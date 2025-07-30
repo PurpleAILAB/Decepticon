@@ -33,7 +33,7 @@
   </a>
 
 <div align="center">
-  <img src="assets/decepticon_logo.png" alt="Decepticon Logo" width="300">
+  <img src="assets/decepticon_logo.png" alt="Decepticon Logo" width="200">
 </div>
 
 </div>
