@@ -32,7 +32,7 @@
     <img src="https://img.shields.io/badge/Visit%20Website-brightgreen?logo=vercel&logoColor=white&style=for-the-badge" alt="Visit Website">
   </a>
 
-![Decepticon Logo](assets/decepticon_log.png)
+![Decepticon Logo](assets/decepticon_logo.png)
 
 </div>
 
