@@ -25,6 +25,18 @@ def compose() -> dict:
         return yaml.safe_load(f)
 
 
+def _env_to_dict(env: list | dict) -> dict[str, str]:
+    """Normalize a docker-compose environment block to a str→str dict."""
+    if isinstance(env, dict):
+        return {k: str(v) for k, v in env.items()}
+    env_dict: dict[str, str] = {}
+    for item in env:
+        if "=" in str(item):
+            k, v = str(item).split("=", 1)
+            env_dict[k.strip()] = v.strip()
+    return env_dict
+
+
 class TestDockerSocketNotExposed:
     """Verify the langgraph container does not have direct Docker socket access."""
 
@@ -54,18 +66,11 @@ class TestDockerSocketNotExposed:
         )
 
     def test_docker_socket_proxy_restricts_operations(self, compose: dict):
-        """The docker-socket-proxy must deny container creation and other dangerous ops."""
+        """The docker-socket-proxy must explicitly deny container creation and other
+        dangerous ops.  Each key must be present AND set to '0'; a missing key is
+        treated as a failure so that accidental removal is caught."""
         proxy = compose["services"]["docker-socket-proxy"]
-        env = proxy.get("environment", [])
-
-        # Normalize environment to dict
-        if isinstance(env, list):
-            env_dict = {}
-            for item in env:
-                if "=" in str(item):
-                    k, v = str(item).split("=", 1)
-                    env_dict[k.strip()] = v.strip()
-            env = env_dict
+        env = _env_to_dict(proxy.get("environment", []))
 
         # These dangerous operations should be explicitly denied (0)
         dangerous_ops = [
@@ -79,10 +84,12 @@ class TestDockerSocketNotExposed:
         ]
         for op in dangerous_ops:
             val = env.get(op, None)
-            if val is not None:
-                assert str(val) == "0", (
-                    f"docker-socket-proxy has {op}={val}, expected 0 (deny)"
-                )
+            assert val is not None, (
+                f"docker-socket-proxy must explicitly set {op}=0 to deny; key is missing"
+            )
+            assert str(val) == "0", (
+                f"docker-socket-proxy has {op}={val}, expected 0 (deny)"
+            )
 
     def test_docker_socket_proxy_has_socket(self, compose: dict):
         """The proxy service must have the actual Docker socket mounted."""
@@ -94,16 +101,7 @@ class TestDockerSocketNotExposed:
     def test_langgraph_uses_docker_host_env(self, compose: dict):
         """The langgraph service must set DOCKER_HOST to point to the proxy."""
         langgraph = compose["services"]["langgraph"]
-        env = langgraph.get("environment", [])
-
-        # Normalize to dict
-        if isinstance(env, list):
-            env_dict = {}
-            for item in env:
-                if "=" in str(item):
-                    k, v = str(item).split("=", 1)
-                    env_dict[k.strip()] = v.strip()
-            env = env_dict
+        env = _env_to_dict(langgraph.get("environment", []))
 
         docker_host = env.get("DOCKER_HOST")
         assert docker_host is not None, (
@@ -124,3 +122,20 @@ class TestDockerSocketNotExposed:
                     f"Service '{name}' mounts raw Docker socket: {vol}. "
                     f"Only docker-socket-proxy should have socket access."
                 )
+
+    def test_proxy_image_pinned(self, compose: dict):
+        """The docker-socket-proxy image should use a pinned version, not :latest."""
+        proxy = compose["services"]["docker-socket-proxy"]
+        image = proxy.get("image", "")
+        assert ":latest" not in image, (
+            f"docker-socket-proxy uses ':latest' tag ({image}). "
+            f"Pin to a specific version or digest for supply-chain safety."
+        )
+
+    def test_langgraph_depends_on_proxy(self, compose: dict):
+        """The langgraph service must depend on docker-socket-proxy."""
+        langgraph = compose["services"]["langgraph"]
+        deps = langgraph.get("depends_on", {})
+        assert "docker-socket-proxy" in deps, (
+            "langgraph must declare depends_on docker-socket-proxy"
+        )
