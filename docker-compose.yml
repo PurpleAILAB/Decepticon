@@ -52,7 +52,7 @@ services:
   # Evasive Red Team Sandbox
   # Isolated container for executing red-team tools (nmap, whois, etc.)
   # Runs on sandbox-net only — NO access to infra (litellm, postgres, langgraph).
-  # LangGraph reaches sandbox via docker exec (Docker socket), not the network.
+  # LangGraph reaches sandbox via docker exec through docker-socket-proxy.
   sandbox:
     image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
     build:
@@ -72,6 +72,45 @@ services:
     pids_limit: 1024
     restart: unless-stopped
 
+  # Docker Socket Proxy — Restricted Docker API access
+  # Only exposes the endpoints needed by DockerSandbox (exec, cp, inspect).
+  # Prevents container creation, image pulls, volume/network manipulation,
+  # and other privileged operations that would enable container escape.
+  # See: https://github.com/Tecnativa/docker-socket-proxy
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: decepticon-docker-proxy
+    environment:
+      # Allow only the operations DockerSandbox needs:
+      # - docker exec (EXEC + CONTAINERS)
+      # - docker cp (CONTAINERS)
+      # - docker inspect (CONTAINERS)
+      - CONTAINERS=1
+      - EXEC=1
+      # Deny everything else — prevent container escape
+      - CONTAINERS_CREATE=0
+      - CONTAINERS_DELETE=0
+      - IMAGES=0
+      - VOLUMES=0
+      - NETWORKS=0
+      - SWARM=0
+      - BUILD=0
+      - NODES=0
+      - SERVICES=0
+      - TASKS=0
+      - SECRETS=0
+      - CONFIGS=0
+      - PLUGINS=0
+      - SYSTEM=0
+      - DISTRIBUTION=0
+      - AUTH=0
+      - POST=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+
   # LangGraph Platform — Agent API Server
   # Exposes all agents (decepticon, recon, planner, exploit, postexploit)
   # as a streaming API on port 2024. Ink CLI connects here.
@@ -88,13 +127,15 @@ services:
       - DECEPTICON_LLM__PROXY_URL=http://litellm:4000
       - DECEPTICON_LLM__PROXY_API_KEY=${LITELLM_MASTER_KEY:-sk-decepticon-master}
       - DECEPTICON_DOCKER__SANDBOX_CONTAINER_NAME=decepticon-sandbox
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${DECEPTICON_DATA_DIR:-./workspace}:/workspace
     depends_on:
       litellm:
         condition: service_healthy
       sandbox:
+        condition: service_started
+      docker-socket-proxy:
         condition: service_started
     networks:
       - decepticon-net
