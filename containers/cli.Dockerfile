@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────
-FROM node:22-slim AS builder
+FROM node:25-slim AS builder
 WORKDIR /app
 
 # Copy workspace root (lock file) + cli package.json for dependency install
@@ -12,7 +12,7 @@ COPY clients/cli/ clients/cli/
 RUN npm run build --workspace=@decepticon/cli
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────
-FROM node:22-slim
+FROM node:25-slim
 WORKDIR /app
 
 # Copy compiled output + runtime dependencies
