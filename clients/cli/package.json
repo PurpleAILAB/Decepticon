@@ -19,7 +19,7 @@
     "@types/diff": "^8.0.0",
     "diff": "^8.0.4",
     "ink": "^6.0.0",
-    "marked": "^15.0.12",
+    "marked": "^18.0.0",
     "marked-terminal": "^7.3.0",
     "react": "^19.0.0"
   },
