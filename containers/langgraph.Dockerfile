@@ -1,4 +1,4 @@
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 # Install Docker CLI (needed to exec into sandbox container)
 RUN apt-get update && \
