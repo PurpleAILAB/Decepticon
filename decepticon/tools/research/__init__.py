@@ -1,18 +1,19 @@
-"""Vulnerability research package.
+"""Vulnerability research package — Neo4j-native attack graph.
 
 High-value capabilities for 0-day discovery and exploit chain construction:
 
-- ``graph``  — KnowledgeGraph: persistent JSON graph of assets, vulns, creds, chains
+- ``graph``  — KnowledgeGraph: Pydantic model for attack graph nodes and edges
+- ``neo4j_store`` — Neo4j persistence with MERGE-based upserts and native labels
+- ``_state`` — Singleton Neo4jStore access for tool modules
 - ``cve``    — CVE/OSV/EPSS intelligence lookup with EPSS-weighted scoring
 - ``sarif``  — SARIF ingestion (semgrep, bandit, gitleaks, trivy, nuclei)
-- ``chain``  — Attack path planner (multi-hop graph search)
+- ``chain``  — Attack path planner (Cypher-native graph search)
 - ``poc``    — PoC reproducer validator with CVSS estimation
 - ``fuzz``   — Fuzzing orchestration (libFuzzer, AFL++, jazzer, boofuzz)
 - ``tools``  — LangChain @tool wrappers exposing all of the above to agents
 
-State defaults to /workspace/kg.json (sandbox-bound JSON graph), with an
-optional Neo4j backend via DECEPTICON_KG_BACKEND=neo4j for larger
-multi-agent workloads.
+State is managed exclusively through Neo4j. Configure via environment:
+  DECEPTICON_NEO4J_URI, DECEPTICON_NEO4J_USER, DECEPTICON_NEO4J_PASSWORD
 """
 
 from __future__ import annotations
@@ -24,8 +25,6 @@ from decepticon.tools.research.graph import (
     Node,
     NodeKind,
     Severity,
-    load_graph,
-    save_graph,
 )
 
 __all__ = [
@@ -35,6 +34,4 @@ __all__ = [
     "Node",
     "NodeKind",
     "Severity",
-    "load_graph",
-    "save_graph",
 ]

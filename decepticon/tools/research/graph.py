@@ -1,39 +1,41 @@
-"""KnowledgeGraph — persistent vulnerability research graph.
+"""KnowledgeGraph — Neo4j-native attack graph.
 
-Survives Ralph fresh-iteration resets by serialising to JSON on disk by
-default (``/workspace/kg.json`` inside the sandbox, bind-mounted to the
-host). The runtime persistence backend can be swapped to Neo4j via
-``decepticon.research._state`` environment configuration.
+Models the full attack surface as a directed graph with typed nodes and
+edges. Node labels map 1-to-1 with Neo4j labels (PascalCase); edge kinds
+map to Neo4j relationship types (UPPER_CASE).  The in-memory
+:class:`KnowledgeGraph` remains useful for testing and Python-side
+reasoning while the authoritative store lives in Neo4j.
 
 Schema
 ------
-Nodes have a ``kind`` (Host, Service, Vulnerability, Credential, Secret,
-Finding, CodeLocation, Chain, Entrypoint, CrownJewel) and a free-form
-``props`` dict. Edges carry a ``kind`` (runs_on, exposes, has_vuln,
-auth_as, enables, leaks, chains_to, located_at, reaches) plus optional
-``weight`` used by the chain planner (lower = easier exploitation).
+Nodes span five layers — Infrastructure (Host, Network, Domain, Service,
+URL, CloudResource, Container), Identity (User, Group, Credential, Secret,
+Session), Vulnerability (Vulnerability, CVE, Misconfiguration, Weakness),
+Code (Repository, SourceFile, CodeLocation, Contract), Attack Progression
+(Technique, Entrypoint, CrownJewel, AttackPath, Finding), and Analysis
+(Candidate, Hypothesis, Patch).
+
+Edges carry a ``kind`` (Neo4j relationship type) plus optional ``weight``
+used by the path planner (lower = easier exploitation).
 
 Design goals
 ------------
 1. **Append-mostly**: agents write once, read often. Deduplication via
    deterministic node IDs (SHA1 of kind + canonical key).
-2. **Concurrent safety**: file-lock-free atomic replace (write-tmp + rename).
-   The graph is small enough to rewrite in full on each mutation.
-3. **Schema validation**: Pydantic models reject bad writes at the boundary.
-4. **Queryable**: ``neighbors()``, ``by_kind()``, ``find()`` avoid the need
-   for a real graph database. O(N) is fine at engagement scale (<10K nodes).
+2. **Schema validation**: Pydantic models reject bad writes at the boundary.
+3. **Queryable**: ``neighbors()``, ``by_kind()``, ``find()`` support
+   Python-side reasoning. O(N) is fine at engagement scale (<10K nodes).
+4. **Neo4j-native labels**: ``NodeKind`` values are PascalCase and used
+   directly as Neo4j node labels. ``EdgeKind`` values are UPPER_CASE and
+   used directly as Neo4j relationship types.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
-import os
-import tempfile
 import time
 from collections.abc import Iterable, Iterator
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -42,49 +44,89 @@ from pydantic import BaseModel, Field
 
 
 class NodeKind(StrEnum):
-    """Canonical node types in the research graph."""
+    """Canonical node types in the research graph.
 
-    HOST = "host"
-    SERVICE = "service"
-    URL = "url"
-    REPO = "repo"
-    FILE = "file"
-    CODE_LOCATION = "code_location"
-    VULNERABILITY = "vulnerability"
-    CVE = "cve"
-    FINDING = "finding"
-    CREDENTIAL = "credential"
-    SECRET = "secret"
-    USER = "user"
-    ENTRYPOINT = "entrypoint"
-    CROWN_JEWEL = "crown_jewel"
-    CHAIN = "chain"
-    HYPOTHESIS = "hypothesis"
-    CANDIDATE = "candidate"  # scanner-emitted suspect code location
-    PATCH = "patch"  # proposed/applied fix for a verified finding
+    Values are PascalCase to match Neo4j node labels directly.
+    """
+
+    # Infrastructure
+    HOST = "Host"
+    NETWORK = "Network"
+    DOMAIN = "Domain"
+    SERVICE = "Service"
+    URL = "URL"
+    CLOUD_RESOURCE = "CloudResource"
+    CONTAINER = "Container"
+    # Identity
+    USER = "User"
+    GROUP = "Group"
+    CREDENTIAL = "Credential"
+    SECRET = "Secret"
+    SESSION = "Session"
+    # Vulnerability
+    VULNERABILITY = "Vulnerability"
+    CVE = "CVE"
+    MISCONFIGURATION = "Misconfiguration"
+    WEAKNESS = "Weakness"
+    # Code
+    REPOSITORY = "Repository"
+    SOURCE_FILE = "SourceFile"
+    CODE_LOCATION = "CodeLocation"
+    CONTRACT = "Contract"
+    # Attack Progression
+    TECHNIQUE = "Technique"
+    ENTRYPOINT = "Entrypoint"
+    CROWN_JEWEL = "CrownJewel"
+    ATTACK_PATH = "AttackPath"
+    FINDING = "Finding"
+    # Analysis
+    CANDIDATE = "Candidate"
+    HYPOTHESIS = "Hypothesis"
+    PATCH = "Patch"
 
 
 class EdgeKind(StrEnum):
-    """Canonical edge types — describe how nodes relate."""
+    """Canonical edge types — describe how nodes relate.
 
-    RUNS_ON = "runs_on"  # service → host
-    EXPOSES = "exposes"  # host → service/url
-    HAS_VULN = "has_vuln"  # service/url/file → vulnerability
-    DEFINED_IN = "defined_in"  # vuln → code_location
-    LOCATED_AT = "located_at"  # code_location → file/repo
-    AFFECTED_BY = "affected_by"  # service → cve
-    MAPPED_TO = "mapped_to"  # finding → vulnerability/cve
-    AUTH_AS = "auth_as"  # credential → user
-    GRANTS = "grants"  # credential → host/service
-    LEAKS = "leaks"  # vulnerability → secret/credential
-    ENABLES = "enables"  # vulnerability → vulnerability (pivot)
-    CHAINS_TO = "chains_to"  # finding → finding (ordered step)
-    REACHES = "reaches"  # chain → crown_jewel
-    STARTS_AT = "starts_at"  # chain → entrypoint
-    CONTAINS = "contains"  # chain → finding (unordered member)
-    VALIDATES = "validates"  # poc → finding/vulnerability
-    DERIVED_FROM = "derived_from"  # vulnerability → candidate
-    PATCHES = "patches"  # patch → vulnerability/finding
+    Values are UPPER_CASE to match Neo4j relationship type conventions.
+    """
+
+    # Topology
+    HOSTS = "HOSTS"
+    RESOLVES_TO = "RESOLVES_TO"
+    CONTAINS = "CONTAINS"
+    EXPOSES = "EXPOSES"
+    ROUTES_TO = "ROUTES_TO"
+    PART_OF = "PART_OF"
+    MANAGES = "MANAGES"
+    # Access
+    AUTHENTICATES_TO = "AUTHENTICATES_TO"
+    HAS_SESSION = "HAS_SESSION"
+    MEMBER_OF = "MEMBER_OF"
+    CAN_ACCESS = "CAN_ACCESS"
+    ADMIN_TO = "ADMIN_TO"
+    OWNS = "OWNS"
+    # Exploitation
+    AFFECTS = "AFFECTS"
+    HAS_VULN = "HAS_VULN"
+    EXPLOITS = "EXPLOITS"
+    ENABLES = "ENABLES"
+    LEAKS = "LEAKS"
+    LEADS_TO = "LEADS_TO"
+    DEFINED_IN = "DEFINED_IN"
+    INSTANCE_OF = "INSTANCE_OF"
+    # Kill Chain
+    PIVOTS_TO = "PIVOTS_TO"
+    ESCALATES_TO = "ESCALATES_TO"
+    REACHES = "REACHES"
+    STARTS_AT = "STARTS_AT"
+    STEP = "STEP"
+    USES = "USES"
+    # Validation
+    VALIDATES = "VALIDATES"
+    DERIVED_FROM = "DERIVED_FROM"
+    PATCHES = "PATCHES"
+    MAPS_TO = "MAPS_TO"
 
 
 class Severity(StrEnum):
@@ -164,15 +206,13 @@ class Edge(BaseModel):
 
 # ── Graph ───────────────────────────────────────────────────────────────
 
-DEFAULT_PATH = Path("/workspace/kg.json")
-
 
 class KnowledgeGraph(BaseModel):
-    """Persistent engagement knowledge graph.
+    """In-memory engagement knowledge graph.
 
-    Instances are intentionally loaded fresh from disk on each mutation
-    (via :func:`load_graph` / :func:`save_graph`) so concurrent agents
-    never stomp each other's writes with stale in-memory state.
+    Provides typed node/edge storage with query helpers for Python-side
+    reasoning.  The authoritative persistence backend is Neo4j; this class
+    is used for testing, batch construction, and agent-local caching.
     """
 
     nodes: dict[str, Node] = Field(default_factory=dict)
@@ -281,7 +321,7 @@ class KnowledgeGraph(BaseModel):
     # ── severity helpers ──────────────────────────────────────────────
 
     def vulnerabilities_by_severity(self, min_severity: Severity = Severity.LOW) -> list[Node]:
-        """Return vuln nodes with severity ≥ ``min_severity``, highest first."""
+        """Return vuln nodes with severity >= ``min_severity``, highest first."""
         threshold = SEVERITY_SCORE[min_severity]
         vulns: list[Node] = []
         for node in self.by_kind(NodeKind.VULNERABILITY):
@@ -331,50 +371,3 @@ class KnowledgeGraph(BaseModel):
                 if nxt in path:
                     continue
                 stack.append((nxt, path + [nxt]))
-
-
-# ── Persistence ─────────────────────────────────────────────────────────
-
-
-def load_graph(path: Path | str = DEFAULT_PATH) -> KnowledgeGraph:
-    """Load a graph from disk; return an empty one if the file doesn't exist."""
-    p = Path(path)
-    if not p.exists():
-        return KnowledgeGraph()
-    try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return KnowledgeGraph()
-    return KnowledgeGraph.model_validate(raw)
-
-
-def save_graph(graph: KnowledgeGraph, path: Path | str = DEFAULT_PATH) -> Path:
-    """Atomically persist the graph to disk.
-
-    Uses write-tmp + rename so a crash mid-write never corrupts the file.
-    Parent directory is created on demand.
-
-    Serialised without ``indent`` — the graph is machine-read on every
-    @tool invocation (at 10k+ nodes this hits tens of MB of Pydantic
-    validation). Compact output cuts parse time and disk I/O roughly
-    in half. Set ``DECEPTICON_KG_INDENT=1`` to restore pretty-printing
-    for human debugging.
-    """
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    if os.environ.get("DECEPTICON_KG_INDENT"):
-        payload = graph.model_dump_json(indent=2)
-    else:
-        payload = graph.model_dump_json()
-    fd, tmp = tempfile.mkstemp(prefix=p.name + ".", suffix=".tmp", dir=str(p.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(payload)
-        os.replace(tmp, p)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-    return p
