@@ -29,8 +29,8 @@ from langchain_core.tools import tool
 from decepticon.tools.contracts.patterns import scan_solidity_source
 from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.core.logging import get_logger
-from decepticon.research import cve as cve_mod
-from decepticon.research import fuzz as fuzz_mod
+from decepticon.tools.research import cve as cve_mod
+from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.graph import (
     SEVERITY_SCORE,
