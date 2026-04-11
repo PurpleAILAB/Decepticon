@@ -5,13 +5,12 @@ one JSON file per object type: ``users.json``, ``computers.json``,
 ``groups.json``, ``domains.json``, ``gpos.json``, ``ous.json``. Each
 contains ``data`` and ``meta`` arrays.
 
-We merge these into the existing ``KnowledgeGraph`` so the chain
-planner can reason about AD paths *together with* web/cloud findings.
-Every AD object becomes a node with kind-specific metadata; every
-ACE / membership / SessionCount edge becomes a graph edge.
+We merge these into the existing attack graph so the chain planner can
+reason about AD paths *together with* web/cloud/binary findings — enabling
+cross-domain attack chains like SSRF → IMDS → AWS → AD pivot → DA.
 
-This module is intentionally resilient: BloodHound schema varies across
-versions, so we accept minor differences and skip unknown shapes.
+Every AD object becomes a node with its correct KG label; every ACE /
+membership / session edge uses the semantically correct relationship type.
 """
 
 from __future__ import annotations
@@ -45,49 +44,57 @@ class ImportStats:
         return self.__dict__
 
 
-# ── High-value BloodHound edge types ────────────────────────────────────
+# ── BloodHound → KG mapping ──────────────────────────────────────────
+#
+# BloodHound edge types mapped to our EdgeKind with semantically correct
+# relationship types. Lower weight = easier-to-abuse relationship.
 
-# Mapping of common BloodHound edge names → our internal edge kind +
-# weight. Lower weight = easier-to-abuse relationship.
 _BH_EDGE_MAP: dict[str, tuple[EdgeKind, float]] = {
-    "MemberOf": (EdgeKind.AUTHENTICATES_TO, 0.8),
-    "HasSession": (EdgeKind.AUTHENTICATES_TO, 0.5),
-    "AdminTo": (EdgeKind.GRANTS, 0.3),
-    "CanRDP": (EdgeKind.GRANTS, 0.6),
-    "CanPSRemote": (EdgeKind.GRANTS, 0.5),
-    "ExecuteDCOM": (EdgeKind.GRANTS, 0.6),
-    "SQLAdmin": (EdgeKind.GRANTS, 0.5),
+    # Group membership
+    "MemberOf": (EdgeKind.MEMBER_OF, 0.8),
+    # Session / access
+    "HasSession": (EdgeKind.HAS_SESSION, 0.5),
+    "AdminTo": (EdgeKind.ADMIN_TO, 0.3),
+    "CanRDP": (EdgeKind.CAN_ACCESS, 0.6),
+    "CanPSRemote": (EdgeKind.CAN_ACCESS, 0.5),
+    "ExecuteDCOM": (EdgeKind.CAN_ACCESS, 0.6),
+    "SQLAdmin": (EdgeKind.ADMIN_TO, 0.5),
+    # Delegation
     "AllowedToDelegate": (EdgeKind.ENABLES, 0.4),
     "AllowedToAct": (EdgeKind.ENABLES, 0.4),
+    # ACL abuse
     "GenericAll": (EdgeKind.ENABLES, 0.3),
     "GenericWrite": (EdgeKind.ENABLES, 0.4),
     "WriteOwner": (EdgeKind.ENABLES, 0.4),
     "WriteDacl": (EdgeKind.ENABLES, 0.3),
-    "Owns": (EdgeKind.ENABLES, 0.3),
+    "Owns": (EdgeKind.OWNS, 0.3),
     "ForceChangePassword": (EdgeKind.ENABLES, 0.3),
     "AddMember": (EdgeKind.ENABLES, 0.4),
     "AddSelf": (EdgeKind.ENABLES, 0.4),
+    # Credential access
     "ReadLAPSPassword": (EdgeKind.LEAKS, 0.3),
     "ReadGMSAPassword": (EdgeKind.LEAKS, 0.3),
     "GetChanges": (EdgeKind.LEAKS, 0.2),
     "GetChangesAll": (EdgeKind.LEAKS, 0.2),
     "DCSync": (EdgeKind.LEAKS, 0.1),
+    # Structural
     "Contains": (EdgeKind.CONTAINS, 1.0),
-    "GPLink": (EdgeKind.AFFECTS, 0.8),
-    "TrustedBy": (EdgeKind.AUTHENTICATES_TO, 0.6),
+    "GPLink": (EdgeKind.CONTAINS, 0.8),
+    "TrustedBy": (EdgeKind.ENABLES, 0.6),
 }
 
 
 def _node_kind_for_bh(type_name: str) -> NodeKind:
+    """Map BloodHound object type to the correct KG NodeKind."""
     m = {
         "User": NodeKind.USER,
         "Computer": NodeKind.HOST,
-        "Group": NodeKind.USER,  # represent groups as users for the chain planner
-        "Domain": NodeKind.HOST,
-        "GPO": NodeKind.SERVICE,
-        "OU": NodeKind.SERVICE,
+        "Group": NodeKind.GROUP,
+        "Domain": NodeKind.DOMAIN,
+        "GPO": NodeKind.GROUP,      # GPOs act as policy containers
+        "OU": NodeKind.GROUP,       # OUs act as organizational containers
     }
-    return m.get(type_name, NodeKind.SERVICE)
+    return m.get(type_name, NodeKind.HOST)
 
 
 def _upsert_bh_object(graph: KnowledgeGraph, obj: dict[str, Any], type_name: str) -> Node:
@@ -129,7 +136,6 @@ def _ingest_aces(
         principal_sid = ace.get("PrincipalSID") or ace.get("principalid")
         if not right or not principal_sid:
             continue
-        # O(1) lookup via bh_index
         principal_node = bh_index.get(principal_sid)
         if principal_node is None:
             principal_node = Node.make(
@@ -171,7 +177,7 @@ def _ingest_memberships(
         parent = bh_index.get(sid)
         if parent is None:
             parent = Node.make(
-                NodeKind.USER,
+                NodeKind.GROUP,
                 sid,
                 key=f"bh::Group::{sid}",
                 bh_id=sid,
@@ -180,7 +186,7 @@ def _ingest_memberships(
             graph.upsert_node(parent)
             bh_index[sid] = parent
         graph.upsert_edge(
-            Edge.make(node.id, parent.id, EdgeKind.AUTHENTICATES_TO, weight=0.8, bh_right="MemberOf")
+            Edge.make(node.id, parent.id, EdgeKind.MEMBER_OF, weight=0.8, bh_right="MemberOf")
         )
         stats.edges += 1
 
@@ -202,8 +208,6 @@ def merge_bloodhound_json(
             data = json.loads(data)
         except json.JSONDecodeError as exc:
             raise ValueError(f"bloodhound: invalid JSON payload: {exc}") from exc
-    # BloodHound's schema is always a top-level object — a top-level
-    # array or scalar would crash the .get() calls below. Reject cleanly.
     if not isinstance(data, dict):
         raise ValueError(
             "bloodhound: expected a JSON object at the top level, got "
@@ -260,7 +264,6 @@ def ingest_bloodhound_zip(path: str | Path, graph: KnowledgeGraph) -> ImportStat
                 data = json.loads(raw.decode("utf-8", errors="replace"))
             except (OSError, json.JSONDecodeError):
                 continue
-            # Guess type from filename if meta is missing
             type_hint = None
             base = Path(name).stem.lower()
             for hint in ("users", "computers", "groups", "domains", "gpos", "ous"):
