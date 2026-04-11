@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from decepticon.research import _state as state
-from decepticon.research.graph import (
+from decepticon.tools.research.graph import (
     EdgeKind,
     Node,
     NodeKind,
@@ -16,7 +16,7 @@ from decepticon.research.graph import (
     load_graph,
     save_graph,
 )
-from decepticon.research.patch import patch_propose, patch_verify
+from decepticon.tools.research.patch import patch_propose, patch_verify
 
 
 def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decepticon.references.payloads import BUNDLED_PAYLOADS
-from decepticon.references.payloads_ingest import (
+from decepticon.tools.references.payloads import BUNDLED_PAYLOADS
+from decepticon.tools.references.payloads_ingest import (
     classify_dir,
     iter_ingested_payloads,
     merged_payloads,

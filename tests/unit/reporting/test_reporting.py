@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from decepticon.reporting.bugcrowd import render_bugcrowd_csv
-from decepticon.reporting.executive import render_executive_summary
-from decepticon.reporting.hackerone import HackerOneReport, render_hackerone_markdown
-from decepticon.reporting.timeline import extract_timeline
-from decepticon.research.graph import KnowledgeGraph, Node, NodeKind
+from decepticon.tools.reporting.bugcrowd import render_bugcrowd_csv
+from decepticon.tools.reporting.executive import render_executive_summary
+from decepticon.tools.reporting.hackerone import HackerOneReport, render_hackerone_markdown
+from decepticon.tools.reporting.timeline import extract_timeline
+from decepticon.tools.research.graph import KnowledgeGraph, Node, NodeKind
 
 
 def _seeded_graph() -> KnowledgeGraph:

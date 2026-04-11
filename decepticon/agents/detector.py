@@ -36,7 +36,7 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.research.tools import (
+from decepticon.tools.research.tools import (
     cve_by_package,
     cve_lookup,
     kg_add_edge,

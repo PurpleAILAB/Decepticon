@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decepticon.references.oneliners import load_recipes, search
+from decepticon.tools.references.oneliners import load_recipes, search
 
 _README = """# The Book of Secret Knowledge
 

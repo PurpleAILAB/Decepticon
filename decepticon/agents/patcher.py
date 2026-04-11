@@ -31,8 +31,8 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.research.patch import patch_propose, patch_verify
-from decepticon.research.tools import (
+from decepticon.tools.research.patch import patch_propose, patch_verify
+from decepticon.tools.research.tools import (
     kg_neighbors,
     kg_query,
     kg_stats,

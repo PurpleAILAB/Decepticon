@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from decepticon.research import _state as state
-from decepticon.research.graph import NodeKind, load_graph
-from decepticon.research.scanner_tools import (
+from decepticon.tools.research.graph import NodeKind, load_graph
+from decepticon.tools.research.scanner_tools import (
     kg_add_candidate,
     rank_candidates,
     scan_shard,

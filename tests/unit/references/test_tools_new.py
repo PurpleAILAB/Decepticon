@@ -13,14 +13,14 @@ from pathlib import Path
 
 import pytest
 
-import decepticon.references.cve_poc_index as cve_poc_index
-import decepticon.references.h1_corpus as h1_corpus
-import decepticon.references.killchain as killchain_mod
-import decepticon.references.methodology as methodology_mod
-import decepticon.references.oneliners as oneliners_mod
-import decepticon.references.payloads_ingest as payloads_ingest
+import decepticon.tools.references.cve_poc_index as cve_poc_index
+import decepticon.tools.references.h1_corpus as h1_corpus
+import decepticon.tools.references.killchain as killchain_mod
+import decepticon.tools.references.methodology as methodology_mod
+import decepticon.tools.references.oneliners as oneliners_mod
+import decepticon.tools.references.payloads_ingest as payloads_ingest
 from decepticon.references import tools as T
-from decepticon.references.fetch import cache_path
+from decepticon.tools.references.fetch import cache_path
 
 
 @pytest.fixture(autouse=True)

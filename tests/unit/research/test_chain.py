@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from decepticon.research.chain import (
+from decepticon.tools.research.chain import (
     critical_path_score,
     plan_chains,
     promote_chain,
 )
-from decepticon.research.graph import (
+from decepticon.tools.research.graph import (
     Edge,
     EdgeKind,
     KnowledgeGraph,

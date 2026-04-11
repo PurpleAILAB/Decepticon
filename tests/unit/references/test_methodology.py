@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decepticon.references.methodology import (
+from decepticon.tools.references.methodology import (
     classes_present,
     classify_filename,
     load_chapters,

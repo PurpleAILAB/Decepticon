@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decepticon.references.h1_corpus import (
+from decepticon.tools.references.h1_corpus import (
     BugReport,
     load_corpus,
     parse_tops_file,

@@ -40,7 +40,7 @@ from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.middleware import OPPLANMiddleware, SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.research.tools import kg_query, kg_stats
+from decepticon.tools.research.tools import kg_query, kg_stats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

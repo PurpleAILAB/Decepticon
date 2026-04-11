@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from decepticon.contracts.foundry import (
+from decepticon.tools.contracts.foundry import (
     generate_access_control_test,
     generate_flashloan_test,
     generate_reentrancy_test,
 )
-from decepticon.contracts.patterns import scan_solidity_source
-from decepticon.contracts.slither import ingest_slither_json
-from decepticon.research.graph import KnowledgeGraph, NodeKind, Severity
+from decepticon.tools.contracts.patterns import scan_solidity_source
+from decepticon.tools.contracts.slither import ingest_slither_json
+from decepticon.tools.research.graph import KnowledgeGraph, NodeKind, Severity
 
 
 class TestPatternScanner:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decepticon.web.http import HTTPHistory, HTTPRequest, HTTPResponse
+from decepticon.tools.web.http import HTTPHistory, HTTPRequest, HTTPResponse
 
 
 def _request(req_id: str, *, url: str = "https://example.test") -> HTTPRequest:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decepticon.research.cve import (
+from decepticon.tools.research.cve import (
     Exploitability,
     _parse_epss,
     _parse_nvd,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decepticon.web.graphql import GraphQLSchema, introspection_query
+from decepticon.tools.web.graphql import GraphQLSchema, introspection_query
 
 
 def _intr(types: list[dict]) -> dict:

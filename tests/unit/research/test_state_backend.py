@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from decepticon.research import _state as state
-from decepticon.research.graph import KnowledgeGraph, Node, NodeKind
+from decepticon.tools.research.graph import KnowledgeGraph, Node, NodeKind
 
 
 class _FakeNeo4jStore:

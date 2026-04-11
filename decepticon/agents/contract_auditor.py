@@ -20,13 +20,20 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
-from decepticon.contracts.tools import CONTRACT_TOOLS
+from decepticon.tools.contracts.tools import CONTRACT_TOOLS
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.references.tools import REFERENCES_TOOLS
-from decepticon.research.tools import RESEARCH_TOOLS
+from decepticon.tools.research.tools import (
+    kg_add_node,
+    kg_add_edge,
+    kg_query,
+    kg_neighbors,
+    kg_stats,
+    kg_ingest_sarif,
+    cve_lookup,
+)
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
 
@@ -65,7 +72,17 @@ def create_contract_auditor_agent():
         ]
     )
 
-    tools = [*CONTRACT_TOOLS, *RESEARCH_TOOLS, *REFERENCES_TOOLS, bash]
+    tools = [
+        # Contract tools
+        *CONTRACT_TOOLS,
+        # KG core + SARIF ingest
+        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats,
+        kg_ingest_sarif,
+        # CVE intelligence
+        cve_lookup,
+        # Execution
+        bash,
+    ]
     agent = create_agent(
         llm,
         system_prompt=system_prompt,

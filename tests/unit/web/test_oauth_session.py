@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from decepticon.web.oauth import analyze_oauth_callback
-from decepticon.web.session import analyze_cookie, shannon_entropy
+from decepticon.tools.web.oauth import analyze_oauth_callback
+from decepticon.tools.web.session import analyze_cookie, shannon_entropy
 
 
 class TestOAuth:

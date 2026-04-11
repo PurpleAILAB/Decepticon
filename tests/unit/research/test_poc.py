@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from decepticon.research.graph import (
+from decepticon.tools.research.graph import (
     KnowledgeGraph,
     Node,
     NodeKind,
 )
-from decepticon.research.poc import (
+from decepticon.tools.research.poc import (
     AC,
     AV,
     PR,

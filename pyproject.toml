@@ -61,7 +61,7 @@ dev = [
 
 [project.scripts]
 decepticon = "decepticon.__main__:main"
-decepticon-kg-health = "decepticon.research.health:main"
+decepticon-kg-health = "decepticon.tools.research.health:main"
 
 [project.urls]
 Homepage = "https://github.com/PurpleAILAB/Decepticon"

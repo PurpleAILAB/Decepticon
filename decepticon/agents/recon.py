@@ -32,8 +32,24 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.references.tools import REFERENCES_TOOLS
-from decepticon.research.tools import RESEARCH_TOOLS
+from decepticon.tools.research.tools import (
+    kg_add_node,
+    kg_add_edge,
+    kg_query,
+    kg_neighbors,
+    kg_stats,
+    kg_backend_health,
+    kg_ingest_nmap_xml,
+    kg_ingest_nuclei_jsonl,
+    kg_ingest_subfinder,
+    kg_ingest_httpx_jsonl,
+    kg_ingest_dnsx,
+    kg_ingest_katana,
+    kg_ingest_masscan,
+    kg_ingest_ffuf,
+    kg_ingest_testssl,
+)
+from decepticon.tools.references.tools import oneliner_search, killchain_lookup
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
 
@@ -88,7 +104,18 @@ def create_recon_agent():
         ]
     )
 
-    tools = [*RESEARCH_TOOLS, *REFERENCES_TOOLS, bash]
+    tools = [
+        # KG core
+        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats, kg_backend_health,
+        # KG ingest (recon outputs)
+        kg_ingest_nmap_xml, kg_ingest_nuclei_jsonl, kg_ingest_subfinder,
+        kg_ingest_httpx_jsonl, kg_ingest_dnsx, kg_ingest_katana,
+        kg_ingest_masscan, kg_ingest_ffuf, kg_ingest_testssl,
+        # References
+        oneliner_search, killchain_lookup,
+        # Execution
+        bash,
+    ]
 
     agent = create_agent(
         llm,

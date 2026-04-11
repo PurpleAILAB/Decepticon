@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from decepticon.references import hydrate
-from decepticon.references.fetch import ReferenceCache
+from decepticon.tools.references.fetch import ReferenceCache
 
 
 @pytest.fixture

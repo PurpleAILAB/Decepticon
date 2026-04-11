@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from decepticon.references.cve_poc_index import (
+from decepticon.tools.references.cve_poc_index import (
     PoCIndex,
     build_index,
     load_index,

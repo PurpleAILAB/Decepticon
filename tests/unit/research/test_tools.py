@@ -9,9 +9,9 @@ import pytest
 
 from decepticon.research import _state as state
 from decepticon.research import tools as research_tools
-from decepticon.research.cve import Exploitability
-from decepticon.research.graph import Edge, EdgeKind, Node, NodeKind, load_graph, save_graph
-from decepticon.web.jwt import forge_token
+from decepticon.tools.research.cve import Exploitability
+from decepticon.tools.research.graph import Edge, EdgeKind, Node, NodeKind, load_graph, save_graph
+from decepticon.tools.web.jwt import forge_token
 
 
 def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:

@@ -8,19 +8,19 @@ from types import SimpleNamespace
 import pytest
 
 from decepticon.references import fetch as fetch_mod
-from decepticon.references.catalog import (
+from decepticon.tools.references.catalog import (
     REFERENCES,
     references_by_category,
     references_for_topic,
     suggest_for_finding,
 )
-from decepticon.references.fetch import (
+from decepticon.tools.references.fetch import (
     cache_path,
     cache_status,
     ensure_cached,
     search_cache,
 )
-from decepticon.references.payloads import (
+from decepticon.tools.references.payloads import (
     BUNDLED_PAYLOADS,
     payloads_by_class,
     search_payloads,

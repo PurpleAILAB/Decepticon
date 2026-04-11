@@ -36,7 +36,7 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.research.tools import (
+from decepticon.tools.research.tools import (
     kg_add_edge,
     kg_add_node,
     kg_neighbors,
