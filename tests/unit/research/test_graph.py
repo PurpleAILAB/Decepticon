@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from decepticon.tools.research.graph import (
@@ -13,8 +11,6 @@ from decepticon.tools.research.graph import (
     Node,
     NodeKind,
     Severity,
-    load_graph,
-    save_graph,
 )
 
 
@@ -46,8 +42,8 @@ class TestNodeDedup:
 
 class TestEdgeOperations:
     def test_edge_deterministic_id(self) -> None:
-        e1 = Edge.make("a", "b", EdgeKind.RUNS_ON)
-        e2 = Edge.make("a", "b", EdgeKind.RUNS_ON)
+        e1 = Edge.make("a", "b", EdgeKind.HOSTS)
+        e2 = Edge.make("a", "b", EdgeKind.HOSTS)
         assert e1.id == e2.id
 
     def test_upsert_edge_overrides_weight(self) -> None:
@@ -72,7 +68,7 @@ class TestQueries:
         self.v_crit = self.g.upsert_node(
             Node.make(NodeKind.VULNERABILITY, "RCE", severity="critical")
         )
-        self.g.upsert_edge(Edge.make(self.s80.id, self.h.id, EdgeKind.RUNS_ON))
+        self.g.upsert_edge(Edge.make(self.s80.id, self.h.id, EdgeKind.HOSTS))
         self.g.upsert_edge(Edge.make(self.s80.id, self.v_high.id, EdgeKind.HAS_VULN, weight=0.5))
 
     def test_by_kind(self) -> None:
@@ -161,46 +157,6 @@ class TestPathIteration:
         # No path should contain a twice
         for p in paths:
             assert len(set(p)) == len(p)
-
-
-class TestPersistence:
-    def test_roundtrip_empty(self, tmp_path: Path) -> None:
-        g = KnowledgeGraph()
-        path = save_graph(g, tmp_path / "kg.json")
-        loaded = load_graph(path)
-        assert loaded.nodes == {}
-        assert loaded.edges == {}
-
-    def test_roundtrip_populated(self, tmp_path: Path) -> None:
-        g = KnowledgeGraph()
-        a = g.upsert_node(Node.make(NodeKind.HOST, "10.0.0.1"))
-        b = g.upsert_node(Node.make(NodeKind.SERVICE, "nginx", key="10.0.0.1:80"))
-        g.upsert_edge(Edge.make(b.id, a.id, EdgeKind.RUNS_ON, weight=0.5))
-        save_graph(g, tmp_path / "kg.json")
-        loaded = load_graph(tmp_path / "kg.json")
-        assert set(loaded.nodes.keys()) == {a.id, b.id}
-        assert len(loaded.edges) == 1
-        edge = list(loaded.edges.values())[0]
-        assert edge.weight == 0.5
-        assert edge.kind == EdgeKind.RUNS_ON
-
-    def test_load_missing_returns_empty(self, tmp_path: Path) -> None:
-        g = load_graph(tmp_path / "doesnotexist.json")
-        assert g.nodes == {}
-
-    def test_load_corrupt_returns_empty(self, tmp_path: Path) -> None:
-        path = tmp_path / "bad.json"
-        path.write_text("{not valid json", encoding="utf-8")
-        g = load_graph(path)
-        assert g.nodes == {}
-
-    def test_atomic_write_uses_rename(self, tmp_path: Path) -> None:
-        # After save_graph, no *.tmp files should be left behind
-        g = KnowledgeGraph()
-        g.upsert_node(Node.make(NodeKind.HOST, "a"))
-        save_graph(g, tmp_path / "kg.json")
-        leftovers = list(tmp_path.glob("kg.json.*"))
-        assert leftovers == []
 
 
 class TestStats:

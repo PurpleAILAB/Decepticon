@@ -33,7 +33,16 @@ CLI entry point: `decepticon` starts the LangGraph dev server. The Ink CLI front
 - `roe.json` — Rules of Engagement (scope constraints, checked every iteration)
 - `conops.json` — threat actor profile, kill chain
 - `opplan.json` — discrete objectives with acceptance criteria (drives Ralph)
-- `findings.txt` — append-only cross-iteration memory
+- `findings/FIND-NNN.md` — per-vulnerability reports (bug bounty format)
+- `findings/attack-paths/PATH-NNN.md` — kill chain traversal paths
+
+**Knowledge Graph** (Neo4j-native attack graph):
+- Neo4j is the sole persistence backend — no JSON fallback
+- Each node type maps to a native Neo4j label (Host, Service, Vulnerability, etc.)
+- Each relationship type maps to a native Neo4j relationship (EXPLOITS, PIVOTS_TO, etc.)
+- Attack path planning uses Cypher-native APOC dijkstra, not Python-side traversal
+- Schema defined in `docs/design/attack-graph-schema.md`, initialized via `scripts/init_neo4j.cypher`
+- Configuration: `DECEPTICON_NEO4J_URI`, `DECEPTICON_NEO4J_USER`, `DECEPTICON_NEO4J_PASSWORD`
 
 **Sandbox** (`backends/docker_sandbox.py`): `DockerSandbox` wraps `docker exec` with tmux session management. Named sessions allow parallel scans. PS1 polling detects command completion. Stall detection after 10s of no output change.
 
@@ -64,11 +73,21 @@ This codebase is designed around controlling LLM context consumption:
 
 - `clients/cli/` — Ink.js (React for terminal) CLI frontend (TypeScript)
 - `containers/` — Dockerfiles: `langgraph.Dockerfile`, `sandbox.Dockerfile`, `cli.Dockerfile`
-- `decepticon/agents/` — LangGraph agent definitions (decepticon, recon, planner, exploit, postexploit)
+- `decepticon/agents/` — LangGraph agent definitions (decepticon, recon, planner, exploit, postexploit, analyst, vulnresearch pipeline, domain specialists)
 - `decepticon/backends/` — Docker sandbox backend (`DockerSandbox`)
 - `decepticon/auth/providers/` — OAuth implementations per LLM provider
+- `decepticon/tools/` — All agent tools organized by domain:
+  - `tools/bash/` — Bash execution tool (sandbox command runner)
+  - `tools/research/` — KnowledgeGraph, Neo4j store, attack chain planner, CVE/fuzz/PoC
+  - `tools/references/` — External reference corpus (PayloadsAllTheThings, HackerOne, killchain)
+  - `tools/ad/` — Active Directory tooling (BloodHound, Kerberos, ADCS)
+  - `tools/cloud/` — Cloud security (AWS IAM, K8s, Terraform)
+  - `tools/contracts/` — Smart contract auditing (Solidity patterns, Slither, Foundry)
+  - `tools/web/` — Web security (JWT, OAuth, GraphQL, HTTP session)
+  - `tools/reversing/` — Binary analysis (strings, packer, ROP, symbols)
+  - `tools/reporting/` — Report generation (HackerOne, Bugcrowd, executive)
 - `skills/` — Markdown knowledge base injected via SkillsMiddleware
-- `reference/` — Read-only source code of related projects (not part of build)
+- `docs/design/` — Architecture design documents (attack-graph-schema.md)
+- `scripts/init_neo4j.cypher` — Neo4j schema initialization
 - `config/` — Runtime configs (`litellm.yaml`, `decepticon.yaml`)
-- `scripts/install.sh` — One-line installer (`curl | bash`)
 - `.github/workflows/` — CI/CD (ci.yml, release.yml)

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from decepticon.research import _state as state
-from decepticon.tools.research.graph import NodeKind, load_graph
+from decepticon.tools.research import _state as state
+from decepticon.tools.research.graph import KnowledgeGraph, NodeKind
 from decepticon.tools.research.scanner_tools import (
     kg_add_candidate,
     rank_candidates,
@@ -16,11 +16,46 @@ from decepticon.tools.research.scanner_tools import (
 )
 
 
-def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    kg_path = tmp_path / "kg.json"
-    monkeypatch.setenv("DECEPTICON_KG_PATH", str(kg_path))
-    state._invalidate_kg_cache()
-    return kg_path
+class _FakeStore:
+    def __init__(self) -> None:
+        self.graph = KnowledgeGraph()
+
+    def load_graph(self):
+        return self.graph.model_copy(deep=True)
+
+    def batch_upsert_nodes(self, nodes):
+        for n in nodes:
+            self.graph.upsert_node(n)
+        return len(nodes)
+
+    def batch_upsert_edges(self, edges):
+        for e in edges:
+            self.graph.upsert_edge(e)
+        return len(edges)
+
+    def ensure_schema(self):
+        pass
+
+    def close(self):
+        pass
+
+    def revision(self):
+        return 0.0
+
+    def stats(self):
+        return self.graph.stats()
+
+    def upsert_node(self, node):
+        self.graph.upsert_node(node)
+
+    def upsert_edge(self, edge):
+        self.graph.upsert_edge(edge)
+
+
+def _configure_kg(monkeypatch: pytest.MonkeyPatch) -> _FakeStore:
+    fake = _FakeStore()
+    monkeypatch.setattr(state, "_store", fake)
+    return fake
 
 
 def _seed_tree(root: Path) -> None:
@@ -176,7 +211,7 @@ class TestKgAddCandidate:
     def test_promotes_candidate_to_graph(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch)
         raw = kg_add_candidate.invoke(
             {
                 "path": "/workspace/target/app.py",
@@ -191,7 +226,7 @@ class TestKgAddCandidate:
         assert result["kind"] == NodeKind.CANDIDATE.value
         assert result["severity"] == "high"
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         node = graph.nodes[result["id"]]
         assert node.props["path"] == "/workspace/target/app.py"
         assert node.props["line"] == 42
@@ -200,7 +235,7 @@ class TestKgAddCandidate:
     def test_deterministic_dedup_by_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _configure_kg(monkeypatch, tmp_path)
+        _configure_kg(monkeypatch)
         a = json.loads(
             kg_add_candidate.invoke(
                 {
@@ -226,7 +261,7 @@ class TestKgAddCandidate:
     def test_severity_buckets(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _configure_kg(monkeypatch, tmp_path)
+        _configure_kg(monkeypatch)
         hi = json.loads(
             kg_add_candidate.invoke(
                 {"path": "a.py", "line": 1, "score": 0.95, "sink_kind": "os_exec"}

@@ -58,11 +58,9 @@ log = get_logger("research.tools")
 
 # ── Helpers ─────────────────────────────────────────────────────────────
 #
-# ``_load`` / ``_save`` / ``_json`` / ``_kg_path`` / ``_invalidate_kg_cache``
-# are defined in ``decepticon.research._state`` so sibling modules
-# (``scanner_tools``, ``patch``) can reuse them without importing this
-# file (which would be circular). Re-exported here under their original
-# private names so the existing ~1500 call sites keep working.
+# ``_load`` / ``_save`` / ``_json`` are compatibility wrappers in
+# ``_state.py`` that route through the Neo4j store. All 40+ call sites
+# in this file use them unchanged.
 from decepticon.tools.research._state import (  # noqa: E402
     _json,
     _kg_backend_name,

@@ -558,8 +558,7 @@ class EngagementBundle(BaseModel):
 
         Layout:
           <engagement_dir>/plan/roe.json, conops.json, opplan.json, deconfliction.json
-          <engagement_dir>/findings.md          (append-only cross-iteration summary)
-          <engagement_dir>/findings/             (per-finding JSON files)
+          <engagement_dir>/findings/             (per-finding reports: FIND-001.md, ...)
           <engagement_dir>/findings/attack-paths/ (attack path JSON files)
           <engagement_dir>/findings/evidence/    (evidence artifacts)
           <engagement_dir>/timeline.jsonl        (activity timeline)
@@ -601,16 +600,18 @@ class EngagementBundle(BaseModel):
             )
             files[name] = str(path)
 
-        # Initialize empty findings.md
-        findings_path = root / "findings.md"
-        if not findings_path.exists():
-            findings_path.write_text(
-                f"# Findings Log — {self.roe.engagement_name}\n\n"
+        # Initialize findings directory README (replaces legacy findings.md)
+        findings_readme = root / "findings" / "README.md"
+        if not findings_readme.exists():
+            findings_readme.write_text(
+                f"# Findings — {self.roe.engagement_name}\n\n"
                 f"Started: {datetime.now().isoformat()}\n\n"
-                "---\n\n",
+                "Each finding is a separate file: `FIND-001.md`, `FIND-002.md`, ...\n"
+                "Attack paths: `attack-paths/PATH-001.md`, ...\n"
+                "Evidence artifacts: `evidence/`\n",
                 encoding="utf-8",
             )
-            files["findings"] = str(findings_path)
+            files["findings"] = str(root / "findings")
 
         # Initialize empty timeline.jsonl (activity log)
         timeline_path = root / "timeline.jsonl"

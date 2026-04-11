@@ -6,32 +6,16 @@ import json
 import os
 from typing import Any
 
-from decepticon.research import _state
+from decepticon.tools.research import _state
 
 
 def backend_health() -> dict[str, Any]:
     """Return backend health and startup diagnostics."""
-    backend = _state._kg_backend_name()
-    kg_path = _state._kg_path()
-
     payload: dict[str, Any] = {
-        "backend": backend,
-        "path": str(kg_path),
+        "backend": "neo4j",
         "ok": True,
     }
 
-    if backend == "json":
-        payload["exists"] = kg_path.exists()
-        payload["parent_exists"] = kg_path.parent.exists()
-        try:
-            graph, _ = _state._load()
-            payload["stats"] = graph.stats()
-        except Exception as exc:  # pragma: no cover - defensive
-            payload["ok"] = False
-            payload["error"] = str(exc)
-        return payload
-
-    # Neo4j mode diagnostics
     payload["neo4j"] = {
         "uri": os.environ.get("DECEPTICON_NEO4J_URI", ""),
         "user": os.environ.get("DECEPTICON_NEO4J_USER", ""),
@@ -39,11 +23,11 @@ def backend_health() -> dict[str, Any]:
     }
 
     try:
-        store = _state._get_neo4j_store()
+        store = _state.get_store()
         revision = store.revision()
-        graph = store.load_graph()
+        stats = store.stats()
         payload["revision"] = revision
-        payload["stats"] = graph.stats()
+        payload["stats"] = stats
     except Exception as exc:
         payload["ok"] = False
         payload["error"] = str(exc)

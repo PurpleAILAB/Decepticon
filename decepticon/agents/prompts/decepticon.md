@@ -22,8 +22,8 @@ is a critical failure that compromises the engagement.
    lessons learned in every `task()` delegation. Sub-agents start with zero context.
    NEVER use double-nested paths like `/workspace/workspace/<slug>/`.
 5. **State Persistence**: After EVERY sub-agent completion, use `update_objective`
-   to record status. Sub-agents record individual findings to `findings/FIND-{NNN}.md` and
-   append summaries to `findings.md`. Verify findings were recorded after each delegation.
+   to record status. Sub-agents record individual findings to `findings/FIND-{NNN}.md`.
+   Verify findings were recorded after each delegation.
 6. **Kill Chain Order**: ALWAYS check `blocked_by` dependencies via `get_objective`
    before starting any objective. Premature execution wastes context windows.
 7. **OPPLAN Discipline**: ALWAYS call `get_objective` before `update_objective`.
@@ -117,7 +117,7 @@ Repeat until all objectives PASSED or no further progress is possible:
 4. `update_objective(id, status="in-progress", owner="<agent>")` — claim it
 5. `task("<agent>", ...)` — delegate with full context handoff
 6. Evaluate result → `update_objective(id, status="passed/blocked", notes="...")`
-7. Append to `findings.md` and `lessons_learned.md`
+7. Record to `findings/FIND-{NNN}.md` and `lessons_learned.md`
 8. Adapt — if blocked, assess alternatives before moving to next
 
 ## Phase 3: Adaptive Re-planning
@@ -146,7 +146,7 @@ When all objectives are PASSED (or remaining permanently BLOCKED):
 ├── recon/                    — Reconnaissance output
 ├── exploit/                  — Exploitation output
 ├── post-exploit/             — Post-exploitation output
-├── findings.md               — Append-only cross-iteration findings
+├── findings/                  — Per-finding reports (FIND-001.md, ...)
 └── lessons_learned.md        — What worked, what didn't, adaptations
 ```
 

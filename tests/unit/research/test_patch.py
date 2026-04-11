@@ -7,28 +7,43 @@ from pathlib import Path
 
 import pytest
 
-from decepticon.research import _state as state
+from decepticon.tools.research import _state as state
 from decepticon.tools.research.graph import (
     EdgeKind,
+    KnowledgeGraph,
     Node,
     NodeKind,
     Severity,
-    load_graph,
-    save_graph,
 )
 from decepticon.tools.research.patch import patch_propose, patch_verify
 
 
-def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    kg_path = tmp_path / "kg.json"
-    monkeypatch.setenv("DECEPTICON_KG_PATH", str(kg_path))
-    state._invalidate_kg_cache()
-    return kg_path
+class _FakeStore:
+    def __init__(self):
+        self.graph = KnowledgeGraph()
+    def load_graph(self):
+        return self.graph.model_copy(deep=True)
+    def batch_upsert_nodes(self, nodes):
+        for n in nodes: self.graph.upsert_node(n)
+        return len(nodes)
+    def batch_upsert_edges(self, edges):
+        for e in edges: self.graph.upsert_edge(e)
+        return len(edges)
+    def ensure_schema(self): pass
+    def close(self): pass
+    def revision(self): return 0.0
+    def stats(self): return self.graph.stats()
+    def upsert_node(self, node): self.graph.upsert_node(node)
+    def upsert_edge(self, edge): self.graph.upsert_edge(edge)
+
+def _configure_kg(monkeypatch):
+    fake = _FakeStore()
+    monkeypatch.setattr("decepticon.tools.research._state._store", fake)
+    return fake
 
 
-def _seed_verified_vuln(kg_path: Path) -> str:
+def _seed_verified_vuln(store: _FakeStore) -> str:
     """Plant a validated vuln node in the graph and return its id."""
-    graph = load_graph(kg_path)
     vuln = Node.make(
         NodeKind.VULNERABILITY,
         "SQLi in product search",
@@ -39,9 +54,7 @@ def _seed_verified_vuln(kg_path: Path) -> str:
         validated=True,
         cvss_score=7.5,
     )
-    graph.upsert_node(vuln)
-    save_graph(graph, kg_path)
-    state._invalidate_kg_cache()
+    store.graph.upsert_node(vuln)
     return vuln.id
 
 
@@ -49,8 +62,8 @@ class TestPatchPropose:
     def test_records_patch_node_and_edge(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        vuln_id = _seed_verified_vuln(kg_path)
+        fake = _configure_kg(monkeypatch)
+        vuln_id = _seed_verified_vuln(fake)
 
         raw = patch_propose.invoke(
             {
@@ -63,7 +76,7 @@ class TestPatchPropose:
         assert result["vuln_id"] == vuln_id
         assert result["status"] == "proposed"
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         patch = graph.nodes[result["id"]]
         assert patch.kind == NodeKind.PATCH
         assert patch.props["status"] == "proposed"
@@ -81,7 +94,7 @@ class TestPatchPropose:
     def test_rejects_unknown_vuln(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        _configure_kg(monkeypatch, tmp_path)
+        _configure_kg(monkeypatch)
         raw = patch_propose.invoke(
             {
                 "vuln_id": "does-not-exist",
@@ -94,8 +107,8 @@ class TestPatchPropose:
     def test_idempotent_on_same_diff(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        vuln_id = _seed_verified_vuln(kg_path)
+        fake = _configure_kg(monkeypatch)
+        vuln_id = _seed_verified_vuln(fake)
         diff = "--- a/x\n+++ b/x\n- 1\n+ 2\n"
 
         a = json.loads(
@@ -136,8 +149,8 @@ class TestPatchVerify:
     async def test_verified_flips_severity_to_info(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        vuln_id = _seed_verified_vuln(kg_path)
+        fake = _configure_kg(monkeypatch)
+        vuln_id = _seed_verified_vuln(fake)
 
         proposed = json.loads(
             patch_propose.invoke(
@@ -151,11 +164,11 @@ class TestPatchVerify:
         patch_id = proposed["id"]
 
         # PoC returns clean output that does NOT match the success pattern.
-        fake = FakeSandbox(scripts=[("all good, no sql error", 0)])
+        sandbox = FakeSandbox(scripts=[("all good, no sql error", 0)])
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", fake)
+        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
 
         raw = await patch_verify.ainvoke(
             {
@@ -169,7 +182,7 @@ class TestPatchVerify:
         assert result["poc_still_fires"] is False
         assert result["signals"] == []
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vuln = graph.nodes[vuln_id]
         assert vuln.props["severity"] == Severity.INFO.value
         assert vuln.props["severity_before_patch"] == Severity.HIGH.value
@@ -179,8 +192,8 @@ class TestPatchVerify:
     async def test_regressed_leaves_vuln_untouched(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        vuln_id = _seed_verified_vuln(kg_path)
+        fake = _configure_kg(monkeypatch)
+        vuln_id = _seed_verified_vuln(fake)
 
         proposed = json.loads(
             patch_propose.invoke(
@@ -190,11 +203,11 @@ class TestPatchVerify:
         patch_id = proposed["id"]
 
         # PoC output STILL contains the sqli error → regression.
-        fake = FakeSandbox(scripts=[("sql syntax error near quote", 1)])
+        sandbox = FakeSandbox(scripts=[("sql syntax error near quote", 1)])
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", fake)
+        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
 
         raw = await patch_verify.ainvoke(
             {
@@ -207,7 +220,7 @@ class TestPatchVerify:
         assert result["status"] == "regressed"
         assert result["poc_still_fires"] is True
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vuln = graph.nodes[vuln_id]
         # Severity preserved — patcher has to retry.
         assert vuln.props["severity"] == Severity.HIGH.value
@@ -216,8 +229,8 @@ class TestPatchVerify:
     async def test_tests_failed_short_circuits(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        vuln_id = _seed_verified_vuln(kg_path)
+        fake = _configure_kg(monkeypatch)
+        vuln_id = _seed_verified_vuln(fake)
 
         proposed = json.loads(
             patch_propose.invoke(
@@ -227,11 +240,11 @@ class TestPatchVerify:
         patch_id = proposed["id"]
 
         # First call = tests, returns non-zero → short-circuits.
-        fake = FakeSandbox(scripts=[("FAILED 3 tests", 1), ("should not run", 0)])
+        sandbox = FakeSandbox(scripts=[("FAILED 3 tests", 1), ("should not run", 0)])
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", fake)
+        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
 
         raw = await patch_verify.ainvoke(
             {
@@ -245,5 +258,5 @@ class TestPatchVerify:
         assert result["status"] == "tests_failed"
         assert result["tests_passed"] is False
         # PoC was never executed
-        assert len(fake.commands) == 1
-        assert "pytest" in fake.commands[0]
+        assert len(sandbox.commands) == 1
+        assert "pytest" in sandbox.commands[0]

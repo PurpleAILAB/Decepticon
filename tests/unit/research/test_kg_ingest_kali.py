@@ -7,21 +7,40 @@ from pathlib import Path
 
 import pytest
 
-from decepticon.research import tools as research_tools
-from decepticon.tools.research.graph import NodeKind, load_graph
+from decepticon.tools.research import tools as research_tools
+from decepticon.tools.research.graph import KnowledgeGraph, NodeKind
 
 
-def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    kg_path = tmp_path / "kg.json"
-    monkeypatch.setenv("DECEPTICON_KG_PATH", str(kg_path))
-    return kg_path
+class _FakeStore:
+    def __init__(self):
+        self.graph = KnowledgeGraph()
+    def load_graph(self):
+        return self.graph.model_copy(deep=True)
+    def batch_upsert_nodes(self, nodes):
+        for n in nodes: self.graph.upsert_node(n)
+        return len(nodes)
+    def batch_upsert_edges(self, edges):
+        for e in edges: self.graph.upsert_edge(e)
+        return len(edges)
+    def ensure_schema(self): pass
+    def close(self): pass
+    def revision(self): return 0.0
+    def stats(self): return self.graph.stats()
+    def upsert_node(self, node): self.graph.upsert_node(node)
+    def upsert_edge(self, edge): self.graph.upsert_edge(edge)
+
+def _configure_kg(monkeypatch, tmp_path):
+    from decepticon.tools.research import _state as state
+    fake = _FakeStore()
+    monkeypatch.setattr(state, "_store", fake)
+    return fake
 
 
 class TestKgIngestDnsx:
     def test_creates_host_nodes_with_records(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "dnsx.jsonl"
         out.write_text(
             "\n".join(
@@ -34,7 +53,7 @@ class TestKgIngestDnsx:
         )
         payload = json.loads(research_tools.kg_ingest_dnsx.invoke({"path": str(out)}))
         assert payload["hosts_added"] == 2
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         labels = {n.label for n in graph.by_kind(NodeKind.HOST)}
         assert "api.example.com" in labels
         assert "web.example.com" in labels
@@ -50,7 +69,7 @@ class TestKgIngestDnsx:
 
 class TestKgIngestKatana:
     def test_creates_url_entrypoints(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "katana.jsonl"
         out.write_text(
             "\n".join(
@@ -73,7 +92,7 @@ class TestKgIngestKatana:
         )
         payload = json.loads(research_tools.kg_ingest_katana.invoke({"path": str(out)}))
         assert payload["urls_added"] == 2
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         urls = {n.label for n in graph.by_kind(NodeKind.URL)}
         assert "https://example.com/admin" in urls
         assert "https://example.com/login" in urls
@@ -81,7 +100,7 @@ class TestKgIngestKatana:
 
 class TestKgIngestMasscan:
     def test_parses_array_format(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "masscan.json"
         out.write_text(
             json.dumps(
@@ -104,14 +123,14 @@ class TestKgIngestMasscan:
         payload = json.loads(research_tools.kg_ingest_masscan.invoke({"path": str(out)}))
         assert payload["hosts_added"] == 2
         assert payload["services_added"] == 3
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.HOST)) == 2
         assert len(graph.by_kind(NodeKind.SERVICE)) == 3
 
 
 class TestKgIngestFfuf:
     def test_creates_url_nodes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "ffuf.json"
         out.write_text(
             json.dumps(
@@ -126,7 +145,7 @@ class TestKgIngestFfuf:
         )
         payload = json.loads(research_tools.kg_ingest_ffuf.invoke({"path": str(out)}))
         assert payload["urls_added"] == 2
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         urls = {n.label for n in graph.by_kind(NodeKind.URL)}
         assert "https://example.com/admin" in urls
 
@@ -135,7 +154,7 @@ class TestKgIngestTestssl:
     def test_creates_high_severity_vulns(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "testssl.json"
         out.write_text(
             json.dumps(
@@ -153,14 +172,14 @@ class TestKgIngestTestssl:
         )
         payload = json.loads(research_tools.kg_ingest_testssl.invoke({"path": str(out)}))
         assert payload["vulns_added"] == 2
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert len(vulns) == 2
 
     def test_links_to_host_when_target_passed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "testssl.json"
         out.write_text(
             json.dumps(
@@ -181,7 +200,7 @@ class TestKgIngestTestssl:
         )
         assert payload["vulns_added"] == 1
         assert payload["linked_to_host"] == 1
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         hosts = graph.by_kind(NodeKind.HOST)
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert len(hosts) == 1
@@ -193,7 +212,7 @@ class TestKgIngestTestssl:
     def test_reads_target_from_envelope(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "testssl.json"
         out.write_text(
             json.dumps(
@@ -217,13 +236,13 @@ class TestKgIngestTestssl:
         payload = json.loads(research_tools.kg_ingest_testssl.invoke({"path": str(out)}))
         assert payload["vulns_added"] == 1
         assert payload["linked_to_host"] == 1
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.HOST)) == 1
 
 
 class TestKgIngestCrackmapexec:
     def test_parses_success_lines(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "cme.log"
         out.write_text(
             "SMB         10.0.0.10       445    DC01             [+] CORP\\alice:Password1!\n"
@@ -236,14 +255,14 @@ class TestKgIngestCrackmapexec:
         )
         assert payload["creds_added"] == 2
         assert payload["admin_creds_added"] == 1
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         creds = graph.by_kind(NodeKind.CREDENTIAL)
         assert len(creds) == 2
 
 
 class TestKgIngestAsrep:
     def test_parses_krb5asrep_lines(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         out = tmp_path / "asrep.txt"
         out.write_text(
             "$krb5asrep$23$alice@CORP.LOCAL:abcdef0123456789$abcdef\n"
@@ -255,7 +274,7 @@ class TestKgIngestAsrep:
             research_tools.kg_ingest_asrep_hashes.invoke({"path": str(out), "domain": "CORP"})
         )
         assert payload["asrep_hashes_added"] == 2
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         creds = graph.by_kind(NodeKind.CREDENTIAL)
         assert len(creds) == 2
         assert all("krb5asrep" in str(c.props.get("secret_type", "")) for c in creds)

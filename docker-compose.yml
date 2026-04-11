@@ -129,7 +129,7 @@ services:
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
-      - DECEPTICON_KG_BACKEND=neo4j
+      # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:

@@ -7,24 +7,65 @@ from pathlib import Path
 
 import pytest
 
-from decepticon.research import _state as state
-from decepticon.research import tools as research_tools
+from decepticon.tools.research import _state as state
+from decepticon.tools.research import tools as research_tools
 from decepticon.tools.research.cve import Exploitability
-from decepticon.tools.research.graph import Edge, EdgeKind, Node, NodeKind, load_graph, save_graph
+from decepticon.tools.research.graph import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
 from decepticon.tools.web.jwt import forge_token
 
 
-def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    kg_path = tmp_path / "kg.json"
-    monkeypatch.setenv("DECEPTICON_KG_PATH", str(kg_path))
-    return kg_path
+class _FakeStore:
+    """In-memory fake Neo4j store for unit tests."""
+
+    def __init__(self) -> None:
+        self.graph = KnowledgeGraph()
+
+    def load_graph(self):
+        return self.graph.model_copy(deep=True)
+
+    def batch_upsert_nodes(self, nodes):
+        for n in nodes:
+            self.graph.upsert_node(n)
+        return len(nodes)
+
+    def batch_upsert_edges(self, edges):
+        for e in edges:
+            self.graph.upsert_edge(e)
+        return len(edges)
+
+    def ensure_schema(self):
+        pass
+
+    def close(self):
+        pass
+
+    def revision(self):
+        return 0.0
+
+    def stats(self):
+        return self.graph.stats()
+
+    def upsert_node(self, node):
+        self.graph.upsert_node(node)
+
+    def upsert_edge(self, edge):
+        self.graph.upsert_edge(edge)
+
+    def query_custom(self, cypher, params):
+        return []
+
+
+def _configure_kg(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _FakeStore:
+    fake = _FakeStore()
+    monkeypatch.setattr(state, "_store", fake)
+    return fake
 
 
 class TestReconIngestion:
     def test_kg_ingest_nmap_xml_creates_graph_entities(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         xml_path = tmp_path / "scan.xml"
         xml_path.write_text(
             """<?xml version=\"1.0\"?>
@@ -50,7 +91,7 @@ class TestReconIngestion:
         assert payload["ingested"]["services"] == 1
         assert payload["ingested"]["entrypoints"] == 1
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.HOST)) == 1
         assert len(graph.by_kind(NodeKind.SERVICE)) == 1
         assert len(graph.by_kind(NodeKind.ENTRYPOINT)) == 1
@@ -58,7 +99,7 @@ class TestReconIngestion:
     def test_kg_ingest_nuclei_jsonl_maps_vuln_and_cve(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         nuclei_path = tmp_path / "nuclei.jsonl"
         nuclei_path.write_text(
             "\n".join(
@@ -84,14 +125,14 @@ class TestReconIngestion:
         assert payload["parsed"] == 1
         assert payload["skipped"] == 0
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.VULNERABILITY)) == 1
         assert len(graph.by_kind(NodeKind.CVE)) == 1
 
     def test_kg_ingest_httpx_jsonl_creates_entrypoints(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         httpx_path = tmp_path / "httpx.jsonl"
         httpx_path.write_text(
             "\n".join(
@@ -125,7 +166,7 @@ class TestReconIngestion:
         assert payload["entrypoints"] == 2
         assert payload["service_links"] == 2
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.ENTRYPOINT)) >= 2
         # 5xx rows become low-severity availability findings for follow-up.
         assert any(
@@ -137,8 +178,8 @@ class TestChainObjectiveDrafting:
     def test_suggest_objectives_from_chains_returns_objective(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
-        graph = load_graph(kg_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
+        graph = fake.load_graph()
 
         entry = graph.upsert_node(Node.make(NodeKind.ENTRYPOINT, "https://target.example/"))
         vuln = graph.upsert_node(
@@ -152,7 +193,7 @@ class TestChainObjectiveDrafting:
         jewel = graph.upsert_node(Node.make(NodeKind.CROWN_JEWEL, "admin-db"))
         graph.upsert_edge(Edge.make(entry.id, vuln.id, EdgeKind.ENABLES, weight=0.3))
         graph.upsert_edge(Edge.make(vuln.id, jewel.id, EdgeKind.GRANTS, weight=0.3))
-        save_graph(graph, kg_path)
+        state._save(graph, None)
 
         payload = json.loads(research_tools.suggest_objectives_from_chains.invoke({"top_k": 1}))
         assert payload["count"] == 1
@@ -167,7 +208,7 @@ class TestDependencyEnrichment:
     async def test_cve_enrich_dependencies_adds_ranked_dependency_vuln(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         reqs = tmp_path / "requirements.txt"
         reqs.write_text("flask==2.0.0\n", encoding="utf-8")
 
@@ -196,7 +237,7 @@ class TestDependencyEnrichment:
         assert payload["high_signal_records"] == 1
         assert payload["results"][0]["cve"] == "CVE-2024-1111"
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert len(vulns) == 1
         assert vulns[0].props["package"] == "flask"
@@ -206,7 +247,7 @@ class TestSpecializedHuntingTools:
     def test_kg_scan_solidity_ingests_pattern_findings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         solidity = tmp_path / "Vault.sol"
         solidity.write_text(
             """pragma solidity ^0.8.20;
@@ -224,14 +265,14 @@ contract Vault {
         assert payload["matches"] >= 2
         assert payload["ingested"] >= 2
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.VULNERABILITY)) >= 2
         assert len(graph.by_kind(NodeKind.CODE_LOCATION)) >= 1
 
     def test_kg_ingest_slither_reads_detector_output(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         slither = tmp_path / "slither.json"
         slither.write_text(
             json.dumps(
@@ -262,7 +303,7 @@ contract Vault {
         payload = json.loads(research_tools.kg_ingest_slither.invoke({"path": str(slither)}))
         assert payload["ingested"] == 1
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         assert len(graph.by_kind(NodeKind.VULNERABILITY)) == 1
         assert len(graph.by_kind(NodeKind.CODE_LOCATION)) == 1
 
@@ -288,7 +329,7 @@ contract Vault {
     def test_kg_analyze_jwt_ingests_alg_none_finding(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         token = forge_token({"sub": "alice"}, alg="none")
 
         payload = json.loads(
@@ -299,14 +340,14 @@ contract Vault {
         assert payload["ingested_vulnerabilities"] >= 1
         assert any("alg=none" in finding for finding in payload["findings"])
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert any(v.props.get("scanner") == "jwt-analysis" for v in vulns)
 
     def test_kg_analyze_oauth_callback_ingests_state_issue(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
         callback = "https://app.example.com/callback?code=testcode"
 
         payload = json.loads(
@@ -318,14 +359,14 @@ contract Vault {
         rule_ids = {n["rule_id"] for n in payload["nodes"]}
         assert "oauth.state-missing" in rule_ids
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert any(v.props.get("scanner") == "oauth-analysis" for v in vulns)
 
     def test_kg_analyze_cookie_value_ingests_cookie_weaknesses(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        kg_path = _configure_kg(monkeypatch, tmp_path)
+        fake = _configure_kg(monkeypatch, tmp_path)
 
         payload = json.loads(
             research_tools.kg_analyze_cookie_value.invoke(
@@ -341,7 +382,7 @@ contract Vault {
         )
         assert payload["ingested_vulnerabilities"] >= 1
 
-        graph = load_graph(kg_path)
+        graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert any(v.props.get("scanner") == "cookie-analysis" for v in vulns)
 

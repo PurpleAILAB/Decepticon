@@ -106,6 +106,7 @@ class EdgeKind(StrEnum):
     CAN_ACCESS = "CAN_ACCESS"
     ADMIN_TO = "ADMIN_TO"
     OWNS = "OWNS"
+    GRANTS = "GRANTS"
     # Exploitation
     AFFECTS = "AFFECTS"
     HAS_VULN = "HAS_VULN"
