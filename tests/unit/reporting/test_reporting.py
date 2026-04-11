@@ -29,7 +29,7 @@ def _seeded_graph() -> KnowledgeGraph:
     g.upsert_node(Node.make(NodeKind.CVE, "CVE-2024-1234", score=9.8))
     g.upsert_node(
         Node.make(
-            NodeKind.CHAIN,
+            NodeKind.ATTACK_PATH,
             "entry → SSRF → IMDS (cost 1.32)",
             total_cost=1.32,
             length=4,

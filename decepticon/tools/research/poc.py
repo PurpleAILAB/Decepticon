@@ -310,7 +310,7 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
     )
     graph.upsert_node(finding)
     graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.VALIDATES))
-    graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.MAPPED_TO))
+    graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.MAPS_TO))
 
 
 # ── Convenience: build a runner from a DockerSandbox ────────────────────

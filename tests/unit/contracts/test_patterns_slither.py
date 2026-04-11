@@ -89,7 +89,7 @@ class TestSlitherIngest:
         assert vuln.props["line"] == 42
         # File + location nodes created
         assert len(g.by_kind(NodeKind.CODE_LOCATION)) == 1
-        assert len(g.by_kind(NodeKind.FILE)) == 1
+        assert len(g.by_kind(NodeKind.SOURCE_FILE)) == 1
 
     def test_handles_missing_results(self) -> None:
         g = KnowledgeGraph()

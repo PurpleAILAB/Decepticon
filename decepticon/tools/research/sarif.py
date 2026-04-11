@@ -215,9 +215,9 @@ def ingest_sarif(
                 graph.upsert_node(loc_node)
                 graph.upsert_edge(Edge.make(vuln_node.id, loc_node.id, EdgeKind.DEFINED_IN))
 
-                file_node = Node.make(NodeKind.FILE, uri, key=uri)
+                file_node = Node.make(NodeKind.SOURCE_FILE, uri, key=uri)
                 graph.upsert_node(file_node)
-                graph.upsert_edge(Edge.make(loc_node.id, file_node.id, EdgeKind.LOCATED_AT))
+                graph.upsert_edge(Edge.make(loc_node.id, file_node.id, EdgeKind.DEFINED_IN))
 
             total += 1
 

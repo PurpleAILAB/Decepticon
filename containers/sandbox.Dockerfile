@@ -6,9 +6,14 @@ FROM kalilinux/kali-rolling@sha256:a3849f99f9f187122de4822341c49e55d250a771f2dbc
 # and minimize image size. Kali apt sandbox disabled so it doesn't fail
 # trying to drop privileges to the _apt user.
 RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
+    sed -i 's|https://|http://|g' /etc/apt/sources.list* 2>/dev/null; \
+    find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|https://|http://|g' {} + 2>/dev/null; \
     apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         ca-certificates && \
+    update-ca-certificates && \
+    sed -i 's|http://|https://|g' /etc/apt/sources.list* 2>/dev/null; \
+    find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|http://|https://|g' {} + 2>/dev/null; \
     apt-get update && \
     apt-get install -y --no-install-recommends --no-install-suggests \
         # ── Core runtime ──
@@ -32,7 +37,7 @@ RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
         exploitdb \
         dirb \
         gobuster \
-        # ── C2 client (Sliver client connects to the separate C2 server container) ──
+        # ── C2 client (connects to the separate c2-sliver server container) ──
         sliver && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*

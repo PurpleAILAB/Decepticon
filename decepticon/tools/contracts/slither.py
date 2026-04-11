@@ -108,9 +108,9 @@ def ingest_slither_json(data: str | dict[str, Any], graph: KnowledgeGraph) -> in
             )
             graph.upsert_node(loc)
             graph.upsert_edge(Edge.make(vuln.id, loc.id, EdgeKind.DEFINED_IN))
-            file_node = Node.make(NodeKind.FILE, file_path, key=file_path)
+            file_node = Node.make(NodeKind.SOURCE_FILE, file_path, key=file_path)
             graph.upsert_node(file_node)
-            graph.upsert_edge(Edge.make(loc.id, file_node.id, EdgeKind.LOCATED_AT))
+            graph.upsert_edge(Edge.make(loc.id, file_node.id, EdgeKind.DEFINED_IN))
 
         count += 1
 

@@ -50,8 +50,8 @@ class ImportStats:
 # Mapping of common BloodHound edge names → our internal edge kind +
 # weight. Lower weight = easier-to-abuse relationship.
 _BH_EDGE_MAP: dict[str, tuple[EdgeKind, float]] = {
-    "MemberOf": (EdgeKind.AUTH_AS, 0.8),
-    "HasSession": (EdgeKind.AUTH_AS, 0.5),
+    "MemberOf": (EdgeKind.AUTHENTICATES_TO, 0.8),
+    "HasSession": (EdgeKind.AUTHENTICATES_TO, 0.5),
     "AdminTo": (EdgeKind.GRANTS, 0.3),
     "CanRDP": (EdgeKind.GRANTS, 0.6),
     "CanPSRemote": (EdgeKind.GRANTS, 0.5),
@@ -73,8 +73,8 @@ _BH_EDGE_MAP: dict[str, tuple[EdgeKind, float]] = {
     "GetChangesAll": (EdgeKind.LEAKS, 0.2),
     "DCSync": (EdgeKind.LEAKS, 0.1),
     "Contains": (EdgeKind.CONTAINS, 1.0),
-    "GPLink": (EdgeKind.AFFECTED_BY, 0.8),
-    "TrustedBy": (EdgeKind.AUTH_AS, 0.6),
+    "GPLink": (EdgeKind.AFFECTS, 0.8),
+    "TrustedBy": (EdgeKind.AUTHENTICATES_TO, 0.6),
 }
 
 
@@ -180,7 +180,7 @@ def _ingest_memberships(
             graph.upsert_node(parent)
             bh_index[sid] = parent
         graph.upsert_edge(
-            Edge.make(node.id, parent.id, EdgeKind.AUTH_AS, weight=0.8, bh_right="MemberOf")
+            Edge.make(node.id, parent.id, EdgeKind.AUTHENTICATES_TO, weight=0.8, bh_right="MemberOf")
         )
         stats.edges += 1
 

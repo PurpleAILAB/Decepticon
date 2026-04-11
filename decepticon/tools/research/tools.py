@@ -170,7 +170,7 @@ def _ensure_service_node(
         )
     )
     graph.upsert_edge(Edge.make(host.id, service.id, EdgeKind.EXPOSES, weight=0.6))
-    graph.upsert_edge(Edge.make(service.id, host.id, EdgeKind.RUNS_ON, weight=0.6))
+    graph.upsert_edge(Edge.make(service.id, host.id, EdgeKind.HOSTS, weight=0.6))
     return service
 
 
@@ -649,9 +649,9 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                     source="dependency-enricher",
                 )
             )
-            graph.upsert_edge(Edge.make(dep_node.id, cve_node.id, EdgeKind.AFFECTED_BY, weight=0.5))
+            graph.upsert_edge(Edge.make(dep_node.id, cve_node.id, EdgeKind.AFFECTS, weight=0.5))
             graph.upsert_edge(Edge.make(dep_node.id, vuln.id, EdgeKind.HAS_VULN, weight=0.5))
-            graph.upsert_edge(Edge.make(vuln.id, cve_node.id, EdgeKind.MAPPED_TO, weight=0.5))
+            graph.upsert_edge(Edge.make(vuln.id, cve_node.id, EdgeKind.MAPS_TO, weight=0.5))
             kept.append(
                 {
                     "dependency": f"{name}@{version}",
@@ -795,7 +795,7 @@ def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
                     source=scanner_hint,
                 )
                 graph.upsert_edge(Edge.make(service.id, ep.id, EdgeKind.EXPOSES, weight=0.5))
-                graph.upsert_edge(Edge.make(ep.id, service.id, EdgeKind.RUNS_ON, weight=0.5))
+                graph.upsert_edge(Edge.make(ep.id, service.id, EdgeKind.HOSTS, weight=0.5))
                 entrypoints_added += 1
 
     _save(graph, out_path)
@@ -877,7 +877,7 @@ def kg_ingest_nuclei_jsonl(path: str, scanner_hint: str = "nuclei") -> str:
                     port=parsed_target.port,
                 )
             )
-            graph.upsert_edge(Edge.make(target_node.id, url_node.id, EdgeKind.RUNS_ON, weight=0.5))
+            graph.upsert_edge(Edge.make(target_node.id, url_node.id, EdgeKind.HOSTS, weight=0.5))
             graph.upsert_edge(Edge.make(url_node.id, target_node.id, EdgeKind.EXPOSES, weight=0.5))
         else:
             host_label = target.split(":", 1)[0]
@@ -904,7 +904,7 @@ def kg_ingest_nuclei_jsonl(path: str, scanner_hint: str = "nuclei") -> str:
                     cve_node = graph.upsert_node(
                         Node.make(NodeKind.CVE, cid, key=f"cve::{cid}", source=scanner_hint)
                     )
-                    graph.upsert_edge(Edge.make(vuln.id, cve_node.id, EdgeKind.MAPPED_TO))
+                    graph.upsert_edge(Edge.make(vuln.id, cve_node.id, EdgeKind.MAPS_TO))
 
     _save(graph, out_path)
     return _json({"parsed": parsed, "skipped": skipped, "stats": graph.stats()})
@@ -955,7 +955,7 @@ def kg_ingest_subfinder(path: str, root_domain: str = "") -> str:
                 )
             )
             graph.upsert_edge(Edge.make(host.id, ep.id, EdgeKind.EXPOSES, weight=0.5))
-            graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.RUNS_ON, weight=0.5))
+            graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.HOSTS, weight=0.5))
             entrypoints_added += 1
 
     _save(graph, out_path)
@@ -1068,11 +1068,11 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
             )
         )
         graph.upsert_edge(Edge.make(host.id, ep.id, EdgeKind.EXPOSES, weight=0.5))
-        graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.RUNS_ON, weight=0.5))
+        graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.HOSTS, weight=0.5))
         graph.upsert_edge(Edge.make(service.id, ep.id, EdgeKind.EXPOSES, weight=0.4))
-        graph.upsert_edge(Edge.make(ep.id, service.id, EdgeKind.RUNS_ON, weight=0.4))
+        graph.upsert_edge(Edge.make(ep.id, service.id, EdgeKind.HOSTS, weight=0.4))
         graph.upsert_edge(Edge.make(ep.id, url_node.id, EdgeKind.EXPOSES, weight=0.3))
-        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.RUNS_ON, weight=0.3))
+        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.HOSTS, weight=0.3))
         entrypoints += 1
         service_links += 1
 
@@ -1354,7 +1354,7 @@ def kg_scan_solidity(
 
     file_node = graph.upsert_node(
         Node.make(
-            NodeKind.FILE,
+            NodeKind.SOURCE_FILE,
             str(source_path),
             key=f"file::{source_path}",
             source=scanner_hint,
@@ -1390,7 +1390,7 @@ def kg_scan_solidity(
             )
         )
         graph.upsert_edge(Edge.make(vuln.id, loc.id, EdgeKind.DEFINED_IN))
-        graph.upsert_edge(Edge.make(loc.id, file_node.id, EdgeKind.LOCATED_AT))
+        graph.upsert_edge(Edge.make(loc.id, file_node.id, EdgeKind.DEFINED_IN))
         by_severity[finding.severity.value] = by_severity.get(finding.severity.value, 0) + 1
         ingested += 1
 
@@ -1446,7 +1446,7 @@ def kg_triage_binary(path: str, max_strings: int = 400) -> str:
     graph, out_path = _load()
     file_node = graph.upsert_node(
         Node.make(
-            NodeKind.FILE,
+            NodeKind.SOURCE_FILE,
             str(binary_path),
             key=f"binary::{binary_path}",
             source="binary-triage",
@@ -1929,7 +1929,7 @@ def kg_ingest_dnsx(path: str) -> str:
                 Edge.make(
                     target_host.id,
                     host.id,
-                    EdgeKind.RUNS_ON,
+                    EdgeKind.HOSTS,
                     weight=0.5,
                     key=f"cname-rev::{target_label}->{host_value}",
                 )
@@ -1990,11 +1990,11 @@ def kg_ingest_katana(path: str) -> str:
             )
         )
         graph.upsert_edge(Edge.make(host.id, url_node.id, EdgeKind.EXPOSES, weight=0.5))
-        graph.upsert_edge(Edge.make(url_node.id, host.id, EdgeKind.RUNS_ON, weight=0.5))
+        graph.upsert_edge(Edge.make(url_node.id, host.id, EdgeKind.HOSTS, weight=0.5))
         graph.upsert_edge(Edge.make(host.id, ep.id, EdgeKind.EXPOSES, weight=0.4))
-        graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.RUNS_ON, weight=0.4))
+        graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.HOSTS, weight=0.4))
         graph.upsert_edge(Edge.make(ep.id, url_node.id, EdgeKind.EXPOSES, weight=0.3))
-        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.RUNS_ON, weight=0.3))
+        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.HOSTS, weight=0.3))
         urls_added += 1
 
     _save(graph, out_path)
@@ -2126,11 +2126,11 @@ def kg_ingest_ffuf(path: str) -> str:
         )
         if host is not None:
             graph.upsert_edge(Edge.make(host.id, url_node.id, EdgeKind.EXPOSES, weight=0.5))
-            graph.upsert_edge(Edge.make(url_node.id, host.id, EdgeKind.RUNS_ON, weight=0.5))
+            graph.upsert_edge(Edge.make(url_node.id, host.id, EdgeKind.HOSTS, weight=0.5))
             graph.upsert_edge(Edge.make(host.id, ep.id, EdgeKind.EXPOSES, weight=0.4))
-            graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.RUNS_ON, weight=0.4))
+            graph.upsert_edge(Edge.make(ep.id, host.id, EdgeKind.HOSTS, weight=0.4))
         graph.upsert_edge(Edge.make(ep.id, url_node.id, EdgeKind.EXPOSES, weight=0.3))
-        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.RUNS_ON, weight=0.3))
+        graph.upsert_edge(Edge.make(url_node.id, ep.id, EdgeKind.HOSTS, weight=0.3))
         urls_added += 1
         entrypoints_added += 1
 
@@ -2294,7 +2294,7 @@ def kg_ingest_crackmapexec(path: str, protocol: str = "smb", target: str = "") -
                 domain=domain,
             )
         )
-        graph.upsert_edge(Edge.make(cred.id, user_node.id, EdgeKind.AUTH_AS, weight=0.5))
+        graph.upsert_edge(Edge.make(cred.id, user_node.id, EdgeKind.AUTHENTICATES_TO, weight=0.5))
         creds_added += 1
         if is_admin:
             admins_added += 1

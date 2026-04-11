@@ -71,7 +71,7 @@ class TestIngest:
         g = KnowledgeGraph()
         ingest_sarif({"runs": [_minimal_run("x", "HIGH", "error")]}, g)
         assert len(g.by_kind(NodeKind.CODE_LOCATION)) == 1
-        assert len(g.by_kind(NodeKind.FILE)) == 1
+        assert len(g.by_kind(NodeKind.SOURCE_FILE)) == 1
 
     def test_scanner_hint_overrides_driver(self) -> None:
         g = KnowledgeGraph()

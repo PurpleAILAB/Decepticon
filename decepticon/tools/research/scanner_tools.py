@@ -553,7 +553,7 @@ def kg_add_candidate(
         node.props["severity"] = Severity.LOW.value
 
     if repo and repo in graph.nodes:
-        graph.upsert_edge(Edge.make(node.id, repo, EdgeKind.LOCATED_AT))
+        graph.upsert_edge(Edge.make(node.id, repo, EdgeKind.DEFINED_IN))
 
     _save(graph, db_path)
     return _json(

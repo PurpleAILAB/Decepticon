@@ -117,7 +117,7 @@ class TestPromoteChain:
         g, _, _ = _build_ssrf_chain_graph()
         chains = plan_chains(g)
         node = promote_chain(g, chains[0])
-        assert node.kind == NodeKind.CHAIN
+        assert node.kind == NodeKind.ATTACK_PATH
         assert node.props["length"] == 4
         # STARTS_AT / REACHES / CONTAINS edges exist
         out_edges = [e for e in g.edges.values() if e.src == node.id]
