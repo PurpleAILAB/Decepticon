@@ -26,6 +26,9 @@ jobs:
           - image: decepticon-cli
             dockerfile: containers/cli.Dockerfile
             platforms: linux/amd64,linux/arm64
+          - image: decepticon-web
+            dockerfile: containers/web.Dockerfile
+            platforms: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@v4
 

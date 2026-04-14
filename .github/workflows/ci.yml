@@ -94,6 +94,8 @@ jobs:
             dockerfile: containers/sandbox.Dockerfile
           - image: cli
             dockerfile: containers/cli.Dockerfile
+          - image: web
+            dockerfile: containers/web.Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4
