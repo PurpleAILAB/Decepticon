@@ -17,10 +17,12 @@ class _FakeStore:
     def load_graph(self):
         return self.graph.model_copy(deep=True)
     def batch_upsert_nodes(self, nodes):
-        for n in nodes: self.graph.upsert_node(n)
+        for n in nodes:
+            self.graph.upsert_node(n)
         return len(nodes)
     def batch_upsert_edges(self, edges):
-        for e in edges: self.graph.upsert_edge(e)
+        for e in edges:
+            self.graph.upsert_edge(e)
         return len(edges)
     def ensure_schema(self): pass
     def close(self): pass
