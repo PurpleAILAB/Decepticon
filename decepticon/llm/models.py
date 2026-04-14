@@ -193,6 +193,14 @@ class LLMModelMapping(BaseModel):
         )
     )
 
+    defender: ModelAssignment = Field(
+        default_factory=lambda: ModelAssignment(
+            primary=SONNET,
+            fallback=HAIKU,
+            temperature=0.2,
+        )
+    )
+
     # ── Vulnresearch pipeline tier ─────────────────────────────────
     # Five specialist sub-agents with scale-tuned model assignments.
 
@@ -304,6 +312,11 @@ class LLMModelMapping(BaseModel):
                     fallback=SONNET,
                     temperature=0.3,
                 ),
+                defender=ModelAssignment(
+                    primary=OPUS,
+                    fallback=SONNET,
+                    temperature=0.2,
+                ),
             )
 
         if profile == ModelProfile.TEST:
@@ -319,6 +332,7 @@ class LLMModelMapping(BaseModel):
                 ad_operator=ModelAssignment(primary=HAIKU, temperature=0.2),
                 recon=ModelAssignment(primary=HAIKU, temperature=0.3),
                 postexploit=ModelAssignment(primary=HAIKU, temperature=0.3),
+                defender=ModelAssignment(primary=HAIKU, temperature=0.2),
                 vulnresearch=ModelAssignment(primary=HAIKU, temperature=0.4),
                 scanner=ModelAssignment(primary=HAIKU, temperature=0.2),
                 detector=ModelAssignment(primary=HAIKU, temperature=0.2),

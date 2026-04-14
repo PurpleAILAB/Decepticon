@@ -85,3 +85,8 @@ workspace/
 
 .langgraph_api/
 .omc/
+.ouroboros/
+.gstack/
+
+# Project-specific Claude Code instructions (private)
+CLAUDE.md

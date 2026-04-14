@@ -16,7 +16,8 @@
     "detector": "./decepticon/agents/detector.py:graph",
     "verifier": "./decepticon/agents/verifier.py:graph",
     "patcher": "./decepticon/agents/patcher.py:graph",
-    "exploiter": "./decepticon/agents/exploiter.py:graph"
+    "exploiter": "./decepticon/agents/exploiter.py:graph",
+    "defender": "./decepticon/agents/defender.py:graph"
   },
   "env": ".env",
   "python_version": "3.13"

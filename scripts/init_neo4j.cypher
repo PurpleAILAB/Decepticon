@@ -44,6 +44,12 @@ CREATE CONSTRAINT candidate_key IF NOT EXISTS FOR (c:Candidate) REQUIRE c.key IS
 CREATE CONSTRAINT hypothesis_key IF NOT EXISTS FOR (h:Hypothesis) REQUIRE h.key IS UNIQUE;
 CREATE CONSTRAINT patch_key IF NOT EXISTS FOR (p:Patch) REQUIRE p.key IS UNIQUE;
 
+// Defense Layer
+CREATE CONSTRAINT defense_action_key IF NOT EXISTS FOR (da:DefenseAction) REQUIRE da.key IS UNIQUE;
+CREATE INDEX defense_action_status IF NOT EXISTS FOR (da:DefenseAction) ON (da.status);
+CREATE INDEX defense_action_type IF NOT EXISTS FOR (da:DefenseAction) ON (da.action_type);
+CREATE INDEX defense_action_finding IF NOT EXISTS FOR (da:DefenseAction) ON (da.finding_ref);
+
 // ── Performance Indexes ─────────────────────────────────────────────────
 
 CREATE INDEX host_explored IF NOT EXISTS FOR (h:Host) ON (h.explored);

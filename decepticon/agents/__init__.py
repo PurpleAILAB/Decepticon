@@ -1,4 +1,5 @@
 from decepticon.agents.analyst import create_analyst_agent
+from decepticon.agents.defender import create_defender_agent
 from decepticon.agents.decepticon import create_decepticon_agent
 from decepticon.agents.detector import create_detector_agent
 from decepticon.agents.exploit import create_exploit_agent
@@ -17,6 +18,7 @@ create_planning_agent = create_planner_agent
 
 __all__ = [
     "create_recon_agent",
+    "create_defender_agent",
     "create_planner_agent",
     "create_planning_agent",
     "create_soundwave_agent",
