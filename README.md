@@ -67,7 +67,8 @@ Then configure your API key and start:
 
 ```bash
 decepticon config    # Set your Anthropic or OpenAI API key
-decepticon           # Launch
+decepticon           # Launch CLI
+make web             # Or launch the Web Dashboard instead
 ```
 
 ## Try the Demo
@@ -168,6 +169,18 @@ The true value isn't in the attack. It's in the defense system that emerges from
 
 The **Soundwave** agent interviews the operator and generates a complete engagement package — RoE, ConOps, Deconfliction Plan, and OPPLAN. The OPPLAN feeds directly into the autonomous loop; the RoE is enforced every iteration.
 
+### Web Dashboard
+
+**Open-source control plane** (Apache 2.0) for managing engagements through the browser. Built with Next.js 16, React Flow for attack graph visualization, and real-time SSE streaming from LangGraph.
+
+- Engagement setup with 5 target types: local path, Git URL, file upload, web URL, IP range
+- Real-time Soundwave interview + execution streaming
+- Findings viewer with severity filtering (parses FIND-NNN.md reports)
+- Interactive Neo4j attack graph canvas (zoom, pan, node detail)
+- OPPLAN progress tracking per objective
+
+Self-hosted — no authentication required. Runs alongside existing CLI or standalone via `make web`.
+
 ### Autonomous Kill Chain Execution
 
 The orchestrator iterates through OPPLAN objectives autonomously:
@@ -177,6 +190,22 @@ The orchestrator iterates through OPPLAN objectives autonomously:
 3. Parse PASSED/BLOCKED signal → update status → append findings to disk → next
 
 Fresh context per objective — no accumulated noise. Findings persist to files, not agent memory. The orchestrator tracks dependencies and state transitions, adapting the attack path in real time.
+
+### Offensive Vaccine
+
+Attack → Defend → Verify feedback loop. For each vulnerability discovered:
+
+1. **Defense Brief** generated with remediation actions (port blocking, firewall rules, service hardening)
+2. **Defense Agent** executes actions via pluggable backend (Docker, cloud, host OS)
+3. **Re-attack** verifies the defense holds — BLOCKED = success
+
+Defense actions tracked as `DefenseAction` nodes in the Knowledge Graph with `MITIGATES`, `DEFENDS`, `RESPONDS_TO` relationships.
+
+### Knowledge Graph
+
+Every host, service, vulnerability, credential, and attack path is a first-class graph node with typed relationships. Attack path planning uses weighted shortest-path algorithms natively, not Python-side traversal.
+
+The graph is the agent's persistent memory across iterations. Findings, defense actions, and attack chains all live in the same connected structure.
 
 ### C2 Integration
 
@@ -222,7 +251,18 @@ Two isolated networks. Management (`decepticon-net`) and operations (`sandbox-ne
 
 ## Agents
 
-Five specialist agents, each with its own tools, skills, and clean context window: **Decepticon** (orchestrator), **Soundwave** (engagement planning), **Recon**, **Exploit**, and **Post-Exploit**. Each agent spawns fresh per objective — no accumulated noise, no degraded reasoning.
+Fourteen specialist agents organized by kill chain phase, each with dedicated tools, skills, and a clean context window per invocation:
+
+| Phase | Agents |
+|-------|--------|
+| **Orchestration** | Decepticon (main), Soundwave (planning interview) |
+| **Reconnaissance** | Recon, Scanner |
+| **Exploitation** | Exploit, Exploiter, Detector, Verifier, Patcher |
+| **Post-Exploitation** | Post-Exploit |
+| **Defense** | Defender (Offensive Vaccine) |
+| **Domain Specialists** | AD Operator, Cloud Hunter, Contract Auditor, Reverser, Analyst |
+
+The Vulnerability Research pipeline (Scanner → Detector → Verifier → Exploiter → Patcher) handles the full lifecycle from discovery through proof-of-concept to patch proposal.
 
 **[Agent details and middleware stack →](docs/agents.md)**
 
@@ -272,6 +312,8 @@ Development runs in the **same Docker containers** as production. Source changes
 ```bash
 make dev          # Build + start with hot-reload
 make cli          # Interactive CLI (separate terminal)
+make web          # Web dashboard (Docker, includes PostgreSQL + Neo4j)
+make web-dev      # Web dashboard local dev server
 make start        # Start in background (no hot-reload, production-like)
 make stop         # Stop all services
 make test         # Run pytest inside container
