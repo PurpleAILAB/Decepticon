@@ -1,18 +1,27 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MessageSquare, Target, FileWarning, Network, Play, ArrowRight } from "lucide-react";
+import { FileWarning, Network, Play, ArrowRight, ClipboardList, Loader2 } from "lucide-react";
+
+interface EngagementDetail {
+  id: string;
+  name: string;
+  targetType: string;
+  targetValue: string;
+  status: string;
+  workspacePath: string | null;
+}
 
 const quickStats = [
   {
     label: "Objectives",
     value: 0,
     subValue: "0 completed",
-    icon: Target,
-    href: "opplan",
+    icon: ClipboardList,
+    href: "plan",
     color: "text-emerald-400",
   },
   {
@@ -27,26 +36,44 @@ const quickStats = [
 
 export default function EngagementOverviewPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
+  const [loading, setLoading] = useState(true);
+
+  // Check if engagement has documents — if not, redirect to Live for Soundwave interview
+  useEffect(() => {
+    async function checkDocs() {
+      try {
+        const res = await fetch(`/api/engagements/${id}/opplan`);
+        if (!res.ok) {
+          router.replace(`/engagements/${id}/live?new=true`);
+          return;
+        }
+        const data = await res.json();
+        // If opplan has no objectives, documents haven't been created yet
+        if (!data.objectives || data.objectives.length === 0) {
+          router.replace(`/engagements/${id}/live?new=true`);
+          return;
+        }
+      } catch {
+        router.replace(`/engagements/${id}/live?new=true`);
+        return;
+      }
+      setLoading(false);
+    }
+    checkDocs();
+  }, [id, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Action buttons */}
-      <div className="flex gap-3">
-        <Link href={`/engagements/${id}/chat`}>
-          <Button className="gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Open Chat
-          </Button>
-        </Link>
-        <Link href={`/engagements/${id}/opplan`}>
-          <Button variant="outline" className="gap-2">
-            <Target className="h-4 w-4" />
-            View OPPLAN
-          </Button>
-        </Link>
-      </div>
-
       {/* Stats grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {quickStats.map((stat) => (

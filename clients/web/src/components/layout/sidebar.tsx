@@ -7,8 +7,9 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Crosshair,
-  MessageSquare,
-  Target,
+  Radio,
+  ClipboardList,
+  FolderOpen,
   FileWarning,
   Network,
   Settings,
@@ -44,8 +45,9 @@ const globalNav: NavItem[] = [
 ];
 
 const engagementNav: NavItem[] = [
-  { href: "/chat", label: "Chat", icon: MessageSquare, engagementScoped: true },
-  { href: "/opplan", label: "OPPLAN", icon: Target, engagementScoped: true },
+  { href: "/live", label: "Live", icon: Radio, engagementScoped: true },
+  { href: "/plan", label: "Plan", icon: ClipboardList, engagementScoped: true },
+  { href: "/documents", label: "Documents", icon: FolderOpen, engagementScoped: true },
   { href: "/findings", label: "Findings", icon: FileWarning, engagementScoped: true },
   { href: "/graph", label: "Attack Graph", icon: Network, engagementScoped: true },
 ];
@@ -155,8 +157,9 @@ export function Sidebar() {
       <div className="flex h-14 items-center gap-2.5 border-b border-border/50 px-4">
         <img src="/logo.png" alt="PurpleAILab" width={26} height={26} className="shrink-0" />
         {!collapsed && (
-          <span className="bg-gradient-to-r from-purple-400 to-violet-300 bg-clip-text text-sm font-bold tracking-tight text-transparent">
-            PurpleAILab
+          <span className="text-sm font-bold tracking-tight">
+            <span className="text-purple-400">Purple</span>
+            <span className="text-foreground">AILab</span>
           </span>
         )}
       </div>

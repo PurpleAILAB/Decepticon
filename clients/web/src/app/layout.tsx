@@ -17,6 +17,9 @@ export const metadata: Metadata = {
   title: "Decepticon — Autonomous Red Team Platform",
   description:
     "AI-powered autonomous red team testing framework with real-time attack monitoring and vulnerability management.",
+  icons: {
+    icon: "/logo.png",
+  },
 };
 
 export default function RootLayout({
