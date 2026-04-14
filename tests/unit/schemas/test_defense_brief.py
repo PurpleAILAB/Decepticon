@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-import pytest
-
 from decepticon.schemas.defense_brief import (
     DefenseActionResult,
     DefenseActionType,
@@ -14,7 +12,6 @@ from decepticon.schemas.defense_brief import (
     ReAttackOutcome,
     VerificationResult,
 )
-
 
 # ── DefenseActionType ─────────────────────────────────────────────────────────
 

@@ -31,10 +31,10 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
-from decepticon.tools.research.tools import kg_query, kg_stats
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
+from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
+from decepticon.tools.research.tools import kg_query, kg_stats
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

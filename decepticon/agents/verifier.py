@@ -36,6 +36,8 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.tools.bash import bash
+from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.tools import (
     kg_add_edge,
     kg_add_node,
@@ -44,8 +46,6 @@ from decepticon.tools.research.tools import (
     kg_stats,
     validate_finding,
 )
-from decepticon.tools.bash import bash
-from decepticon.tools.bash.bash import set_sandbox
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

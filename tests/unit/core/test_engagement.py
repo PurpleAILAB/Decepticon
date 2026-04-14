@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from decepticon.core.engagement import (
     EngagementConfig,
     EngagementPhase,
@@ -13,7 +11,6 @@ from decepticon.core.engagement import (
     IterationResult,
     VaccineMode,
 )
-
 
 # ── EngagementPhase ───────────────────────────────────────────────────────────
 

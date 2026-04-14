@@ -29,17 +29,17 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.reversing.tools import REVERSING_TOOLS
+from decepticon.tools.bash import bash
+from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.tools import (
-    kg_add_node,
     kg_add_edge,
-    kg_query,
+    kg_add_node,
     kg_neighbors,
+    kg_query,
     kg_stats,
     kg_triage_binary,
 )
-from decepticon.tools.bash import bash
-from decepticon.tools.bash.bash import set_sandbox
+from decepticon.tools.reversing.tools import REVERSING_TOOLS
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

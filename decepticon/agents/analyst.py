@@ -34,10 +34,10 @@ from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.references.tools import REFERENCES_TOOLS
-from decepticon.tools.research.tools import RESEARCH_TOOLS
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
+from decepticon.tools.references.tools import REFERENCES_TOOLS
+from decepticon.tools.research.tools import RESEARCH_TOOLS
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 

@@ -6,8 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from decepticon.references import fetch as fetch_mod
+
 from decepticon.tools.references.catalog import (
     REFERENCES,
     references_by_category,

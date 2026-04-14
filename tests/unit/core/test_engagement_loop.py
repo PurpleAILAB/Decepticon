@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from decepticon.core.engagement import EngagementConfig, EngagementState
 from decepticon.core.engagement_loop import EngagementLoop
 from decepticon.core.schemas import (
+    OPPLAN,
     Objective,
     ObjectivePhase,
     ObjectiveStatus,
     OpsecLevel,
-    OPPLAN,
 )
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

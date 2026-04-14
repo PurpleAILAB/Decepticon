@@ -12,7 +12,6 @@ from decepticon.schemas.defense_brief import (
     DefenseActionResult,
     DefenseActionType,
     DefenseBrief,
-    DefenseRecommendation,
 )
 from decepticon.tools.defense import tools as defense_tools
 from decepticon.tools.defense.tools import (
@@ -22,7 +21,6 @@ from decepticon.tools.defense.tools import (
     defense_verify_status,
     set_defense_backend,
 )
-
 
 # ── defense_read_brief ────────────────────────────────────────────────────────
 

@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from decepticon.tools.research import _state as state
 from decepticon.tools.research.graph import (
     EdgeKind,
     KnowledgeGraph,

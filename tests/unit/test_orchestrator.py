@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-
-import pytest
 
 from decepticon.orchestrator import OrchestratorPhase, OrchestratorState, VaccineOrchestrator
 from decepticon.schemas.defense_brief import (
@@ -14,7 +11,6 @@ from decepticon.schemas.defense_brief import (
     ReAttackOutcome,
     VerificationResult,
 )
-
 
 # ── OrchestratorState defaults ────────────────────────────────────────────────
 

@@ -14,21 +14,21 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
-from decepticon.tools.cloud.tools import CLOUD_TOOLS
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import SafeCommandMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.research.tools import (
-    kg_add_node,
-    kg_add_edge,
-    kg_query,
-    kg_neighbors,
-    kg_stats,
-    cve_lookup,
-)
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
+from decepticon.tools.cloud.tools import CLOUD_TOOLS
+from decepticon.tools.research.tools import (
+    cve_lookup,
+    kg_add_edge,
+    kg_add_node,
+    kg_neighbors,
+    kg_query,
+    kg_stats,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
