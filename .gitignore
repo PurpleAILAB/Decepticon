@@ -87,6 +87,8 @@ workspace/
 .omc/
 .ouroboros/
 .gstack/
+.claude/
+clients/ee/
 
 # Project-specific Claude Code instructions (private)
 CLAUDE.md
