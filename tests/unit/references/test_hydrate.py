@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from decepticon.references import hydrate
+from decepticon.tools.references import hydrate
 
 from decepticon.tools.references.fetch import ReferenceCache
 

@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 import pytest
-from decepticon.references import tools as T
+from decepticon.tools.references import tools as T
 
 import decepticon.tools.references.cve_poc_index as cve_poc_index
 import decepticon.tools.references.h1_corpus as h1_corpus
