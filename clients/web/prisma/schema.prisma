@@ -1,0 +1,55 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Target types ─────────────────────────────────────────────────────
+// OSS: local_path, git_url, file_upload, web_url, ip_range
+// EE adds: github_repo (requires OAuth — provided by @decepticon/ee)
+
+enum TargetType {
+  local_path
+  git_url
+  file_upload
+  web_url
+  ip_range
+  github_repo // EE only — hidden in OSS UI, but kept in schema for compatibility
+}
+
+enum EngagementStatus {
+  draft
+  planning
+  running
+  completed
+  failed
+}
+
+// ── Application models ───────────────────────────────────────────────
+// Auth models (User, Account, Session, VerificationToken) live in the
+// EE package's separate Prisma schema (@decepticon/ee).
+
+model Engagement {
+  id          String           @id @default(cuid())
+  name        String
+  targetType  TargetType
+  targetValue String
+  status      EngagementStatus @default(draft)
+
+  // In OSS mode, userId is always "local" (no auth, single user).
+  // In SaaS mode (EE), userId references the EE User table by raw ID.
+  userId      String           @default("local")
+
+  // LangGraph thread tracking
+  threadId      String?
+  workspacePath String?
+
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
