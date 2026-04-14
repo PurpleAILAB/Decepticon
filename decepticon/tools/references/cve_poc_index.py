@@ -289,7 +289,7 @@ def _cached_index(root: Path | None) -> PoCIndex:
                 save_index(index, root=root)
                 mtime = path.stat().st_mtime
             except OSError:
-                pass
+                pass  # malformed entry — skip
     _index_cache[path] = (mtime, index)
     return index
 

@@ -138,7 +138,6 @@ _OPERATIONAL_ROLES = {
     "cloud_hunter",
     "ad_operator",
 }
-_ALL_ROLES = _OPERATIONAL_ROLES | {"decepticon", "planner", "soundwave"}
 
 
 class PromptBuilder:

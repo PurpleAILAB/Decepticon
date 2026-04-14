@@ -598,7 +598,7 @@ class EngagementLoop:
                             title = line[2:].strip()
                             break
                 except OSError:
-                    pass
+                    pass  # state persist failure is non-fatal
                 prior_findings.append(f"{p.stem}: {title}" if title else p.stem)
 
         roe_path = self._workspace / "plan" / "roe.json"

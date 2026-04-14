@@ -256,5 +256,5 @@ def _pyfind(root: Path, pattern: str, max_results: int) -> list[tuple[str, int, 
             except OSError:
                 continue
     except OSError:
-        pass
+        pass  # cache miss is non-fatal
     return hits

@@ -1593,13 +1593,11 @@ def plan_attack_chains(
         JSON list of chains with entrypoint, crown jewel, hop sequence,
         and total cost.
     """
-    graph, path = _load()
-    chains = plan_chains(graph, max_depth=max_depth, max_cost=max_cost, top_k=top_k)
+    chains = plan_chains(max_depth=max_depth, max_cost=max_cost, top_k=top_k)
     promoted_ids: list[str] = []
     if promote:
         for chain in chains:
-            promoted_ids.append(promote_chain(graph, chain).id)
-        _save(graph, path)
+            promoted_ids.append(promote_chain(chain))
     return _json(
         {
             "count": len(chains),
@@ -1620,8 +1618,7 @@ def suggest_objectives_from_chains(
     This does not mutate OPPLAN; it returns draft payloads for the
     orchestrator's `add_objective` tool.
     """
-    graph, _ = _load()
-    chains = plan_chains(graph, top_k=max(top_k, 1), max_depth=max_depth, max_cost=max_cost)
+    chains = plan_chains(top_k=max(top_k, 1), max_depth=max_depth, max_cost=max_cost)
     if not chains:
         return _json({"count": 0, "objectives": []})
 

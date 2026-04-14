@@ -39,7 +39,7 @@ def close_store() -> None:
         try:
             _store.close()
         except Exception:
-            pass
+            pass  # Neo4j not configured — no-op
         _store = None
 
 

@@ -115,7 +115,7 @@ def hydrate_all(
                 if index.size() > 0:
                     save_index(index, root=root)
             except OSError:
-                pass
+                pass  # skip unparseable entries
     return results
 
 

@@ -44,7 +44,7 @@ def span(name: str, **attributes: Any) -> Iterator[Any]:
                 try:
                     s.set_attribute(k, v)
                 except Exception:
-                    pass
+                    pass  # tracing unavailable — continue without telemetry
             yield s
     else:
         noop = _NoopSpan()
