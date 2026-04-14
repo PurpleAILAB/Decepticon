@@ -22,6 +22,8 @@ import {
   ChevronDown,
   ChevronRight,
   X,
+  Sparkles,
+  Circle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -189,52 +191,46 @@ export default function LivePage() {
         ))}
       </div>
 
-      {/* Right: Floating Chat Panel */}
+      {/* Right: Glassmorphism Floating Panel */}
       {selectedAgent && (
-        <div className="absolute right-0 top-0 bottom-0 w-[400px] border-l border-border/50 bg-background shadow-xl flex flex-col">
-          {/* Chat header */}
-          <div className="flex items-center gap-3 border-b border-border/50 px-4 py-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/50">
-              <AgentSpline agent={selectedAgent} size={32} />
-            </div>
+        <div className="absolute right-4 top-4 bottom-4 w-[420px] flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d1a]/80 shadow-2xl backdrop-blur-xl">
+          {/* Gradient glow effects */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+            <div className="absolute -left-20 -top-20 h-40 w-40 rounded-full blur-[80px]" style={{ backgroundColor: `${selectedAgent.color}15` }} />
+            <div className="absolute -right-20 -bottom-20 h-40 w-40 rounded-full bg-purple-600/10 blur-[80px]" />
+          </div>
+
+          {/* Header */}
+          <div className="relative flex items-center gap-3 px-5 py-4">
+            <Sparkles className="h-5 w-5" style={{ color: selectedAgent.color }} />
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold truncate">{selectedAgent.name}</h3>
-              <p className="text-xs text-muted-foreground truncate">
-                {isStreaming ? (
-                  <span className="flex items-center gap-1.5 text-emerald-400">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-                    Responding...
-                  </span>
-                ) : (
-                  selectedAgent.mascot
-                )}
-              </p>
+              <h3 className="text-sm font-semibold text-white">
+                Running {selectedAgent.name} Agent
+              </h3>
             </div>
             <button
               onClick={() => setSelectedAgent(null)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-500 hover:bg-white/5 hover:text-zinc-300 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Messages */}
-          <ScrollArea className="flex-1" ref={scrollRef}>
-            <div className="space-y-4 p-4">
+          {/* Steps / Messages — vertical step list */}
+          <ScrollArea className="relative flex-1" ref={scrollRef}>
+            <div className="space-y-2 px-5 py-3">
               {isEmpty && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <div className="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/50">
-                    <AgentSpline agent={selectedAgent} size={48} />
-                  </div>
-                  <h3 className="text-sm font-medium">{selectedAgent.name}</h3>
-                  <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <AgentSpline agent={selectedAgent} size={56} />
+                  <h3 className="mt-3 text-sm font-medium text-white">{selectedAgent.name}</h3>
+                  <p className="mt-1 max-w-xs text-xs text-zinc-500">
                     {selectedAgent.description}
                   </p>
                 </div>
               )}
 
               {messages.map((msg) => (
-                <MessageBubble
+                <StepCard
                   key={msg.id}
                   message={msg}
                   renderer={renderer}
@@ -244,24 +240,31 @@ export default function LivePage() {
               ))}
 
               {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
-                <div className="flex items-start gap-2">
-                  <div
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
-                    style={{ backgroundColor: `${selectedAgent.color}20` }}
-                  >
-                    <Bot className="h-3 w-3" style={{ color: selectedAgent.color }} />
-                  </div>
-                  <div className="flex items-center gap-2 rounded-xl bg-accent/50 px-3 py-2">
-                    <Loader2 className="h-3 w-3 animate-spin" style={{ color: selectedAgent.color }} />
-                    <span className="text-xs text-muted-foreground">Thinking...</span>
-                  </div>
+                <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]">
+                  <Loader2 className="h-4 w-4 animate-spin" style={{ color: selectedAgent.color }} />
+                  <span className="text-xs text-zinc-400">Processing...</span>
                 </div>
               )}
             </div>
           </ScrollArea>
 
+          {/* Progress indicator */}
+          {messages.length > 0 && (
+            <div className="relative px-5 py-2">
+              <div className="h-1 overflow-hidden rounded-full bg-white/5">
+                <div
+                  className="h-full rounded-full transition-all duration-1000"
+                  style={{
+                    backgroundColor: selectedAgent.color,
+                    width: isStreaming ? "60%" : "100%",
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Input */}
-          <div className="border-t border-border/50 p-3">
+          <div className="relative px-5 pb-4 pt-2">
             <div className="flex items-center gap-2">
               <input
                 value={input}
@@ -269,12 +272,12 @@ export default function LivePage() {
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
                 placeholder={`Message ${selectedAgent.name}...`}
                 disabled={isStreaming}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none transition-colors focus:border-primary/50 focus:ring-1 focus:ring-primary/20 disabled:opacity-50"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-white/20 focus:ring-1 focus:ring-white/10 disabled:opacity-50"
               />
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isStreaming}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-colors disabled:opacity-30"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-all disabled:opacity-30"
                 style={{ backgroundColor: selectedAgent.color }}
               >
                 <Send className="h-4 w-4" />
@@ -293,9 +296,9 @@ export default function LivePage() {
   );
 }
 
-/* ── Message components ─────────────────────────────────────────── */
+/* ── Step card — glassmorphism style like reference image ──────── */
 
-function MessageBubble({
+function StepCard({
   message,
   renderer,
   agentColor,
@@ -306,105 +309,110 @@ function MessageBubble({
   agentColor: string;
   onDocumentClick?: (doc: DocumentRef) => void;
 }) {
-  if (message.role === "tool") return <ToolBlock message={message} renderer={renderer} />;
+  const [expanded, setExpanded] = useState(false);
+
+  // System messages — small inline badge
   if (message.role === "system") {
     return (
-      <div className="flex justify-center">
-        <span className="rounded-full bg-accent/50 px-3 py-1 text-[10px] text-muted-foreground">
-          {message.content}
-        </span>
+      <div className="flex items-center gap-2 py-1">
+        <Circle className="h-2 w-2 fill-zinc-600 text-zinc-600" />
+        <span className="text-[11px] text-zinc-500">{message.content}</span>
       </div>
     );
   }
+
+  // User messages — right-aligned bubble
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary px-3 py-2">
-          <p className="text-sm leading-relaxed text-primary-foreground whitespace-pre-wrap">{message.content}</p>
+        <div className="max-w-[85%] rounded-2xl rounded-br-md px-4 py-2.5" style={{ backgroundColor: `${agentColor}25` }}>
+          <p className="text-sm leading-relaxed text-white whitespace-pre-wrap">{message.content}</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div>
-      {message.status && (
-        <div className="mb-1 pl-8">
-          {message.status === "passed" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
-              <CheckCircle2 className="h-2.5 w-2.5" /> PASSED
-            </span>
-          )}
-          {message.status === "blocked" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-400">
-              <XCircle className="h-2.5 w-2.5" /> BLOCKED
-            </span>
-          )}
-        </div>
-      )}
-      <div className="flex items-start gap-2">
-        <div
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg"
-          style={{ backgroundColor: `${agentColor}20` }}
+  // Tool calls — step card with icon
+  if (message.role === "tool") {
+    const isDone = !!message.content;
+    return (
+      <div
+        className={cn(
+          "rounded-xl px-4 py-3 ring-1 transition-all",
+          isDone
+            ? "bg-white/[0.04] ring-white/[0.08]"
+            : "bg-white/[0.02] ring-white/[0.05]"
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => isDone && setExpanded(!expanded)}
+          className="flex w-full items-center gap-3 text-left"
         >
-          <Bot className="h-3 w-3" style={{ color: agentColor }} />
-        </div>
+          {isDone ? (
+            <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" />
+          ) : (
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-zinc-500" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-white">{message.toolName}</p>
+            {isDone && message.content && (
+              <p className="mt-0.5 truncate text-xs text-zinc-500">
+                {message.content.slice(0, 100)}
+              </p>
+            )}
+          </div>
+          {isDone && (
+            expanded
+              ? <ChevronDown className="h-4 w-4 shrink-0 text-zinc-600" />
+              : <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
+          )}
+        </button>
+        {expanded && message.content && (
+          <div className="mt-2 rounded-lg bg-black/30 p-3 text-xs">
+            {renderer.renderToolOutput(message.content)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Assistant messages — step card with status
+  const hasStatus = message.status === "passed" || message.status === "blocked";
+  return (
+    <div className="rounded-xl bg-white/[0.04] px-4 py-3 ring-1 ring-white/[0.08]">
+      <div className="flex items-start gap-3">
+        {hasStatus ? (
+          message.status === "passed" ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+          ) : (
+            <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+          )
+        ) : (
+          <Bot className="mt-0.5 h-5 w-5 shrink-0" style={{ color: agentColor }} />
+        )}
         <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="rounded-2xl rounded-tl-md bg-accent/30 px-3 py-2 ring-1 ring-border/30">
+          <div className="text-sm text-zinc-200 leading-relaxed">
             {renderer.renderAssistantContent(message.content)}
           </div>
           {message.documents && message.documents.length > 0 && (
-            <div className="flex flex-wrap gap-1 pl-0.5">
+            <div className="flex flex-wrap gap-1.5 pt-1">
               {message.documents.map((doc) => (
                 <button
                   key={doc.id}
                   type="button"
                   onClick={() => onDocumentClick?.(doc)}
-                  className="flex items-center gap-1 rounded-lg bg-accent/30 px-2 py-1 text-[11px] ring-1 ring-border/30 transition-all hover:bg-primary/10"
+                  className="flex items-center gap-1.5 rounded-lg bg-white/[0.05] px-2.5 py-1.5 text-[11px] ring-1 ring-white/[0.08] transition-all hover:bg-white/[0.08]"
                 >
-                  <FileText className="h-2.5 w-2.5 text-primary" />
-                  <span>{doc.title}</span>
-                  <Badge variant="secondary" className="h-3.5 px-1 text-[9px]">{doc.type}</Badge>
+                  <FileText className="h-3 w-3" style={{ color: agentColor }} />
+                  <span className="text-zinc-300">{doc.title}</span>
+                  <Badge variant="secondary" className="h-4 bg-white/5 px-1 text-[9px] text-zinc-500">{doc.type}</Badge>
                 </button>
               ))}
             </div>
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-function ToolBlock({
-  message,
-  renderer,
-}: {
-  message: ChatMessage;
-  renderer: { renderToolOutput: (c: string) => React.ReactNode };
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const hasOutput = !!message.content;
-
-  return (
-    <div className="ml-8 overflow-hidden rounded-xl ring-1 ring-border/30">
-      <button
-        type="button"
-        onClick={() => hasOutput && setExpanded(!expanded)}
-        className={cn(
-          "flex w-full items-center gap-2 bg-accent/20 px-3 py-1.5 text-[11px]",
-          hasOutput && "cursor-pointer hover:bg-accent/40"
-        )}
-      >
-        <Wrench className="h-2.5 w-2.5 shrink-0 text-amber-400/70" />
-        <span className="font-mono font-medium text-amber-400/90">{message.toolName}</span>
-        <span className="flex-1" />
-        {hasOutput && (expanded ? <ChevronDown className="h-2.5 w-2.5 text-muted-foreground" /> : <ChevronRight className="h-2.5 w-2.5 text-muted-foreground" />)}
-      </button>
-      {expanded && message.content && (
-        <div className="border-t border-border/30 bg-background/50 p-2">
-          {renderer.renderToolOutput(message.content)}
-        </div>
-      )}
     </div>
   );
 }
