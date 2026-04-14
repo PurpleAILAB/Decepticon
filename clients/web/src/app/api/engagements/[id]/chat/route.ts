@@ -13,11 +13,13 @@ export async function POST(
   }
 
   const { id } = await params;
-  const { message } = await req.json();
+  const { message, assistantId } = await req.json();
 
   if (!message) {
     return NextResponse.json({ error: "Message required" }, { status: 400 });
   }
+
+  const agent = assistantId ?? "soundwave";
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -27,12 +29,11 @@ export async function POST(
       };
 
       try {
-        // Invoke the soundwave graph via LangGraph API
         const res = await fetch(`${LANGGRAPH_URL}/runs/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            assistant_id: "soundwave",
+            assistant_id: agent,
             thread_id: id,
             input: {
               messages: [{ role: "human", content: message }],

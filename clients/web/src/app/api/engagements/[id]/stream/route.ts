@@ -1,8 +1,20 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(
-  _req: NextRequest,
+/**
+ * Agent execution stream — only triggers when explicitly requested via POST.
+ * GET returns 405 to prevent accidental execution on page load.
+ */
+
+export async function GET() {
+  return NextResponse.json(
+    { error: "Use POST to start agent execution stream" },
+    { status: 405 }
+  );
+}
+
+export async function POST(
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try { await requireAuth(); } catch (e) {
@@ -11,9 +23,10 @@ export async function GET(
   }
 
   const { id } = await params;
-  const langGraphUrl = process.env.LANGGRAPH_API_URL ?? "http://localhost:8123";
+  const body = await req.json().catch(() => ({}));
+  const assistantId = (body as Record<string, unknown>).assistantId ?? "decepticon";
+  const langGraphUrl = process.env.LANGGRAPH_API_URL ?? "http://localhost:2024";
 
-  // Create a streaming response using SSE
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -24,12 +37,11 @@ export async function GET(
       };
 
       try {
-        // Connect to LangGraph streaming endpoint
         const res = await fetch(`${langGraphUrl}/runs/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            assistant_id: "decepticon",
+            assistant_id: assistantId,
             thread_id: id,
             input: {
               messages: [
@@ -79,7 +91,6 @@ export async function GET(
                 const event = JSON.parse(jsonStr);
                 sendEvent(event);
               } catch {
-                // Forward as raw text
                 sendEvent({ type: "raw", content: jsonStr });
               }
             }
