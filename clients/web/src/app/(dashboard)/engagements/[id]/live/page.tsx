@@ -127,15 +127,15 @@ export default function LivePage() {
     [chatService, engagementId, selectedAgent]
   );
 
-  // Auto-send initial prompt for new engagements
+  // Pre-fill initial prompt for new engagements (user must click send)
   useEffect(() => {
     if (!isNew || initSent.current || !selectedAgent) return;
     initSent.current = true;
     fetch(`/api/engagements/${engagementId}`)
       .then((res) => { if (!res.ok) throw new Error("fail"); return res.json(); })
-      .then((eng: Engagement) => sendMessage(buildInitialPrompt(eng), true))
+      .then((eng: Engagement) => setInput(buildInitialPrompt(eng)))
       .catch(() => {});
-  }, [isNew, engagementId, sendMessage, selectedAgent]);
+  }, [isNew, engagementId, selectedAgent]);
 
   function handleSend() {
     if (!input.trim() || isStreaming) return;
