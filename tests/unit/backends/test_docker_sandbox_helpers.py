@@ -166,18 +166,15 @@ class TestExtractInteractiveOutput:
 
 
 class TestTmuxSessionManagerLock:
-    """The class-level lock should be created lazily and shared across instances."""
+    """The class-level lock is eagerly initialized and shared across instances."""
 
-    def test_lock_is_lazy_initialized(self) -> None:
-        # Reset to simulate fresh module load
-        TmuxSessionManager._init_lock = None  # type: ignore[assignment]
-        mgr = TmuxSessionManager(session="test", container_name="dummy")
+    def test_lock_is_initialized(self) -> None:
+        # Lock is created eagerly at class definition time, not lazily
         assert TmuxSessionManager._init_lock is not None
         # Reentrant — we can acquire twice from the same thread
         with TmuxSessionManager._init_lock:
             with TmuxSessionManager._init_lock:
                 pass
-        del mgr
 
     def test_lock_is_shared_across_instances(self) -> None:
         a = TmuxSessionManager(session="a", container_name="dummy")

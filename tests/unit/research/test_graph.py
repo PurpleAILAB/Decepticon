@@ -92,7 +92,7 @@ class TestQueries:
     def test_neighbors_out(self) -> None:
         pairs = self.g.neighbors(self.s80.id, direction="out")
         kinds = {e.kind.value for e, _ in pairs}
-        assert kinds == {"runs_on", "has_vuln"}
+        assert kinds == {"HOSTS", "HAS_VULN"}
 
     def test_neighbors_in(self) -> None:
         pairs = self.g.neighbors(self.h.id, direction="in")
@@ -167,5 +167,5 @@ class TestStats:
         g.upsert_node(Node.make(NodeKind.VULNERABILITY, "v"))
         s = g.stats()
         assert s["nodes"] == 3
-        assert s["node.host"] == 2
-        assert s["node.vulnerability"] == 1
+        assert s["node.Host"] == 2
+        assert s["node.Vulnerability"] == 1

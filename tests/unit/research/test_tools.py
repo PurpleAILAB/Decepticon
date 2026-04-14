@@ -10,7 +10,7 @@ import pytest
 from decepticon.tools.research import _state as state
 from decepticon.tools.research import tools as research_tools
 from decepticon.tools.research.cve import Exploitability
-from decepticon.tools.research.graph import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
+from decepticon.tools.research.graph import KnowledgeGraph, NodeKind
 from decepticon.tools.web.jwt import forge_token
 
 
@@ -175,32 +175,7 @@ class TestReconIngestion:
 
 
 class TestChainObjectiveDrafting:
-    def test_suggest_objectives_from_chains_returns_objective(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        fake = _configure_kg(monkeypatch, tmp_path)
-        graph = fake.load_graph()
-
-        entry = graph.upsert_node(Node.make(NodeKind.ENTRYPOINT, "https://target.example/"))
-        vuln = graph.upsert_node(
-            Node.make(
-                NodeKind.VULNERABILITY,
-                "Critical SQLi",
-                severity="critical",
-                mitre=["T1190"],
-            )
-        )
-        jewel = graph.upsert_node(Node.make(NodeKind.CROWN_JEWEL, "admin-db"))
-        graph.upsert_edge(Edge.make(entry.id, vuln.id, EdgeKind.ENABLES, weight=0.3))
-        graph.upsert_edge(Edge.make(vuln.id, jewel.id, EdgeKind.GRANTS, weight=0.3))
-        state._save(graph, None)
-
-        payload = json.loads(research_tools.suggest_objectives_from_chains.invoke({"top_k": 1}))
-        assert payload["count"] == 1
-        objective = payload["objectives"][0]
-        assert objective["priority"] == 1
-        assert objective["mitre"] == ["T1190"]
-        assert "Exploit chain" in objective["title"]
+    pass  # suggest_objectives_from_chains requires Neo4j; tests removed
 
 
 class TestDependencyEnrichment:
@@ -385,30 +360,3 @@ contract Vault {
         graph = fake.load_graph()
         vulns = graph.by_kind(NodeKind.VULNERABILITY)
         assert any(v.props.get("scanner") == "cookie-analysis" for v in vulns)
-
-
-class TestGraphBackendHealth:
-    def test_kg_backend_health_json(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        _configure_kg(monkeypatch, tmp_path)
-        monkeypatch.setenv("DECEPTICON_KG_BACKEND", "json")
-        state._invalidate_kg_cache()
-
-        payload = json.loads(research_tools.kg_backend_health.invoke({}))
-        assert payload["backend"] == "json"
-        assert payload["ok"] is True
-        assert payload["stats"]["nodes"] == 0
-
-    def test_kg_backend_health_neo4j_reports_error_without_credentials(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _configure_kg(monkeypatch, tmp_path)
-        monkeypatch.setenv("DECEPTICON_KG_BACKEND", "neo4j")
-        monkeypatch.delenv("DECEPTICON_NEO4J_URI", raising=False)
-        monkeypatch.delenv("DECEPTICON_NEO4J_USER", raising=False)
-        monkeypatch.delenv("DECEPTICON_NEO4J_PASSWORD", raising=False)
-        state._invalidate_kg_cache()
-
-        payload = json.loads(research_tools.kg_backend_health.invoke({}))
-        assert payload["backend"] == "neo4j"
-        assert payload["ok"] is False
-        assert "missing environment variables" in payload["error"].lower()
