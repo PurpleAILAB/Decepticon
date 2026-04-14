@@ -76,7 +76,11 @@ def create_contract_auditor_agent():
         # Contract tools
         *CONTRACT_TOOLS,
         # KG core + SARIF ingest
-        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats,
+        kg_add_node,
+        kg_add_edge,
+        kg_query,
+        kg_neighbors,
+        kg_stats,
         kg_ingest_sarif,
         # CVE intelligence
         cve_lookup,

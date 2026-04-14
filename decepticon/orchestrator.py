@@ -189,14 +189,10 @@ class VaccineOrchestrator:
         """Return a summary dict with counts and current status."""
         state = self.state
         verified = sum(
-            1
-            for r in state.verification_results
-            if r.re_attack_outcome == ReAttackOutcome.BLOCKED
+            1 for r in state.verification_results if r.re_attack_outcome == ReAttackOutcome.BLOCKED
         )
         failed = sum(
-            1
-            for r in state.verification_results
-            if r.re_attack_outcome != ReAttackOutcome.BLOCKED
+            1 for r in state.verification_results if r.re_attack_outcome != ReAttackOutcome.BLOCKED
         )
         return {
             "phase": state.phase,
@@ -250,8 +246,8 @@ class VaccineOrchestrator:
             log.error("Could not read finding %s: %s", finding_path, exc)
             return None
 
-        title, severity, attack_vector, affected_assets, evidence_summary = (
-            self._parse_finding(content)
+        title, severity, attack_vector, affected_assets, evidence_summary = self._parse_finding(
+            content
         )
 
         recommended_actions = self._infer_recommendations(attack_vector, severity)
@@ -266,9 +262,7 @@ class VaccineOrchestrator:
             evidence_summary=evidence_summary,
         )
 
-    def _parse_finding(
-        self, content: str
-    ) -> tuple[str, str, str, list[str], str]:
+    def _parse_finding(self, content: str) -> tuple[str, str, str, list[str], str]:
         """Extract structured fields from a finding markdown document.
 
         Returns ``(title, severity, attack_vector, affected_assets, evidence_summary)``.
@@ -504,7 +498,11 @@ class VaccineOrchestrator:
         try:
             data = json.loads(self._state_path.read_text(encoding="utf-8"))
             state = OrchestratorState.model_validate(data)
-            log.info("Resumed orchestrator state from %s (iteration %d)", self._state_path, state.iteration)
+            log.info(
+                "Resumed orchestrator state from %s (iteration %d)",
+                self._state_path,
+                state.iteration,
+            )
             return state
         except (OSError, ValueError) as exc:
             log.error("Failed to load orchestrator state from %s: %s", self._state_path, exc)

@@ -88,7 +88,9 @@ def defense_read_brief(workspace_path: str) -> str:
         return brief.model_dump_json(indent=None)
     except Exception as exc:
         log.warning("defense_read_brief failed to parse %s: %s", brief_path, exc)
-        return json.dumps({"error": f"Failed to parse defense-brief.json: {exc}"}, ensure_ascii=False)
+        return json.dumps(
+            {"error": f"Failed to parse defense-brief.json: {exc}"}, ensure_ascii=False
+        )
 
 
 @tool
@@ -327,7 +329,9 @@ async def defense_verify_status(action_type: str, target: str) -> str:
                 {"active": verification.success, "details": verification.message},
                 ensure_ascii=False,
             )
-        return json.dumps({"active": bool(verification), "details": str(verification)}, ensure_ascii=False)
+        return json.dumps(
+            {"active": bool(verification), "details": str(verification)}, ensure_ascii=False
+        )
     except Exception as exc:
         log.error("defense_verify_status failed: %s", exc)
         return json.dumps({"error": f"Verification failed: {exc}"}, ensure_ascii=False)
@@ -368,23 +372,32 @@ def defense_generate_brief(finding_ref: str, workspace_path: str) -> str:
 
     # ── Parse finding metadata from markdown ─────────────────────────────
     title = _extract_field(content, r"^#\s+(.+)", r"(?i)^##?\s*title[:\s]+(.+)")
-    severity = _extract_field(
-        content,
-        r"(?i)\*\*severity\*\*[:\s]+(\w+)",
-        r"(?i)^severity[:\s]+(\w+)",
-        r"(?i)\bseverity:\s*(\w+)",
-    ) or "medium"
-    description = _extract_field(
-        content,
-        r"(?i)##\s*description\s*\n([\s\S]+?)(?=\n##|\Z)",
-        r"(?i)##\s*summary\s*\n([\s\S]+?)(?=\n##|\Z)",
-    ) or ""
+    severity = (
+        _extract_field(
+            content,
+            r"(?i)\*\*severity\*\*[:\s]+(\w+)",
+            r"(?i)^severity[:\s]+(\w+)",
+            r"(?i)\bseverity:\s*(\w+)",
+        )
+        or "medium"
+    )
+    description = (
+        _extract_field(
+            content,
+            r"(?i)##\s*description\s*\n([\s\S]+?)(?=\n##|\Z)",
+            r"(?i)##\s*summary\s*\n([\s\S]+?)(?=\n##|\Z)",
+        )
+        or ""
+    )
     affected_assets = _extract_assets(content)
-    attack_vector = _extract_field(
-        content,
-        r"(?i)##\s*attack\s+vector\s*\n([\s\S]+?)(?=\n##|\Z)",
-        r"(?i)##\s*exploitation\s*\n([\s\S]+?)(?=\n##|\Z)",
-    ) or description[:500]
+    attack_vector = (
+        _extract_field(
+            content,
+            r"(?i)##\s*attack\s+vector\s*\n([\s\S]+?)(?=\n##|\Z)",
+            r"(?i)##\s*exploitation\s*\n([\s\S]+?)(?=\n##|\Z)",
+        )
+        or description[:500]
+    )
 
     recommendations = _infer_recommendations(content, severity)
 
@@ -399,7 +412,8 @@ def defense_generate_brief(finding_ref: str, workspace_path: str) -> str:
             content,
             r"(?i)##\s*evidence\s*\n([\s\S]+?)(?=\n##|\Z)",
             r"(?i)##\s*proof[- ]of[- ]concept\s*\n([\s\S]+?)(?=\n##|\Z)",
-        ) or "",
+        )
+        or "",
     )
 
     output_path = Path(workspace_path) / "defense-brief.json"
@@ -407,7 +421,9 @@ def defense_generate_brief(finding_ref: str, workspace_path: str) -> str:
         output_path.write_text(brief.model_dump_json(indent=2), encoding="utf-8")
         log.info("defense_generate_brief: wrote %s", output_path)
     except OSError as exc:
-        return json.dumps({"error": f"Could not write defense-brief.json: {exc}"}, ensure_ascii=False)
+        return json.dumps(
+            {"error": f"Could not write defense-brief.json: {exc}"}, ensure_ascii=False
+        )
 
     return brief.model_dump_json(indent=None)
 
@@ -447,7 +463,9 @@ def _extract_assets(text: str) -> list[str]:
         if val not in assets:
             assets.append(val)
 
-    for m in re.finditer(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", text, re.IGNORECASE):
+    for m in re.finditer(
+        r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", text, re.IGNORECASE
+    ):
         val = m.group(0)
         if val not in assets and "." in val:
             assets.append(val)

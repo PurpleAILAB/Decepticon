@@ -69,11 +69,13 @@ async def test_defense_execute_action_success() -> None:
 
     set_defense_backend(mock_backend)
 
-    result_str = await defense_execute_action.ainvoke({
-        "action_type": "block_port",
-        "target": "tcp/8080",
-        "parameters": "{}",
-    })
+    result_str = await defense_execute_action.ainvoke(
+        {
+            "action_type": "block_port",
+            "target": "tcp/8080",
+            "parameters": "{}",
+        }
+    )
 
     result = json.loads(result_str)
     assert result["success"] is True
@@ -88,10 +90,12 @@ async def test_defense_execute_action_success() -> None:
 async def test_defense_execute_action_no_backend() -> None:
     set_defense_backend(None)
 
-    result_str = await defense_execute_action.ainvoke({
-        "action_type": "block_port",
-        "target": "tcp/8080",
-    })
+    result_str = await defense_execute_action.ainvoke(
+        {
+            "action_type": "block_port",
+            "target": "tcp/8080",
+        }
+    )
     result = json.loads(result_str)
     assert "error" in result
     assert "not initialized" in result["error"]
@@ -119,13 +123,16 @@ def test_defense_log_action() -> None:
 
     with patch.object(defense_tools, "_get_neo4j", return_value=mock_store):
         from decepticon.tools.defense.tools import defense_log_action
-        result_str = defense_log_action.invoke({
-            "action_type": "block_port",
-            "target": "tcp/22",
-            "success": True,
-            "finding_ref": "FIND-001",
-            "message": "Port blocked",
-        })
+
+        result_str = defense_log_action.invoke(
+            {
+                "action_type": "block_port",
+                "target": "tcp/22",
+                "success": True,
+                "finding_ref": "FIND-001",
+                "message": "Port blocked",
+            }
+        )
 
     result = json.loads(result_str)
     assert result["status"] == "logged"
@@ -145,10 +152,12 @@ async def test_defense_verify_status() -> None:
 
     set_defense_backend(mock_backend)
 
-    result_str = await defense_verify_status.ainvoke({
-        "action_type": "block_port",
-        "target": "tcp/8080",
-    })
+    result_str = await defense_verify_status.ainvoke(
+        {
+            "action_type": "block_port",
+            "target": "tcp/8080",
+        }
+    )
 
     result = json.loads(result_str)
     assert result["active"] is True
@@ -173,10 +182,12 @@ def test_defense_generate_brief(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    result_str = defense_generate_brief.invoke({
-        "finding_ref": "FIND-001",
-        "workspace_path": str(tmp_path),
-    })
+    result_str = defense_generate_brief.invoke(
+        {
+            "finding_ref": "FIND-001",
+            "workspace_path": str(tmp_path),
+        }
+    )
 
     result = json.loads(result_str)
     assert result["finding_ref"] == "FIND-001"
@@ -191,10 +202,12 @@ def test_defense_generate_brief(tmp_path: Path) -> None:
 
 
 def test_defense_generate_brief_missing_finding(tmp_path: Path) -> None:
-    result_str = defense_generate_brief.invoke({
-        "finding_ref": "FIND-999",
-        "workspace_path": str(tmp_path),
-    })
+    result_str = defense_generate_brief.invoke(
+        {
+            "finding_ref": "FIND-999",
+            "workspace_path": str(tmp_path),
+        }
+    )
     result = json.loads(result_str)
     assert "error" in result
     assert "FIND-999" in result["error"]

@@ -80,14 +80,10 @@ def _seed_tree(root: Path) -> None:
     )
     # Should be noise-filtered out by test/vendor pruning
     (root / "tests" / "test_noise.py").write_text(
-        "import os\n"
-        "def test_thing():\n"
-        "    os.system('echo hi')\n"
+        "import os\ndef test_thing():\n    os.system('echo hi')\n"
     )
     (root / "vendor" / "legacy.py").write_text(
-        "import pickle\n"
-        "def load(x):\n"
-        "    return pickle.loads(x)\n"
+        "import pickle\ndef load(x):\n    return pickle.loads(x)\n"
     )
     # Non-matching file
     (root / "README.md").write_text("# not scanned\n")
@@ -121,11 +117,7 @@ class TestScanShard:
         for i in range(20):
             d = tmp_path / f"pkg{i}"
             d.mkdir()
-            (d / f"mod{i}.py").write_text(
-                f"import os\n"
-                f"def f{i}(x):\n"
-                f"    os.system(x)\n"
-            )
+            (d / f"mod{i}.py").write_text(f"import os\ndef f{i}(x):\n    os.system(x)\n")
 
         full = json.loads(
             scan_shard.invoke(
@@ -161,15 +153,11 @@ class TestScanShard:
         assert shard_keys == full_keys
 
     def test_bad_shard_idx_errors(self, tmp_path: Path) -> None:
-        raw = scan_shard.invoke(
-            {"root": str(tmp_path), "shard_idx": 5, "shard_total": 4}
-        )
+        raw = scan_shard.invoke({"root": str(tmp_path), "shard_idx": 5, "shard_total": 4})
         assert "error" in json.loads(raw)
 
     def test_missing_root_errors(self) -> None:
-        raw = scan_shard.invoke(
-            {"root": "/nonexistent/xyzzy", "shard_idx": 0, "shard_total": 1}
-        )
+        raw = scan_shard.invoke({"root": "/nonexistent/xyzzy", "shard_idx": 0, "shard_total": 1})
         assert "error" in json.loads(raw)
 
 
@@ -258,9 +246,7 @@ class TestKgAddCandidate:
         )
         assert a["id"] == b["id"], "same (path,line,sink) should produce same node id"
 
-    def test_severity_buckets(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_severity_buckets(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _configure_kg(monkeypatch)
         hi = json.loads(
             kg_add_candidate.invoke(
@@ -268,9 +254,7 @@ class TestKgAddCandidate:
             )
         )
         md = json.loads(
-            kg_add_candidate.invoke(
-                {"path": "b.py", "line": 1, "score": 0.70, "sink_kind": "sql"}
-            )
+            kg_add_candidate.invoke({"path": "b.py", "line": 1, "score": 0.70, "sink_kind": "sql"})
         )
         lo = json.loads(
             kg_add_candidate.invoke(

@@ -56,9 +56,7 @@ class TestBloodHoundIngest:
 
         g = KnowledgeGraph()
         with pytest.raises(ValueError, match="'data'/'items' must be an array"):
-            merge_bloodhound_json(
-                {"meta": {"type": "users"}, "data": "oops"}, g
-            )
+            merge_bloodhound_json({"meta": {"type": "users"}, "data": "oops"}, g)
 
     def test_missing_meta_is_tolerated(self) -> None:
         # Historical behavior: meta is optional. Verify it still works

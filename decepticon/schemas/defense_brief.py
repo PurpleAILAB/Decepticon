@@ -42,10 +42,10 @@ class ReAttackOutcome(StrEnum):
     Used to determine whether a defense was effective, partial, or failed.
     """
 
-    BLOCKED = "blocked"   # Attack was fully mitigated — finding is closed
-    PASSED = "passed"     # Attack still succeeds — defense was ineffective
-    PARTIAL = "partial"   # Attack partially mitigated — follow-up needed
-    ERROR = "error"       # Re-attack could not complete (infra/tooling issue)
+    BLOCKED = "blocked"  # Attack was fully mitigated — finding is closed
+    PASSED = "passed"  # Attack still succeeds — defense was ineffective
+    PARTIAL = "partial"  # Attack partially mitigated — follow-up needed
+    ERROR = "error"  # Re-attack could not complete (infra/tooling issue)
 
 
 # ── Models ─────────────────────────────────────────────────────────────
@@ -58,9 +58,7 @@ class DefenseRecommendation(BaseModel):
     agent reads them and decides which to execute, in which order.
     """
 
-    action_type: DefenseActionType = Field(
-        description="Category of defensive action to take"
-    )
+    action_type: DefenseActionType = Field(description="Category of defensive action to take")
     target: str = Field(
         description=(
             "What to act on — port notation (e.g. 'tcp/8080'), service name "
@@ -88,12 +86,8 @@ class DefenseBrief(BaseModel):
     without needing to re-read raw findings files.
     """
 
-    finding_ref: str = Field(
-        description="Reference to the source finding, e.g. 'FIND-001'"
-    )
-    finding_title: str = Field(
-        description="Human-readable title matching the finding document"
-    )
+    finding_ref: str = Field(description="Reference to the source finding, e.g. 'FIND-001'")
+    finding_title: str = Field(description="Human-readable title matching the finding document")
     severity: str = Field(
         description=(
             "Finding severity using FindingSeverity values: "
@@ -131,12 +125,8 @@ class DefenseActionResult(BaseModel):
     action_type: DefenseActionType = Field(
         description="The type of defensive action that was executed"
     )
-    target: str = Field(
-        description="The specific target the action was applied to"
-    )
-    success: bool = Field(
-        description="Whether the action was applied successfully"
-    )
+    target: str = Field(description="The specific target the action was applied to")
+    success: bool = Field(description="Whether the action was applied successfully")
     message: str = Field(
         description="Human-readable result message — include error detail on failure"
     )
@@ -158,9 +148,7 @@ class VerificationResult(BaseModel):
     this to determine whether to close the finding or escalate.
     """
 
-    finding_ref: str = Field(
-        description="Reference to the finding being verified, e.g. 'FIND-001'"
-    )
+    finding_ref: str = Field(description="Reference to the finding being verified, e.g. 'FIND-001'")
     defense_actions_applied: list[DefenseActionResult] = Field(
         default_factory=list,
         description="Results for every defensive action that was attempted",

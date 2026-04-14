@@ -69,8 +69,13 @@ def create_ad_operator_agent():
         # AD tools
         *AD_TOOLS,
         # KG core + credential ingest
-        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats,
-        kg_ingest_crackmapexec, kg_ingest_asrep_hashes,
+        kg_add_node,
+        kg_add_edge,
+        kg_query,
+        kg_neighbors,
+        kg_stats,
+        kg_ingest_crackmapexec,
+        kg_ingest_asrep_hashes,
         # References
         killchain_lookup,
         # Execution

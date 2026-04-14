@@ -91,9 +91,7 @@ def patch_propose(
     if vuln is None:
         return _json({"error": f"vuln node not found: {vuln_id}"})
     if vuln.kind != NodeKind.VULNERABILITY:
-        return _json(
-            {"error": f"node {vuln_id} is kind={vuln.kind.value}, expected vulnerability"}
-        )
+        return _json({"error": f"node {vuln_id} is kind={vuln.kind.value}, expected vulnerability"})
     if not vuln.props.get("validated"):
         # Not fatal — we still record, but flag it so the orchestrator can triage.
         log.warning("patch_propose: vuln %s has no validated=True flag", vuln_id)

@@ -93,9 +93,7 @@ def _resolve_env(root: Path) -> tuple[int, Path]:
         sys.exit(2)
 
     home_raw = (
-        os.environ.get("DECEPTICON_HOME")
-        or env_file.get("DECEPTICON_HOME")
-        or "~/.decepticon"
+        os.environ.get("DECEPTICON_HOME") or env_file.get("DECEPTICON_HOME") or "~/.decepticon"
     )
     home = Path(home_raw).expanduser().resolve()
     return port, home
@@ -137,10 +135,7 @@ def main() -> None:
     home.mkdir(parents=True, exist_ok=True)
     child_env = {**os.environ, "DECEPTICON_HOME": str(home)}
 
-    print(
-        f"{DIM}Building and starting services "
-        f"(DECEPTICON_HOME={home}, port={port})...{NC}"
-    )
+    print(f"{DIM}Building and starting services (DECEPTICON_HOME={home}, port={port})...{NC}")
     # Do NOT swallow stdout/stderr — build + pull errors should stream
     # live so a failure is visible immediately rather than masquerading
     # as a "Server failed to start within 90s" timeout later.

@@ -14,25 +14,42 @@ from decepticon.tools.research.graph import KnowledgeGraph, NodeKind
 class _FakeStore:
     def __init__(self):
         self.graph = KnowledgeGraph()
+
     def load_graph(self):
         return self.graph.model_copy(deep=True)
+
     def batch_upsert_nodes(self, nodes):
         for n in nodes:
             self.graph.upsert_node(n)
         return len(nodes)
+
     def batch_upsert_edges(self, edges):
         for e in edges:
             self.graph.upsert_edge(e)
         return len(edges)
-    def ensure_schema(self): pass
-    def close(self): pass
-    def revision(self): return 0.0
-    def stats(self): return self.graph.stats()
-    def upsert_node(self, node): self.graph.upsert_node(node)
-    def upsert_edge(self, edge): self.graph.upsert_edge(edge)
+
+    def ensure_schema(self):
+        pass
+
+    def close(self):
+        pass
+
+    def revision(self):
+        return 0.0
+
+    def stats(self):
+        return self.graph.stats()
+
+    def upsert_node(self, node):
+        self.graph.upsert_node(node)
+
+    def upsert_edge(self, edge):
+        self.graph.upsert_edge(edge)
+
 
 def _configure_kg(monkeypatch, tmp_path):
     from decepticon.tools.research import _state as state
+
     fake = _FakeStore()
     monkeypatch.setattr(state, "_store", fake)
     return fake

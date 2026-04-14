@@ -169,10 +169,7 @@ def test_parse_objective_result_finds_findings(tmp_path: Path) -> None:
     loop = EngagementLoop(tmp_path, _make_config(tmp_path))
     obj = _make_objective()
     start = time.time()
-    response = (
-        "OBJECTIVE PASSED. Wrote FIND-001 and FIND-002. "
-        "Also referenced FIND-001 again."
-    )
+    response = "OBJECTIVE PASSED. Wrote FIND-001 and FIND-002. Also referenced FIND-001 again."
     result = loop._parse_objective_result(response, obj, "recon", start)
     # FIND-001 appears twice but must be deduplicated; order preserved
     assert result.findings_produced == ["FIND-001", "FIND-002"]

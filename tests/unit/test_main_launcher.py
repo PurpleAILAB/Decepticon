@@ -49,24 +49,18 @@ class TestResolveEnv:
         monkeypatch.delenv("LANGGRAPH_PORT", raising=False)
         monkeypatch.delenv("DECEPTICON_HOME", raising=False)
         workspace = tmp_path / "custom"
-        (tmp_path / ".env").write_text(
-            f"LANGGRAPH_PORT=9999\nDECEPTICON_HOME={workspace}\n"
-        )
+        (tmp_path / ".env").write_text(f"LANGGRAPH_PORT=9999\nDECEPTICON_HOME={workspace}\n")
         port, home = _resolve_env(tmp_path)
         assert port == 9999
         assert home == workspace.resolve()
 
-    def test_os_env_overrides_dotenv(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_os_env_overrides_dotenv(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         (tmp_path / ".env").write_text("LANGGRAPH_PORT=9999\n")
         monkeypatch.setenv("LANGGRAPH_PORT", "3030")
         port, _ = _resolve_env(tmp_path)
         assert port == 3030
 
-    def test_tilde_is_expanded(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_tilde_is_expanded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         # Compose cannot expand ~; the launcher must.
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("DECEPTICON_HOME", "~/.decepticon")
@@ -74,9 +68,7 @@ class TestResolveEnv:
         assert str(home).startswith(str(tmp_path))
         assert "~" not in str(home)
 
-    def test_invalid_port_exits(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_invalid_port_exits(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LANGGRAPH_PORT", "not-a-number")
         with pytest.raises(SystemExit) as exc:
             _resolve_env(tmp_path)

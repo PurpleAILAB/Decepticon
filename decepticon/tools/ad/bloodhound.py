@@ -91,8 +91,8 @@ def _node_kind_for_bh(type_name: str) -> NodeKind:
         "Computer": NodeKind.HOST,
         "Group": NodeKind.GROUP,
         "Domain": NodeKind.DOMAIN,
-        "GPO": NodeKind.GROUP,      # GPOs act as policy containers
-        "OU": NodeKind.GROUP,       # OUs act as organizational containers
+        "GPO": NodeKind.GROUP,  # GPOs act as policy containers
+        "OU": NodeKind.GROUP,  # OUs act as organizational containers
     }
     return m.get(type_name, NodeKind.HOST)
 
@@ -167,7 +167,10 @@ def _ingest_aces(
 
 
 def _ingest_memberships(
-    graph: KnowledgeGraph, node: Node, obj: dict[str, Any], stats: ImportStats,
+    graph: KnowledgeGraph,
+    node: Node,
+    obj: dict[str, Any],
+    stats: ImportStats,
     bh_index: dict[str, Node],
 ) -> None:
     for mem in obj.get("MemberOf") or []:
@@ -210,8 +213,7 @@ def merge_bloodhound_json(
             raise ValueError(f"bloodhound: invalid JSON payload: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(
-            "bloodhound: expected a JSON object at the top level, got "
-            f"{type(data).__name__}"
+            f"bloodhound: expected a JSON object at the top level, got {type(data).__name__}"
         )
     stats = ImportStats()
 
@@ -227,8 +229,7 @@ def merge_bloodhound_json(
         items = items_raw
     else:
         raise ValueError(
-            "bloodhound: 'data'/'items' must be an array, got "
-            f"{type(items_raw).__name__}"
+            f"bloodhound: 'data'/'items' must be an array, got {type(items_raw).__name__}"
         )
     counter_attr = object_type.lower()
 

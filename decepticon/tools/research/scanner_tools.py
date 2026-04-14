@@ -72,9 +72,7 @@ _SOURCE_PATTERNS: dict[str, re.Pattern[str]] = {
     "env": re.compile(r"\b(os\.environ|getenv|System\.getenv|process\.env)\b"),
     "cli": re.compile(r"\b(sys\.argv|os\.args|Process\.argv|argv\[)\b"),
     "stdin": re.compile(r"\b(sys\.stdin|input\(|readLine|fgets)\b"),
-    "file_read": re.compile(
-        r"\b(open\(|read_text|readFileSync|ioutil\.ReadFile|fs\.readFile)\b"
-    ),
+    "file_read": re.compile(r"\b(open\(|read_text|readFileSync|ioutil\.ReadFile|fs\.readFile)\b"),
     "network": re.compile(r"\b(recv|recvfrom|socket\.recv|ws\.onmessage)\b"),
 }
 
@@ -132,15 +130,11 @@ _SINK_PATTERNS: dict[str, tuple[re.Pattern[str], float]] = {
         0.70,
     ),
     "ssti": (
-        re.compile(
-            r"\b(render_template_string|Template\(|Jinja2Templates|Handlebars\.compile)\b"
-        ),
+        re.compile(r"\b(render_template_string|Template\(|Jinja2Templates|Handlebars\.compile)\b"),
         0.70,
     ),
     "crypto": (
-        re.compile(
-            r"\b(MD5|SHA1|DES|RC4|ECB|PKCS1|math\.random|Math\.random|rand\(\))\b"
-        ),
+        re.compile(r"\b(MD5|SHA1|DES|RC4|ECB|PKCS1|math\.random|Math\.random|rand\(\))\b"),
         0.35,
     ),
     "auth": (

@@ -67,7 +67,11 @@ def create_cloud_hunter_agent():
         # Cloud tools
         *CLOUD_TOOLS,
         # KG core
-        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats,
+        kg_add_node,
+        kg_add_edge,
+        kg_query,
+        kg_neighbors,
+        kg_stats,
         # CVE intelligence
         cve_lookup,
         # Execution

@@ -20,22 +20,38 @@ from decepticon.tools.research.patch import patch_propose, patch_verify
 class _FakeStore:
     def __init__(self):
         self.graph = KnowledgeGraph()
+
     def load_graph(self):
         return self.graph.model_copy(deep=True)
+
     def batch_upsert_nodes(self, nodes):
         for n in nodes:
             self.graph.upsert_node(n)
         return len(nodes)
+
     def batch_upsert_edges(self, edges):
         for e in edges:
             self.graph.upsert_edge(e)
         return len(edges)
-    def ensure_schema(self): pass
-    def close(self): pass
-    def revision(self): return 0.0
-    def stats(self): return self.graph.stats()
-    def upsert_node(self, node): self.graph.upsert_node(node)
-    def upsert_edge(self, edge): self.graph.upsert_edge(edge)
+
+    def ensure_schema(self):
+        pass
+
+    def close(self):
+        pass
+
+    def revision(self):
+        return 0.0
+
+    def stats(self):
+        return self.graph.stats()
+
+    def upsert_node(self, node):
+        self.graph.upsert_node(node)
+
+    def upsert_edge(self, edge):
+        self.graph.upsert_edge(edge)
+
 
 def _configure_kg(monkeypatch):
     fake = _FakeStore()
@@ -92,9 +108,7 @@ class TestPatchPropose:
         ]
         assert len(edges) == 1
 
-    def test_rejects_unknown_vuln(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_rejects_unknown_vuln(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _configure_kg(monkeypatch)
         raw = patch_propose.invoke(
             {
@@ -105,22 +119,16 @@ class TestPatchPropose:
         )
         assert "error" in json.loads(raw)
 
-    def test_idempotent_on_same_diff(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_idempotent_on_same_diff(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         fake = _configure_kg(monkeypatch)
         vuln_id = _seed_verified_vuln(fake)
         diff = "--- a/x\n+++ b/x\n- 1\n+ 2\n"
 
         a = json.loads(
-            patch_propose.invoke(
-                {"vuln_id": vuln_id, "diff": diff, "commit_message": "fix: x"}
-            )
+            patch_propose.invoke({"vuln_id": vuln_id, "diff": diff, "commit_message": "fix: x"})
         )
         b = json.loads(
-            patch_propose.invoke(
-                {"vuln_id": vuln_id, "diff": diff, "commit_message": "fix: x"}
-            )
+            patch_propose.invoke({"vuln_id": vuln_id, "diff": diff, "commit_message": "fix: x"})
         )
         assert a["id"] == b["id"], "same vuln + same diff should dedupe"
 
@@ -234,9 +242,7 @@ class TestPatchVerify:
         vuln_id = _seed_verified_vuln(fake)
 
         proposed = json.loads(
-            patch_propose.invoke(
-                {"vuln_id": vuln_id, "diff": "x", "commit_message": "fix"}
-            )
+            patch_propose.invoke({"vuln_id": vuln_id, "diff": "x", "commit_message": "fix"})
         )
         patch_id = proposed["id"]
 

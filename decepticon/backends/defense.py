@@ -219,7 +219,9 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         rc, output = await self._exec(apply_cmd)
         success = rc == 0
-        message = output if output else ("Port blocked successfully" if success else "iptables failed")
+        message = (
+            output if output else ("Port blocked successfully" if success else "iptables failed")
+        )
         return self._make_result(
             action,
             success=success,
@@ -246,7 +248,7 @@ class DockerDefenseBackend(AbstractDefenseBackend):
         rollback_rule = rule
         for flag in ("-A ", "-I "):
             if rollback_rule.startswith(flag):
-                rollback_rule = "-D " + rollback_rule[len(flag):]
+                rollback_rule = "-D " + rollback_rule[len(flag) :]
                 break
         rollback_cmd = f"iptables {rollback_rule}"
 
@@ -271,7 +273,11 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         rc, output = await self._exec(apply_cmd)
         success = rc == 0
-        message = output if output else (f"Service {service} stopped and disabled" if success else "systemctl failed")
+        message = (
+            output
+            if output
+            else (f"Service {service} stopped and disabled" if success else "systemctl failed")
+        )
         return self._make_result(
             action,
             success=success,
@@ -289,7 +295,11 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         rc, output = await self._exec(apply_cmd)
         success = rc == 0
-        message = output if output else (f"Service {service} restarted" if success else "systemctl failed")
+        message = (
+            output
+            if output
+            else (f"Service {service} restarted" if success else "systemctl failed")
+        )
         return self._make_result(
             action,
             success=success,
@@ -353,7 +363,11 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         success = rc == 0
         rollback_cmd = f"cp {backup_path} {path} && rm -f {backup_path}" if success else None
-        message = output if output else (f"Config updated at {path}" if success else f"Write failed (exit {rc})")
+        message = (
+            output
+            if output
+            else (f"Config updated at {path}" if success else f"Write failed (exit {rc})")
+        )
 
         return self._make_result(
             action,
@@ -383,7 +397,11 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         rc, output = await self._exec(apply_cmd)
         success = rc == 0
-        message = output if output else (f"Credential '{target}' revoked" if success else f"Revocation failed (exit {rc})")
+        message = (
+            output
+            if output
+            else (f"Credential '{target}' revoked" if success else f"Revocation failed (exit {rc})")
+        )
 
         return self._make_result(
             action,
@@ -420,12 +438,18 @@ class DockerDefenseBackend(AbstractDefenseBackend):
 
         rc, output = await self._exec(result.rollback_command)
         success = rc == 0
-        message = output if output else ("Rollback successful" if success else f"Rollback failed (exit {rc})")
+        message = (
+            output
+            if output
+            else ("Rollback successful" if success else f"Rollback failed (exit {rc})")
+        )
 
         if success:
-            self._applied = [a for a in self._applied if not (
-                a.action_type == result.action_type and a.target == result.target
-            )]
+            self._applied = [
+                a
+                for a in self._applied
+                if not (a.action_type == result.action_type and a.target == result.target)
+            ]
 
         log.info(
             "Rollback %s: success=%s target=%s",

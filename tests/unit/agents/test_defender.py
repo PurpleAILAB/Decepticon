@@ -48,9 +48,7 @@ def _mock_create_agent():
         yield m
 
 
-def test_create_defender_agent_returns_agent(
-    _mock_config, _mock_llm_factory, _mock_create_agent
-):
+def test_create_defender_agent_returns_agent(_mock_config, _mock_llm_factory, _mock_create_agent):
     """create_defender_agent() returns a runnable agent graph."""
     from decepticon.agents.defender import create_defender_agent
 
@@ -101,9 +99,7 @@ def test_create_defender_agent_middleware_stack(
     assert len(middleware) >= 5
 
 
-def test_create_defender_agent_name(
-    _mock_config, _mock_llm_factory, _mock_create_agent
-):
+def test_create_defender_agent_name(_mock_config, _mock_llm_factory, _mock_create_agent):
     """Defender agent is named 'defender'."""
     from decepticon.agents.defender import create_defender_agent
 

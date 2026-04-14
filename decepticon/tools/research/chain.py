@@ -38,17 +38,19 @@ from decepticon.tools.research.graph import (
 log = get_logger("research.chain")
 
 # Relationship types that represent attack progression (traversable for paths).
-_ATTACK_REL_TYPES = "|".join([
-    EdgeKind.EXPLOITS.value,
-    EdgeKind.ENABLES.value,
-    EdgeKind.LEAKS.value,
-    EdgeKind.LEADS_TO.value,
-    EdgeKind.PIVOTS_TO.value,
-    EdgeKind.ESCALATES_TO.value,
-    EdgeKind.HAS_VULN.value,
-    EdgeKind.CAN_ACCESS.value,
-    EdgeKind.ADMIN_TO.value,
-])
+_ATTACK_REL_TYPES = "|".join(
+    [
+        EdgeKind.EXPLOITS.value,
+        EdgeKind.ENABLES.value,
+        EdgeKind.LEAKS.value,
+        EdgeKind.LEADS_TO.value,
+        EdgeKind.PIVOTS_TO.value,
+        EdgeKind.ESCALATES_TO.value,
+        EdgeKind.HAS_VULN.value,
+        EdgeKind.CAN_ACCESS.value,
+        EdgeKind.ADMIN_TO.value,
+    ]
+)
 
 # Severity → multiplier. High severity shrinks cost (faster to reach).
 _SEVERITY_MULTIPLIER: dict[str, float] = {
@@ -113,7 +115,9 @@ class Chain:
         }
 
 
-def compute_edge_cost(severity: str = "", validated: bool = False, base_weight: float = 1.0) -> float:
+def compute_edge_cost(
+    severity: str = "", validated: bool = False, base_weight: float = 1.0
+) -> float:
     """Compute the traversal cost for an attack edge.
 
     This should be called at ingestion time and stored as the ``cost``
@@ -219,22 +223,26 @@ def plan_chains(
         # Skip first node (entrypoint) — steps are the intermediate + goal nodes
         for i, node_data in enumerate(path_nodes[1:]):
             edge_data = path_edges[i] if i < len(path_edges) else {}
-            steps.append(ChainStep(
-                node_id=node_data.get("id", ""),
-                node_label=node_data.get("label", ""),
-                node_kind=node_data.get("kind", ""),
-                edge_kind=edge_data.get("kind", ""),
-                hop_cost=float(edge_data.get("cost", 1.0)),
-            ))
+            steps.append(
+                ChainStep(
+                    node_id=node_data.get("id", ""),
+                    node_label=node_data.get("label", ""),
+                    node_kind=node_data.get("kind", ""),
+                    edge_kind=edge_data.get("kind", ""),
+                    hop_cost=float(edge_data.get("cost", 1.0)),
+                )
+            )
 
-        chains.append(Chain(
-            entrypoint_id=row.get("entry_id", ""),
-            entrypoint_label=row.get("entry_label", ""),
-            crown_jewel_id=row.get("crown_id", ""),
-            crown_jewel_label=row.get("crown_label", ""),
-            steps=steps,
-            total_cost=float(row.get("total_cost", 0.0)),
-        ))
+        chains.append(
+            Chain(
+                entrypoint_id=row.get("entry_id", ""),
+                entrypoint_label=row.get("entry_label", ""),
+                crown_jewel_id=row.get("crown_id", ""),
+                crown_jewel_label=row.get("crown_label", ""),
+                steps=steps,
+                total_cost=float(row.get("total_cost", 0.0)),
+            )
+        )
 
     return chains
 
@@ -275,6 +283,7 @@ def promote_chain(chain: Chain) -> str:
     """
 
     import time
+
     params = {
         "id": node_id,
         "key": path_key,
@@ -294,11 +303,14 @@ def promote_chain(chain: Chain) -> str:
         MATCH (ap:AttackPath {id: $ap_id}), (n {id: $node_id})
         MERGE (ap)-[s:STEP {order: $order}]->(n)
         """
-        store.query_custom(step_query, {
-            "ap_id": node_id,
-            "node_id": step.node_id,
-            "order": i,
-        })
+        store.query_custom(
+            step_query,
+            {
+                "ap_id": node_id,
+                "node_id": step.node_id,
+                "order": i,
+            },
+        )
 
     return node_id
 

@@ -176,10 +176,7 @@ class EngagementLoop:
                 self._state.findings_discovered.append(finding_ref)
 
         # Immediate vaccine mode: apply defense right after finding discovery
-        if (
-            self._config.vaccine_mode == VaccineMode.IMMEDIATE
-            and result.findings_produced
-        ):
+        if self._config.vaccine_mode == VaccineMode.IMMEDIATE and result.findings_produced:
             log.info(
                 "Immediate vaccine mode — applying defense for %d finding(s)",
                 len(result.findings_produced),
@@ -206,7 +203,8 @@ class EngagementLoop:
 
         # A finding is unprocessed if it has no verification result on disk
         unprocessed = [
-            f for f in self._state.findings_discovered
+            f
+            for f in self._state.findings_discovered
             if not (self._workspace / f"verification-{f}.json").exists()
         ]
 
@@ -215,7 +213,9 @@ class EngagementLoop:
             self._state.phase = EngagementPhase.COMPLETE
             return
 
-        log.info("Vaccine phase: processing %d finding(s): %s", len(unprocessed), ", ".join(unprocessed))
+        log.info(
+            "Vaccine phase: processing %d finding(s): %s", len(unprocessed), ", ".join(unprocessed)
+        )
         await self._apply_defenses(unprocessed)
         self._state.phase = EngagementPhase.COMPLETE
 
@@ -574,7 +574,8 @@ class EngagementLoop:
                             return content
                         if isinstance(content, list):
                             parts = [
-                                c.get("text", "") for c in content
+                                c.get("text", "")
+                                for c in content
                                 if isinstance(c, dict) and c.get("type") == "text"
                             ]
                             return " ".join(p for p in parts if p)
@@ -647,7 +648,8 @@ class EngagementLoop:
         completed_ids = set(self._state.objectives_completed) if self._state else set()
 
         candidates = [
-            obj for obj in self._opplan.objectives
+            obj
+            for obj in self._opplan.objectives
             if obj.status == ObjectiveStatus.PENDING
             and all(dep in completed_ids for dep in obj.blocked_by)
         ]

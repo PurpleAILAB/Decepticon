@@ -76,8 +76,7 @@ class Neo4jConfig:
         if missing:
             joined = ", ".join(missing)
             raise Neo4jUnavailableError(
-                "Neo4j backend selected but missing environment variables: "
-                f"{joined}"
+                f"Neo4j backend selected but missing environment variables: {joined}"
             )
 
         return cls(uri=uri, user=user, password=password, database=database)
@@ -119,8 +118,7 @@ class Neo4jStore:
             from neo4j import GraphDatabase
         except Exception as exc:  # pragma: no cover - exercised in integration envs
             raise Neo4jUnavailableError(
-                "Neo4j backend requires the `neo4j` Python package. "
-                "Install it and retry."
+                "Neo4j backend requires the `neo4j` Python package. Install it and retry."
             ) from exc
 
         self._driver = GraphDatabase.driver(
@@ -161,10 +159,7 @@ class Neo4jStore:
                 "CREATE CONSTRAINT vuln_key IF NOT EXISTS"
                 " FOR (v:Vulnerability) REQUIRE v.key IS UNIQUE"
             ),
-            (
-                "CREATE CONSTRAINT finding_key IF NOT EXISTS"
-                " FOR (f:Finding) REQUIRE f.key IS UNIQUE"
-            ),
+            ("CREATE CONSTRAINT finding_key IF NOT EXISTS FOR (f:Finding) REQUIRE f.key IS UNIQUE"),
             (
                 "CREATE CONSTRAINT credential_key IF NOT EXISTS"
                 " FOR (c:Credential) REQUIRE c.key IS UNIQUE"
@@ -302,15 +297,17 @@ class Neo4jStore:
         now = time.time()
         for node in nodes:
             label = _label_for(node.kind)
-            grouped[label].append({
-                "id": node.id,
-                "kind": node.kind.value,
-                "label": node.label,
-                "props": _encode_props(node.props),
-                "key": node.props.get("key", node.id),
-                "created_at": node.created_at,
-                "updated_at": now,
-            })
+            grouped[label].append(
+                {
+                    "id": node.id,
+                    "kind": node.kind.value,
+                    "label": node.label,
+                    "props": _encode_props(node.props),
+                    "key": node.props.get("key", node.id),
+                    "created_at": node.created_at,
+                    "updated_at": now,
+                }
+            )
 
         total = 0
         with self._driver.session(database=self._database) as session:
@@ -342,15 +339,17 @@ class Neo4jStore:
         grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for edge in edges:
             rel_type = edge.kind.value.upper()
-            grouped[rel_type].append({
-                "id": edge.id,
-                "kind": edge.kind.value,
-                "src_id": edge.src,
-                "dst_id": edge.dst,
-                "weight": edge.weight,
-                "props": _encode_props(edge.props),
-                "created_at": edge.created_at,
-            })
+            grouped[rel_type].append(
+                {
+                    "id": edge.id,
+                    "kind": edge.kind.value,
+                    "src_id": edge.src,
+                    "dst_id": edge.dst,
+                    "weight": edge.weight,
+                    "props": _encode_props(edge.props),
+                    "created_at": edge.created_at,
+                }
+            )
 
         total = 0
         with self._driver.session(database=self._database) as session:
@@ -414,23 +413,25 @@ class Neo4jStore:
         results: list[dict[str, Any]] = []
         with self._driver.session(database=self._database) as session:
             for row in session.run(query, node_id=node_id):
-                results.append({
-                    "node": {
-                        "id": row["id"],
-                        "kind": row["kind"],
-                        "label": row["label"],
-                        "props": _decode_props(row["props"]),
-                        "created_at": float(row["created_at"] or 0.0),
-                        "updated_at": float(row["updated_at"] or 0.0),
-                    },
-                    "edge": {
-                        "id": row["edge_id"],
-                        "type": row["edge_type"],
-                        "kind": row["edge_kind"],
-                        "weight": float(row["edge_weight"] or 1.0),
-                        "props": _decode_props(row["edge_props"]),
-                    },
-                })
+                results.append(
+                    {
+                        "node": {
+                            "id": row["id"],
+                            "kind": row["kind"],
+                            "label": row["label"],
+                            "props": _decode_props(row["props"]),
+                            "created_at": float(row["created_at"] or 0.0),
+                            "updated_at": float(row["updated_at"] or 0.0),
+                        },
+                        "edge": {
+                            "id": row["edge_id"],
+                            "type": row["edge_type"],
+                            "kind": row["edge_kind"],
+                            "weight": float(row["edge_weight"] or 1.0),
+                            "props": _decode_props(row["edge_props"]),
+                        },
+                    }
+                )
         return results
 
     def query_by_kind(self, kind: str) -> list[dict[str, Any]]:
@@ -459,17 +460,21 @@ class Neo4jStore:
         results: list[dict[str, Any]] = []
         with self._driver.session(database=self._database) as session:
             for row in session.run(query):
-                results.append({
-                    "id": row["id"],
-                    "kind": row["kind"],
-                    "label": row["label"],
-                    "props": _decode_props(row["props"]),
-                    "created_at": float(row["created_at"] or 0.0),
-                    "updated_at": float(row["updated_at"] or 0.0),
-                })
+                results.append(
+                    {
+                        "id": row["id"],
+                        "kind": row["kind"],
+                        "label": row["label"],
+                        "props": _decode_props(row["props"]),
+                        "created_at": float(row["created_at"] or 0.0),
+                        "updated_at": float(row["updated_at"] or 0.0),
+                    }
+                )
         return results
 
-    def query_custom(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def query_custom(
+        self, cypher: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
         """Execute a raw Cypher query and return results as list of dicts.
 
         Intended for agent tools that need ad-hoc graph queries (attack path

@@ -80,7 +80,11 @@ def create_reverser_agent():
         # Reversing tools
         *REVERSING_TOOLS,
         # KG core + binary triage
-        kg_add_node, kg_add_edge, kg_query, kg_neighbors, kg_stats,
+        kg_add_node,
+        kg_add_edge,
+        kg_query,
+        kg_neighbors,
+        kg_stats,
         kg_triage_binary,
         # Execution
         bash,
