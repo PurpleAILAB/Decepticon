@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense } from "react";
 import type { AgentConfig } from "@/lib/agents";
+import { AgentScene } from "./agent-scene";
 
 interface AgentSplineProps {
   agent: AgentConfig;
@@ -22,33 +23,28 @@ function EmojiAvatar({ emoji, mascot, size }: { emoji: string; mascot: string; s
   );
 }
 
+function ModelSkeleton({ size }: { size: number }) {
+  return (
+    <div
+      className="animate-pulse rounded-2xl bg-white/[0.06]"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 /**
- * 3D GLB model viewer with emoji fallback.
- * Place models at public/models/[agent-id].glb and set hasModel: true in agents.ts
+ * 3D GLB model viewer with shimmer skeleton fallback.
+ * Agents without models (hasModel: false) render emoji instantly.
+ * Agents with models render via the shared Canvas (AgentCanvasProvider).
  */
 export function AgentSpline({ agent, size = 64, interactive = false }: AgentSplineProps) {
-  const [Scene, setScene] = useState<React.ComponentType<{
-    agentId: string;
-    color: string;
-    size: number;
-    interactive: boolean;
-  }> | null>(null);
-  const [loadError, setLoadError] = useState(false);
-
-  useEffect(() => {
-    if (!agent.hasModel) return;
-    import("./agent-scene")
-      .then((mod) => setScene(() => mod.AgentScene))
-      .catch(() => setLoadError(true));
-  }, [agent.hasModel]);
-
-  if (!agent.hasModel || loadError || !Scene) {
+  if (!agent.hasModel) {
     return <EmojiAvatar emoji={agent.mascotEmoji} mascot={agent.mascot} size={size} />;
   }
 
   return (
-    <Suspense fallback={<EmojiAvatar emoji={agent.mascotEmoji} mascot={agent.mascot} size={size} />}>
-      <Scene agentId={agent.id} color={agent.color} size={size} interactive={interactive} />
+    <Suspense fallback={<ModelSkeleton size={size} />}>
+      <AgentScene agentId={agent.id} color={agent.color} size={size} interactive={interactive} />
     </Suspense>
   );
 }

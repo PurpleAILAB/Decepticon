@@ -31,7 +31,7 @@ start:
 
 ## Stop all services
 stop:
-	$(COMPOSE) --profile cli --profile web --profile victims down
+	$(COMPOSE) --profile cli --profile web --profile victims --profile c2-sliver down
 
 ## Show service status
 status:
