@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useGLTF, OrbitControls, Environment } from "@react-three/drei";
+import { useGLTF, OrbitControls, Environment, Center, Bounds } from "@react-three/drei";
 import type { Group } from "three";
 
 interface AgentSceneProps {
@@ -25,7 +25,9 @@ function Model({ url, color }: { url: string; color: string }) {
 
   return (
     <group ref={ref}>
-      <primitive object={scene.clone()} scale={1.5} />
+      <Center>
+        <primitive object={scene.clone()} />
+      </Center>
       <pointLight color={color} intensity={2} distance={5} position={[1, 1, 1]} />
     </group>
   );
@@ -33,15 +35,17 @@ function Model({ url, color }: { url: string; color: string }) {
 
 export function AgentScene({ agentId, color, size, interactive }: AgentSceneProps) {
   return (
-    <div style={{ width: size, height: size }}>
+    <div style={{ width: size, height: size, overflow: "visible" }}>
       <Canvas
-        camera={{ position: [0, 0.5, 3], fov: 40 }}
-        style={{ background: "transparent" }}
+        camera={{ position: [0, 0.3, 4], fov: 50 }}
+        style={{ background: "transparent", overflow: "visible" }}
         gl={{ alpha: true, antialias: true }}
       >
         <ambientLight intensity={0.6} />
         <directionalLight position={[5, 5, 5]} intensity={1.2} />
-        <Model url={`/models/${agentId}.glb`} color={color} />
+        <Bounds fit clip observe margin={1.4}>
+          <Model url={`/models/${agentId}.glb`} color={color} />
+        </Bounds>
         <Environment preset="city" />
         {interactive && (
           <OrbitControls enableZoom={false} enablePan={false} />
