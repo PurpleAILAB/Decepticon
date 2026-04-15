@@ -160,6 +160,8 @@ export default function LivePage() {
     return acc;
   }, {});
 
+  const panelOpen = !!selectedAgent;
+
   return (
     <div className="flex h-full">
       {/* Left: Agent Grid */}
@@ -190,17 +192,17 @@ export default function LivePage() {
         ))}
       </div>
 
-      {/* Right: Side Panel */}
-      {selectedAgent && (
-        <div className="w-[420px] shrink-0 flex flex-col overflow-hidden border-l border-white/[0.08] bg-[#0d0d1a]/90 backdrop-blur-xl">
-          {/* Gradient glow effects */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="absolute -left-20 -top-20 h-40 w-40 rounded-full blur-[80px]" style={{ backgroundColor: `${selectedAgent.color}15` }} />
-            <div className="absolute -right-20 -bottom-20 h-40 w-40 rounded-full bg-purple-600/10 blur-[80px]" />
-          </div>
-
+      {/* Right: Collapsible sidebar panel (like left sidebar) */}
+      <aside
+        className={cn(
+          "flex flex-col overflow-hidden border-l border-white/[0.08] bg-[#0d0d1a]/90 backdrop-blur-xl transition-all duration-200",
+          panelOpen ? "w-[420px]" : "w-0 border-l-0"
+        )}
+      >
+        {selectedAgent && (
+          <>
           {/* Header */}
-          <div className="relative flex items-center gap-3 px-5 py-4">
+          <div className="relative flex items-center gap-3 px-5 py-4 shrink-0">
             <Sparkles className="h-5 w-5" style={{ color: selectedAgent.color }} />
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-white">
@@ -283,8 +285,9 @@ export default function LivePage() {
               </button>
             </div>
           </div>
-        </div>
-      )}
+          </>
+        )}
+      </aside>
 
       <DocumentPanel
         open={docPanelOpen}
