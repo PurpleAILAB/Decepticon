@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Send,
   Bot,
-  Wrench,
   FileText,
   Loader2,
   CheckCircle2,
@@ -162,9 +161,9 @@ export default function LivePage() {
   }, {});
 
   return (
-    <div className="relative flex h-full">
+    <div className="flex h-full">
       {/* Left: Agent Grid */}
-      <div className={cn("flex-1 overflow-auto p-4 transition-all duration-300", selectedAgent && "pr-[420px]")}>
+      <div className="flex-1 overflow-auto p-4">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">Live</h1>
           <p className="text-sm text-muted-foreground">
@@ -191,11 +190,11 @@ export default function LivePage() {
         ))}
       </div>
 
-      {/* Right: Glassmorphism Floating Panel */}
+      {/* Right: Side Panel */}
       {selectedAgent && (
-        <div className="absolute right-4 top-4 bottom-4 w-[420px] flex flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d1a]/80 shadow-2xl backdrop-blur-xl">
+        <div className="w-[420px] shrink-0 flex flex-col overflow-hidden border-l border-white/[0.08] bg-[#0d0d1a]/90 backdrop-blur-xl">
           {/* Gradient glow effects */}
-          <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute -left-20 -top-20 h-40 w-40 rounded-full blur-[80px]" style={{ backgroundColor: `${selectedAgent.color}15` }} />
             <div className="absolute -right-20 -bottom-20 h-40 w-40 rounded-full bg-purple-600/10 blur-[80px]" />
           </div>
