@@ -1,49 +1,78 @@
 "use client";
 
-import { lazy, Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import type { AgentConfig } from "@/lib/agents";
-
-const Spline = lazy(() => import("@splinetool/react-spline"));
 
 interface AgentSplineProps {
   agent: AgentConfig;
   size?: number;
+  interactive?: boolean;
 }
 
-/**
- * Renders a Spline 3D scene for the agent when splineUrl is available.
- * Falls back to a large mascot emoji when no Spline scene is configured.
- *
- * To add a Spline scene for an agent:
- * 1. Design the 3D mascot in Spline (spline.design)
- * 2. Publish the scene and copy the production URL
- * 3. Set the splineUrl in src/lib/agents.ts
- */
-export function AgentSpline({ agent, size = 64 }: AgentSplineProps) {
-  if (agent.splineUrl) {
-    return (
-      <Suspense
-        fallback={
-          <span style={{ fontSize: size * 0.6 }} role="img" aria-label={agent.mascot}>
-            {agent.mascotEmoji}
-          </span>
-        }
-      >
-        <div style={{ width: size, height: size }} className="overflow-hidden rounded-xl">
-          <Spline scene={agent.splineUrl} />
-        </div>
-      </Suspense>
-    );
-  }
+// Track which models exist
+const checkedModels = new Map<string, boolean>();
 
+function useModelExists(agentId: string): boolean {
+  const [exists, setExists] = useState(() => checkedModels.get(agentId) ?? false);
+
+  useEffect(() => {
+    if (checkedModels.has(agentId)) {
+      setExists(checkedModels.get(agentId)!);
+      return;
+    }
+    fetch(`/models/${agentId}.glb`, { method: "HEAD" })
+      .then((res) => {
+        checkedModels.set(agentId, res.ok);
+        setExists(res.ok);
+      })
+      .catch(() => {
+        checkedModels.set(agentId, false);
+        setExists(false);
+      });
+  }, [agentId]);
+
+  return exists;
+}
+
+function EmojiAvatar({ emoji, mascot, size }: { emoji: string; mascot: string; size: number }) {
   return (
     <span
       className="select-none"
       style={{ fontSize: size * 0.6 }}
       role="img"
-      aria-label={agent.mascot}
+      aria-label={mascot}
     >
-      {agent.mascotEmoji}
+      {emoji}
     </span>
+  );
+}
+
+/**
+ * 3D GLB model viewer with emoji fallback.
+ * Place models at public/models/[agent-id].glb
+ */
+export function AgentSpline({ agent, size = 64, interactive = false }: AgentSplineProps) {
+  const hasModel = useModelExists(agent.id);
+  const [Scene, setScene] = useState<React.ComponentType<{
+    agentId: string;
+    color: string;
+    size: number;
+    interactive: boolean;
+  }> | null>(null);
+
+  // Lazy load the 3D scene only when model exists (avoids loading Three.js for emoji-only agents)
+  useEffect(() => {
+    if (!hasModel) return;
+    import("./agent-scene").then((mod) => setScene(() => mod.AgentScene));
+  }, [hasModel]);
+
+  if (!hasModel || !Scene) {
+    return <EmojiAvatar emoji={agent.mascotEmoji} mascot={agent.mascot} size={size} />;
+  }
+
+  return (
+    <Suspense fallback={<EmojiAvatar emoji={agent.mascotEmoji} mascot={agent.mascot} size={size} />}>
+      <Scene agentId={agent.id} color={agent.color} size={size} interactive={interactive} />
+    </Suspense>
   );
 }
