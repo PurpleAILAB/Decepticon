@@ -25,26 +25,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface Engagement {
-  id: string;
-  name: string;
-  targetType: string;
-  targetValue: string;
-  status: string;
-}
-
-function buildInitialPrompt(eng: Engagement): string {
-  const targetLabels: Record<string, string> = {
-    web_url: "Web Application URL",
-    ip_range: "IP Range / Network",
-  };
-  return [
-    `New engagement: **${eng.name}**`,
-    `Target type: ${targetLabels[eng.targetType] ?? eng.targetType}`,
-    `Target: ${eng.targetValue}`,
-    "",
-    "Please begin the Socratic interview to generate the engagement documents (RoE, CONOPS, OPPLAN).",
-  ].join("\n");
+function buildInitialPrompt(): string {
+  return "Please begin the Socratic interview to generate the engagement documents (RoE, CONOPS, OPPLAN).";
 }
 
 export default function LivePage() {
@@ -125,11 +107,8 @@ export default function LivePage() {
   useEffect(() => {
     if (!isNew || initSent.current || !selectedAgent) return;
     initSent.current = true;
-    fetch(`/api/engagements/${engagementId}`)
-      .then((res) => { if (!res.ok) throw new Error("fail"); return res.json(); })
-      .then((eng: Engagement) => setInput(buildInitialPrompt(eng)))
-      .catch(() => {});
-  }, [isNew, engagementId, selectedAgent]);
+    setInput(buildInitialPrompt());
+  }, [isNew, selectedAgent]);
 
   function handleSend() {
     if (!input.trim() || isStreaming) return;
