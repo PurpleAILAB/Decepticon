@@ -1,11 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { AGENTS, type AgentConfig } from "@/lib/agents";
+import { type AgentConfig } from "@/lib/agents";
 import { AgentSpline } from "@/components/agents/agent-spline";
+import { AgentCanvasProvider } from "@/components/agents/agent-canvas-provider";
+import { AgentGrid } from "@/components/agents/agent-grid";
 import { DocumentPanel } from "@/components/panels/document-panel";
-import { LangGraphChatService } from "@/lib/chat/langgraph-service";
+import { StreamError } from "@/components/chat/streaming-activity";
+import { useChat } from "@/hooks/useChat";
+import { useAgents } from "@/hooks/useAgents";
 import { defaultRenderer } from "@/lib/chat/markdown-renderer";
 import type { ChatMessage, DocumentRef } from "@/lib/chat/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,72 +58,40 @@ export default function LivePage() {
   const isNew = searchParams.get("new") === "true";
   const initSent = useRef(false);
 
+  const { agents } = useAgents();
   const [selectedAgent, setSelectedAgent] = useState<AgentConfig | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [input, setInput] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<DocumentRef | null>(null);
   const [docPanelOpen, setDocPanelOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledRef = useRef(false);
+  const prevMsgCountRef = useRef(0);
 
-  const chatService = useMemo(() => new LangGraphChatService(), []);
+  const { messages, isStreaming, error: chatError, sendMessage, stop } = useChat({
+    engagementId,
+    assistantId: selectedAgent?.id ?? "soundwave",
+  });
 
+  // Smart auto-scroll: don't interrupt when user is reading earlier messages
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    const container = scrollRef.current;
+    if (!container || isUserScrolledRef.current) return;
+    const isNewMessage = messages.length > prevMsgCountRef.current;
+    prevMsgCountRef.current = messages.length;
+    // Small delay for new messages (smoother UX), immediate for content updates
+    const delay = isNewMessage ? 250 : 0;
+    setTimeout(() => {
+      container.scrollTop = container.scrollHeight;
+    }, delay);
   }, [messages]);
 
   // Auto-select Soundwave for new engagements
   useEffect(() => {
     if (isNew && !selectedAgent) {
-      const soundwave = AGENTS.find((a) => a.id === "soundwave");
+      const soundwave = agents.find((a) => a.id === "soundwave");
       if (soundwave) setSelectedAgent(soundwave);
     }
   }, [isNew, selectedAgent]);
-
-  const sendMessage = useCallback(
-    async (content: string, showInChat = true) => {
-      if (showInChat) {
-        setMessages((prev) => [
-          ...prev,
-          { id: `user-${Date.now()}`, role: "user", content, timestamp: Date.now() },
-        ]);
-      }
-      setIsStreaming(true);
-
-      await chatService.sendMessage(
-        {
-          engagementId,
-          message: content,
-          assistantId: selectedAgent?.id ?? "soundwave",
-        },
-        {
-          onMessage: (msg) => {
-            setMessages((prev) => {
-              const idx = prev.findIndex((m) => m.id === msg.id);
-              if (idx >= 0) {
-                const updated = [...prev];
-                updated[idx] = msg;
-                return updated;
-              }
-              return [...prev, msg];
-            });
-          },
-          onToolCall: (msg) => setMessages((prev) => [...prev, msg]),
-          onError: (error) => {
-            setMessages((prev) => [
-              ...prev,
-              { id: `error-${Date.now()}`, role: "system", content: `Error: ${error}`, timestamp: Date.now() },
-            ]);
-            setIsStreaming(false);
-          },
-          onDone: () => setIsStreaming(false),
-        }
-      );
-    },
-    [chatService, engagementId, selectedAgent]
-  );
 
   // Pre-fill initial prompt for new engagements (user must click send)
   useEffect(() => {
@@ -133,7 +105,7 @@ export default function LivePage() {
 
   function handleSend() {
     if (!input.trim() || isStreaming) return;
-    sendMessage(input.trim(), true);
+    sendMessage(input.trim());
     setInput("");
   }
 
@@ -142,7 +114,6 @@ export default function LivePage() {
       setSelectedAgent(null);
     } else {
       setSelectedAgent(agent);
-      setMessages([]);
     }
   }
 
@@ -151,6 +122,7 @@ export default function LivePage() {
   const panelOpen = !!selectedAgent;
 
   return (
+    <AgentCanvasProvider>
     <div className="flex h-full overflow-hidden">
       {/* Left: Agent Characters */}
       <div className={cn(
@@ -180,7 +152,7 @@ export default function LivePage() {
 
             {/* Other agents — small row at bottom */}
             <div className="mt-8 flex flex-wrap justify-center gap-2">
-              {AGENTS.filter((a) => a.id !== selectedAgent.id).map((agent) => (
+              {agents.filter((a) => a.id !== selectedAgent.id).map((agent) => (
                 <button
                   key={agent.id}
                   onClick={() => handleAgentClick(agent)}
@@ -195,7 +167,7 @@ export default function LivePage() {
             </div>
           </div>
         ) : (
-          /* Agent selection grid */
+          /* Agent selection grid — grouped by kill chain phase */
           <div className="p-6">
             <div className="mb-8 text-center">
               <h1 className="text-2xl font-bold tracking-tight">Live</h1>
@@ -204,29 +176,7 @@ export default function LivePage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 max-w-4xl mx-auto">
-              {AGENTS.map((agent, i) => (
-                <button
-                  key={agent.id}
-                  onClick={() => handleAgentClick(agent)}
-                  className="group flex flex-col items-center gap-2 rounded-2xl p-5 transition-all duration-300 hover:bg-white/[0.04] hover:scale-105"
-                >
-                  <div
-                    className="transition-transform duration-300 group-hover:scale-110"
-                    style={{
-                      animation: `float ${3 + (i % 3) * 0.5}s ease-in-out infinite`,
-                      animationDelay: `${i * 0.2}s`,
-                    }}
-                  >
-                    <AgentSpline agent={agent} size={56} />
-                  </div>
-                  <h3 className="text-sm font-semibold text-white">{agent.name}</h3>
-                  <p className="text-[11px] text-zinc-500 text-center leading-relaxed line-clamp-2">
-                    {agent.description}
-                  </p>
-                </button>
-              ))}
-            </div>
+            <AgentGrid agents={agents} onAgentClick={handleAgentClick} />
           </div>
         )}
       </div>
@@ -248,7 +198,12 @@ export default function LivePage() {
                   {selectedAgent.name}
                 </h3>
                 <p className="text-[11px] text-zinc-500">
-                  {isStreaming ? (
+                  {chatError ? (
+                    <span className="flex items-center gap-1.5 text-red-400">
+                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                      {chatError}
+                    </span>
+                  ) : isStreaming ? (
                     <span className="flex items-center gap-1.5 text-emerald-400">
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
                       Processing...
@@ -267,7 +222,15 @@ export default function LivePage() {
             </div>
 
             {/* Messages */}
-            <ScrollArea className="flex-1" ref={scrollRef}>
+            <ScrollArea
+              className="flex-1"
+              ref={scrollRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                isUserScrolledRef.current = !atBottom;
+              }}
+            >
               <div className="space-y-2 px-5 py-4">
                 {isEmpty && (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -289,6 +252,16 @@ export default function LivePage() {
                     onDocumentClick={(doc) => { setSelectedDoc(doc); setDocPanelOpen(true); }}
                   />
                 ))}
+
+                {chatError && (
+                  <StreamError
+                    error={chatError}
+                    onRetry={() => {
+                      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+                      if (lastUserMsg) sendMessage(lastUserMsg.content);
+                    }}
+                  />
+                )}
 
                 {isStreaming && messages[messages.length - 1]?.role !== "assistant" && (
                   <div className="flex items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]">
@@ -325,14 +298,24 @@ export default function LivePage() {
                   disabled={isStreaming}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-white/20 focus:ring-1 focus:ring-white/10 disabled:opacity-50"
                 />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim() || isStreaming}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-all disabled:opacity-30"
-                  style={{ backgroundColor: selectedAgent.color }}
-                >
-                  <Send className="h-4 w-4" />
-                </button>
+                {isStreaming ? (
+                  <button
+                    onClick={() => stop()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-700 text-white transition-all hover:bg-zinc-600"
+                    title="Stop"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white transition-all disabled:opacity-30"
+                    style={{ backgroundColor: selectedAgent.color }}
+                  >
+                    <Send className="h-4 w-4" />
+                  </button>
+                )}
               </div>
             </div>
           </>
@@ -345,6 +328,7 @@ export default function LivePage() {
         document={selectedDoc}
       />
     </div>
+    </AgentCanvasProvider>
   );
 }
 

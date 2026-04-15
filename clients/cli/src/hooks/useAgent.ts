@@ -291,7 +291,9 @@ export function useAgent({
               input: {
                 messages: [{ role: "user", content: message }],
               },
-              streamMode: ["values", "custom"],
+              streamMode: ["values", "updates", "custom"],
+              streamSubgraphs: true,
+              streamResumable: true,
               onDisconnect: "cancel",
               signal: abortController.signal,
             },
