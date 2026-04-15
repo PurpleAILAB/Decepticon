@@ -1,34 +1,21 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  FolderOpen,
-  GitBranch,
-  Upload,
-  Globe,
-  Server,
-  Loader2,
-} from "lucide-react";
-import { hasEE } from "@/lib/ee";
+import { Globe, Server, Loader2 } from "lucide-react";
 
 export default function NewEngagementPage() {
   const router = useRouter();
-  const [targetType, setTargetType] = useState("local_path");
+  const [targetType, setTargetType] = useState("web_url");
   const [name, setName] = useState("");
   const [targetValue, setTargetValue] = useState("");
-  const [gitBranch, setGitBranch] = useState("main");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const showGitHubTab = hasEE();
 
   async function handleSubmit() {
     if (!name.trim() || !targetValue.trim()) {
@@ -40,20 +27,10 @@ export default function NewEngagementPage() {
     setError(null);
 
     try {
-      // For git_url, append branch info to the value
-      const finalValue =
-        targetType === "git_url" && gitBranch
-          ? `${targetValue}#${gitBranch}`
-          : targetValue;
-
       const res = await fetch("/api/engagements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          targetType,
-          targetValue: finalValue,
-        }),
+        body: JSON.stringify({ name, targetType, targetValue }),
       });
 
       if (!res.ok) {
@@ -62,27 +39,11 @@ export default function NewEngagementPage() {
       }
 
       const engagement = await res.json();
-      router.push(`/engagements/${engagement.id}/chat?new=true`);
+      router.push(`/engagements/${engagement.id}/live?new=true`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  function handleFileDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      setTargetValue(file.name);
-    }
-  }
-
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      setTargetValue(file.name);
     }
   }
 
@@ -91,7 +52,7 @@ export default function NewEngagementPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">New Engagement</h1>
         <p className="text-sm text-muted-foreground">
-          Configure a new red team testing operation
+          Configure a new red team testing operation (DAST)
         </p>
       </div>
 
@@ -130,19 +91,7 @@ export default function NewEngagementPage() {
               setTargetValue("");
             }}
           >
-            <TabsList className="w-full flex-wrap">
-              <TabsTrigger value="local_path" className="flex-1 gap-2">
-                <FolderOpen className="h-4 w-4" />
-                Local Path
-              </TabsTrigger>
-              <TabsTrigger value="git_url" className="flex-1 gap-2">
-                <GitBranch className="h-4 w-4" />
-                Git URL
-              </TabsTrigger>
-              <TabsTrigger value="file_upload" className="flex-1 gap-2">
-                <Upload className="h-4 w-4" />
-                Upload
-              </TabsTrigger>
+            <TabsList className="w-full">
               <TabsTrigger value="web_url" className="flex-1 gap-2">
                 <Globe className="h-4 w-4" />
                 Web URL
@@ -151,90 +100,7 @@ export default function NewEngagementPage() {
                 <Server className="h-4 w-4" />
                 IP Range
               </TabsTrigger>
-              {showGitHubTab && (
-                <TabsTrigger value="github_repo" className="flex-1 gap-2">
-                  <GitBranch className="h-4 w-4" />
-                  GitHub
-                </TabsTrigger>
-              )}
             </TabsList>
-
-            <TabsContent value="local_path" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="local-path">Local Directory Path</Label>
-                <Input
-                  id="local-path"
-                  placeholder="/home/user/projects/myapp"
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Absolute path to a project directory on this server
-                </p>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="git_url" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="git-url">Repository URL</Label>
-                <Input
-                  id="git-url"
-                  placeholder="https://github.com/org/repo.git or git@gitlab.com:org/repo.git"
-                  value={targetValue}
-                  onChange={(e) => setTargetValue(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                  HTTPS or SSH URL — uses credentials configured on this server
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="git-branch">Branch</Label>
-                <Input
-                  id="git-branch"
-                  placeholder="main"
-                  value={gitBranch}
-                  onChange={(e) => setGitBranch(e.target.value)}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="file_upload" className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label>Upload Archive</Label>
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={handleFileDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors ${
-                    dragOver
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-muted-foreground/50"
-                  }`}
-                >
-                  <Upload className="mb-2 h-8 w-8 text-muted-foreground" />
-                  {targetValue ? (
-                    <p className="text-sm font-medium text-foreground">{targetValue}</p>
-                  ) : (
-                    <>
-                      <p className="text-sm text-muted-foreground">
-                        Drag & drop a <strong>.zip</strong> or <strong>.tar.gz</strong> file
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground/70">
-                        or click to browse
-                      </p>
-                    </>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".zip,.tar.gz,.tgz"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </div>
-              </div>
-            </TabsContent>
 
             <TabsContent value="web_url" className="mt-4 space-y-4">
               <div className="space-y-2">
@@ -266,17 +132,6 @@ export default function NewEngagementPage() {
                 </p>
               </div>
             </TabsContent>
-
-            {showGitHubTab && (
-              <TabsContent value="github_repo" className="mt-4">
-                <div className="space-y-2">
-                  <Label>Repository</Label>
-                  <p className="text-sm text-muted-foreground">
-                    GitHub repo picker loaded via EE
-                  </p>
-                </div>
-              </TabsContent>
-            )}
           </Tabs>
         </CardContent>
       </Card>
