@@ -33,7 +33,7 @@ function Model({ url, color }: { url: string; color: string }) {
 
 export function AgentScene({ agentId, color, size, interactive }: AgentSceneProps) {
   return (
-    <div style={{ width: size, height: size }} className="rounded-xl overflow-hidden">
+    <div style={{ width: size, height: size }}>
       <Canvas
         camera={{ position: [0, 0.5, 3], fov: 40 }}
         style={{ background: "transparent" }}

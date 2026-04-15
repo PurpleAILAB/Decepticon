@@ -167,26 +167,14 @@ export default function LivePage() {
                 className="absolute inset-0 -m-8 rounded-full blur-[60px] opacity-30 animate-pulse"
                 style={{ backgroundColor: selectedAgent.color }}
               />
-              {/* Character */}
-              <div className={cn(
-                "relative flex h-48 w-48 items-center justify-center rounded-3xl",
-                "bg-gradient-to-br from-white/[0.06] to-white/[0.02]",
-                "ring-1 ring-white/10",
-                "animate-[float_3s_ease-in-out_infinite]"
-              )}>
-                <AgentSpline agent={selectedAgent} size={120} />
+              {/* Character — no box, blends with background */}
+              <div className="relative animate-[float_3s_ease-in-out_infinite]">
+                <AgentSpline agent={selectedAgent} size={160} />
               </div>
             </div>
 
             <h2 className="mt-6 text-xl font-bold text-white">{selectedAgent.name}</h2>
-            <p className="mt-1 text-sm text-zinc-500">{selectedAgent.mascot}</p>
-            <span
-              className="mt-2 rounded-full px-3 py-1 text-xs font-medium"
-              style={{ backgroundColor: `${selectedAgent.color}20`, color: selectedAgent.color }}
-            >
-              {selectedAgent.role}
-            </span>
-            <p className="mt-3 max-w-sm text-center text-xs text-zinc-400 leading-relaxed">
+            <p className="mt-3 max-w-sm text-center text-sm text-zinc-400 leading-relaxed">
               {selectedAgent.description}
             </p>
 
@@ -221,32 +209,21 @@ export default function LivePage() {
                 <button
                   key={agent.id}
                   onClick={() => handleAgentClick(agent)}
-                  className="group relative flex flex-col items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.05] hover:scale-105 hover:shadow-lg hover:shadow-black/20"
-                  style={{
-                    animationDelay: `${i * 0.05}s`,
-                  }}
+                  className="group flex flex-col items-center gap-2 rounded-2xl p-5 transition-all duration-300 hover:bg-white/[0.04] hover:scale-105"
                 >
-                  {/* Colored top accent */}
                   <div
-                    className="absolute inset-x-0 top-0 h-0.5 rounded-t-2xl opacity-40 group-hover:opacity-100 transition-opacity"
-                    style={{ backgroundColor: agent.color }}
-                  />
-
-                  {/* Floating character */}
-                  <div
-                    className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.04] transition-transform duration-300 group-hover:scale-110"
+                    className="transition-transform duration-300 group-hover:scale-110"
                     style={{
                       animation: `float ${3 + (i % 3) * 0.5}s ease-in-out infinite`,
                       animationDelay: `${i * 0.2}s`,
                     }}
                   >
-                    <AgentSpline agent={agent} size={48} />
+                    <AgentSpline agent={agent} size={56} />
                   </div>
-
-                  <div className="text-center">
-                    <h3 className="text-sm font-semibold text-white">{agent.name}</h3>
-                    <span className="text-[10px] text-zinc-500">{agent.role}</span>
-                  </div>
+                  <h3 className="text-sm font-semibold text-white">{agent.name}</h3>
+                  <p className="text-[11px] text-zinc-500 text-center leading-relaxed line-clamp-2">
+                    {agent.description}
+                  </p>
                 </button>
               ))}
             </div>
