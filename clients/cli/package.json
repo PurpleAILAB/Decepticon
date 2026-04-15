@@ -16,8 +16,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@decepticon/streaming": "*",
     "@inkjs/ui": "^2.0.0",
-    "@langchain/langgraph-sdk": "^1.7.5",
+    "@langchain/langgraph-sdk": "^1.8.8",
     "@types/diff": "^8.0.0",
     "diff": "^8.0.4",
     "ink": "^6.0.0",

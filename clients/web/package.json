@@ -10,6 +10,7 @@
     "compress-models": "node scripts/compress-models.mjs"
   },
   "dependencies": {
+    "@decepticon/streaming": "*",
     "@base-ui/react": "^1.3.0",
     "@langchain/core": "^1.1.40",
     "@langchain/langgraph-sdk": "^1.8.8",

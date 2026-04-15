@@ -18,27 +18,12 @@ import { useMemo, useCallback, useRef } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { Message } from "@langchain/langgraph-sdk";
-
-// ── Types ───────────────────────────────────────────────────────
-
-/** Custom event payload from StreamingRunnable's get_stream_writer(). */
-interface SubagentCustomEvent {
-  type:
-    | "subagent_start"
-    | "subagent_end"
-    | "subagent_tool_call"
-    | "subagent_tool_result"
-    | "subagent_message";
-  agent: string;
-  tool?: string;
-  args?: Record<string, unknown>;
-  content?: string;
-  text?: string;
-  prompt?: string;
-  elapsed?: number;
-  status?: string;
-  error?: boolean;
-}
+import {
+  type SubagentCustomEvent,
+  STREAM_OPTIONS,
+  extractText,
+  stripResultTags,
+} from "@decepticon/streaming";
 
 interface UseChatOptions {
   engagementId: string;
@@ -62,19 +47,6 @@ interface UseChatReturn {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function extractText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((block) =>
-        typeof block === "string" ? block : (block as { text?: string }).text ?? ""
-      )
-      .join("")
-      .trim();
-  }
-  return "";
-}
-
 /** Convert SDK Message[] to our ChatMessage[] for rendering. */
 function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
   const result: ChatMessage[] = [];
@@ -88,7 +60,7 @@ function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
         timestamp: Date.now(),
       });
     } else if (msg.type === "ai") {
-      const text = extractText(msg.content).replace(/<\/?result>/g, "").trim();
+      const text = stripResultTags(extractText(msg.content));
       if (text) {
         result.push({
           id: msg.id ?? `assistant-${result.length}`,
@@ -174,9 +146,7 @@ export function useChat({ engagementId: _engagementId, assistantId = "soundwave"
         { messages: [{ type: "human" as const, content, id: `user-${Date.now()}` }] },
         {
           // Stream options go in submit(), not useStream()
-          streamMode: ["values", "updates", "custom"],
-          streamSubgraphs: true,
-          streamResumable: true,
+          ...STREAM_OPTIONS,
           optimisticValues: (prev) => {
             const existing = (Array.isArray(prev.messages) ? prev.messages : []) as Message[];
             return {

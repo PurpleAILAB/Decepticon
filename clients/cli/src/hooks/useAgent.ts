@@ -12,6 +12,12 @@
 import { useState, useCallback, useRef } from "react";
 import { Client } from "@langchain/langgraph-sdk";
 import type { AgentEvent } from "../types.js";
+import {
+  type SubagentCustomEvent,
+  STREAM_OPTIONS,
+  extractText,
+  stripResultTags,
+} from "@decepticon/streaming";
 
 interface LangChainMessage {
   type: string; // "human", "ai", "tool"
@@ -31,26 +37,6 @@ interface LangChainMessage {
       total_tokens?: number;
     };
   };
-}
-
-/** Custom event payload from StreamingRunnable's get_stream_writer(). */
-interface SubagentCustomEvent {
-  type:
-    | "subagent_start"
-    | "subagent_end"
-    | "subagent_tool_call"
-    | "subagent_tool_result"
-    | "subagent_message";
-  agent: string;
-  tool?: string;
-  args?: Record<string, unknown>;
-  content?: string;
-  text?: string;
-  prompt?: string;
-  elapsed?: number;
-  status?: string;
-  cancelled?: boolean;
-  error?: boolean;
 }
 
 interface UseAgentOptions {
@@ -82,18 +68,6 @@ interface UseAgentReturn {
   error: string | null;
   clearEvents: () => void;
   addSystemEvent: (content: string) => void;
-}
-
-/** Extract text from AIMessage content (string or content_block array). */
-function extractText(content: LangChainMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((block) => (typeof block === "string" ? block : block.text ?? ""))
-      .join("")
-      .trim();
-  }
-  return "";
 }
 
 const ASSISTANT_ID = "decepticon";
@@ -291,9 +265,7 @@ export function useAgent({
               input: {
                 messages: [{ role: "user", content: message }],
               },
-              streamMode: ["values", "updates", "custom"],
-              streamSubgraphs: true,
-              streamResumable: true,
+              ...STREAM_OPTIONS,
               onDisconnect: "cancel",
               signal: abortController.signal,
             },
@@ -351,9 +323,7 @@ export function useAgent({
                 }
 
                 // Emit AI text content (even when tool_calls are present)
-                const text = extractText(msg.content)
-                  .replace(/<\/?result>/g, "")
-                  .trim();
+                const text = stripResultTags(extractText(msg.content));
                 if (text) {
                   addEvent({ type: "ai_message", content: text });
                 }

@@ -57,26 +57,5 @@ export interface AgentEvent {
   timestamp: number;
 }
 
-/** A structured sub-agent execution session derived from the event stream. */
-export interface SubAgentSession {
-  /** Unique session ID (matches the subagent_start event ID). */
-  id: string;
-  /** Agent name: "recon", "exploit", "postexploit", etc. */
-  agent: string;
-  /** Description/prompt from the subagent_start event. */
-  description: string;
-  /** ID of the subagent_start event. */
-  startEventId: string;
-  /** ID of the subagent_end event (undefined if still running). */
-  endEventId?: string;
-  /** All event IDs belonging to this session. */
-  eventIds: string[];
-  /** Number of tool calls executed in this session. */
-  toolCount: number;
-  /** Session start timestamp. */
-  startTime: number;
-  /** Session end timestamp (undefined if still running). */
-  endTime?: number;
-  /** Current session status. */
-  status: "running" | "completed" | "error";
-}
+// SubAgentSession is exported from @decepticon/streaming
+export type { SubAgentSession } from "@decepticon/streaming";
