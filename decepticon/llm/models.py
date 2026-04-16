@@ -56,6 +56,8 @@ HAIKU = "anthropic/claude-haiku-4-5"
 GPT_5 = "openai/gpt-5.4"
 GPT_4 = "openai/gpt-4.1"
 GEMINI_FLASH = "gemini/gemini-2.5-flash"
+MINIMAX = "minimax/MiniMax-M2.7"
+MINIMAX_HIGHSPEED = "minimax/MiniMax-M2.7-highspeed"
 
 
 class ProxyConfig(BaseModel):

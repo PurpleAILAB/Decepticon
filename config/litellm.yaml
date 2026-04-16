@@ -53,6 +53,19 @@ model_list:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
 
+  # ── MiniMax ──────────────────────────────────────────────────────────
+  - model_name: minimax/MiniMax-M2.7
+    litellm_params:
+      model: openai/MiniMax-M2.7
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+
+  - model_name: minimax/MiniMax-M2.7-highspeed
+    litellm_params:
+      model: openai/MiniMax-M2.7-highspeed
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+
   # ── Local LLM (Ollama) ──────────────────────────────────────────────
   # Uncomment when running Ollama locally
   # - model_name: ollama/llama3.2
