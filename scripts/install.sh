@@ -142,6 +142,10 @@ RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
 COMPOSE_FILE="$DECEPTICON_HOME/docker-compose.yml"
 COMPOSE="docker compose -f $COMPOSE_FILE --env-file $DECEPTICON_HOME/.env"
 COMPOSE_PROFILES="$COMPOSE --profile cli"
+# Every profile that may have started services. Required for `down` to reach
+# profile-gated containers (cli, victims, c2-*) — without these flags compose
+# silently leaves them running. Keep in sync with docker-compose.yml profiles.
+COMPOSE_ALL_PROFILES="$COMPOSE --profile cli --profile victims --profile c2-sliver"
 
 # Colors
 RED='\033[0;31m'
@@ -243,7 +247,7 @@ case "${1:-}" in
 
     stop)
         echo -e "${DIM}Stopping all services...${NC}"
-        $COMPOSE --profile cli --profile victims down > /dev/null 2>&1
+        $COMPOSE_ALL_PROFILES down > /dev/null 2>&1
         # Clean up orphaned CLI containers from 'docker compose run'
         docker rm $(docker ps -aq --filter "name=decepticon-cli-run" --filter "status=exited") 2>/dev/null || true
         echo -e "${GREEN}All services stopped.${NC}"
@@ -295,7 +299,7 @@ case "${1:-}" in
             # Restart services if running
             if docker ps --filter "name=decepticon-langgraph" --format '{{.Names}}' | grep -q .; then
                 echo -e "${DIM}Restarting services with new version...${NC}"
-                $COMPOSE --profile cli --profile victims down > /dev/null 2>&1
+                $COMPOSE_ALL_PROFILES down > /dev/null 2>&1
                 $COMPOSE up -d --no-build > /dev/null 2>&1
                 echo -e "${GREEN}Updated and restarted (v${latest}).${NC}"
             else
@@ -412,10 +416,10 @@ case "${1:-}" in
         # 1. Stop and remove containers + networks + volumes
         echo -e "${DIM}Stopping and removing containers...${NC}"
         if [[ -f "$COMPOSE_FILE" ]]; then
-            $COMPOSE --profile cli --profile victims down --volumes --remove-orphans 2>/dev/null || true
+            $COMPOSE_ALL_PROFILES down --volumes --remove-orphans 2>/dev/null || true
         fi
         # Clean up any remaining containers by name
-        for c in decepticon-sandbox decepticon-langgraph decepticon-litellm decepticon-postgres decepticon-cli decepticon-dvwa decepticon-msf2; do
+        for c in decepticon-sandbox decepticon-langgraph decepticon-litellm decepticon-postgres decepticon-cli decepticon-dvwa decepticon-msf2 decepticon-c2-sliver decepticon-neo4j; do
             docker rm -f "$c" 2>/dev/null || true
         done
         # Clean up 'docker compose run' orphans
@@ -424,7 +428,7 @@ case "${1:-}" in
 
         # 2. Remove Docker images
         echo -e "${DIM}Removing Docker images...${NC}"
-        docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "decepticon-(sandbox|langgraph|cli)" | xargs -r docker rmi -f 2>/dev/null || true
+        docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "decepticon-(sandbox|langgraph|cli|c2-sliver)" | xargs -r docker rmi -f 2>/dev/null || true
         echo -e "${GREEN}Images removed.${NC}"
 
         # 3. Remove install directory
