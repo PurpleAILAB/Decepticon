@@ -8,7 +8,8 @@ COPY clients/cli/package.json clients/cli/
 COPY clients/shared/streaming/package.json clients/shared/streaming/
 RUN npm ci --workspace=@decepticon/cli
 
-# Copy CLI source and build
+# Copy CLI and shared source and build
+COPY clients/shared/ clients/shared/
 COPY clients/cli/ clients/cli/
 RUN npm run build --workspace=@decepticon/cli
 

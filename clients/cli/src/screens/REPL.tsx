@@ -272,7 +272,7 @@ function TranscriptSessionHeader({ session }: { session: SubAgentSession }) {
         <Text dimColor italic>{`(${headerDesc})`}</Text>
       </Text>
       <Text dimColor>{`  ${GLYPH_HOOK}  Prompt:`}</Text>
-      {session.description.split("\n").map((line, i) => (
+      {session.description.split("\n").map((line: string, i: number) => (
         <Text key={`p${i}`} dimColor wrap="wrap">
           {`       ${line}`}
         </Text>
