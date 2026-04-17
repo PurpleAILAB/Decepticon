@@ -14,7 +14,7 @@
  * Proxied through Next.js rewrite: /lgs → LANGGRAPH_API_URL
  */
 
-import { useMemo, useCallback, useRef } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { Message } from "@langchain/langgraph-sdk";
@@ -105,11 +105,18 @@ function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
 // ── Hook ────────────────────────────────────────────────────────
 
 export function useChat({ engagementId: _engagementId, assistantId = "soundwave" }: UseChatOptions): UseChatReturn {
-  // Track custom events (sub-agent activity) in a ref to avoid re-renders per event
-  const customEventsRef = useRef<ChatMessage[]>([]);
+  // Track custom events (sub-agent activity) in state so changes trigger re-renders
+  const [customEvents, setCustomEvents] = useState<ChatMessage[]>([]);
+
+  // Connect directly to LangGraph server — NOT through Next.js rewrite proxy.
+  // Next.js rewrite buffers SSE responses, breaking real-time streaming.
+  // LANGGRAPH_API_URL is exposed via NEXT_PUBLIC_ for browser access.
+  const apiUrl = typeof window !== "undefined"
+    ? (process.env.NEXT_PUBLIC_LANGGRAPH_API_URL ?? "http://localhost:2024")
+    : (process.env.LANGGRAPH_API_URL ?? "http://localhost:2024");
 
   const stream = useStream({
-    apiUrl: typeof window !== "undefined" ? `${window.location.origin}/lgs` : "http://localhost:3000/lgs",
+    apiUrl,
     assistantId,
     threadId: undefined, // Let SDK auto-create UUID threads; engagementId reserved for future thread mapping
     // Callbacks
@@ -118,7 +125,7 @@ export function useChat({ engagementId: _engagementId, assistantId = "soundwave"
       if (!event || typeof event !== "object" || !("type" in event)) return;
       const chatMsg = customEventToChatMessage(event);
       if (chatMsg) {
-        customEventsRef.current = [...customEventsRef.current, chatMsg];
+        setCustomEvents((prev) => [...prev, chatMsg]);
       }
     },
     onError: (err: unknown) => {
@@ -129,19 +136,17 @@ export function useChat({ engagementId: _engagementId, assistantId = "soundwave"
   // Merge SDK messages with custom events into a unified ChatMessage[]
   const messages = useMemo(() => {
     const sdkMessages = sdkMessagesToChatMessages(stream.messages ?? []);
-    const custom = customEventsRef.current;
-
-    if (custom.length === 0) return sdkMessages;
+    if (customEvents.length === 0) return sdkMessages;
 
     // Interleave: SDK messages first, then custom events appended
     // Custom events have timestamps so they sort correctly
-    return [...sdkMessages, ...custom].sort((a, b) => a.timestamp - b.timestamp);
-  }, [stream.messages, customEventsRef.current.length]);
+    return [...sdkMessages, ...customEvents].sort((a, b) => a.timestamp - b.timestamp);
+  }, [stream.messages, customEvents]);
 
   const sendMessage = useCallback(
     (content: string) => {
       // Reset custom events for new turn
-      customEventsRef.current = [];
+      setCustomEvents([]);
       stream.submit(
         { messages: [{ type: "human" as const, content, id: `user-${Date.now()}` }] },
         {

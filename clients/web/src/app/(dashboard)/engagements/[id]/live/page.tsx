@@ -12,7 +12,7 @@ import { useChat } from "@/hooks/useChat";
 import { useAgents } from "@/hooks/useAgents";
 import { defaultRenderer } from "@/lib/chat/markdown-renderer";
 import type { ChatMessage, DocumentRef } from "@/lib/chat/types";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Badge } from "@/components/ui/badge";
 import {
   Send,
@@ -222,8 +222,8 @@ export default function LivePage() {
             </div>
 
             {/* Messages */}
-            <ScrollArea
-              className="flex-1"
+            <div
+              className="flex-1 overflow-y-auto min-h-0"
               ref={scrollRef}
               onScroll={(e) => {
                 const el = e.currentTarget;
@@ -270,7 +270,7 @@ export default function LivePage() {
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             {/* Progress */}
             {messages.length > 0 && (
