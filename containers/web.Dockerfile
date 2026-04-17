@@ -24,6 +24,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
 COPY clients/shared/ clients/shared/
 COPY clients/web/ clients/web/
+# Prisma generates to src/generated/ (gitignored) — carry it over from deps stage
+COPY --from=deps /app/clients/web/src/generated ./clients/web/src/generated
 WORKDIR /app/clients/web
 # Explicit OSS edition — proxy.ts + hasEE() check this env var.
 # EE builds override via --build-arg or separate Dockerfile.
