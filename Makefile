@@ -57,7 +57,7 @@ logs:
 
 ## Build all Docker images without starting
 build:
-	$(COMPOSE_CLI) build
+	$(COMPOSE) --profile cli --profile web build
 
 ## Build a specific service (usage: make build-svc SVC=langgraph)
 build-svc:
@@ -101,9 +101,9 @@ test-cli:
 ## Python lint + Python tests + CLI typecheck + CLI build + CLI tests.
 ## Run this before opening a PR so a CLI-workspace break cannot slip
 ## through the way it did prior to the HIGH-1 finding.
-quality: lint test-local lint-cli build-cli test-cli
+quality: lint test-local lint-cli build-cli test-cli web-lint web-build
 	@echo ""
-	@echo "OK — all quality gates passed (python + cli)"
+	@echo "OK — all quality gates passed (python + cli + web)"
 
 # ── Web Dashboard ───────────────────────────────────────────────
 
@@ -126,8 +126,8 @@ web-db-ensure:
 	@docker exec decepticon-postgres psql -U decepticon -d decepticon_web -tAc \
 		"INSERT INTO \"User\" (id, \"updatedAt\") VALUES ('local', NOW()) ON CONFLICT (id) DO NOTHING;" >/dev/null
 
-## Build web dashboard
-web-build:
+## Build web dashboard (generates Prisma client first)
+web-build: web-generate
 	cd clients/web && npm run build
 
 ## Lint web dashboard

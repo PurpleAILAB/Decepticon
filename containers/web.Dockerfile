@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 COPY clients/cli/package.json clients/cli/
 COPY clients/web/package.json clients/web/
 COPY clients/shared/streaming/package.json clients/shared/streaming/
-RUN npm ci --production=false
+RUN npm ci
 
 # Generate Prisma client
 COPY clients/web/prisma ./clients/web/prisma
