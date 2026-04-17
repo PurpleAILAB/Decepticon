@@ -164,6 +164,44 @@ services:
         - action: rebuild
           path: ./containers/langgraph.Dockerfile
 
+  # Web Dashboard — Next.js UI
+  # Runs via: docker compose --profile web up -d
+  web:
+    image: ghcr.io/purpleailab/decepticon-web:${DECEPTICON_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: containers/web.Dockerfile
+    container_name: decepticon-web
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    env_file: .env
+    environment:
+      - NEXT_PUBLIC_DECEPTICON_EDITION=oss
+      - LANGGRAPH_API_URL=http://langgraph:2024
+      - DATABASE_URL=postgresql://decepticon:decepticon@postgres:5432/litellm
+    depends_on:
+      langgraph:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    networks:
+      - decepticon-net
+    profiles:
+      - web
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: ./clients/web/src
+          target: /app/clients/web/src
+        - action: sync
+          path: ./clients/web/public
+          target: /app/clients/web/public
+        - action: rebuild
+          path: ./clients/web/package.json
+        - action: rebuild
+          path: ./containers/web.Dockerfile
+
   # Ink CLI — Interactive terminal UI
   # Runs via: docker compose run --rm cli
   cli:
