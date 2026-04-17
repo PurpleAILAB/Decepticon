@@ -11,7 +11,7 @@ COMPOSE := docker compose
 COMPOSE_CLI := $(COMPOSE) --profile cli
 COMPOSE_WEB := $(COMPOSE) --profile web
 
-.PHONY: dev start cli web web-dev web-build web-lint web-migrate web-ee web-oss stop status logs kg-health neo4j-health build test test-cli lint lint-cli quality clean
+.PHONY: dev start cli cli-dev web web-dev web-db-ensure web-build web-lint web-migrate web-ee web-oss stop status logs kg-health neo4j-health build test test-cli lint lint-cli quality clean
 
 # ── Development ──────────────────────────────────────────────────
 
@@ -19,9 +19,13 @@ COMPOSE_WEB := $(COMPOSE) --profile web
 dev:
 	$(COMPOSE) watch
 
-## Run interactive CLI (use in a separate terminal while `make dev` is running)
+## Run interactive CLI in Docker (prod-like, requires `make dev` for backend)
 cli:
 	$(COMPOSE_CLI) run --rm cli
+
+## Run interactive CLI locally (dev mode with hot-reload, reflects source changes instantly)
+cli-dev:
+	DECEPTICON_API_URL=$${DECEPTICON_API_URL:-http://localhost:2024} npm run cli:dev
 
 # ── Production-like ──────────────────────────────────────────────
 
@@ -108,8 +112,19 @@ web:
 	$(COMPOSE_WEB) up -d --build web
 
 ## Start web dashboard in dev mode (local Next.js, requires running PostgreSQL)
-web-dev:
+## Auto-ensures decepticon_web DB exists + applies migrations before starting.
+web-dev: web-db-ensure
 	cd clients/web && npm run dev
+
+## Ensure decepticon_web DB exists, schema is migrated, and OSS seed user exists.
+## Idempotent — safe to run multiple times.
+web-db-ensure:
+	@docker exec decepticon-postgres psql -U decepticon -d postgres -tAc \
+		"SELECT 1 FROM pg_database WHERE datname='decepticon_web'" 2>/dev/null | grep -q 1 \
+		|| docker exec decepticon-postgres psql -U decepticon -d postgres -c "CREATE DATABASE decepticon_web;" >/dev/null
+	@cd clients/web && npx prisma migrate deploy 2>&1 | tail -1
+	@docker exec decepticon-postgres psql -U decepticon -d decepticon_web -tAc \
+		"INSERT INTO \"User\" (id, \"updatedAt\") VALUES ('local', NOW()) ON CONFLICT (id) DO NOTHING;" >/dev/null
 
 ## Build web dashboard
 web-build:
@@ -169,7 +184,8 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make dev        Build + start with hot-reload (docker compose watch)"
-	@echo "  make cli        Run interactive CLI (separate terminal)"
+	@echo "  make cli        Run interactive CLI in Docker (prod-like)"
+	@echo "  make cli-dev    Run interactive CLI locally (dev mode, hot-reload)"
 	@echo ""
 	@echo "Production-like:"
 	@echo "  make start      Build + start in background"
