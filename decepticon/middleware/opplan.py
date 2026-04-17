@@ -20,7 +20,9 @@ Key differences from Claude Code:
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Annotated, Any, NotRequired, cast, override
 
 from langchain.agents import AgentState
@@ -33,6 +35,7 @@ from langgraph.types import Command
 
 from decepticon.core.schemas import (
     C2Tier,
+    OPPLAN,
     Objective,
     ObjectivePhase,
     ObjectiveStatus,
@@ -61,6 +64,9 @@ class OPPLANState(AgentState):
 
     objective_counter: Annotated[NotRequired[int], OmitFromInput]
     """Auto-increment counter for objective IDs (like Claude Code high water mark)."""
+
+    workspace_path: Annotated[NotRequired[str], OmitFromInput]
+    """Engagement workspace root path — set by save_opplan/load_opplan."""
 
 
 # ── System Prompt ─────────────────────────────────────────────────────
@@ -96,9 +102,16 @@ These are always available — no mode switching needed.
   Use when abandoning a hierarchical task so the parent can then be moved
   to COMPLETED or CANCELLED itself.
 
+- **`save_opplan`** — Persist the current OPPLAN state to `plan/opplan.json`.
+  Call after the user approves the plan and after any major re-planning.
+  Validates all objectives against the Pydantic schema before writing.
+
+- **`load_opplan`** — Hydrate agent state from an existing `plan/opplan.json`.
+  Call on session startup if the engagement already has an OPPLAN file.
+
 ### Workflow
 ```
-add_objective(×N, engagement_name=...) → [user approval] → Ralph Loop
+add_objective(×N, engagement_name=...) → [user approval] → save_opplan → Ralph Loop
           ↓
 objective_expand(parent_id, children=[...])   # split broad work on demand
 ```
@@ -998,6 +1011,147 @@ def _make_tools() -> list:
             }
         )
 
+    @tool(
+        description=(
+            "Persist the current OPPLAN to plan/opplan.json in the engagement workspace. "
+            "Validates all objectives against the Pydantic schema before writing. "
+            "Call after the user approves the plan and after any major re-planning. "
+            "Sets workspace_path in state for subsequent calls."
+        )
+    )
+    def save_opplan(
+        workspace_path: str,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    ) -> Command[Any]:
+        """Serialize state objectives → OPPLAN schema → plan/opplan.json."""
+        objectives_raw = state.get("objectives", [])
+        engagement_name = state.get("engagement_name", "")
+        threat_profile = state.get("threat_profile", "")
+
+        try:
+            objectives = [Objective(**o) for o in objectives_raw]
+        except Exception as e:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"OPPLAN validation failed: {e}",
+                            tool_call_id=tool_call_id,
+                            status="error",
+                        )
+                    ]
+                }
+            )
+
+        opplan = OPPLAN(
+            engagement_name=engagement_name,
+            threat_profile=threat_profile,
+            objectives=objectives,
+        )
+
+        plan_dir = Path(workspace_path) / "plan"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        out_path = plan_dir / "opplan.json"
+        out_path.write_text(
+            json.dumps(opplan.model_dump(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+        return Command(
+            update={
+                "workspace_path": workspace_path,
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            f"OPPLAN saved to {out_path} "
+                            f"({len(objectives)} objectives, engagement: {engagement_name})"
+                        ),
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool(
+        description=(
+            "Load an existing plan/opplan.json into agent state to resume an engagement. "
+            "Call on session startup when plan/opplan.json already exists — "
+            "this hydrates objectives, engagement_name, and threat_profile into state "
+            "so OPPLAN tools and the status tracker work immediately."
+        )
+    )
+    def load_opplan(
+        workspace_path: str,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId] = "",
+    ) -> Command[Any]:
+        """Read plan/opplan.json and hydrate agent state."""
+        path = Path(workspace_path) / "plan" / "opplan.json"
+        if not path.exists():
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=(
+                                f"No opplan.json found at {path}. "
+                                "Use add_objective to create a new OPPLAN."
+                            ),
+                            tool_call_id=tool_call_id,
+                            status="error",
+                        )
+                    ]
+                }
+            )
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            opplan = OPPLAN(**data)
+        except Exception as e:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=f"Failed to load opplan.json: {e}",
+                            tool_call_id=tool_call_id,
+                            status="error",
+                        )
+                    ]
+                }
+            )
+
+        objectives_raw = [o.model_dump() for o in opplan.objectives]
+
+        # Derive counter from highest existing ID so new objectives don't collide
+        counter = 0
+        for o in opplan.objectives:
+            try:
+                n = int(o.id.replace("OBJ-", ""))
+                if n > counter:
+                    counter = n
+            except (ValueError, AttributeError):
+                pass
+
+        return Command(
+            update={
+                "objectives": objectives_raw,
+                "engagement_name": opplan.engagement_name,
+                "threat_profile": opplan.threat_profile,
+                "objective_counter": counter,
+                "workspace_path": workspace_path,
+                "messages": [
+                    ToolMessage(
+                        content=(
+                            f"Loaded {len(objectives_raw)} objectives from {path}. "
+                            f"Engagement: {opplan.engagement_name} | "
+                            f"Counter at OBJ-{counter:03d}"
+                        ),
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
     return [
         add_objective,
         get_objective,
@@ -1005,6 +1159,8 @@ def _make_tools() -> list:
         update_objective,
         objective_expand,
         objective_collapse,
+        save_opplan,
+        load_opplan,
     ]
 
 

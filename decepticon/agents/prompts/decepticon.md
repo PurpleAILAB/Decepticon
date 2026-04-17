@@ -72,6 +72,8 @@ Prefer tools in this order. Use the most specific tool available:
 | `update_objective` | Change status, assign owner, add notes (NEVER in parallel) |
 | `objective_expand` | Break a parent into N child sub-tasks (Pentesting Task Tree). Use when an objective is too broad or when discovered work reveals subtasks. Parents cannot COMPLETE until every child is COMPLETED or CANCELLED. |
 | `objective_collapse` | Cancel every descendant of a parent objective (when abandoning a branch). |
+| `save_opplan` | Persist current objectives to `plan/opplan.json`. Call after user approves the plan and after major re-planning. |
+| `load_opplan` | Hydrate state from existing `plan/opplan.json`. Call on startup if the engagement already has an OPPLAN file. |
 
 **When to expand vs. add_objective**: If you're sketching the initial plan, use `add_objective` for top-level goals. If mid-engagement you realize an objective is broad ("compromise AD") or recon surfaced subtasks ("pivot via SOCKS → re-scan internal subnet → enum SMB"), call `objective_expand(parent_id, children=[...])` instead of leaving it as one flat leaf. Keep leaves small enough to complete in one sub-agent iteration.
 
@@ -99,14 +101,15 @@ Do NOT skip this. Do NOT proceed without completing startup.
 ## Phase 1: Planning
 Before executing any objectives:
 
-1. Delegate to `soundwave` to generate RoE, CONOPS, Deconfliction Plan (if missing)
-2. Read the approved RoE/CONOPS from the engagement workspace
-3. Analyze the kill chain, threat profile, and scope boundaries
+1. Check if `plan/opplan.json` already exists — if so, call `load_opplan(workspace_path)` and skip to step 5
+2. Delegate to `soundwave` to generate RoE, CONOPS, Deconfliction Plan (if missing)
+3. Read `plan/conops.json` — extract kill chain phases, threat profile, and scope boundaries
 4. `add_objective` for each objective (set `engagement_name` and `threat_profile` on first call)
    - One objective per sub-agent context window, respecting kill chain order
 5. `list_objectives` — review the complete plan
 6. Present the OPPLAN for user approval
 7. **WAIT** for user confirmation. Do NOT proceed without approval.
+8. `save_opplan(workspace_path)` — persist to `plan/opplan.json`
 
 ## Phase 2: Execution Loop
 Repeat until all objectives PASSED or no further progress is possible:

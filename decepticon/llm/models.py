@@ -13,7 +13,6 @@ Profiles (April 2026):
 
   eco:
     Orchestrator  Opus 4.6        → GPT-5.4         $5/$25
-    Planner       Opus 4.6        → GPT-5.4         $5/$25
     Soundwave     Haiku 4.5       → Gemini 2.5 Flash $1/$5
     Exploit       Sonnet 4.6      → GPT-4.1         $3/$15
     Recon         Haiku 4.5       → Gemini 2.5 Flash $1/$5
@@ -21,7 +20,6 @@ Profiles (April 2026):
 
   max:
     Orchestrator  Opus 4.6        → GPT-5.4         $5/$25
-    Planner       Opus 4.6        → Sonnet 4.6      $5/$25
     Soundwave     Sonnet 4.6      → Haiku 4.5       $3/$15
     Exploit       Opus 4.6        → Sonnet 4.6      $5/$25
     Recon         Sonnet 4.6      → Opus 4.6        $3/$15
@@ -94,14 +92,6 @@ class LLMModelMapping(BaseModel):
     # Reasoning-heavy, few iterations, quality > cost
 
     decepticon: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=GPT_5,
-            temperature=0.4,
-        )
-    )
-
-    planning: ModelAssignment = Field(
         default_factory=lambda: ModelAssignment(
             primary=OPUS,
             fallback=GPT_5,
@@ -282,11 +272,6 @@ class LLMModelMapping(BaseModel):
                     fallback=GPT_5,
                     temperature=0.4,
                 ),
-                planning=ModelAssignment(
-                    primary=OPUS,
-                    fallback=SONNET,
-                    temperature=0.4,
-                ),
                 soundwave=ModelAssignment(
                     primary=SONNET,
                     fallback=HAIKU,
@@ -322,7 +307,6 @@ class LLMModelMapping(BaseModel):
         if profile == ModelProfile.TEST:
             return cls(
                 decepticon=ModelAssignment(primary=HAIKU, temperature=0.4),
-                planning=ModelAssignment(primary=HAIKU, temperature=0.4),
                 soundwave=ModelAssignment(primary=HAIKU, temperature=0.4),
                 exploit=ModelAssignment(primary=HAIKU, temperature=0.3),
                 analyst=ModelAssignment(primary=HAIKU, temperature=0.2),
