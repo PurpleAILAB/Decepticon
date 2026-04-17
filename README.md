@@ -1,14 +1,13 @@
 [![English](https://img.shields.io/badge/Language-English-blue?style=for-the-badge)](README.md)
-[![한국어](https://img.shields.io/badge/Language-한국어-red?style=for-the-badge)](./docs/README_KO.md)
-
+[![한국어](https://img.shields.io/badge/Language-한국어-red?style=for-the-badge)](README_KO.md)
 
 <div align="center">
   <img src="assets/logo_banner.png" alt="Decepticon Logo">
 </div>
 
-<h1 align="center">Decepticon — Autonomous Hacking Agent</h1>
+<h1 align="center">Decepticon — Autonomous Red Team Agent</h1>
 
-<p align="center"><i>"Another AI hacker? Let us guess — it runs nmap and writes a report. How original. Then what?"</i></p>
+<p align="center"><i>"Another AI hacker? Let us guess — it runs nmap and writes a report."</i></p>
 
 <div align="center">
 
@@ -42,295 +41,171 @@
   <video src="https://github.com/user-attachments/assets/b3fd40d8-e859-4a39-97f4-bd825694ad96" width="800" controls></video>
 </div>
 
-## 💖 Support Decepticon
-
-[![Sponsor](https://img.shields.io/badge/Sponsor-Decepticon-red?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/PurpleCHOIms?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)
-
-We are building Decepticon — an **Offensive Vaccine** for the AI-driven threat landscape.
-
-As attackers leverage AI, traditional defenses become obsolete.  
-Decepticon aims to automate red team operations through autonomous agents.
-
-If you believe in the future of **Autonomous Hacking Agents for Red Team Testing**, consider supporting.
-
+---
 
 ## Install
 
-**Prerequisites**: [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2. That's it.
+**Prerequisites**: [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2.
 
 ```bash
 curl -fsSL https://decepticon.red/install | bash
+decepticon config    # Set your API key (Anthropic, OpenAI, or Google)
+decepticon           # Launch the terminal CLI
 ```
 
-Then configure your API key and start:
+Or launch the web dashboard instead:
 
 ```bash
-decepticon config    # Set your Anthropic or OpenAI API key
-decepticon           # Launch CLI
-make web             # Or launch the Web Dashboard instead
+make web             # Opens http://localhost:3000
 ```
+
+→ **[Full setup guide](docs/getting-started.md)**
+
+---
 
 ## Try the Demo
 
-Configure your API key first, then run the demo — nothing else needed.
-
 ```bash
-decepticon config    # Set your API key (one-time)
 decepticon demo
 ```
 
-Launches Metasploitable 2 as a target, loads a pre-built engagement, and runs the full kill chain automatically: port scan, vsftpd exploit, Sliver C2 implant deployment, credential harvesting via C2, and internal network reconnaissance.
+Launches Metasploitable 2, loads a pre-built engagement, and runs the full kill chain autonomously: port scan → vsftpd exploit → Sliver C2 implant → credential harvesting → internal recon.
 
 ---
 
-> **Disclaimer** — Do not use this project on any system or network without explicit written authorization from the system owner. Unauthorized access to computer systems is illegal. You are solely responsible for your actions. The authors and contributors of this project assume no liability for misuse.
+## 💖 Support Decepticon
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-Decepticon-red?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)
+
+We're building Decepticon as an **Offensive Vaccine** for the AI-driven threat landscape. If you believe in autonomous red teaming as a path to stronger defense, consider supporting the project.
 
 ---
 
-## What is Autonomous Hacking?
+## What is Decepticon?
 
-Let's be honest. The "AI + hacking" space is exhausting.
+The "AI + hacking" space is full of demos that run nmap and print a report. That's not what this is.
 
-Every other week, someone drops a demo: *"Look, GPT can run nmap!"* Cool. Then what? It either ends up as a party trick that no one actually uses in production — or worse, it crosses a line nobody should cross.
+**Decepticon is a professional autonomous Red Team agent.** It executes realistic attack chains — reconnaissance, exploitation, privilege escalation, lateral movement, C2 — the way a real adversary would, not the way a scanner does.
 
-> *"Yet another AI pentesting tool... cool demo. But when does it actually do something a real attacker would?"*
+But more importantly: it operates under the discipline that separates red teamers from script kiddies.
 
-Fair question. Here's our answer.
+Before a single packet leaves the wire, Decepticon generates a complete engagement package:
 
-**Autonomous Hacking** is the next evolution in offensive security. It's not about making hacking easier or more accessible. It's about making **real Red Team operations** executable at machine speed — with the rigor, documentation, and legal framework that separates professionals from script kiddies.
+- **RoE** (Rules of Engagement) — Authorized scope, exclusions, testing window, escalation contacts
+- **ConOps** (Concept of Operations) — Threat actor profile, methodology, TTPs
+- **Deconfliction Plan** — Source IPs, time windows, shared codes for real-time SOC deconfliction
+- **OPPLAN** (Operations Plan) — Full mission plan with objectives, kill chain phases, and MITRE ATT&CK mapping
 
-Traditional red teaming demands hundreds of hours of manual work — scanning, enumerating, pivoting, documenting — most of it repetitive, all of it exhausting. Meanwhile, the attack surface grows faster than any human team can cover.
+Every action operates inside defined rules. The agent doesn't just hack — it runs a professional Red Team operation that happens to be autonomous.
 
-Autonomous Hacking changes the equation. AI agents handle the grind: running scans, analyzing output, chaining techniques, and adapting in real time. The human sets the mission, defines the rules, and focuses on what machines still can't do — intuition, judgment, and creative thinking.
-
-> *"Delegate the repetitive. Focus on the decisive."*
-
-## "But wait — aren't you guys just the same?"
-
-Great question. Short answer: **No.**
-
-Here's the thing most people miss about offensive security — there's a massive difference between *hacking* and *Red Team Testing*.
-
-Red Team Testing is a **regulated, authorized, professional discipline**. Before a single packet leaves the wire, there are documents. Agreements. Rules.
-
-- **RoE (Rules of Engagement)** — Defines what you can and can't touch. Scope, timing, boundaries. Violate this and you're not a red teamer, you're a criminal.
-- **ConOps (Concept of Operations)** — Threat actor profile, attack methodology, the "who are we pretending to be" document.
-- **Deconfliction Plan** — Separates red team activity from real threats. Source IPs, user-agents, time windows, and a shared code for real-time deconfliction calls with the SOC.
-- **OPPLAN (Operations Plan)** — The full mission plan. Objectives, kill chain phases, acceptance criteria. Every action maps to a purpose.
-
-**Decepticon supports all of this. Obviously.**
-
-Every engagement starts with proper documentation. Every objective is tracked. Every action operates within defined boundaries. The agent doesn't just hack — it operates under a formal operations plan, respects the Rules of Engagement, and produces auditable findings.
-
-This isn't a toy. It's a professional Red Team platform that happens to be autonomous.
+---
 
 ## Why Decepticon?
 
-Penetration testing finds vulnerabilities. Red teaming answers a harder question: *can your organization survive a real attack?*
+**Real kill chains, not checkbox scans.**
+Decepticon reads an OPPLAN and pursues objectives through whatever path opens up — pivoting, adapting, chaining techniques — the way a real attacker would.
 
-Most security tools stop at the scan report. Decepticon doesn't. It thinks in kill chains — reconnaissance, exploitation, privilege escalation, lateral movement, persistence — executing multi-stage operations the way a real adversary would, not the way a scanner does.
+**Interactive shells, actually.**
+Real offensive tools are interactive — `msfconsole`, `sliver-client`, `evil-winrm`. Most AI agents fire one-shot commands and give up. Decepticon runs every command inside persistent tmux sessions with automatic prompt detection. When a tool drops you into an interactive prompt, the agent sends follow-up commands. No workarounds.
 
-Four principles guide everything we build:
+**Real infrastructure isolation.**
+All commands run inside a hardened Kali Linux sandbox on a dedicated operational network (`sandbox-net`), fully isolated from management (`decepticon-net`). LLM gateway, databases, and agent API live on one network; sandbox, C2 server, and targets live on another. Zero cross-network access. The agent controls the sandbox via Docker socket only.
 
-**Real Red Teaming, Not Checkbox Security**
-Decepticon emulates actual adversary behavior — not just running CVE checks against a list of ports. It reads an operations plan, adapts to what it finds, and pursues objectives through whatever path opens up. The goal is to test your defenses the way they'll actually be tested.
+**Offense serves defense.**
+The [Offensive Vaccine](docs/offensive-vaccine.md) loop turns every finding into a defense improvement — automatically. Attack → defend → verify, at machine speed. This is Step 1 toward infrastructure that hardens itself.
 
-**Interactive Shell Sessions**
-Real offensive security tools are interactive — `sliver-client`, `msfconsole`, `evil-winrm`, `sqlmap`, `impacket-psexec`. They don't just take a command and exit. They drop you into a prompt, wait for input, and expect a conversation. Most AI agents can't handle this — they fire one-shot commands via `subprocess.run()` and call it a day. Decepticon runs every command inside persistent tmux sessions with automatic prompt detection. When a tool presents an interactive prompt (`sliver >`, `msf6 >`, `PS C:\>`), the agent detects it and sends follow-up commands — the same way a human operator would. Parallel named sessions, control signals (`C-c`, `C-z`), and stall detection are built in. No workarounds, no hacks. The agent actually *operates* the tools.
-
-**Complete Isolation — Real Red Team Infrastructure**
-Every command runs inside a hardened Kali Linux sandbox on a dedicated operational network (`sandbox-net`), fully isolated from the management infrastructure (`decepticon-net`). The C2 team server, victim targets, and the operator sandbox live on one network; the LLM gateway, agent API server, and database live on another. No cross-network access. LangGraph reaches the sandbox exclusively via Docker socket — not the network. You get the full offensive toolkit — nmap, Sliver C2, sqlmap, Impacket — without any risk of leaking credentials or touching the host.
-
-**CLI-First**
-Security work belongs in the terminal. Decepticon's interface is a real-time streaming CLI built with Ink — no browser tabs, no dashboards, no context switching. You see what the agent sees, as it happens.
-
-## The Bigger Picture: Offense Serves Defense
-
-Here's what most "offensive AI" projects get wrong: they treat the attack as the destination.
-
-**Decepticon is not the destination. It's Step 1.**
-
-> There are already plenty of offensive AI agents out there. The world doesn't need another "look, AI can hack things" demo.
-
-What the world actually needs is a system that turns offensive capabilities into **defensive evolution**. That's the real vision:
-
-1. **Step 1 — Autonomous Offensive Agent**: Build a world-class hacking agent that executes realistic Red Team operations. *We are here.*
-2. **Step 2 — Infinite Offensive Feedback**: Deploy the agent to generate continuous, diverse attack scenarios — an endless stream of real-world threat simulation.
-3. **Step 3 — Defensive Evolution**: Channel that feedback into Blue Team capabilities — detection rules, response playbooks, hardening strategies. The defense evolves because the offense never stops.
-
-Think of it as an **Offensive Vaccine**. Just as a biological vaccine exposes the body to weakened pathogens to build immunity, Decepticon exposes your infrastructure to relentless AI-driven attacks to build resilience.
-
-The true value isn't in the attack. It's in the defense system that emerges from surviving it.
-
-## Features
-
-### Engagement Planning
-
-The **Soundwave** agent interviews the operator and generates a complete engagement package — RoE, ConOps, Deconfliction Plan, and OPPLAN. The OPPLAN feeds directly into the autonomous loop; the RoE is enforced every iteration.
-
-### Web Dashboard
-
-**Open-source control plane** (Apache 2.0) for managing engagements through the browser. Built with Next.js 16, React Flow for attack graph visualization, and real-time SSE streaming from LangGraph.
-
-- Engagement setup with 5 target types: local path, Git URL, file upload, web URL, IP range
-- Real-time Soundwave interview + execution streaming
-- Findings viewer with severity filtering (parses FIND-NNN.md reports)
-- Interactive Neo4j attack graph canvas (zoom, pan, node detail)
-- OPPLAN progress tracking per objective
-
-Self-hosted — no authentication required. Runs alongside existing CLI or standalone via `make web`.
-
-### Autonomous Kill Chain Execution
-
-The orchestrator iterates through OPPLAN objectives autonomously:
-
-1. Pick next pending objective → build prompt with RoE guard rails + previous findings
-2. Spawn a **fresh agent** with a clean context window → execute
-3. Parse PASSED/BLOCKED signal → update status → append findings to disk → next
-
-Fresh context per objective — no accumulated noise. Findings persist to files, not agent memory. The orchestrator tracks dependencies and state transitions, adapting the attack path in real time.
-
-### Offensive Vaccine
-
-Attack → Defend → Verify feedback loop. For each vulnerability discovered:
-
-1. **Defense Brief** generated with remediation actions (port blocking, firewall rules, service hardening)
-2. **Defense Agent** executes actions via pluggable backend (Docker, cloud, host OS)
-3. **Re-attack** verifies the defense holds — BLOCKED = success
-
-Defense actions tracked as `DefenseAction` nodes in the Knowledge Graph with `MITIGATES`, `DEFENDS`, `RESPONDS_TO` relationships.
-
-### Knowledge Graph
-
-Every host, service, vulnerability, credential, and attack path is a first-class graph node with typed relationships. Attack path planning uses weighted shortest-path algorithms natively, not Python-side traversal.
-
-The graph is the agent's persistent memory across iterations. Findings, defense actions, and attack chains all live in the same connected structure.
-
-### C2 Integration
-
-**Sliver C2 team server** runs on the operational network. The sandbox has `sliver-client` pre-installed with auto-generated operator config.
-
-- Implant generation, deployment, and session management
-- mTLS, HTTPS, and DNS-based C2 channels
-- Post-exploitation via C2 sessions: credential harvesting, lateral movement, internal recon
-
-C2 is profile-based — `COMPOSE_PROFILES=c2-sliver`. Swap the profile to change frameworks.
-
-### Skill System
-
-Progressive skill disclosure — only frontmatter loaded initially, full content on-demand via `read_file()`. Skills organized by kill chain phase with MITRE ATT&CK tags. Covers OSINT, web exploitation, AD attacks, privilege escalation, lateral movement, credential access, defense evasion, and OPSEC.
-
-### MITRE ATT&CK Integration
-
-ATT&CK mapping at every layer — not added after the fact:
-
-- **Objectives** — each OPPLAN objective carries `mitre` technique IDs (e.g., `T1190`, `T1003.001`)
-- **Skills** — ATT&CK techniques declared in frontmatter, displayed inline in agent's skill catalog
-- **Threat actors** — ConOps defines `initial_access` and `ttps` as ATT&CK IDs
-
-### Multi-Model Routing
-
-LiteLLM proxy routes to any backend (Anthropic, OpenAI, Google). Three profiles:
-
-| Profile | Orchestrator | Exploit | Recon | Use Case |
-|---------|-------------|---------|-------|----------|
-| **eco** | Opus 4.6 | Sonnet 4.6 | Haiku 4.5 | Production |
-| **max** | Opus 4.6 | Opus 4.6 | Sonnet 4.6 | High-value targets |
-| **test** | Haiku 4.5 | Haiku 4.5 | Haiku 4.5 | Development/CI |
-
-Each role has automatic fallback (e.g., Opus → GPT-5.4). Provider outage or rate limit → seamless switch.
+---
 
 ## Architecture
 
-Two isolated networks. Management (`decepticon-net`) and operations (`sandbox-net`) share zero network access. LangGraph controls the sandbox exclusively via Docker socket.
+Two isolated networks. Management and operations share zero network access.
 
 <div align="center">
   <img src="assets/decepticon_infra.svg" alt="Decepticon Infrastructure" width="680">
 </div>
 
+→ **[Architecture deep dive](docs/architecture.md)**
+
+---
+
 ## Agents
 
-Fourteen specialist agents organized by kill chain phase, each with dedicated tools, skills, and a clean context window per invocation:
+16 specialist agents organized by kill chain phase. Each agent starts with a fresh context window per objective — no accumulated noise.
 
 | Phase | Agents |
 |-------|--------|
-| **Orchestration** | Decepticon (main), Soundwave (planning interview) |
+| **Orchestration** | Decepticon (main), Soundwave (planning + docs) |
 | **Reconnaissance** | Recon, Scanner |
 | **Exploitation** | Exploit, Exploiter, Detector, Verifier, Patcher |
 | **Post-Exploitation** | Post-Exploit |
-| **Defense** | Defender (Offensive Vaccine) |
-| **Domain Specialists** | AD Operator, Cloud Hunter, Contract Auditor, Reverser, Analyst |
+| **Defense** | Defender (Offensive Vaccine loop) |
+| **Specialists** | AD Operator, Cloud Hunter, Contract Auditor, Reverser, Analyst |
 
-The Vulnerability Research pipeline (Scanner → Detector → Verifier → Exploiter → Patcher) handles the full lifecycle from discovery through proof-of-concept to patch proposal.
+The vulnerability research pipeline (Scanner → Detector → Verifier → Exploiter → Patcher) handles the full lifecycle from discovery through proof-of-concept to patch proposal.
 
-**[Agent details and middleware stack →](docs/agents.md)**
+→ **[Agent details and middleware stack](docs/agents.md)**
 
-## CLI
+---
 
-```bash
-decepticon           # Start all services and open the interactive CLI
-decepticon demo      # Run guided demo (full kill chain + Sliver C2)
-decepticon config    # Edit API keys and settings
-decepticon stop      # Stop all services
-```
+## Models
 
-**[Full CLI reference →](docs/cli.md)**
+Three profiles via LiteLLM proxy. Each role has a primary model and automatic fallback.
 
-## Vision & Philosophy
+| Profile | Orchestrator | Exploit | Recon | Use case |
+|---------|-------------|---------|-------|---------|
+| **eco** (default) | Opus 4.6 | Sonnet 4.6 | Haiku 4.5 | Production |
+| **max** | Opus 4.6 | Opus 4.6 | Sonnet 4.6 | High-value targets |
+| **test** | Haiku 4.5 | Haiku 4.5 | Haiku 4.5 | Development / CI |
 
-This README covers the essentials — but there's a deeper story behind why Decepticon exists, where it's headed, and the philosophy that drives every design decision.
+Set via `DECEPTICON_MODEL_PROFILE=eco` in your `.env`. Provider outage or rate limit → seamless fallback.
 
-**[Read the full vision and philosophy at docs.decepticon.red](https://docs.decepticon.red)**
+→ **[Full model reference](docs/models.md)**
 
-Topics covered in the documentation:
-- **Core Philosophy** — Reasoning over signatures, hybrid intelligence, stealth as foundation
-- **Pentesting vs. Red Teaming** — Why the distinction matters and where Decepticon sits
-- **History & Evolution** — From Purple Team AI (2021) through RL and GANs to today's autonomous agents
-- **Target Architecture** — Multi-agent hybrid architecture, C2-based stealth execution
-- **Why Open Source** — Collective intelligence and the Red/Blue Team feedback loop
+---
+
+## Documentation
+
+| Topic | Doc |
+|-------|-----|
+| Installation and first engagement | [Getting Started](docs/getting-started.md) |
+| All CLI commands and keyboard shortcuts | [CLI Reference](docs/cli-reference.md) |
+| All `make` targets | [Makefile Reference](docs/makefile-reference.md) |
+| Agent roster and middleware | [Agents](docs/agents.md) |
+| Model profiles and fallback chain | [Models](docs/models.md) |
+| Skill system and format spec | [Skills](docs/skills.md) |
+| Web dashboard features and setup | [Web Dashboard](docs/web-dashboard.md) |
+| System architecture and network isolation | [Architecture](docs/architecture.md) |
+| Neo4j knowledge graph | [Knowledge Graph](docs/knowledge-graph.md) |
+| End-to-end engagement workflow | [Engagement Workflow](docs/engagement-workflow.md) |
+| Offensive Vaccine loop | [Offensive Vaccine](docs/offensive-vaccine.md) |
+| Contributing to Decepticon | [Contributing](docs/contributing.md) |
+
+---
 
 ## Contributing
-
-We welcome contributions. Whether you're a security researcher, an AI engineer, or someone who cares about making defense better — there's a place for you here.
-
-**Developer Setup** (for contributors):
 
 ```bash
 git clone https://github.com/PurpleAILAB/Decepticon.git
 cd Decepticon
-
-# Start with hot-reload (builds Docker images + watches for source changes)
-make dev
-
-# In a separate terminal — open the interactive CLI
-make cli
+make dev     # Start with hot-reload
+make cli     # Open the interactive CLI (separate terminal)
 ```
 
-Development runs in the **same Docker containers** as production. Source changes are automatically synced into containers via `docker compose watch` — no manual rebuilds needed.
+→ **[Contributing guide](docs/contributing.md)**
 
-```bash
-make dev          # Build + start with hot-reload
-make cli          # Interactive CLI (separate terminal)
-make web          # Web dashboard (Docker, includes PostgreSQL + Neo4j)
-make web-dev      # Web dashboard local dev server
-make start        # Start in background (no hot-reload, production-like)
-make stop         # Stop all services
-make test         # Run pytest inside container
-make lint         # Lint + typecheck locally (requires: uv sync --dev)
-make help         # Show all available targets
-```
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit with clear messages
-4. Open a Pull Request
-
-For architecture details and contribution guidelines, visit the [documentation](https://docs.decepticon.red).
+---
 
 ## Community
 
-Join the [Discord](https://discord.gg/TZUYsZgrRG) — ask questions, share engagement logs, discuss techniques, or just connect with others who believe defense starts with understanding offense.
+Join the [Discord](https://discord.gg/TZUYsZgrRG) — ask questions, share engagement logs, discuss techniques, or just connect with others building at the intersection of offense and defense.
+
+---
+
+## Disclaimer
+
+Do not use this project on any system or network without explicit written authorization from the system owner. Unauthorized access to computer systems is illegal. You are solely responsible for your actions. The authors and contributors assume no liability for misuse.
+
+---
 
 ## License
 

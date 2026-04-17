@@ -1,0 +1,125 @@
+# Getting Started
+
+## Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2
+- An API key for at least one LLM provider (Anthropic, OpenAI, or Google)
+
+That's it. Everything else runs inside containers.
+
+---
+
+## Install
+
+```bash
+curl -fsSL https://decepticon.red/install | bash
+```
+
+This installs the `decepticon` CLI to your system.
+
+---
+
+## Configure
+
+```bash
+decepticon config
+```
+
+Opens your `$EDITOR` with the `.env` file. Set at least one API key:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...     # Claude (recommended)
+OPENAI_API_KEY=sk-...            # GPT (optional fallback)
+GOOGLE_API_KEY=...               # Gemini (optional fallback)
+```
+
+Save and exit.
+
+---
+
+## Launch
+
+**Terminal CLI** (default):
+```bash
+decepticon
+```
+
+Starts all services (LiteLLM, LangGraph, Neo4j, sandbox) and opens the interactive terminal UI.
+
+**Web Dashboard** (browser):
+```bash
+make web
+```
+
+Starts the full stack including PostgreSQL and opens the dashboard at `http://localhost:3000`.
+
+---
+
+## Try the Demo
+
+The demo runs a complete autonomous kill chain against a local Metasploitable 2 target — no setup needed beyond your API key.
+
+```bash
+decepticon demo
+```
+
+**What happens:**
+1. Metasploitable 2 is launched as a target VM
+2. A pre-built engagement (RoE + OPPLAN) is loaded
+3. The agent executes autonomously:
+   - Port scan and service enumeration
+   - vsftpd 2.3.4 backdoor exploitation
+   - Sliver C2 implant deployment
+   - Credential harvesting via C2 session
+   - Internal network reconnaissance
+
+The demo is read-only — it doesn't modify anything on your host.
+
+---
+
+## First Real Engagement
+
+1. Launch Decepticon (`decepticon` or `make web`)
+2. The **Soundwave** agent interviews you to define the engagement:
+   - Target scope (IP range, URL, Git repo, file upload, or local path)
+   - Threat actor profile
+   - Rules of Engagement (authorized scope, timing, exclusions)
+3. Soundwave generates: **RoE → ConOps → Deconfliction Plan → OPPLAN**
+4. You review and approve the OPPLAN
+5. The autonomous loop begins
+
+> **Important**: Only run Decepticon against systems you own or have explicit written authorization to test. See the disclaimer in the main README.
+
+---
+
+## Stopping Services
+
+```bash
+decepticon stop     # Stop all services, keep data
+make clean          # Stop + remove all volumes (resets everything)
+```
+
+---
+
+## Check Service Status
+
+```bash
+decepticon status        # Show running services
+decepticon logs          # Follow LangGraph logs (default)
+decepticon logs litellm  # Follow a specific service's logs
+decepticon kg-health     # Diagnose the Neo4j knowledge graph
+```
+
+---
+
+## Next Steps
+
+| Topic | Doc |
+|-------|-----|
+| All CLI commands and keyboard shortcuts | [CLI Reference](cli-reference.md) |
+| All `make` targets | [Makefile Reference](makefile-reference.md) |
+| Agent roles and middleware | [Agents](agents.md) |
+| Model profiles and fallback chain | [Models](models.md) |
+| Engagement workflow (RoE → Execution) | [Engagement Workflow](engagement-workflow.md) |
+| Web dashboard features | [Web Dashboard](web-dashboard.md) |
+| Contributing to Decepticon | [Contributing](contributing.md) |
