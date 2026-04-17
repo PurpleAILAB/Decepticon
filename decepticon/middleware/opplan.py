@@ -34,8 +34,8 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
 from decepticon.core.schemas import (
-    C2Tier,
     OPPLAN,
+    C2Tier,
     Objective,
     ObjectivePhase,
     ObjectiveStatus,
