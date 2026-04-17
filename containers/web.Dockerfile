@@ -11,15 +11,20 @@ COPY clients/shared/streaming/package.json clients/shared/streaming/
 RUN npm ci --production=false
 
 # Generate Prisma client
-COPY clients/web/prisma ./prisma
-COPY clients/web/prisma.config.ts ./prisma.config.ts
+COPY clients/web/prisma ./clients/web/prisma
+COPY clients/web/prisma.config.ts ./clients/web/prisma.config.ts
+WORKDIR /app/clients/web
 RUN npx prisma generate
+WORKDIR /app
 
 # Build application
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY clients/web/ .
+COPY package.json package-lock.json ./
+COPY clients/shared/ clients/shared/
+COPY clients/web/ clients/web/
+WORKDIR /app/clients/web
 # Explicit OSS edition — proxy.ts + hasEE() check this env var.
 # EE builds override via --build-arg or separate Dockerfile.
 ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
@@ -36,11 +41,11 @@ ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
+COPY --from=builder /app/clients/web/public ./public
 # Next.js 16 standalone nests under the original path (clients/web/)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/clients/web ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/standalone/clients/web ./
+COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/standalone/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/static ./.next/static
 
 USER nextjs
 
