@@ -1,0 +1,48 @@
+import NextAuth from "next-auth";
+import GitHub from "next-auth/providers/github";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { prisma } from "./prisma";
+import type { Adapter } from "next-auth/adapters";
+
+interface AccountWithToken {
+  access_token: string | null;
+}
+
+declare module "next-auth" {
+  interface Session {
+    accessToken?: string;
+  }
+}
+
+export const { handlers, auth, signIn, signOut } = NextAuth({
+  adapter: PrismaAdapter(prisma) as Adapter,
+  providers: [
+    GitHub({
+      clientId: process.env.GITHUB_ID!,
+      clientSecret: process.env.GITHUB_SECRET!,
+      authorization: {
+        params: {
+          scope: "read:user user:email repo",
+        },
+      },
+    }),
+  ],
+  callbacks: {
+    async session({ session, user }) {
+      if (session.user) {
+        session.user.id = user.id;
+      }
+      const account = (await prisma.account.findFirst({
+        where: { userId: user.id, provider: "github" },
+        select: { access_token: true },
+      })) as AccountWithToken | null;
+      if (account?.access_token) {
+        session.accessToken = account.access_token;
+      }
+      return session;
+    },
+  },
+  pages: {
+    signIn: "/login",
+  },
+});
