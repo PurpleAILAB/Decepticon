@@ -14,8 +14,18 @@ function createPrismaClient() {
   return new PrismaClient({ adapter });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+// Lazy proxy — defers PrismaClient instantiation to first actual DB call.
+// This prevents "Failed to collect page data" errors during `next build`
+// when DATABASE_URL is not set in the build environment.
+function getOrCreatePrisma(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    return getOrCreatePrisma()[prop as keyof PrismaClient];
+  },
+});
