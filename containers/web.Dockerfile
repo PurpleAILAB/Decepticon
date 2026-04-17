@@ -4,7 +4,10 @@ WORKDIR /app
 
 # Install dependencies
 FROM base AS deps
-COPY clients/web/package.json clients/web/package-lock.json ./
+COPY package.json package-lock.json ./
+COPY clients/cli/package.json clients/cli/
+COPY clients/web/package.json clients/web/
+COPY clients/shared/streaming/package.json clients/shared/streaming/
 RUN npm ci --production=false
 
 # Generate Prisma client
