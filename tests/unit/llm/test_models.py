@@ -45,7 +45,6 @@ class TestLLMModelMapping:
         assert mapping.recon is not None
         assert mapping.exploit is not None
         assert mapping.analyst is not None
-        assert mapping.planning is not None
         assert mapping.soundwave is not None
         assert mapping.postexploit is not None
 
@@ -60,10 +59,9 @@ class TestLLMModelMapping:
             mapping.get_assignment("nonexistent")
 
     def test_strategic_agents_use_opus(self):
-        """Orchestrator and planner need strongest reasoning — Opus 4.6."""
+        """Orchestrator needs strongest reasoning — Opus 4.6."""
         mapping = LLMModelMapping()
-        for role in ("decepticon", "planning"):
-            assert mapping.get_assignment(role).primary == OPUS
+        assert mapping.get_assignment("decepticon").primary == OPUS
 
     def test_precision_agent_uses_sonnet(self):
         """Exploit needs precision + tool calling balance — Sonnet 4.6."""
@@ -87,7 +85,6 @@ class TestLLMModelMapping:
         mapping = LLMModelMapping()
         for role in (
             "decepticon",
-            "planning",
             "soundwave",
             "exploit",
             "analyst",
@@ -105,7 +102,6 @@ class TestModelProfile:
         bare = LLMModelMapping()
         for role in (
             "decepticon",
-            "planning",
             "soundwave",
             "exploit",
             "analyst",
@@ -118,7 +114,7 @@ class TestModelProfile:
     def test_max_profile_uses_opus_everywhere(self):
         """Max profile puts Opus on all roles except recon (Sonnet) and soundwave (Sonnet)."""
         maxp = LLMModelMapping.from_profile(ModelProfile.MAX)
-        for role in ("decepticon", "planning", "exploit", "analyst", "postexploit"):
+        for role in ("decepticon", "exploit", "analyst", "postexploit"):
             assert maxp.get_assignment(role).primary == OPUS
         assert maxp.get_assignment("recon").primary == SONNET
         assert maxp.get_assignment("soundwave").primary == SONNET
@@ -126,7 +122,7 @@ class TestModelProfile:
     def test_max_profile_anthropic_only_fallbacks(self):
         """Max profile fallbacks stay within Anthropic where possible."""
         maxp = LLMModelMapping.from_profile("max")
-        for role in ("planning", "exploit", "analyst", "postexploit"):
+        for role in ("exploit", "analyst", "postexploit"):
             assert maxp.get_assignment(role).fallback == SONNET
         assert maxp.get_assignment("recon").fallback == OPUS
         assert maxp.get_assignment("decepticon").fallback == GPT_5
@@ -136,7 +132,6 @@ class TestModelProfile:
         test = LLMModelMapping.from_profile("test")
         for role in (
             "decepticon",
-            "planning",
             "soundwave",
             "exploit",
             "analyst",
