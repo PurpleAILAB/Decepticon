@@ -5,6 +5,7 @@ WORKDIR /app
 # Copy workspace root (lock file) + cli package.json for dependency install
 COPY package.json package-lock.json ./
 COPY clients/cli/package.json clients/cli/
+COPY clients/shared/streaming/package.json clients/shared/streaming/
 RUN npm ci --workspace=@decepticon/cli
 
 # Copy CLI source and build
