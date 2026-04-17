@@ -19,8 +19,6 @@ const help: Command = {
       "",
       "Shortcuts:",
       "  ctrl+o  Expand (toggle transcript view)",
-      "  ctrl+g  Cycle graph sidebar mode",
-      "  ctrl+b  Toggle graph sidebar",
       "  ctrl+c  Cancel stream / exit transcript / exit",
       "  Esc     Exit transcript",
     ];

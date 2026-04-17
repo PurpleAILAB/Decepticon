@@ -18,8 +18,6 @@ import { useAgent } from "../hooks/useAgent.js";
 import { useOpplan } from "../hooks/useOpplan.js";
 import { useSubAgentSessions } from "../hooks/useSubAgentSessions.js";
 import { useGlobalKeybindings } from "../hooks/useGlobalKeybindings.js";
-import { useTerminalSize } from "../hooks/useTerminalSize.js";
-import { useGraphCanvasServer } from "../hooks/useGraphCanvasServer.js";
 import { useAppState } from "../state/AppState.js";
 import { Banner } from "../components/Banner.js";
 import { EventItem } from "../components/EventItem.js";
@@ -32,7 +30,6 @@ import { ScreenProvider } from "../components/shell/ScreenContext.js";
 import { ExpandOutputProvider } from "../components/shell/ExpandOutputContext.js";
 import { SubAgentProvider } from "../components/shell/SubAgentContext.js";
 import { CtrlOToExpand } from "../components/shell/CtrlOToExpand.js";
-import { GraphSidebar } from "../components/GraphSidebar.js";
 import { parseSlashCommand, findCommand } from "../commands/registry.js";
 import { groupConsecutiveTools } from "../utils/groupEvents.js";
 import { formatDuration } from "../utils/format.js";
@@ -42,7 +39,6 @@ import type { CommandContext } from "../commands/types.js";
 import type { AgentEvent, ScreenMode, SubAgentSession } from "../types.js";
 import { ErrorMessage } from "../components/messages/ErrorMessage.js";
 import type { ToolGroup } from "../utils/groupEvents.js";
-import { deriveGraphSnapshot } from "../utils/graph.js";
 
 export type Screen = ScreenMode;
 
@@ -62,12 +58,6 @@ export function REPL({ initialMessage }: REPLProps) {
   const opplan = useOpplan(agent.events);
   const sessions = useSubAgentSessions(agent.events);
   const screen = useAppState((s) => s.screen);
-  const sidebarVisible = useAppState((s) => s.sidebarVisible);
-  const graphSidebarMode = useAppState((s) => s.graphSidebarMode);
-  const { columns } = useTerminalSize();
-  const graphSnapshot = useMemo(() => deriveGraphSnapshot(agent.events), [agent.events]);
-  const canvas = useGraphCanvasServer(graphSnapshot);
-  const showSidebar = sidebarVisible && columns >= 120;
 
   // Auto-submit initial message (e.g. demo mode)
   const autoStarted = useRef(false);
@@ -191,16 +181,6 @@ export function REPL({ initialMessage }: REPLProps) {
               sessions={sessions}
             />
           </Box>
-          {showSidebar && (
-            <GraphSidebar
-              snapshot={graphSnapshot}
-              activeAgent={agent.activeAgent}
-              mode={graphSidebarMode}
-              canvasUrl={canvas.url}
-              canvasStatus={canvas.status}
-              canvasError={canvas.error}
-            />
-          )}
         </Box>
       </ScreenProvider>
     );
@@ -269,16 +249,6 @@ export function REPL({ initialMessage }: REPLProps) {
           />
         </Box>
 
-        {showSidebar && (
-          <GraphSidebar
-            snapshot={graphSnapshot}
-            activeAgent={agent.activeAgent}
-            mode={graphSidebarMode}
-            canvasUrl={canvas.url}
-            canvasStatus={canvas.status}
-            canvasError={canvas.error}
-          />
-        )}
       </Box>
     </ScreenProvider>
   );

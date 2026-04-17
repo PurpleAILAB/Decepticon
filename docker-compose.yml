@@ -37,6 +37,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-decepticon}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Auto-create decepticon_web DB on first startup (empty volume only).
+      # Existing deployments: run the SQL manually or `docker volume rm postgres_data`.
+      - ./containers/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks:
@@ -56,9 +59,9 @@ services:
     container_name: decepticon-neo4j
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-decepticon-graph}
-      NEO4J_server_memory_heap_initial__size: 256m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_server_memory_heap_initial__size: 128m
+      NEO4J_server_memory_heap_max__size: 384m
+      NEO4J_server_memory_pagecache_size: 128m
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_apoc_export_file_enabled: "true"
@@ -107,7 +110,7 @@ services:
     pids_limit: 1024
     depends_on:
       neo4j:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
   # LangGraph Platform — Agent API Server
@@ -132,13 +135,15 @@ services:
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Relaxed startup: langgraph has built-in retry for litellm/neo4j connections,
+    # so we don't block on healthchecks — cuts cold start by ~30-40s.
     depends_on:
       litellm:
-        condition: service_healthy
+        condition: service_started
       sandbox:
         condition: service_started
       neo4j:
-        condition: service_healthy
+        condition: service_started
     networks:
       - decepticon-net
     restart: unless-stopped

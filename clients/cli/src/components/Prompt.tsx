@@ -4,7 +4,8 @@ import { TextInput } from "@inkjs/ui";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
 import { useSpinnerFrame } from "../hooks/useSpinnerFrame.js";
 import { getCommands } from "../commands/registry.js";
-import { AGENT_LABELS, AGENT_MODES } from "../utils/agents.js";
+import { labelForAgent } from "../utils/agents.js";
+import { CLI_VERSION } from "../utils/version.js";
 
 interface PromptProps {
   isDisabled: boolean;
@@ -15,37 +16,31 @@ interface PromptProps {
 
 const DEBOUNCE_MS = 150;
 
-/** Agent status bar: shows all agents, active one blinks. */
-const AgentBar = React.memo(function AgentBar({
+/** Compact status line: [Decepticon#1.0.0 | ActiveAgent] */
+const StatusLine = React.memo(function StatusLine({
   activeAgent,
 }: {
   activeAgent: string | null;
 }) {
   const { tick } = useSpinnerFrame(activeAgent != null);
-  // Blink cycle: bright for 8 ticks, dim for 4 ticks
-  const bright = (tick % 12) < 8;
+  // Blink cycle: bright for 8 ticks, dim for 4 ticks (only when active)
+  const bright = activeAgent == null || (tick % 12) < 8;
+  const label = labelForAgent(activeAgent);
 
   return (
-    <Box flexDirection="row">
-      {AGENT_MODES.map((agent, i) => {
-        const label = AGENT_LABELS[agent] ?? agent;
-        const isActive = agent === activeAgent;
-        const separator = i < AGENT_MODES.length - 1 ? " | " : "";
-
-        return (
-          <Text key={agent}>
-            {isActive ? (
-              <Text color="#ef4444" bold={bright} dimColor={!bright}>
-                {label}
-              </Text>
-            ) : (
-              <Text dimColor>{label}</Text>
-            )}
-            {separator && <Text dimColor>{separator}</Text>}
-          </Text>
-        );
-      })}
-    </Box>
+    <Text>
+      <Text dimColor>{"["}</Text>
+      <Text dimColor>{`Decepticon#${CLI_VERSION}`}</Text>
+      <Text dimColor>{" | "}</Text>
+      {activeAgent ? (
+        <Text color="#ef4444" bold={bright} dimColor={!bright}>
+          {label}
+        </Text>
+      ) : (
+        <Text dimColor>{label}</Text>
+      )}
+      <Text dimColor>{"]"}</Text>
+    </Text>
   );
 });
 
@@ -170,12 +165,12 @@ export const Prompt = React.memo(function Prompt({
 
       <Text dimColor>{"─".repeat(columns)}</Text>
 
-      {/* Agent status bar — always visible */}
-      <AgentBar activeAgent={activeAgent} />
+      {/* Compact status line — always visible */}
+      <StatusLine activeAgent={activeAgent} />
 
       {/* Keybinding hints */}
       <Text dimColor>
-        {"  ctrl+o: expand  ctrl+g: graph mode  ctrl+b: sidebar  ctrl+c: cancel/exit"}
+        {"  ctrl+o: expand  ctrl+c: cancel/exit"}
       </Text>
     </Box>
   );

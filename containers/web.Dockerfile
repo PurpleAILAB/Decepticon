@@ -17,6 +17,9 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY clients/web/ .
+# Explicit OSS edition — proxy.ts + hasEE() check this env var.
+# EE builds override via --build-arg or separate Dockerfile.
+ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
 RUN npm run build
 
 # Production image
@@ -24,6 +27,8 @@ FROM base AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+# OSS mode — same edition marker used at build time, propagated to runtime.
+ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

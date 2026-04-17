@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// OSS mode: no auth required. Edition check must use NEXT_PUBLIC_*
+// because this proxy runs in Edge Runtime (no Node runtime access).
+const IS_EE = process.env.NEXT_PUBLIC_DECEPTICON_EDITION === "ee";
+
 export default function proxy(req: NextRequest) {
+  // OSS mode: skip all auth redirects — no login required.
+  if (!IS_EE) {
+    return NextResponse.next();
+  }
+
   const sessionCookie =
     req.cookies.get("authjs.session-token") ??
     req.cookies.get("__Secure-authjs.session-token");

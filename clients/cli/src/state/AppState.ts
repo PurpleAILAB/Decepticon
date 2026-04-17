@@ -11,21 +11,9 @@ import type { ScreenMode } from "../types.js";
 
 // ── State type ────────────────────────────────────────────────────
 
-export type GraphSidebarMode = "overview" | "nodes" | "flows";
-
-export const GRAPH_SIDEBAR_MODES: GraphSidebarMode[] = [
-  "overview",
-  "nodes",
-  "flows",
-];
-
 export type AppState = {
   /** Current screen mode: prompt (compact) or transcript (full). */
   screen: ScreenMode;
-  /** Whether the right-hand sidebar is visible. */
-  sidebarVisible: boolean;
-  /** Active knowledge-graph sidebar mode. */
-  graphSidebarMode: GraphSidebarMode;
 };
 
 export type AppStateStore = Store<AppState>;
@@ -33,8 +21,6 @@ export type AppStateStore = Store<AppState>;
 export function getDefaultAppState(): AppState {
   return {
     screen: "prompt",
-    sidebarVisible: true,
-    graphSidebarMode: "overview",
   };
 }
 

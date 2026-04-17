@@ -75,15 +75,23 @@ export function Sidebar() {
   const [engDropdownOpen, setEngDropdownOpen] = useState(false);
   const [engagements, setEngagements] = useState<Engagement[]>([]);
 
+  // Refetch on every navigation — picks up newly created engagements
+  // when the user is redirected from /engagements/new to /engagements/:id.
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/engagements")
       .then((res) => {
         if (!res.ok) throw new Error("fetch failed");
         return res.json();
       })
-      .then((data: Engagement[]) => setEngagements(data))
-      .catch(() => setEngagements([]));
-  }, []);
+      .then((data: Engagement[]) => {
+        if (!cancelled) setEngagements(data);
+      })
+      .catch(() => {
+        if (!cancelled) setEngagements([]);
+      });
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   // Detect active engagement from URL
   const engMatch = pathname.match(/^\/engagements\/([^/]+)/);
