@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { type AgentConfig } from "@/lib/agents";
+import { AGENTS, type AgentConfig } from "@/lib/agents";
 import { AgentSpline } from "@/components/agents/agent-spline";
 import { AgentCanvasProvider } from "@/components/agents/agent-canvas-provider";
 import { AgentGrid } from "@/components/agents/agent-grid";
@@ -59,7 +59,9 @@ export default function LivePage() {
   const initSent = useRef(false);
 
   const { agents } = useAgents();
-  const [selectedAgent, setSelectedAgent] = useState<AgentConfig | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<AgentConfig | null>(
+    () => isNew ? (AGENTS.find((a) => a.id === "soundwave") ?? null) : null,
+  );
   const [input, setInput] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<DocumentRef | null>(null);
   const [docPanelOpen, setDocPanelOpen] = useState(false);
@@ -87,14 +89,6 @@ export default function LivePage() {
       container.scrollTop = container.scrollHeight;
     }, delay);
   }, [messages]);
-
-  // Auto-select Soundwave for new engagements
-  const soundwave = agents.find((a) => a.id === "soundwave");
-  useEffect(() => {
-    if (isNew && !selectedAgent && soundwave) {
-      setSelectedAgent(soundwave);
-    }
-  }, [isNew, selectedAgent, soundwave]);
 
   // Pre-fill initial prompt for new engagements (user must click send)
   useEffect(() => {

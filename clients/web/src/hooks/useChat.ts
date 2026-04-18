@@ -127,7 +127,8 @@ function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
 export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatReturn {
   // Track custom events (sub-agent activity) in state so changes trigger re-renders
   const [customEvents, setCustomEvents] = useState<ChatMessage[]>([]);
-  const [runState, setRunState] = useState<WebRunState>("idle");
+  // Only track "paused" explicitly — "streaming" and "idle" are derived from SDK isLoading
+  const [isPaused, setIsPaused] = useState(false);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const queuedMessageRef = useRef<string | null>(null);
   const sendRef = useRef<((content: string) => void) | null>(null);
@@ -157,24 +158,22 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
     },
   });
 
-  // Sync runState with SDK isLoading and handle auto-submit of queued messages
+  // Derive runState from SDK isLoading + isPaused (no setState in effects)
+  const runState: WebRunState = stream.isLoading ? "streaming" : isPaused ? "paused" : "idle";
+
+  // Auto-submit queued message when stream completes (not when paused)
   const prevLoading = useRef(stream.isLoading);
   useEffect(() => {
-    // Detect transition: loading → not loading (stream completed)
-    if (prevLoading.current && !stream.isLoading) {
-      if (runState === "streaming") {
-        setRunState("idle");
-      }
-      // Auto-submit queued message — but not if user intentionally paused
+    if (prevLoading.current && !stream.isLoading && !isPaused) {
       const pending = queuedMessageRef.current;
-      if (pending && runState !== "paused") {
+      if (pending) {
         queuedMessageRef.current = null;
         setQueuedMessage(null);
         setTimeout(() => sendRef.current?.(pending), 0);
       }
     }
     prevLoading.current = stream.isLoading;
-  }, [stream.isLoading, runState]);
+  }, [stream.isLoading, isPaused]);
 
   // Merge SDK messages with custom events into a unified ChatMessage[]
   const messages = useMemo(() => {
@@ -189,7 +188,7 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   const sendMessageDirect = useCallback(
     (content: string) => {
       setCustomEvents([]);
-      setRunState("streaming");
+      setIsPaused(false);
       stream.submit(
         { messages: [{ type: "human" as const, content, id: `user-${Date.now()}` }] },
         {
@@ -225,31 +224,31 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
         return;
       }
       // If paused, starting a new message implicitly cancels the paused run
-      if (runState === "paused") {
-        setRunState("idle");
+      if (isPaused) {
+        setIsPaused(false);
       }
       sendMessageDirect(content);
     },
-    [stream.isLoading, sendMessageDirect, runState],
+    [stream.isLoading, sendMessageDirect, isPaused],
   );
 
   const interrupt = useCallback(() => {
     stream.stop();
-    setRunState("paused");
+    setIsPaused(true);
   }, [stream]);
 
   const stopFn = useCallback(() => {
     stream.stop();
     queuedMessageRef.current = null;
     setQueuedMessage(null);
-    setRunState("idle");
+    setIsPaused(false);
   }, [stream]);
 
   const resume = useCallback(
     (value?: string) => {
-      if (runState !== "paused") return;
+      if (!isPaused) return;
       setCustomEvents([]);
-      setRunState("streaming");
+      setIsPaused(false);
       stream.submit(
         { command: { resume: value ?? true } },
         {
