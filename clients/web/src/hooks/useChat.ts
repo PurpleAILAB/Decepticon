@@ -161,15 +161,18 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   // Derive runState from SDK isLoading + isPaused (no setState in effects)
   const runState: WebRunState = stream.isLoading ? "streaming" : isPaused ? "paused" : "idle";
 
-  // Auto-submit queued message when stream completes (not when paused)
+  // Auto-submit queued message when stream completes (not when paused).
+  // Uses setTimeout to avoid calling setState synchronously in an effect.
   const prevLoading = useRef(stream.isLoading);
   useEffect(() => {
     if (prevLoading.current && !stream.isLoading && !isPaused) {
       const pending = queuedMessageRef.current;
       if (pending) {
         queuedMessageRef.current = null;
-        setQueuedMessage(null);
-        setTimeout(() => sendRef.current?.(pending), 0);
+        setTimeout(() => {
+          setQueuedMessage(null);
+          sendRef.current?.(pending);
+        }, 0);
       }
     }
     prevLoading.current = stream.isLoading;
@@ -237,28 +240,25 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
     setIsPaused(true);
   }, [stream]);
 
-  const stopFn = useCallback(() => {
+  const stopFn = () => {
     stream.stop();
     queuedMessageRef.current = null;
     setQueuedMessage(null);
     setIsPaused(false);
-  }, [stream]);
+  };
 
-  const resume = useCallback(
-    (value?: string) => {
-      if (!isPaused) return;
-      setCustomEvents([]);
-      setIsPaused(false);
-      stream.submit(
-        { command: { resume: value ?? true } },
-        {
-          ...STREAM_OPTIONS,
-          multitaskStrategy: "interrupt",
-        },
-      );
-    },
-    [stream, runState],
-  );
+  const resume = (value?: string) => {
+    if (!isPaused) return;
+    setCustomEvents([]);
+    setIsPaused(false);
+    stream.submit(
+      { command: { resume: value ?? true } },
+      {
+        ...STREAM_OPTIONS,
+        multitaskStrategy: "interrupt",
+      },
+    );
+  };
 
   const enqueue = useCallback((message: string) => {
     queuedMessageRef.current = message;
