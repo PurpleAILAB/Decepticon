@@ -141,9 +141,20 @@ export function useAgent({
 
   const submit = useCallback(
     (message: string): void => {
-      // Block submit while a stream is active to prevent race conditions
-      // where a second run cancels the first, leaving dangling tool calls
-      if (abortRef.current) return;
+      // If a run is already active, interrupt it so the operator can inject
+      // a message mid-run (Human in the Loop).  PatchToolCallsMiddleware on
+      // the backend handles any dangling tool calls left by the interruption.
+      if (abortRef.current) {
+        const threadId = threadIdRef.current;
+        if (threadId) {
+          clientRef.current.runs
+            .cancelMany({ threadId, status: "running" })
+            .catch(() => {});
+        }
+        abortRef.current.abort();
+        abortRef.current = null;
+        addEvent({ type: "system", content: "Interrupted by operator." });
+      }
 
       addEvent({ type: "user", content: message });
 
@@ -390,8 +401,13 @@ export function useAgent({
           setError(msg);
         }
 
-        abortRef.current = null;
-        resetStreamState();
+        // Only reset if this run was not interrupted by a new submit().
+        // An interrupt sets abortController.signal.aborted and immediately
+        // starts a fresh runStream(), so we must not clobber its state.
+        if (!abortController.signal.aborted) {
+          abortRef.current = null;
+          resetStreamState();
+        }
       };
 
       runStream().catch((err) => {

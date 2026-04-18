@@ -243,7 +243,7 @@ export function REPL({ initialMessage }: REPLProps) {
           )}
 
           <Prompt
-            isDisabled={agent.isStreaming}
+            isDisabled={false}
             onSubmit={handleSubmit}
             activeAgent={agent.activeAgent}
           />
