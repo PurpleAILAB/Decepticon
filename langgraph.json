@@ -20,5 +20,8 @@
     "defender": "./decepticon/agents/defender.py:graph"
   },
   "env": ".env",
-  "python_version": "3.13"
+  "python_version": "3.13",
+  "http": {
+    "multitask_strategy": "interrupt"
+  }
 }

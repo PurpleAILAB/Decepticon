@@ -46,12 +46,6 @@ interface REPLProps {
   initialMessage?: string;
 }
 
-// ── Static item type for the prompt-mode <Static> list ──────────
-type StaticItem =
-  | { id: "__banner__"; kind: "banner" }
-  | { id: string; kind: "event"; event: AgentEvent }
-  | { id: string; kind: "session"; session: SubAgentSession };
-
 export function REPL({ initialMessage }: REPLProps) {
   const { exit } = useApp();
   const agent = useAgent();
@@ -70,9 +64,12 @@ export function REPL({ initialMessage }: REPLProps) {
 
   // ── Global keybindings ──────────────────────────────────────────
   useGlobalKeybindings({
+    onInterrupt: agent.interrupt,
     onCancel: agent.cancel,
     onExit: exit,
-    isStreaming: agent.isStreaming,
+    onClearQueue: agent.clearQueuedMessage,
+    runState: agent.runState,
+    hasQueuedMessage: agent.queuedMessage != null,
   });
 
   // ── Command handling ────────────────────────────────────────────
@@ -81,9 +78,10 @@ export function REPL({ initialMessage }: REPLProps) {
       addSystemEvent: agent.addSystemEvent,
       clearEvents: agent.clearEvents,
       submit: agent.submit,
+      resume: agent.resume,
       exit,
     }),
-    [agent.addSystemEvent, agent.clearEvents, agent.submit, exit],
+    [agent.addSystemEvent, agent.clearEvents, agent.submit, agent.resume, exit],
   );
 
   const handleSubmit = useCallback(
@@ -91,7 +89,7 @@ export function REPL({ initialMessage }: REPLProps) {
       const trimmed = input.trim();
       if (!trimmed) return;
 
-      // Slash command dispatch
+      // Slash commands always execute immediately (even during streaming)
       const parsed = parseSlashCommand(trimmed);
       if (parsed) {
         const cmd = findCommand(parsed.name);
@@ -107,7 +105,12 @@ export function REPL({ initialMessage }: REPLProps) {
         return;
       }
 
-      agent.submit(trimmed);
+      // If streaming/connecting → queue; if idle/paused → submit
+      if (agent.runState === "streaming" || agent.runState === "connecting") {
+        agent.enqueue(trimmed);
+      } else {
+        agent.submit(trimmed);
+      }
     },
     [agent, commandContext],
   );
@@ -226,7 +229,7 @@ export function REPL({ initialMessage }: REPLProps) {
           )}
 
           <ActivityIndicator
-            isStreaming={agent.isStreaming}
+            runState={agent.runState}
             streamStats={agent.streamStats}
           />
 
@@ -238,14 +241,16 @@ export function REPL({ initialMessage }: REPLProps) {
           {agent.error && <ErrorMessage content={agent.error} />}
 
           {/* Transcript mode hint */}
-          {!agent.isStreaming && agent.events.length > 0 && (
+          {agent.runState === "idle" && agent.events.length > 0 && (
             <CtrlOToExpand />
           )}
 
           <Prompt
-            isDisabled={agent.isStreaming}
+            runState={agent.runState}
             onSubmit={handleSubmit}
             activeAgent={agent.activeAgent}
+            queuedMessage={agent.queuedMessage}
+            onEditQueue={agent.enqueue}
           />
         </Box>
 

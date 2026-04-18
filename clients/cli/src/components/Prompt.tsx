@@ -6,12 +6,17 @@ import { useSpinnerFrame } from "../hooks/useSpinnerFrame.js";
 import { getCommands } from "../commands/registry.js";
 import { labelForAgent } from "../utils/agents.js";
 import { CLI_VERSION } from "../utils/version.js";
+import type { RunState } from "../hooks/useAgent.js";
 
 interface PromptProps {
-  isDisabled: boolean;
+  runState: RunState;
   onSubmit: (input: string) => void;
   /** Currently active agent name, e.g. "recon". null when idle. */
   activeAgent?: string | null;
+  /** Queued message waiting to be sent after stream completes. */
+  queuedMessage?: string | null;
+  /** Callback to update the queued message (for editing). */
+  onEditQueue?: (message: string) => void;
 }
 
 const DEBOUNCE_MS = 150;
@@ -44,16 +49,47 @@ const StatusLine = React.memo(function StatusLine({
   );
 });
 
+/** Context-sensitive keybinding hints. */
+function KeybindingHints({ runState, hasQueue }: { runState: RunState; hasQueue: boolean }) {
+  switch (runState) {
+    case "streaming":
+    case "connecting":
+      return (
+        <Text dimColor>
+          {"  ctrl+o: expand  ctrl+c: pause  2x: cancel"}
+        </Text>
+      );
+    case "paused":
+      return (
+        <Text dimColor>
+          {"  ctrl+o: expand  ctrl+c: cancel  /resume: continue"}
+        </Text>
+      );
+    default:
+      return (
+        <Text dimColor>
+          {hasQueue
+            ? "  ctrl+o: expand  ctrl+c: clear queue  esc: clear queue"
+            : "  ctrl+o: expand  ctrl+c: exit"}
+        </Text>
+      );
+  }
+}
+
 export const Prompt = React.memo(function Prompt({
-  isDisabled,
+  runState,
   onSubmit,
   activeAgent = null,
+  queuedMessage = null,
+  onEditQueue,
 }: PromptProps) {
   const lastSubmitRef = useRef(0);
   const { columns } = useTerminalSize();
   const [inputValue, setInputValue] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [inputKey, setInputKey] = useState(0);
+
+  const isActive = runState === "streaming" || runState === "connecting";
 
   // Derive autocomplete entries from command registry
   const commandEntries = useMemo(() => {
@@ -96,7 +132,14 @@ export const Prompt = React.memo(function Prompt({
 
   // Up/Down/Tab — TextInput explicitly ignores these, so they bubble here
   useInput((_input, key) => {
-    if (isDisabled || !showMenu) return;
+    // Up arrow when queued + streaming: load queued message into input for editing
+    if (key.upArrow && queuedMessage && isActive) {
+      setInputValue(queuedMessage);
+      setInputKey((prev) => prev + 1);
+      return;
+    }
+
+    if (!showMenu) return;
 
     if (key.upArrow) {
       setSelectedIdx((prev) => Math.max(0, prev - 1));
@@ -124,24 +167,38 @@ export const Prompt = React.memo(function Prompt({
       lastSubmitRef.current = now;
       setInputValue("");
       setInputKey((prev) => prev + 1);
+
+      // If streaming and not a slash command, update the queue
+      if (isActive && onEditQueue && !value.startsWith("/")) {
+        onEditQueue(value);
+        return;
+      }
+
       onSubmit(value);
     },
-    [onSubmit],
+    [onSubmit, isActive, onEditQueue],
   );
 
   const maxCmdLen = Math.max(...commandEntries.map((c) => c.cmd.length));
 
   return (
     <Box flexDirection="column" marginTop={1}>
+      {/* Queued message display */}
+      {queuedMessage && isActive && (
+        <Box marginLeft={2} marginBottom={0}>
+          <Text dimColor italic>{"  "}{queuedMessage}</Text>
+        </Box>
+      )}
+
       <Text dimColor>{"─".repeat(columns)}</Text>
       <Box flexDirection="row">
         <Text color="white">{"› "}</Text>
         <TextInput
           key={inputKey}
-          placeholder=""
+          placeholder={queuedMessage && isActive ? "Press up to edit queued message" : ""}
           defaultValue={inputValue || undefined}
           suggestions={suggestionList}
-          isDisabled={isDisabled}
+          isDisabled={false}
           onChange={handleChange}
           onSubmit={handleSubmit}
         />
@@ -168,10 +225,8 @@ export const Prompt = React.memo(function Prompt({
       {/* Compact status line — always visible */}
       <StatusLine activeAgent={activeAgent} />
 
-      {/* Keybinding hints */}
-      <Text dimColor>
-        {"  ctrl+o: expand  ctrl+c: cancel/exit"}
-      </Text>
+      {/* Context-sensitive keybinding hints */}
+      <KeybindingHints runState={runState} hasQueue={queuedMessage != null} />
     </Box>
   );
 });

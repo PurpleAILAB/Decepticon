@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { AGENTS, type AgentConfig } from "@/lib/agents";
+import { type AgentConfig } from "@/lib/agents";
 import { AgentSpline } from "@/components/agents/agent-spline";
 import { AgentCanvasProvider } from "@/components/agents/agent-canvas-provider";
 import { AgentGrid } from "@/components/agents/agent-grid";
@@ -59,9 +59,7 @@ export default function LivePage() {
   const initSent = useRef(false);
 
   const { agents } = useAgents();
-  const [selectedAgent, setSelectedAgent] = useState<AgentConfig | null>(
-    () => isNew ? (AGENTS.find((a) => a.id === "soundwave") ?? null) : null,
-  );
+  const [selectedAgent, setSelectedAgent] = useState<AgentConfig | null>(null);
   const [input, setInput] = useState("");
   const [selectedDoc, setSelectedDoc] = useState<DocumentRef | null>(null);
   const [docPanelOpen, setDocPanelOpen] = useState(false);
@@ -69,7 +67,10 @@ export default function LivePage() {
   const isUserScrolledRef = useRef(false);
   const prevMsgCountRef = useRef(0);
 
-  const { messages, isStreaming, error: chatError, sendMessage, stop } = useChat({
+  const {
+    messages, isStreaming, runState, error: chatError,
+    sendMessage, interrupt, resume,
+  } = useChat({
     engagementId,
     assistantId: selectedAgent?.id ?? "soundwave",
   });
@@ -87,6 +88,14 @@ export default function LivePage() {
     }, delay);
   }, [messages]);
 
+  // Auto-select Soundwave for new engagements
+  useEffect(() => {
+    if (isNew && !selectedAgent) {
+      const soundwave = agents.find((a) => a.id === "soundwave");
+      if (soundwave) setSelectedAgent(soundwave);
+    }
+  }, [isNew, selectedAgent]);
+
   // Pre-fill initial prompt for new engagements (user must click send)
   useEffect(() => {
     if (!isNew || initSent.current || !selectedAgent) return;
@@ -98,7 +107,7 @@ export default function LivePage() {
   }, [isNew, engagementId, selectedAgent]);
 
   function handleSend() {
-    if (!input.trim() || isStreaming) return;
+    if (!input.trim()) return;
     sendMessage(input.trim());
     setInput("");
   }
@@ -289,16 +298,23 @@ export default function LivePage() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
                   placeholder={`Message ${selectedAgent.name}...`}
-                  disabled={isStreaming}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-white/20 focus:ring-1 focus:ring-white/10 disabled:opacity-50"
                 />
                 {isStreaming ? (
                   <button
-                    onClick={() => stop()}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-700 text-white transition-all hover:bg-zinc-600"
-                    title="Stop"
+                    onClick={() => interrupt()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-yellow-600 text-white transition-all hover:bg-yellow-500"
+                    title="Pause"
                   >
                     <X className="h-4 w-4" />
+                  </button>
+                ) : runState === "paused" ? (
+                  <button
+                    onClick={() => resume()}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white transition-all hover:bg-emerald-500"
+                    title="Resume"
+                  >
+                    <Send className="h-4 w-4" />
                   </button>
                 ) : (
                   <button

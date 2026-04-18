@@ -11,10 +11,15 @@
  * - Built-in error handling and `isLoading` state
  * - Sub-agent tracking via custom events from StreamingRunnable
  *
+ * Supports three run lifecycle operations:
+ * - interrupt(): Pause at checkpoint (state preserved)
+ * - resume(): Continue from pause point with optional feedback
+ * - Message queuing: type during streaming, auto-submit on completion
+ *
  * Proxied through Next.js rewrite: /lgs → LANGGRAPH_API_URL
  */
 
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import { useStream } from "@langchain/langgraph-sdk/react";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { Message } from "@langchain/langgraph-sdk";
@@ -24,6 +29,9 @@ import {
   extractText,
   stripResultTags,
 } from "@decepticon/streaming";
+
+/** Run lifecycle state. */
+export type WebRunState = "idle" | "streaming" | "paused";
 
 interface UseChatOptions {
   engagementId: string;
@@ -35,12 +43,24 @@ interface UseChatReturn {
   messages: ChatMessage[];
   /** True while the agent is streaming. */
   isStreaming: boolean;
+  /** Current run lifecycle state. */
+  runState: WebRunState;
   /** Error from the stream, if any. */
   error: string | null;
-  /** Send a user message. */
+  /** Send a user message (queues if streaming). */
   sendMessage: (content: string) => void;
-  /** Stop the current stream. */
+  /** Pause the current run (preserves checkpoint). */
+  interrupt: () => void;
+  /** Hard cancel the current run (destroys state). */
   stop: () => void;
+  /** Resume a paused run with optional feedback. */
+  resume: (value?: string) => void;
+  /** Queued message to auto-submit on completion. */
+  queuedMessage: string | null;
+  /** Enqueue a message for auto-submit after stream completes. */
+  enqueue: (message: string) => void;
+  /** Clear the queued message. */
+  clearQueuedMessage: () => void;
   /** The raw SDK stream for advanced usage. */
   stream: ReturnType<typeof useStream>;
 }
@@ -107,6 +127,10 @@ function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
 export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatReturn {
   // Track custom events (sub-agent activity) in state so changes trigger re-renders
   const [customEvents, setCustomEvents] = useState<ChatMessage[]>([]);
+  const [runState, setRunState] = useState<WebRunState>("idle");
+  const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
+  const queuedMessageRef = useRef<string | null>(null);
+  const sendRef = useRef<((content: string) => void) | null>(null);
 
   // Connect directly to LangGraph server — NOT through Next.js rewrite proxy.
   // Next.js rewrite buffers SSE responses, breaking real-time streaming.
@@ -133,6 +157,25 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
     },
   });
 
+  // Sync runState with SDK isLoading and handle auto-submit of queued messages
+  const prevLoading = useRef(stream.isLoading);
+  useEffect(() => {
+    // Detect transition: loading → not loading (stream completed)
+    if (prevLoading.current && !stream.isLoading) {
+      if (runState === "streaming") {
+        setRunState("idle");
+      }
+      // Auto-submit queued message — but not if user intentionally paused
+      const pending = queuedMessageRef.current;
+      if (pending && runState !== "paused") {
+        queuedMessageRef.current = null;
+        setQueuedMessage(null);
+        setTimeout(() => sendRef.current?.(pending), 0);
+      }
+    }
+    prevLoading.current = stream.isLoading;
+  }, [stream.isLoading, runState]);
+
   // Merge SDK messages with custom events into a unified ChatMessage[]
   const messages = useMemo(() => {
     const sdkMessages = sdkMessagesToChatMessages(stream.messages ?? []);
@@ -143,15 +186,15 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
     return [...sdkMessages, ...customEvents].sort((a, b) => a.timestamp - b.timestamp);
   }, [stream.messages, customEvents]);
 
-  const sendMessage = useCallback(
+  const sendMessageDirect = useCallback(
     (content: string) => {
-      // Reset custom events for new turn
       setCustomEvents([]);
+      setRunState("streaming");
       stream.submit(
         { messages: [{ type: "human" as const, content, id: `user-${Date.now()}` }] },
         {
-          // Stream options go in submit(), not useStream()
           ...STREAM_OPTIONS,
+          multitaskStrategy: "interrupt",
           optimisticValues: (prev) => {
             const existing = (Array.isArray(prev.messages) ? prev.messages : []) as Message[];
             return {
@@ -168,9 +211,63 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
     [stream],
   );
 
-  const stop = useCallback(() => {
+  // Keep ref updated for deferred auto-submit
+  sendRef.current = sendMessageDirect;
+
+  const sendMessage = useCallback(
+    (content: string) => {
+      // If streaming, queue instead of interrupting
+      if (stream.isLoading) {
+        queuedMessageRef.current = content;
+        setQueuedMessage(content);
+        return;
+      }
+      // If paused, starting a new message implicitly cancels the paused run
+      if (runState === "paused") {
+        setRunState("idle");
+      }
+      sendMessageDirect(content);
+    },
+    [stream.isLoading, sendMessageDirect, runState],
+  );
+
+  const interrupt = useCallback(() => {
     stream.stop();
+    setRunState("paused");
   }, [stream]);
+
+  const stopFn = useCallback(() => {
+    stream.stop();
+    queuedMessageRef.current = null;
+    setQueuedMessage(null);
+    setRunState("idle");
+  }, [stream]);
+
+  const resume = useCallback(
+    (value?: string) => {
+      if (runState !== "paused") return;
+      setCustomEvents([]);
+      setRunState("streaming");
+      stream.submit(
+        { command: { resume: value ?? true } },
+        {
+          ...STREAM_OPTIONS,
+          multitaskStrategy: "interrupt",
+        },
+      );
+    },
+    [stream, runState],
+  );
+
+  const enqueue = useCallback((message: string) => {
+    queuedMessageRef.current = message;
+    setQueuedMessage(message);
+  }, []);
+
+  const clearQueuedMessage = useCallback(() => {
+    queuedMessageRef.current = null;
+    setQueuedMessage(null);
+  }, []);
 
   const error = stream.error
     ? stream.error instanceof Error
@@ -181,9 +278,15 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   return {
     messages,
     isStreaming: stream.isLoading,
+    runState,
     error,
     sendMessage,
-    stop,
+    interrupt,
+    stop: stopFn,
+    resume,
+    queuedMessage,
+    enqueue,
+    clearQueuedMessage,
     stream,
   };
 }

@@ -19,8 +19,8 @@ const help: Command = {
       "",
       "Shortcuts:",
       "  ctrl+o  Expand (toggle transcript view)",
-      "  ctrl+c  Cancel stream / exit transcript / exit",
-      "  Esc     Exit transcript",
+      "  ctrl+c  Pause stream (1x) / cancel (2x) / exit (idle)",
+      "  Esc     Exit transcript / clear queue",
     ];
 
     ctx.addSystemEvent(lines.join("\n"));

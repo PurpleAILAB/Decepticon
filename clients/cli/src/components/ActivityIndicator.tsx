@@ -2,10 +2,11 @@ import React, { useRef } from "react";
 import { Box, Text } from "ink";
 import { useSpinnerFrame } from "../hooks/useSpinnerFrame.js";
 import type { StreamStats } from "../hooks/useAgent.js";
+import type { RunState } from "../hooks/useAgent.js";
 import { GLYPH_DOT, GLYPH_SEP } from "../utils/theme.js";
 
 interface ActivityIndicatorProps {
-  isStreaming: boolean;
+  runState: RunState;
   streamStats: StreamStats | null;
 }
 
@@ -56,7 +57,7 @@ function ShimmerText({ text, tick }: { text: string; tick: number }) {
   );
 }
 
-// Pulse palette for the ● icon — smooth bright↔dim cycle synced with shimmer
+// Pulse palette for the icon — smooth bright/dim cycle synced with shimmer
 const PULSE_COLORS = [
   "#fecaca", // bright peak
   "#fca5a5",
@@ -74,19 +75,29 @@ const PULSE_COLORS = [
  *
  * Never returns null — maintains stable layout height like Claude Code's SpinnerGlyph.
  * When idle, renders an empty line to preserve layout; when streaming, shows the full
- * animated indicator. This prevents flicker from mount/unmount cycles.
+ * animated indicator. When paused, shows a static pause indicator.
  */
 export const ActivityIndicator = React.memo(function ActivityIndicator({
-  isStreaming,
+  runState,
   streamStats,
 }: ActivityIndicatorProps) {
-  const { tick } = useSpinnerFrame(isStreaming);
+  const isActive = runState === "streaming" || runState === "connecting";
+  const { tick } = useSpinnerFrame(isActive);
   const displayTokensRef = useRef(0);
 
-  // Reset token counter when idle, but keep the component mounted
-  if (!isStreaming) {
+  // Paused state — static indicator
+  if (runState === "paused") {
     displayTokensRef.current = 0;
-    // Empty placeholder — same height as active state to prevent layout shift
+    return (
+      <Box marginTop={1} height={1}>
+        <Text color="yellow">{GLYPH_DOT} Paused — /resume to continue, or type a new message</Text>
+      </Box>
+    );
+  }
+
+  // Idle — empty placeholder to prevent layout shift
+  if (!isActive) {
+    displayTokensRef.current = 0;
     return <Box marginTop={1} height={1} />;
   }
 
