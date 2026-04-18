@@ -167,7 +167,8 @@ jobs:
       - name: Run pip-audit
         run: uv tool run pip-audit --requirement requirements.txt --ignore-vuln GHSA-xxxx-xxxx-xxxx || true
       - name: Gitleaks
-        uses: docker://zricethez/gitleaks:latest
+        uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
-        with:
-          args: detect --source . -v
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

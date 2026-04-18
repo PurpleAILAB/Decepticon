@@ -212,7 +212,9 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   );
 
   // Keep ref updated for deferred auto-submit
-  sendRef.current = sendMessageDirect;
+  useEffect(() => {
+    sendRef.current = sendMessageDirect;
+  }, [sendMessageDirect]);
 
   const sendMessage = useCallback(
     (content: string) => {

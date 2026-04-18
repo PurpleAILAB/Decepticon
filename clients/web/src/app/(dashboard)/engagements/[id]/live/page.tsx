@@ -89,12 +89,12 @@ export default function LivePage() {
   }, [messages]);
 
   // Auto-select Soundwave for new engagements
+  const soundwave = agents.find((a) => a.id === "soundwave");
   useEffect(() => {
-    if (isNew && !selectedAgent) {
-      const soundwave = agents.find((a) => a.id === "soundwave");
-      if (soundwave) setSelectedAgent(soundwave);
+    if (isNew && !selectedAgent && soundwave) {
+      setSelectedAgent(soundwave);
     }
-  }, [isNew, selectedAgent]);
+  }, [isNew, selectedAgent, soundwave]);
 
   // Pre-fill initial prompt for new engagements (user must click send)
   useEffect(() => {
