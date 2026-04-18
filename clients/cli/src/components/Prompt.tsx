@@ -204,6 +204,9 @@ export const Prompt = React.memo(function Prompt({
         />
       </Box>
 
+      <Text dimColor>{"─".repeat(columns)}</Text>
+
+      {/* Autocomplete menu — below the input divider, Claude Code style */}
       {showMenu && (
         <Box flexDirection="column" marginLeft={2}>
           {filteredCommands.map((cmd, i) => (
@@ -219,8 +222,6 @@ export const Prompt = React.memo(function Prompt({
           ))}
         </Box>
       )}
-
-      <Text dimColor>{"─".repeat(columns)}</Text>
 
       {/* Compact status line — always visible */}
       <StatusLine activeAgent={activeAgent} />

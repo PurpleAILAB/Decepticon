@@ -2,9 +2,9 @@ import type { Command } from "./types.js";
 
 const resume: Command = {
   name: "resume",
-  description: "Resume a paused run with optional feedback",
+  description: "Resume paused run or continue previous session",
   aliases: ["r"],
-  argumentHint: "[feedback]",
+  argumentHint: "[message]",
   execute(args, ctx) {
     ctx.resume(args || undefined);
   },

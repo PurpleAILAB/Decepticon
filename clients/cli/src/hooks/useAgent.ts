@@ -16,6 +16,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { Client } from "@langchain/langgraph-sdk";
+import { saveThread, touchThread, listThreads, loadThreadByIndex, clearThread } from "../utils/threadStore.js";
 import type { AgentEvent } from "../types.js";
 import {
   type SubagentCustomEvent,
@@ -46,6 +47,8 @@ interface LangChainMessage {
 
 interface UseAgentOptions {
   apiUrl?: string;
+  /** Load the previous thread from disk (--continue flag). */
+  continueThread?: boolean;
 }
 
 interface PendingTool {
@@ -95,9 +98,12 @@ const ASSISTANT_ID = "decepticon";
 
 export function useAgent({
   apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024",
+  continueThread = false,
 }: UseAgentOptions = {}): UseAgentReturn {
   const clientRef = useRef(new Client({ apiUrl }));
-  const threadIdRef = useRef<string | null>(null);
+  // Load persisted thread if --continue flag is set
+  const savedThread = continueThread ? loadThreadByIndex(0) : null;
+  const threadIdRef = useRef<string | null>(savedThread?.threadId ?? null);
   const eventsRef = useRef<AgentEvent[]>([]);
   const lastCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -454,6 +460,7 @@ export function useAgent({
     queuedMessageRef.current = null;
     setQueuedMessage(null);
     setRunState("idle");
+    clearThread();
   }, []);
 
   // ── Submit (only when idle or paused) ──────────────────────────
@@ -493,6 +500,7 @@ export function useAgent({
             try {
               const thread = await client.threads.create();
               threadIdRef.current = thread.thread_id;
+              saveThread(thread.thread_id, ASSISTANT_ID, message);
               break;
             } catch (err) {
               if (attempt === maxRetries) {
@@ -558,79 +566,107 @@ export function useAgent({
   const submitRef = useRef(submit);
   submitRef.current = submit;
 
-  // ── Resume (continue from pause point) ─────────────────────────
+  // ── Resume (pause point OR previous session) ───────────────────
 
   const resume = useCallback(
     (value?: string): void => {
-      if (runStateRef.current !== "paused") {
-        addEvent({ type: "system", content: "Nothing to resume." });
-        return;
-      }
+      const isPaused = runStateRef.current === "paused";
+      const hasThread = !!threadIdRef.current;
 
-      if (!threadIdRef.current) {
-        addEvent({ type: "system", content: "No thread to resume." });
-        setRunState("idle");
-        return;
-      }
+      // Case 1: Paused — resume from checkpoint with Command({ resume })
+      if (isPaused && hasThread) {
+        if (value) addEvent({ type: "user", content: value });
+        addEvent({ type: "system", content: "Resuming from checkpoint..." });
 
-      if (value) {
-        addEvent({ type: "user", content: value });
-      }
-      addEvent({ type: "system", content: "Resuming..." });
+        const abortController = new AbortController();
+        abortRef.current = abortController;
 
-      const abortController = new AbortController();
-      abortRef.current = abortController;
+        const runResume = async () => {
+          const client = clientRef.current;
+          setError(null);
 
-      const runResume = async () => {
-        const client = clientRef.current;
-        setError(null);
+          try {
+            const state = await client.threads.getState(threadIdRef.current!);
+            const msgs = (state.values as { messages?: unknown[] })?.messages;
+            if (msgs) lastCountRef.current = msgs.length;
+          } catch { /* proceed with current count */ }
 
-        // Sync lastCountRef with server state before resuming
-        try {
-          const state = await client.threads.getState(threadIdRef.current!);
-          const msgs = (state.values as { messages?: unknown[] })?.messages;
-          if (msgs) lastCountRef.current = msgs.length;
-        } catch {
-          // Proceed with current count — may cause some duplicate events
-        }
-
-        if (abortController.signal.aborted) return;
-
-        setRunState("streaming");
-        setPendingTool(null);
-        setActiveAgent("decepticon");
-        setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
-
-        try {
-          const stream = client.runs.stream(
-            threadIdRef.current!,
-            ASSISTANT_ID,
-            {
-              command: { resume: value ?? true },
-              ...STREAM_OPTIONS,
-              onDisconnect: "continue",
-              signal: abortController.signal,
-            },
-          );
-
-          await processStream(stream, abortController);
-        } catch (err) {
           if (abortController.signal.aborted) return;
-          const msg =
-            err instanceof Error ? err.message : "Resume failed";
-          setError(msg);
+
+          setRunState("streaming");
+          setPendingTool(null);
+          setActiveAgent("decepticon");
+          setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
+
+          try {
+            const stream = client.runs.stream(
+              threadIdRef.current!,
+              ASSISTANT_ID,
+              {
+                command: { resume: value ?? true },
+                ...STREAM_OPTIONS,
+                onDisconnect: "continue",
+                signal: abortController.signal,
+              },
+            );
+            await processStream(stream, abortController);
+          } catch (err) {
+            if (abortController.signal.aborted) return;
+            setError(err instanceof Error ? err.message : "Resume failed");
+          }
+          handleStreamComplete(abortController);
+        };
+
+        runResume().catch((err) => {
+          if (abortController.signal.aborted) return;
+          setError(err instanceof Error ? err.message : "Resume error");
+          abortRef.current = null;
+          runIdRef.current = null;
+          resetStreamState();
+        });
+        return;
+      }
+
+      // Case 2: Idle with no thread — list or select previous sessions
+      if (!hasThread && runStateRef.current === "idle") {
+        const sessions = listThreads();
+        if (sessions.length === 0) {
+          addEvent({ type: "system", content: "No previous sessions found." });
+          return;
         }
 
-        handleStreamComplete(abortController);
-      };
+        // If value is a number, select that session
+        const idx = value ? parseInt(value, 10) : NaN;
+        if (!isNaN(idx)) {
+          const selected = loadThreadByIndex(idx - 1); // 1-based for user
+          if (!selected) {
+            addEvent({ type: "system", content: `Invalid session number. Use 1-${sessions.length}.` });
+            return;
+          }
+          threadIdRef.current = selected.threadId;
+          touchThread(selected.threadId);
+          addEvent({ type: "system", content: `Resumed: "${selected.title}"` });
+          return;
+        }
 
-      runResume().catch((err) => {
-        if (abortController.signal.aborted) return;
-        setError(err instanceof Error ? err.message : "Resume error");
-        abortRef.current = null;
-        runIdRef.current = null;
-        resetStreamState();
-      });
+        // No index given — show the list
+        const lines = sessions.map((s, i) => {
+          const date = new Date(s.lastUsed).toLocaleString();
+          return `  ${i + 1}. ${s.title}  (${date})`;
+        });
+        addEvent({
+          type: "system",
+          content: `Previous sessions:\n${lines.join("\n")}\n\nUse /resume <number> to continue a session.`,
+        });
+        return;
+      }
+
+      // Case 3: Already in a session or streaming — nothing to do
+      if (hasThread && runStateRef.current === "idle") {
+        addEvent({ type: "system", content: "Already in an active session. Send a message to continue." });
+      } else {
+        addEvent({ type: "system", content: "Nothing to resume." });
+      }
     },
     [addEvent, processStream, handleStreamComplete, resetStreamState],
   );

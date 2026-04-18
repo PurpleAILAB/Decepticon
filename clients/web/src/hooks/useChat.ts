@@ -124,7 +124,28 @@ function sdkMessagesToChatMessages(messages: Message[]): ChatMessage[] {
 
 // ── Hook ────────────────────────────────────────────────────────
 
-export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatReturn {
+/** Load persisted thread ID for an engagement from localStorage. */
+function loadEngagementThread(engagementId: string): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    const stored = localStorage.getItem(`decepticon:thread:${engagementId}`);
+    return stored ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Save thread ID for an engagement to localStorage. */
+function saveEngagementThread(engagementId: string, threadId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(`decepticon:thread:${engagementId}`, threadId);
+  } catch {
+    // Non-critical
+  }
+}
+
+export function useChat({ engagementId, assistantId = "soundwave" }: UseChatOptions): UseChatReturn {
   // Track custom events (sub-agent activity) in state so changes trigger re-renders
   const [customEvents, setCustomEvents] = useState<ChatMessage[]>([]);
   // Only track "paused" explicitly — "streaming" and "idle" are derived from SDK isLoading
@@ -132,6 +153,9 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const queuedMessageRef = useRef<string | null>(null);
   const sendRef = useRef<((content: string) => void) | null>(null);
+
+  // Load persisted thread ID for this engagement
+  const persistedThreadId = loadEngagementThread(engagementId);
 
   // Connect directly to LangGraph server — NOT through Next.js rewrite proxy.
   // Next.js rewrite buffers SSE responses, breaking real-time streaming.
@@ -143,7 +167,8 @@ export function useChat({ assistantId = "soundwave" }: UseChatOptions): UseChatR
   const stream = useStream({
     apiUrl,
     assistantId,
-    threadId: undefined, // Let SDK auto-create UUID threads; engagementId reserved for future thread mapping
+    threadId: persistedThreadId, // Reuse persisted thread for conversation continuity
+    onThreadId: (threadId: string) => saveEngagementThread(engagementId, threadId),
     // Callbacks
     onCustomEvent: (data: unknown) => {
       const event = data as SubagentCustomEvent;
