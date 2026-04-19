@@ -273,6 +273,9 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
               sessions={listThreads()}
               onSelect={(session: ThreadEntry) => {
                 setShowSessionPicker(false);
+                // Clear terminal — Ink's <Static> is append-only, so previous
+                // session output stays on screen unless we reset the terminal.
+                process.stdout.write("\x1B[2J\x1B[H");
                 agent.resume(session.threadId);
               }}
               onCancel={() => setShowSessionPicker(false)}
