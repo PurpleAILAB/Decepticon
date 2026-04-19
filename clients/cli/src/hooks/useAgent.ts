@@ -631,8 +631,29 @@ export function useAgent({
       if (value && runStateRef.current === "idle") {
         threadIdRef.current = value;
         touchThread(value);
-        lastCountRef.current = 0;
-        addEvent({ type: "system", content: "Resumed previous session." });
+        addEvent({ type: "system", content: "Restoring session..." });
+
+        // Fetch thread state and restore conversation history
+        const client = clientRef.current;
+        client.threads.getState(value).then((state) => {
+          const msgs = (state.values as { messages?: LangChainMessage[] })?.messages ?? [];
+          lastCountRef.current = msgs.length;
+
+          for (const msg of msgs) {
+            if (msg.type === "human") {
+              const text = extractText(msg.content);
+              if (text) addEvent({ type: "user", content: text });
+            } else if (msg.type === "ai") {
+              const text = stripResultTags(extractText(msg.content));
+              if (text) addEvent({ type: "ai_message", content: text });
+            }
+          }
+
+          addEvent({ type: "system", content: "Session restored. Send a message to continue." });
+        }).catch(() => {
+          addEvent({ type: "system", content: "Could not restore history. Thread loaded — send a message to continue." });
+          lastCountRef.current = 0;
+        });
         return;
       }
 
