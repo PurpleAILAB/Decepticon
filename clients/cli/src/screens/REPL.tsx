@@ -44,12 +44,12 @@ export type Screen = ScreenMode;
 
 interface REPLProps {
   initialMessage?: string;
-  continueThread?: boolean;
+  resumeThread?: boolean;
 }
 
-export function REPL({ initialMessage, continueThread }: REPLProps) {
+export function REPL({ initialMessage, resumeThread }: REPLProps) {
   const { exit } = useApp();
-  const agent = useAgent({ continueThread });
+  const agent = useAgent({ resumeThread });
   const opplan = useOpplan(agent.events);
   const sessions = useSubAgentSessions(agent.events);
   const screen = useAppState((s) => s.screen);

@@ -47,8 +47,8 @@ interface LangChainMessage {
 
 interface UseAgentOptions {
   apiUrl?: string;
-  /** Load the previous thread from disk (--continue flag). */
-  continueThread?: boolean;
+  /** Load the previous thread from disk (--resume flag). */
+  resumeThread?: boolean;
 }
 
 interface PendingTool {
@@ -98,11 +98,11 @@ const ASSISTANT_ID = "decepticon";
 
 export function useAgent({
   apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024",
-  continueThread = false,
+  resumeThread = false,
 }: UseAgentOptions = {}): UseAgentReturn {
   const clientRef = useRef(new Client({ apiUrl }));
-  // Load persisted thread if --continue flag is set
-  const savedThread = continueThread ? loadThreadByIndex(0) : null;
+  // Load persisted thread if --resume flag is set
+  const savedThread = resumeThread ? loadThreadByIndex(0) : null;
   const threadIdRef = useRef<string | null>(savedThread?.threadId ?? null);
   const eventsRef = useRef<AgentEvent[]>([]);
   const lastCountRef = useRef(0);
