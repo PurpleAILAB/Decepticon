@@ -16,7 +16,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { Client } from "@langchain/langgraph-sdk";
-import { saveThread, touchThread, listThreads, loadThreadByIndex, clearThread } from "../utils/threadStore.js";
+import { saveThread, touchThread, loadThreadByIndex, clearThread } from "../utils/threadStore.js";
 import type { AgentEvent } from "../types.js";
 import {
   type SubagentCustomEvent,
@@ -627,46 +627,17 @@ export function useAgent({
         return;
       }
 
-      // Case 2: Idle with no thread — list or select previous sessions
-      if (!hasThread && runStateRef.current === "idle") {
-        const sessions = listThreads();
-        if (sessions.length === 0) {
-          addEvent({ type: "system", content: "No previous sessions found." });
-          return;
-        }
-
-        // If value is a number, select that session
-        const idx = value ? parseInt(value, 10) : NaN;
-        if (!isNaN(idx)) {
-          const selected = loadThreadByIndex(idx - 1); // 1-based for user
-          if (!selected) {
-            addEvent({ type: "system", content: `Invalid session number. Use 1-${sessions.length}.` });
-            return;
-          }
-          threadIdRef.current = selected.threadId;
-          touchThread(selected.threadId);
-          addEvent({ type: "system", content: `Resumed: "${selected.title}"` });
-          return;
-        }
-
-        // No index given — show the list
-        const lines = sessions.map((s, i) => {
-          const date = new Date(s.lastUsed).toLocaleString();
-          return `  ${i + 1}. ${s.title}  (${date})`;
-        });
-        addEvent({
-          type: "system",
-          content: `Previous sessions:\n${lines.join("\n")}\n\nUse /resume <number> to continue a session.`,
-        });
+      // Case 2: Load a specific thread by ID (from session picker or --resume)
+      if (value && runStateRef.current === "idle") {
+        threadIdRef.current = value;
+        touchThread(value);
+        lastCountRef.current = 0;
+        addEvent({ type: "system", content: "Resumed previous session." });
         return;
       }
 
-      // Case 3: Already in a session or streaming — nothing to do
-      if (hasThread && runStateRef.current === "idle") {
-        addEvent({ type: "system", content: "Already in an active session. Send a message to continue." });
-      } else {
-        addEvent({ type: "system", content: "Nothing to resume." });
-      }
+      // Case 3: Nothing to resume
+      addEvent({ type: "system", content: "Nothing to resume." });
     },
     [addEvent, processStream, handleStreamComplete, resetStreamState],
   );

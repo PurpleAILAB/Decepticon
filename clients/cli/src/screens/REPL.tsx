@@ -12,6 +12,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { Box, Text, Static, useApp } from "ink";
 import { useAgent } from "../hooks/useAgent.js";
@@ -38,6 +39,9 @@ import { ToolGroupSummary } from "../components/messages/ToolGroupSummary.js";
 import type { CommandContext } from "../commands/types.js";
 import type { AgentEvent, ScreenMode, SubAgentSession } from "../types.js";
 import { ErrorMessage } from "../components/messages/ErrorMessage.js";
+import { SessionPicker } from "../components/SessionPicker.js";
+import { listThreads } from "../utils/threadStore.js";
+import type { ThreadEntry } from "../utils/threadStore.js";
 import type { ToolGroup } from "../utils/groupEvents.js";
 
 export type Screen = ScreenMode;
@@ -53,6 +57,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
   const opplan = useOpplan(agent.events);
   const sessions = useSubAgentSessions(agent.events);
   const screen = useAppState((s) => s.screen);
+  const [showSessionPicker, setShowSessionPicker] = useState(false);
 
   // Auto-submit initial message (e.g. demo mode)
   const autoStarted = useRef(false);
@@ -93,6 +98,23 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
       // Slash commands always execute immediately (even during streaming)
       const parsed = parseSlashCommand(trimmed);
       if (parsed) {
+        // /resume with no args → open interactive session picker
+        if ((parsed.name === "resume" || parsed.name === "r") && !parsed.args) {
+          // If paused, resume from checkpoint directly
+          if (agent.runState === "paused") {
+            agent.resume();
+            return;
+          }
+          // Otherwise show session picker
+          const savedSessions = listThreads();
+          if (savedSessions.length === 0) {
+            agent.addSystemEvent("No previous sessions found.");
+            return;
+          }
+          setShowSessionPicker(true);
+          return;
+        }
+
         const cmd = findCommand(parsed.name);
         if (cmd) {
           const result = cmd.execute(parsed.args, commandContext);
@@ -246,13 +268,24 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
             <CtrlOToExpand />
           )}
 
-          <Prompt
-            runState={agent.runState}
-            onSubmit={handleSubmit}
-            activeAgent={agent.activeAgent}
-            queuedMessage={agent.queuedMessage}
-            onEditQueue={agent.enqueue}
-          />
+          {showSessionPicker ? (
+            <SessionPicker
+              sessions={listThreads()}
+              onSelect={(session: ThreadEntry) => {
+                setShowSessionPicker(false);
+                agent.resume(session.threadId);
+              }}
+              onCancel={() => setShowSessionPicker(false)}
+            />
+          ) : (
+            <Prompt
+              runState={agent.runState}
+              onSubmit={handleSubmit}
+              activeAgent={agent.activeAgent}
+              queuedMessage={agent.queuedMessage}
+              onEditQueue={agent.enqueue}
+            />
+          )}
         </Box>
 
       </Box>
