@@ -629,6 +629,10 @@ export function useAgent({
 
       // Case 2: Load a specific thread by ID (from session picker or --resume)
       if (value && runStateRef.current === "idle") {
+        // Clear current events before restoring a different session
+        eventsRef.current = [];
+        setEvents([]);
+
         threadIdRef.current = value;
         touchThread(value);
         addEvent({ type: "system", content: "Restoring session..." });
