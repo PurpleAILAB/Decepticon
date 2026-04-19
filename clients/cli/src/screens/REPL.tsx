@@ -58,6 +58,8 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
   const sessions = useSubAgentSessions(agent.events);
   const screen = useAppState((s) => s.screen);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
+  // Increment to force <Static> re-mount on session switch (resets its internal render history)
+  const [sessionKey, setSessionKey] = useState(0);
 
   // Auto-submit initial message (e.g. demo mode)
   const autoStarted = useRef(false);
@@ -218,7 +220,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1}>
           {/* Static region: banner + completed events + completed sessions */}
-          <Static items={staticItems}>
+          <Static key={sessionKey} items={staticItems}>
             {(item) => (
               <Box key={item.id}>
                 {item.kind === "banner" ? (
@@ -273,9 +275,10 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
               sessions={listThreads()}
               onSelect={(session: ThreadEntry) => {
                 setShowSessionPicker(false);
-                // Clear terminal — Ink's <Static> is append-only, so previous
-                // session output stays on screen unless we reset the terminal.
+                // Clear terminal + force <Static> re-mount so previous session
+                // output is fully removed (Static is append-only internally).
                 process.stdout.write("\x1B[2J\x1B[H");
+                setSessionKey((k) => k + 1);
                 agent.resume(session.threadId);
               }}
               onCancel={() => setShowSessionPicker(false)}
