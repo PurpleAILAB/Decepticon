@@ -80,7 +80,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const wsPath = path.join(WORKSPACE, name);
+    // Sanitize name to prevent path traversal
+    const safeName = path.basename(name);
+    if (!safeName || safeName !== name) {
+      return NextResponse.json(
+        { error: "Invalid engagement name — must not contain path separators" },
+        { status: 400 }
+      );
+    }
+    const wsPath = path.join(WORKSPACE, safeName);
 
     const engagement = await prisma.engagement.create({
       data: {
