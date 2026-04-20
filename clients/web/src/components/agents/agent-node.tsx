@@ -28,9 +28,22 @@ export function AgentNode({ node, x, y, onDragStart }: AgentNodeProps) {
   const isProcessing = runtimeState === "processing";
   const isWaiting = isWaitingState(runtimeState);
   const isCompleted = runtimeState === "completed";
+  const isFailed = runtimeState === "failed";
+  const isIdle = runtimeState === "idle";
   const isActive = isProcessing || isWaiting;
 
   const color = isWaiting ? AMBER : node.color;
+
+  // State-based pulse CSS class
+  const pulseClass = isProcessing
+    ? "agent-pulse-processing"
+    : isWaiting
+      ? "agent-pulse-waiting"
+      : isCompleted
+        ? "agent-pulse-completed"
+        : isFailed
+          ? "agent-pulse-failed"
+          : undefined;
   const r = isOrchestrator ? 36 : 24;
   const initial = node.label.charAt(0).toUpperCase();
 
@@ -59,8 +72,8 @@ export function AgentNode({ node, x, y, onDragStart }: AgentNodeProps) {
             y={-r}
             width={r * 2}
             height={r * 2}
-            className={isActive ? "agent-card-pulse" : undefined}
-            style={{ pointerEvents: "none" }}
+            className={pulseClass}
+            style={{ pointerEvents: "none", opacity: isIdle ? 0.5 : 1 }}
           />
         </>
       ) : (
@@ -68,11 +81,11 @@ export function AgentNode({ node, x, y, onDragStart }: AgentNodeProps) {
           {/* Sub-agent: initial avatar */}
           <circle
             r={r}
-            fill={`${color}20`}
+            fill={`${color}${isIdle ? "10" : "20"}`}
             stroke={color}
             strokeWidth={1.5}
-            className={isActive ? "agent-card-pulse" : undefined}
-            style={{ pointerEvents: "none" }}
+            className={pulseClass}
+            style={{ pointerEvents: "none", opacity: isIdle ? 0.4 : 1 }}
           />
           <text
             textAnchor="middle"
@@ -110,6 +123,7 @@ export function AgentNode({ node, x, y, onDragStart }: AgentNodeProps) {
         fill="#d1d5db"
         fontSize={11}
         fontWeight={isActive ? 600 : 400}
+        opacity={isIdle ? 0.4 : 1}
         className="canvas-node-label"
       >
         {node.label}

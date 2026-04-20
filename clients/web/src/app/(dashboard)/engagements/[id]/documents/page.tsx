@@ -3,61 +3,132 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { FileText, Shield, Target, AlertTriangle, ClipboardList, Loader2 } from "lucide-react";
+import {
+  FileText, Radar, Zap, Key, AlertTriangle,
+  Folder, Loader2, File, ChevronRight,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
-interface EngagementDetail {
-  id: string;
-  workspacePath: string | null;
+interface FileEntry {
+  name: string;
+  folder: string;
+  path: string;
+  size: number;
 }
 
-interface DocumentContent {
-  roe: string | null;
-  conops: string | null;
-  deconfliction: string | null;
-  opplan: string | null;
+interface FolderGroup {
+  folder: string;
+  files: FileEntry[];
 }
 
-const docMeta = [
-  { key: "roe" as const, label: "Rules of Engagement", icon: Shield, file: "roe.json" },
-  { key: "conops" as const, label: "CONOPS", icon: Target, file: "conops.json" },
-  { key: "deconfliction" as const, label: "Deconfliction Plan", icon: AlertTriangle, file: "deconfliction.json" },
-  { key: "opplan" as const, label: "OPPLAN", icon: ClipboardList, file: "plan/opplan.json" },
-];
+const FOLDER_META: Record<string, { icon: typeof Folder; color: string; label: string }> = {
+  recon: { icon: Radar, color: "text-cyan-400", label: "Recon" },
+  exploit: { icon: Zap, color: "text-amber-400", label: "Exploit" },
+  "post-exploit": { icon: Key, color: "text-purple-400", label: "Post-Exploit" },
+  findings: { icon: AlertTriangle, color: "text-red-400", label: "Findings" },
+  report: { icon: FileText, color: "text-emerald-400", label: "Report" },
+};
+
+/** Folders managed by the Plan page — excluded from Documents. */
+const EXCLUDED_FOLDERS = new Set(["plan"]);
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function DocumentsPage() {
   const params = useParams();
   const id = params.id as string;
-  const [docs, setDocs] = useState<DocumentContent>({ roe: null, conops: null, deconfliction: null, opplan: null });
+  const [folders, setFolders] = useState<FolderGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<{ path: string; content: string } | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [workspaceName, setWorkspaceName] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
+  // Resolve engagement ID to workspace name
   useEffect(() => {
-    async function loadDocs() {
+    async function resolve() {
       try {
-        const res = await fetch(`/api/engagements/${id}`);
-        if (!res.ok) return;
-        const eng: EngagementDetail = await res.json();
-        if (!eng.workspacePath) return;
-
-        // Load each document via API
-        const opplanRes = await fetch(`/api/engagements/${id}/opplan`);
-        const opplanData = opplanRes.ok ? await opplanRes.text() : null;
-
-        setDocs({
-          roe: null, // TODO: add API route for individual docs
-          conops: null,
-          deconfliction: null,
-          opplan: opplanData && opplanData !== '{"objectives":[]}' ? opplanData : null,
-        });
+        const engRes = await fetch(`/api/engagements/${id}`);
+        if (!engRes.ok) return;
+        const eng = await engRes.json();
+        if (eng.workspacePath) {
+          const name = eng.workspacePath.split("/").pop();
+          setWorkspaceName(name);
+          return;
+        }
+        setWorkspaceName(eng.name);
       } catch {
-        // failed to load
+        // ignore
+      }
+    }
+    resolve();
+  }, [id]);
+
+  // Load files when workspace name is resolved
+  useEffect(() => {
+    if (!workspaceName) {
+      setLoading(false);
+      return;
+    }
+    async function loadFiles() {
+      try {
+        const res = await fetch(`/api/workspace/${encodeURIComponent(workspaceName!)}/files`);
+        if (res.ok) {
+          const data = await res.json();
+          const filtered = (data.folders ?? []).filter(
+            (g: FolderGroup) => !EXCLUDED_FOLDERS.has(g.folder)
+          );
+          setFolders(filtered);
+          // Auto-expand first folder with files
+          if (filtered.length > 0) {
+            setExpandedFolders(new Set([filtered[0].folder]));
+          }
+        }
+      } catch {
+        // ignore
       } finally {
         setLoading(false);
       }
     }
-    loadDocs();
-  }, [id]);
+    loadFiles();
+  }, [workspaceName]);
+
+  function toggleFolder(folder: string) {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folder)) next.delete(folder);
+      else next.add(folder);
+      return next;
+    });
+  }
+
+  async function openFile(filePath: string) {
+    if (!workspaceName) return;
+    setFileLoading(true);
+    try {
+      const res = await fetch(`/api/workspace/${encodeURIComponent(workspaceName)}/files/${filePath}`);
+      if (res.ok) {
+        const contentType = res.headers.get("content-type") ?? "";
+        let content: string;
+        if (contentType.includes("json")) {
+          const json = await res.json();
+          content = JSON.stringify(json, null, 2);
+        } else {
+          content = await res.text();
+        }
+        setSelectedFile({ path: filePath, content });
+      }
+    } catch {
+      // ignore
+    } finally {
+      setFileLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -67,65 +138,130 @@ export default function DocumentsPage() {
     );
   }
 
-  const hasAnyDoc = Object.values(docs).some((v) => v !== null);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Documents</h1>
-        <p className="text-sm text-muted-foreground">
-          Engagement documents generated from the Soundwave interview
-        </p>
-      </div>
-
-      {!hasAnyDoc ? (
+  if (folders.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Documents</h1>
+          <p className="text-sm text-muted-foreground">Engagement workspace files</p>
+        </div>
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <FileText className="mb-3 h-10 w-10 text-muted-foreground/30" />
-            <p className="text-sm font-medium">No documents generated yet</p>
+            <p className="text-sm font-medium">No workspace files found</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Start a Soundwave interview from the Live tab to generate RoE, CONOPS, and OPPLAN
+              Start an engagement from the Live tab to generate documents
             </p>
           </CardContent>
         </Card>
-      ) : (
-        <Tabs defaultValue={docs.opplan ? "opplan" : docMeta.find((d) => docs[d.key])?.key ?? "roe"}>
-          <TabsList>
-            {docMeta.map((doc) => (
-              <TabsTrigger key={doc.key} value={doc.key} disabled={!docs[doc.key]} className="gap-2">
-                <doc.icon className="h-3.5 w-3.5" />
-                {doc.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+      </div>
+    );
+  }
 
-          {docMeta.map((doc) => (
-            <TabsContent key={doc.key} value={doc.key}>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <doc.icon className="h-4 w-4" />
-                    {doc.label}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {docs[doc.key] ? (
-                    <ScrollArea className="h-[60vh]">
-                      <pre className="whitespace-pre-wrap text-sm text-muted-foreground">
-                        {docs[doc.key]}
-                      </pre>
-                    </ScrollArea>
-                  ) : (
-                    <p className="py-8 text-center text-sm text-muted-foreground">
-                      Not yet generated
-                    </p>
+  const totalFiles = folders.reduce((sum, g) => sum + g.files.length, 0);
+
+  return (
+    <div className="flex h-full gap-4 overflow-hidden">
+      {/* Left: Folder tree */}
+      <div className="w-64 shrink-0 overflow-hidden flex flex-col">
+        <div className="mb-3">
+          <h1 className="text-lg font-bold tracking-tight">Documents</h1>
+          <p className="text-xs text-muted-foreground">
+            {totalFiles} files in {folders.length} folders
+          </p>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="space-y-0.5 pr-2">
+            {folders.map((group) => {
+              const meta = FOLDER_META[group.folder];
+              const Icon = meta?.icon ?? Folder;
+              const color = meta?.color ?? "text-muted-foreground";
+              const expanded = expandedFolders.has(group.folder);
+
+              return (
+                <div key={group.folder}>
+                  {/* Folder header */}
+                  <button
+                    onClick={() => toggleFolder(group.folder)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 shrink-0 text-muted-foreground transition-transform",
+                        expanded && "rotate-90"
+                      )}
+                    />
+                    <Icon className={cn("h-4 w-4 shrink-0", color)} />
+                    <span className="flex-1 text-sm font-medium">
+                      {meta?.label ?? group.folder}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/70">
+                      {group.files.length}
+                    </span>
+                  </button>
+
+                  {/* File list */}
+                  {expanded && (
+                    <div className="ml-5 space-y-0.5 pb-1">
+                      {group.files.map((file) => {
+                        const active = selectedFile?.path === file.path;
+                        return (
+                          <button
+                            key={file.path}
+                            onClick={() => openFile(file.path)}
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors",
+                              active
+                                ? "bg-primary/10 text-foreground"
+                                : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                            )}
+                          >
+                            <File className="h-3 w-3 shrink-0" />
+                            <span className="flex-1 truncate text-xs">{file.name}</span>
+                            <span className="text-[10px] text-muted-foreground/50">
+                              {formatSize(file.size)}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          ))}
-        </Tabs>
-      )}
+                </div>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </div>
+
+      {/* Right: File content viewer */}
+      <Card className="flex-1 overflow-hidden">
+        <CardHeader className="border-b border-border/50 pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-mono">
+            <FileText className="h-4 w-4" />
+            {selectedFile?.path ?? "Select a file"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea className="h-[calc(100vh-14rem)]">
+            <div className="p-6">
+              {fileLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : selectedFile ? (
+                <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono">
+                  {selectedFile.content}
+                </pre>
+              ) : (
+                <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+                  Select a file from the sidebar
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
     </div>
   );
 }

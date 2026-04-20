@@ -22,7 +22,8 @@ export type AgentRuntimeState =
   | "processing"
   | "waiting_for_permission"
   | "waiting_for_user"
-  | "completed";
+  | "completed"
+  | "failed";
 
 export type GraphNodeType = "orchestrator" | "agent" | "tool-session" | "completed-session";
 

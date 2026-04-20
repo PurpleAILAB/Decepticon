@@ -1,6 +1,12 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
+import * as fs from "fs/promises";
+import * as path from "path";
+
+const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
+
+const WORKSPACE_SUBDIRS = ["plan", "recon", "exploit", "findings", "post-exploit"];
 
 export async function GET() {
   try {
@@ -10,6 +16,32 @@ export async function GET() {
       where: { userId },
       orderBy: { createdAt: "desc" },
     });
+
+    // Auto-import workspace dirs created by CLI that are not yet in DB
+    try {
+      const entries = await fs.readdir(WORKSPACE, { withFileTypes: true });
+      const wsDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+      const knownNames = new Set(engagements.map((e) => e.name));
+
+      for (const dir of wsDirs) {
+        if (!knownNames.has(dir)) {
+          const wsPath = path.join(WORKSPACE, dir);
+          const imported = await prisma.engagement.create({
+            data: {
+              name: dir,
+              targetType: "web_url",
+              targetValue: "imported from CLI",
+              status: "running",
+              userId,
+              workspacePath: wsPath,
+            },
+          });
+          engagements.unshift(imported);
+        }
+      }
+    } catch {
+      // Workspace dir may not exist yet — skip
+    }
 
     return NextResponse.json(engagements);
   } catch (e) {
@@ -48,14 +80,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const wsPath = path.join(WORKSPACE, name);
+
     const engagement = await prisma.engagement.create({
       data: {
         name,
         targetType,
         targetValue,
         userId,
+        workspacePath: wsPath,
       },
     });
+
+    // Create workspace directory structure
+    try {
+      await Promise.all(
+        WORKSPACE_SUBDIRS.map((sub) => fs.mkdir(path.join(wsPath, sub), { recursive: true }))
+      );
+    } catch {
+      // Non-fatal — workspace creation failure doesn't block engagement creation
+    }
 
     return NextResponse.json(engagement, { status: 201 });
   } catch (e) {

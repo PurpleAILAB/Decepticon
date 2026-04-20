@@ -88,10 +88,8 @@ export function useAgentActivity({
       }
     }
 
-    // Only show orchestrator + agents that have been activated
-    const visibleAgents = agents.filter(
-      (a) => a.id === "decepticon" || agentStates.has(a.id),
-    );
+    // Show all agents — idle ones are dimmed, active ones pulse
+    const visibleAgents = agents;
 
     const nodes: GraphNode[] = [];
     const agentPositions = new Map<string, { x: number; y: number }>();

@@ -4,6 +4,10 @@ import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs/promises";
 import * as path from "path";
 
+const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
+
+const PLAN_DOCS = ["opplan", "conops", "roe", "deconfliction"] as const;
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -25,17 +29,19 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Try to read opplan from workspace
-  const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
   const wsPath = path.join(WORKSPACE, engagement.name);
-  const opplanPath = path.join(wsPath, "plan", "opplan.json");
+  const planDir = path.join(wsPath, "plan");
 
-  try {
-    const content = await fs.readFile(opplanPath, "utf-8");
-    return NextResponse.json(JSON.parse(content));
-  } catch {
-    // File not found or invalid — return empty
+  const docs: Record<string, unknown> = {};
+
+  for (const name of PLAN_DOCS) {
+    try {
+      const content = await fs.readFile(path.join(planDir, `${name}.json`), "utf-8");
+      docs[name] = JSON.parse(content);
+    } catch {
+      // File doesn't exist yet
+    }
   }
 
-  return NextResponse.json({ objectives: [] });
+  return NextResponse.json(docs);
 }

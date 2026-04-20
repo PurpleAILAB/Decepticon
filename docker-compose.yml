@@ -181,6 +181,9 @@ services:
       - LANGGRAPH_API_URL=http://langgraph:2024
       - NEXT_PUBLIC_TERMINAL_WS_URL=ws://localhost:${TERMINAL_PORT:-3003}
       - DATABASE_URL=postgresql://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/decepticon_web
+      - WORKSPACE_PATH=/workspace
+    volumes:
+      - ${DECEPTICON_HOME:-~/.decepticon}/workspace:/workspace
     depends_on:
       langgraph:
         condition: service_started
