@@ -1,15 +1,12 @@
 /**
- * Thread persistence — save/load LangGraph thread IDs to disk.
+ * Thread persistence — query/update LangGraph threads via the SDK.
  *
- * Stores a history of recent threads so the CLI can list and resume
- * previous sessions with `/resume`.
- *
- * Storage location: ~/.decepticon/threads.json
+ * Replaces the previous file-based storage (~/.decepticon/threads.json)
+ * with server-side thread metadata, so all clients (CLI, Web) share
+ * the same thread list.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { Client } from "@langchain/langgraph-sdk";
 
 export interface ThreadEntry {
   /** LangGraph thread ID. */
@@ -23,65 +20,70 @@ export interface ThreadEntry {
 }
 
 const MAX_ENTRIES = 20;
-const STORE_DIR = join(homedir(), ".decepticon");
-const STORE_PATH = join(STORE_DIR, "threads.json");
 
-function readStore(): ThreadEntry[] {
+function getClient(): Client {
+  const apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024";
+  return new Client({ apiUrl });
+}
+
+/** Save or update a thread's metadata on the server. */
+export async function saveThread(
+  threadId: string,
+  assistantId: string,
+  title: string,
+): Promise<void> {
   try {
-    if (!existsSync(STORE_PATH)) return [];
-    const raw = readFileSync(STORE_PATH, "utf-8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    const client = getClient();
+    await client.threads.update(threadId, {
+      metadata: {
+        assistantId,
+        title: title.slice(0, 100),
+        lastUsed: new Date().toISOString(),
+      },
+    });
+  } catch {
+    // Non-critical — don't crash if metadata update fails
+  }
+}
+
+/** Update the lastUsed timestamp for an existing thread. */
+export async function touchThread(threadId: string): Promise<void> {
+  try {
+    const client = getClient();
+    await client.threads.update(threadId, {
+      metadata: {
+        lastUsed: new Date().toISOString(),
+      },
+    });
+  } catch {
+    // Non-critical
+  }
+}
+
+/** Load all saved thread entries from the server, most recent first. */
+export async function listThreads(): Promise<ThreadEntry[]> {
+  try {
+    const client = getClient();
+    const threads = await client.threads.search({
+      sortBy: "updated_at",
+      sortOrder: "desc",
+      limit: MAX_ENTRIES,
+    });
+    return threads.map((t) => ({
+      threadId: t.thread_id,
+      assistantId: (t.metadata?.assistantId as string) ?? "",
+      lastUsed: t.updated_at,
+      title: (t.metadata?.title as string) || `Session ${t.thread_id.slice(0, 8)}`,
+    }));
   } catch {
     return [];
   }
 }
 
-function writeStore(entries: ThreadEntry[]): void {
-  try {
-    if (!existsSync(STORE_DIR)) {
-      mkdirSync(STORE_DIR, { recursive: true });
-    }
-    writeFileSync(STORE_PATH, JSON.stringify(entries, null, 2), "utf-8");
-  } catch {
-    // Non-critical — don't crash if storage fails
-  }
-}
-
-/** Save or update a thread entry. Keeps the most recent MAX_ENTRIES. */
-export function saveThread(threadId: string, assistantId: string, title: string): void {
-  const entries = readStore().filter((e) => e.threadId !== threadId);
-  entries.unshift({
-    threadId,
-    assistantId,
-    lastUsed: new Date().toISOString(),
-    title: title.slice(0, 100),
-  });
-  writeStore(entries.slice(0, MAX_ENTRIES));
-}
-
-/** Update the lastUsed timestamp for an existing thread. */
-export function touchThread(threadId: string): void {
-  const entries = readStore();
-  const entry = entries.find((e) => e.threadId === threadId);
-  if (entry) {
-    entry.lastUsed = new Date().toISOString();
-    writeStore(entries);
-  }
-}
-
-/** Load all saved thread entries, most recent first. */
-export function listThreads(): ThreadEntry[] {
-  return readStore();
-}
-
-/** Load a single thread by index (0-based). */
-export function loadThreadByIndex(index: number): ThreadEntry | null {
-  const entries = readStore();
+/** Load a single thread by index (0-based) from the server list. */
+export async function loadThreadByIndex(
+  index: number,
+): Promise<ThreadEntry | null> {
+  const entries = await listThreads();
   return entries[index] ?? null;
-}
-
-/** Clear all saved threads (e.g., on /clear). */
-export function clearThread(): void {
-  writeStore([]);
 }

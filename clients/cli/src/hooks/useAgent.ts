@@ -14,9 +14,9 @@
  * - resume(): Continue from pause point with optional feedback
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Client } from "@langchain/langgraph-sdk";
-import { saveThread, touchThread, loadThreadByIndex, clearThread } from "../utils/threadStore.js";
+import { saveThread, touchThread, loadThreadByIndex } from "../utils/threadStore.js";
 import type { AgentEvent } from "../types.js";
 import {
   type SubagentCustomEvent,
@@ -101,9 +101,10 @@ export function useAgent({
   resumeThread = false,
 }: UseAgentOptions = {}): UseAgentReturn {
   const clientRef = useRef(new Client({ apiUrl }));
-  // Load persisted thread if --resume flag is set
-  const savedThread = resumeThread ? loadThreadByIndex(0) : null;
-  const threadIdRef = useRef<string | null>(savedThread?.threadId ?? null);
+  // Thread ID priority: env var (from web terminal) > --resume flag > new thread
+  const envThreadId = process.env.DECEPTICON_THREAD_ID || null;
+  const threadIdRef = useRef<string | null>(envThreadId ?? null);
+  const resumeInitialized = useRef(false);
   const eventsRef = useRef<AgentEvent[]>([]);
   const lastCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -124,6 +125,17 @@ export function useAgent({
 
   // Derived for backward compatibility
   const isStreaming = runState === "streaming" || runState === "connecting";
+
+  // Async initialization: load saved thread for --resume flag
+  useEffect(() => {
+    if (envThreadId || !resumeThread || resumeInitialized.current) return;
+    resumeInitialized.current = true;
+    loadThreadByIndex(0).then((saved) => {
+      if (saved) {
+        threadIdRef.current = saved.threadId;
+      }
+    }).catch(() => {});
+  }, []);
 
   const addEvent = useCallback(
     (partial: Omit<AgentEvent, "id" | "timestamp">) => {
@@ -460,7 +472,6 @@ export function useAgent({
     queuedMessageRef.current = null;
     setQueuedMessage(null);
     setRunState("idle");
-    clearThread();
   }, []);
 
   // ── Submit (only when idle or paused) ──────────────────────────
@@ -500,7 +511,7 @@ export function useAgent({
             try {
               const thread = await client.threads.create();
               threadIdRef.current = thread.thread_id;
-              saveThread(thread.thread_id, ASSISTANT_ID, message);
+              await saveThread(thread.thread_id, ASSISTANT_ID, message);
               break;
             } catch (err) {
               if (attempt === maxRetries) {
@@ -634,7 +645,7 @@ export function useAgent({
         setEvents([]);
 
         threadIdRef.current = value;
-        touchThread(value);
+        touchThread(value).catch(() => {});
         addEvent({ type: "system", content: "Restoring session..." });
 
         // Fetch thread state and restore conversation history

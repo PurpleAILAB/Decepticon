@@ -1,104 +1,95 @@
-FROM node:24-slim AS base
+# ----------------------
+# Base — Node 22 LTS (Active LTS until 2027-04)
+# Build tools for native addons (node-pty, sharp)
+# ----------------------
+FROM node:22-slim AS base
 
 WORKDIR /app
 
-# Install dependencies
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+# ----------------------
+# deps — install all workspace dependencies
+# ----------------------
 FROM base AS deps
-# openssl is required by Prisma's migration engine binary
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
 COPY package.json package-lock.json ./
 COPY clients/cli/package.json clients/cli/
 COPY clients/web/package.json clients/web/
 COPY clients/shared/streaming/package.json clients/shared/streaming/
-RUN npm ci
 
-# Generate Prisma client
-COPY clients/web/prisma ./clients/web/prisma
-COPY clients/web/prisma.config.ts ./clients/web/prisma.config.ts
-WORKDIR /app/clients/web
-RUN npx prisma generate
+RUN npm ci --no-audit --no-fund
+
+# ----------------------
+# build — prisma generate + next build
+# ----------------------
+FROM base AS build
+
 WORKDIR /app
 
-# Build application
-FROM base AS builder
-WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json package-lock.json ./
-COPY clients/shared/ clients/shared/
-COPY clients/web/ clients/web/
-# Prisma generates to src/generated/ (gitignored) — carry it over from deps stage
-COPY --from=deps /app/clients/web/src/generated ./clients/web/src/generated
-WORKDIR /app/clients/web
-# Explicit OSS edition — proxy.ts + hasEE() check this env var.
-# EE builds override via --build-arg or separate Dockerfile.
-ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
-# Turbopack aliases @prisma/client as @prisma/client-<schema-hash> in server chunks
-# (external module, not bundled). Copy @prisma/client under that alias so the
-# standalone server can resolve it at runtime. Hash is extracted from build output.
-RUN npm run build && \
-    # Turbopack aliases external packages as <name>-<16hexchars> in server chunks.
-    # Standalone build omits these aliases. Find every alias, derive the original
-    # package name, and copy it into standalone/node_modules under the alias.
-    grep -roh '"[^"]*-[a-f0-9]\{16\}[^"]*"' .next/server/chunks/ 2>/dev/null \
-        | tr -d '"' \
-        | grep -oE '^(@[^/]+/[^/]+-[a-f0-9]{16,}|[^@/][^/]+-[a-f0-9]{16,})' \
-        | sort -u \
-        | while read alias; do \
-            pkg=$(echo "$alias" | sed -E 's/-[a-f0-9]{16,}$//'); \
-            dst=".next/standalone/node_modules/$alias"; \
-            [ -d "$dst" ] && continue; \
-            for base in ".next/standalone/node_modules" "../../node_modules"; do \
-                if [ -d "$base/$pkg" ]; then \
-                    echo "Turbopack alias: $alias <- $pkg"; \
-                    cp -r "$base/$pkg/." "$dst/"; \
-                    break; \
-                fi; \
-            done; \
-        done
+COPY . .
 
-# Production image
-FROM base AS runner
+WORKDIR /app/clients/web
+
+RUN npx prisma generate
+RUN npm run build
+
+# ----------------------
+# runtime — standalone output, minimal image
+# Includes terminal server + CLI for PTY embedding
+# ----------------------
+FROM node:22-slim AS runner
+
+RUN apt-get update && apt-get install -y \
+    openssl \
+    ca-certificates \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 ENV NODE_ENV=production
-# OSS mode — same edition marker used at build time, propagated to runtime.
-ENV NEXT_PUBLIC_DECEPTICON_EDITION=oss
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV TERMINAL_PORT=3003
 
-# openssl required by Prisma migration engine
-RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Standalone Next.js server
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/static ./clients/web/.next/static
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/public ./clients/web/public
+# Prisma schema + migrations
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/prisma ./clients/web/prisma
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/prisma.config.ts ./clients/web/prisma.config.ts
+# Terminal WebSocket server
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/server ./clients/web/server
+# CLI source (spawned by terminal server via PTY)
+COPY --from=build --chown=nextjs:nodejs /app/clients/cli/src ./clients/cli/src
+COPY --from=build --chown=nextjs:nodejs /app/clients/cli/package.json ./clients/cli/package.json
+# Shared streaming library
+COPY --from=build --chown=nextjs:nodejs /app/clients/shared ./clients/shared
+# node_modules for terminal server (node-pty, ws, tsx) and CLI (ink, react)
+COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
 
-COPY --from=builder /app/clients/web/public ./public
-# Next.js 16 standalone nests under the original path (clients/web/)
-COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/standalone/clients/web ./
-COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/standalone/node_modules ./node_modules
-COPY --from=builder --chown=nextjs:nodejs /app/clients/web/.next/static ./.next/static
+WORKDIR /app/clients/web
 
-# Prisma CLI for migrations — fresh install brings the full transitive dep tree.
-# Cherry-picking individual packages breaks on deep deps (effect, @prisma/debug, etc.).
-# Pin to the exact version from deps stage to guarantee schema/engine compatibility.
-COPY --from=deps /app/node_modules/prisma/package.json /tmp/prisma-version.json
-COPY --from=deps /app/node_modules/dotenv/package.json /tmp/dotenv-version.json
-RUN PRISMA_VER=$(node -p "require('/tmp/prisma-version.json').version") && \
-    DOTENV_VER=$(node -p "require('/tmp/dotenv-version.json').version") && \
-    npm install --no-save --prefix /tmp/prisma-cli \
-        "prisma@${PRISMA_VER}" "dotenv@${DOTENV_VER}" && \
-    cp -rn /tmp/prisma-cli/node_modules/. ./node_modules/ && \
-    rm -rf /tmp/prisma-cli /tmp/prisma-version.json /tmp/dotenv-version.json
-COPY --from=deps --chown=nextjs:nodejs /app/clients/web/prisma ./prisma
-COPY --chown=nextjs:nodejs clients/web/prisma.config.ts ./prisma.config.ts
-
-# Startup entrypoint: run DB migrations then start Next.js server
-COPY containers/web-entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
+COPY --chmod=755 containers/web-entrypoint.sh /web-entrypoint.sh
 
 USER nextjs
 
-EXPOSE 3000
+EXPOSE 3000 3003
 
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["./entrypoint.sh"]
+CMD ["/web-entrypoint.sh"]

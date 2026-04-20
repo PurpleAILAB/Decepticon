@@ -1,9 +1,21 @@
 {
   "name": "decepticon",
   "private": true,
-  "workspaces": ["clients/cli", "clients/web", "clients/shared/*"],
+  "workspaces": [
+    "clients/*",
+    "clients/shared/*"
+  ],
   "scripts": {
-    "cli": "npm run start --workspace=@decepticon/cli",
-    "cli:dev": "npm run dev --workspace=@decepticon/cli"
+    "dev": "npm run dev --workspace=clients/web",
+    "build": "npm run build --workspace=clients/web",
+    "start": "npm run start --workspace=clients/web",
+    "prisma:generate": "npm run prisma:generate --workspace=clients/web",
+    "prisma:migrate": "npm run prisma:migrate --workspace=clients/web"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.7.0"
+  },
+  "devDependencies": {
+    "prisma": "^7.7.0"
   }
 }

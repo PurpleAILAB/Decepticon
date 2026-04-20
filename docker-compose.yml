@@ -174,10 +174,12 @@ services:
     container_name: decepticon-web
     ports:
       - "${WEB_PORT:-3000}:3000"
+      - "${TERMINAL_PORT:-3003}:3003"
     env_file: .env
     environment:
       - NEXT_PUBLIC_DECEPTICON_EDITION=oss
       - LANGGRAPH_API_URL=http://langgraph:2024
+      - NEXT_PUBLIC_TERMINAL_WS_URL=ws://localhost:${TERMINAL_PORT:-3003}
       - DATABASE_URL=postgresql://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/decepticon_web
     depends_on:
       langgraph:

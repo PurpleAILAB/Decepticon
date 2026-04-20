@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
   // @prisma/client + pg: Turbopack otherwise aliases them with content hashes
   // (e.g. @prisma/client-2c3a…) which the standalone build can't resolve at runtime.
   // @decepticon/ee: optional private package, absence handled via try/catch.
-  serverExternalPackages: ["@prisma/client", "pg", "@decepticon/ee"],
+  serverExternalPackages: ["@prisma/client", "pg", "@decepticon/ee", "node-pty", "ws"],
   // Proxy LangGraph SDK requests to the LangGraph server (avoids CORS,
   // enables direct SDK streaming from the browser).
   async rewrites() {

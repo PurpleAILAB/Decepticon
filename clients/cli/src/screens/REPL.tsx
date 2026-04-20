@@ -58,6 +58,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
   const sessions = useSubAgentSessions(agent.events);
   const screen = useAppState((s) => s.screen);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const [pickerSessions, setPickerSessions] = useState<ThreadEntry[]>([]);
   // Increment to force <Static> re-mount on session switch (resets its internal render history)
   const [sessionKey, setSessionKey] = useState(0);
 
@@ -107,13 +108,17 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
             agent.resume();
             return;
           }
-          // Otherwise show session picker
-          const savedSessions = listThreads();
-          if (savedSessions.length === 0) {
-            agent.addSystemEvent("No previous sessions found.");
-            return;
-          }
-          setShowSessionPicker(true);
+          // Otherwise show session picker (async)
+          listThreads().then((savedSessions) => {
+            if (savedSessions.length === 0) {
+              agent.addSystemEvent("No previous sessions found.");
+              return;
+            }
+            setPickerSessions(savedSessions);
+            setShowSessionPicker(true);
+          }).catch(() => {
+            agent.addSystemEvent("Failed to load sessions.");
+          });
           return;
         }
 
@@ -272,7 +277,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
 
           {showSessionPicker ? (
             <SessionPicker
-              sessions={listThreads()}
+              sessions={pickerSessions}
               onSelect={(session: ThreadEntry) => {
                 setShowSessionPicker(false);
                 // Clear terminal + force <Static> re-mount so previous session

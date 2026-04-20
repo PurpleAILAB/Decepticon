@@ -110,8 +110,11 @@ quality: lint test-local quality-cli web-lint web-build
 web:
 	$(COMPOSE) up -d --build web
 
-## Start web dashboard in dev mode (local Next.js, requires running PostgreSQL)
+## Start web dashboard in dev mode (Next.js + terminal WebSocket server)
 web-dev: web-db-ensure
+	@echo "[web-dev] Starting terminal server (ws://localhost:3003)..."
+	@cd clients/web && npx tsx server/terminal-server.ts &
+	@echo "[web-dev] Starting Next.js dev server (http://localhost:3000)..."
 	cd clients/web && npm run dev
 
 # Internal: ensure decepticon_web DB exists and migrations are applied
