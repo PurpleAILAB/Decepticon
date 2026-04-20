@@ -95,6 +95,7 @@ export function useRunObserver({ threadId }: UseRunObserverOptions): UseRunObser
       clearInterval(interval);
       abortRef.current?.abort();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 
   const joinRunStream = useCallback(async (tid: string, runId: string) => {

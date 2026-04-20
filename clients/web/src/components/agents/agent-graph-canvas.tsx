@@ -37,6 +37,7 @@ interface AgentGraphCanvasProps {
 export function AgentGraphCanvas({
   agents,
   events,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   selectedAgent,
   onAgentClick,
 }: AgentGraphCanvasProps) {
@@ -46,7 +47,6 @@ export function AgentGraphCanvas({
   const { nodes, edges } = useAgentActivity({
     agents,
     events,
-    selectedAgentId: selectedAgent?.id,
   });
 
   const { positions, pinNode } = useForceSimulation({ nodes, edges });

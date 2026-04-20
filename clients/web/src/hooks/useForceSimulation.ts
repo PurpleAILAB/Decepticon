@@ -8,7 +8,7 @@
  * can re-render the SVG.
  */
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import {
   forceSimulation,
   forceLink,
@@ -78,6 +78,10 @@ export function useForceSimulation({
   // Preserve positions and pinned state across simulation rebuilds
   const prevPositionsRef = useRef<Map<string, { x: number; y: number; fx: number | null; fy: number | null }>>(new Map());
   const posMapRef = useRef(new Map<string, { x: number; y: number }>());
+
+  // Stable keys for topology change detection
+  const nodeKey = useMemo(() => nodes.map((n) => n.id).join(","), [nodes]);
+  const edgeKey = useMemo(() => edges.map((e) => `${e.source}-${e.target}`).join(","), [edges]);
 
   // Build / rebuild simulation when topology changes
   useEffect(() => {
@@ -150,10 +154,7 @@ export function useForceSimulation({
     };
     // Re-run when node/edge IDs change (serialized for stable deps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    nodes.map((n) => n.id).join(","),
-    edges.map((e) => `${e.source}-${e.target}`).join(","),
-  ]);
+  }, [nodeKey, edgeKey]);
 
   const pinNode = useCallback((id: string, x: number, y: number) => {
     const sim = simRef.current;

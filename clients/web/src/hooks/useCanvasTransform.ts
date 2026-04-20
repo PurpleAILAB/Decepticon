@@ -8,7 +8,7 @@
  * helper that frames all nodes with padding.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 3.0;
@@ -79,7 +79,7 @@ export function useCanvasTransform(): UseCanvasTransformReturn {
   }, []);
 
   const transformRef = useRef(transform);
-  transformRef.current = transform;
+  useEffect(() => { transformRef.current = transform; }, [transform]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;

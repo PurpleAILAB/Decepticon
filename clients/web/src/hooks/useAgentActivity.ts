@@ -27,7 +27,6 @@ interface ToolSession {
 interface UseAgentActivityOptions {
   agents: AgentConfig[];
   events: SubagentCustomEvent[];
-  selectedAgentId?: string | null;
 }
 
 interface UseAgentActivityReturn {
@@ -39,7 +38,6 @@ interface UseAgentActivityReturn {
 export function useAgentActivity({
   agents,
   events,
-  selectedAgentId,
 }: UseAgentActivityOptions): UseAgentActivityReturn {
   return useMemo(() => {
     const agentStates = new Map<string, AgentRuntimeState>();
@@ -189,5 +187,5 @@ export function useAgentActivity({
     }
 
     return { nodes, edges, activeAgentIds };
-  }, [agents, events, selectedAgentId]);
+  }, [agents, events]);
 }
