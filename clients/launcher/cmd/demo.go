@@ -42,8 +42,11 @@ func runDemo(cmd *cobra.Command, args []string) error {
 	home := config.DecepticonHome()
 	demoDir := filepath.Join(home, "workspace", "demo")
 
-	// Download demo plan files
-	branch := config.Get(env, "DECEPTICON_BRANCH", "main")
+	// Download demo plan files — use release tag to stay in sync with installed version
+	branch := "v" + version
+	if version == "dev" || version == "" {
+		branch = config.Get(env, "DECEPTICON_BRANCH", "main")
+	}
 	planDir := filepath.Join(demoDir, "plan")
 	if err := os.MkdirAll(planDir, 0o755); err != nil {
 		return err

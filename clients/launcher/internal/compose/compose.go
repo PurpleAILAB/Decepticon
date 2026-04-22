@@ -125,7 +125,7 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 	for _, p := range profiles {
 		cmdArgs = append(cmdArgs, "--profile", p)
 	}
-	cmdArgs = append(cmdArgs, "run", "--rm")
+	cmdArgs = append(cmdArgs, "run", "--rm", "--no-build")
 	for k, v := range env {
 		cmdArgs = append(cmdArgs, "-e", k+"="+v)
 	}

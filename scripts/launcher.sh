@@ -263,7 +263,7 @@ case "${1:-}" in
         [[ -n "$_ver" ]] && export DECEPTICON_VERSION="$_ver"
 
         # Run CLI in foreground (interactive)
-        $COMPOSE_PROFILES run --rm cli
+        $COMPOSE_PROFILES run --rm --no-build cli
         ;;
 
     stop)
@@ -362,7 +362,7 @@ case "${1:-}" in
         ;&
 
     onboard)
-        $COMPOSE_PROFILES run --rm cli python -m decepticon.cli.app onboard
+        $COMPOSE_PROFILES run --rm --no-build cli python -m decepticon.cli.app onboard
         ;;
 
     demo)
@@ -383,9 +383,13 @@ case "${1:-}" in
         mkdir -p "$DECEPTICON_HOME/workspace/demo/exploit"
         mkdir -p "$DECEPTICON_HOME/workspace/demo/post-exploit"
         touch "$DECEPTICON_HOME/workspace/demo/findings.md"
+        # Use installed version tag for demo files (not the moving main branch)
+        _installed_ver=$(cat "$DECEPTICON_HOME/.version" 2>/dev/null || echo "")
+        _demo_base="$RAW_BASE"
+        [[ -n "$_installed_ver" ]] && _demo_base="https://raw.githubusercontent.com/$REPO/v${_installed_ver}"
         for f in roe.json conops.json opplan.json; do
             if [[ ! -f "$demo_dir/$f" ]]; then
-                curl -fsSL "$RAW_BASE/demo/plan/$f" -o "$demo_dir/$f" 2>/dev/null || {
+                curl -fsSL "$_demo_base/demo/plan/$f" -o "$demo_dir/$f" 2>/dev/null || {
                     echo -e "${RED}Failed to download $f. Run 'decepticon update' first.${NC}"
                     exit 1
                 }
@@ -409,7 +413,7 @@ case "${1:-}" in
         echo ""
 
         # Run CLI with auto-start message
-        $COMPOSE_PROFILES run --rm -e DECEPTICON_INITIAL_MESSAGE="Resume the demo engagement and execute all objectives." cli
+        $COMPOSE_PROFILES run --rm --no-build -e DECEPTICON_INITIAL_MESSAGE="Resume the demo engagement and execute all objectives." cli
         ;;
 
     victims)

@@ -206,8 +206,9 @@ func CheckAndUpdate(currentVersion string, env map[string]string) bool {
 
 	ui.Info(fmt.Sprintf("Update available: %s → %s", currentVersion, release.TagName))
 
-	branch := config.Get(env, "DECEPTICON_BRANCH", "main")
-	if err := SyncConfigFiles(branch); err != nil {
+	// Use release tag for config files to avoid main branch drift
+	ref := release.TagName // e.g., "v1.0.7"
+	if err := SyncConfigFiles(ref); err != nil {
 		ui.Warning("Config sync failed: " + err.Error())
 	}
 

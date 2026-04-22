@@ -42,6 +42,9 @@ jobs:
       fail-fast: false   # one image failure must not cancel the rest
       matrix:
         include:
+          - image: decepticon-litellm
+            dockerfile: containers/litellm.Dockerfile
+            platforms: linux/amd64,linux/arm64
           - image: decepticon-langgraph
             dockerfile: containers/langgraph.Dockerfile
             platforms: linux/amd64,linux/arm64

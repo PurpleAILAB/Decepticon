@@ -83,6 +83,8 @@ resolve_version() {
         info "No releases found, using latest from $BRANCH branch."
     else
         DECEPTICON_VERSION="$latest"
+        # Pin config downloads to the release tag (not the moving main branch)
+        RAW_BASE="https://raw.githubusercontent.com/$REPO/v$DECEPTICON_VERSION"
     fi
 }
 

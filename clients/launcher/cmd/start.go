@@ -56,9 +56,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 	home := config.DecepticonHome()
 	composePath := filepath.Join(home, "docker-compose.yml")
 	if _, err := os.Stat(composePath); os.IsNotExist(err) {
-		branch := config.Get(env, "DECEPTICON_BRANCH", "main")
+		// Use installed version tag; fall back to branch for dev builds
+		ref := "v" + version
+		if version == "dev" || version == "" {
+			ref = config.Get(env, "DECEPTICON_BRANCH", "main")
+		}
 		ui.Info("Downloading configuration files...")
-		if err := updater.SyncConfigFiles(branch); err != nil {
+		if err := updater.SyncConfigFiles(ref); err != nil {
 			return fmt.Errorf("sync config: %w", err)
 		}
 	}
