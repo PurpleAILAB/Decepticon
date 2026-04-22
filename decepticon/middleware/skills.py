@@ -82,6 +82,13 @@ line. If the objective mentions any trigger keyword, load that skill before proc
 - `bash(command="cat /skills/...")` — WILL FAIL (sandbox does not mount `/skills/`)
 - Skills are on the host filesystem, routed through a virtual backend.
 
+### SKILL-FIRST RULE (CRITICAL)
+Memorize the skill catalog below. When a task matches an available skill, you MUST
+load and follow that skill BEFORE acting on your own knowledge. Skills contain
+domain-specific checklists, templates, and procedures that are more precise and
+current than general knowledge. Operating from memory when a specialized skill
+exists is a critical failure — load the skill, follow its procedure.
+
 ### When to Load
 - **Before each new technique**: Read the relevant skill FIRST, then execute.
 - **Before using unfamiliar tools**: Even if you know the tool generically, skills

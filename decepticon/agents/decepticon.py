@@ -1,4 +1,9 @@
-"""Decepticon Orchestrator — autonomous red team coordinator.
+"""Decepticon Orchestrator — autonomous red team coordinator with engagement flow routing.
+
+Wraps the Decepticon and Soundwave agents in a StateGraph router that checks
+for engagement documents (roe.json, conops.json, deconfliction.json) on every
+turn. No docs → Soundwave interviews the user. Docs exist → Decepticon takes
+over for OPPLAN creation and kill chain execution.
 
 Uses create_agent() directly (not create_deep_agent()) to control the
 middleware stack precisely. The orchestrator coordinates the full kill chain
