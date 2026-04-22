@@ -11,6 +11,30 @@ permissions:
   attestations: write
 
 jobs:
+  launcher:
+    name: Build Go launcher binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache-dependency-path: clients/launcher/go.sum
+
+      - name: Run tests
+        working-directory: clients/launcher
+        run: go test ./...
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+          workdir: clients/launcher
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   docker:
     name: Build & push ${{ matrix.image }}
     runs-on: ubuntu-latest
