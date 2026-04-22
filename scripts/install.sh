@@ -120,15 +120,42 @@ download_files() {
     echo "$DECEPTICON_VERSION" > "$install_dir/.version"
 }
 
-# ── Create launcher script ───────────────────────────────────────
+# ── Download launcher binary ─────────────────────────────────────
 create_launcher() {
     local bin_dir="$1"
     local install_dir="$2"
 
     mkdir -p "$bin_dir"
 
-    info "Downloading launcher..."
-    curl -fsSL "$RAW_BASE/scripts/launcher.sh" -o "$bin_dir/decepticon"
+    # Detect OS and architecture
+    local os arch
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        arm64)   arch="arm64" ;;
+        *)
+            error "Unsupported architecture: $arch"
+            exit 1
+            ;;
+    esac
+
+    local binary_name="decepticon-${os}-${arch}"
+    local download_url
+
+    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+        info "Downloading launcher script (no release binary available)..."
+        curl -fsSL "$RAW_BASE/scripts/launcher.sh" -o "$bin_dir/decepticon"
+    else
+        download_url="https://github.com/$REPO/releases/download/v${DECEPTICON_VERSION}/${binary_name}"
+        info "Downloading launcher binary ($binary_name)..."
+        if ! curl -fsSL "$download_url" -o "$bin_dir/decepticon" 2>/dev/null; then
+            warn "Binary not available, falling back to launcher script..."
+            curl -fsSL "$RAW_BASE/scripts/launcher.sh" -o "$bin_dir/decepticon"
+        fi
+    fi
+
     chmod 755 "$bin_dir/decepticon"
 }
 
@@ -251,8 +278,8 @@ main() {
     echo -e "${GREEN}  Decepticon installed successfully!${NC}"
     echo -e "${GREEN}────────────────────────────────────────────${NC}"
     echo ""
-    echo -e "  ${BOLD}1.${NC} Configure your API key:"
-    echo -e "     ${BOLD}decepticon config${NC}"
+    echo -e "  ${BOLD}1.${NC} Configure your API keys:"
+    echo -e "     ${BOLD}decepticon onboard${NC}"
     echo ""
     echo -e "  ${BOLD}2.${NC} Start Decepticon:"
     echo -e "     ${BOLD}decepticon${NC}"

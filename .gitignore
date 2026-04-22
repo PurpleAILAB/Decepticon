@@ -91,3 +91,4 @@ clients/ee/
 # Project-specific Claude Code instructions (private)
 CLAUDE.md
 references/octogent
+clients/launcher/decepticon

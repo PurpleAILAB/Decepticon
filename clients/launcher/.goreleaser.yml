@@ -1,0 +1,48 @@
+version: 2
+
+project_name: decepticon
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: decepticon
+    dir: .
+    main: ./main.go
+    binary: decepticon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/PurpleAILAB/Decepticon/clients/launcher/cmd.version={{.Version}}
+
+archives:
+  - id: binaries
+    format: binary
+    name_template: "decepticon-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: PurpleAILAB
+    name: Decepticon
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
