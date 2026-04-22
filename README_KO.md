@@ -53,16 +53,6 @@ decepticon onboard   # 대화형 설정 위자드 (프로바이더, API 키, 모
 decepticon           # 터미널 CLI 실행
 ```
 
-<details>
-<summary>소스에서 직접 빌드 (선택)</summary>
-
-```bash
-cd clients/launcher
-go build -o decepticon .
-sudo mv decepticon /usr/local/bin/
-```
-
-</details>
 
 또는 웹 대시보드로 실행:
 

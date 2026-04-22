@@ -53,17 +53,6 @@ decepticon onboard   # Interactive setup wizard (provider, API key, model profil
 decepticon           # Start everything: terminal CLI + web dashboard at http://localhost:3000
 ```
 
-<details>
-<summary>Build from source (optional)</summary>
-
-```bash
-cd clients/launcher
-go build -o decepticon .
-sudo mv decepticon /usr/local/bin/
-```
-
-</details>
-
 → **[Full setup guide](docs/getting-started.md)**
 
 ---
