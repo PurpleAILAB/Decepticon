@@ -176,6 +176,72 @@ wait_for_server() {
     done
 }
 
+# ── Auto-migrate to Go binary ────────────────────────────────────
+# If a compiled Go launcher is available in GitHub Releases, download
+# it and replace this bash script. Re-exec so the user seamlessly
+# switches to the Go version on next run.
+migrate_to_go_binary() {
+    # Skip if disabled
+    local auto_update
+    auto_update=$(grep -m1 '^AUTO_UPDATE=' "$DECEPTICON_HOME/.env" 2>/dev/null | cut -d= -f2 | tr -d "'\"" || true)
+    [[ "${auto_update,,}" == "false" ]] && return
+
+    # Skip if already tried and failed recently (cooldown: 24h)
+    local marker="$DECEPTICON_HOME/.go-migration-checked"
+    if [[ -f "$marker" ]]; then
+        local age=$(( $(date +%s) - $(stat -c %Y "$marker" 2>/dev/null || echo 0) ))
+        [[ $age -lt 86400 ]] && return
+    fi
+
+    # Detect OS and architecture
+    local os arch
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) return ;;  # unsupported arch, stay on bash
+    esac
+
+    # Find the latest release with a Go binary
+    local latest binary_name download_url
+    latest=$(curl -sf --max-time 5 "https://api.github.com/repos/$REPO/releases/latest" \
+        | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p') 2>/dev/null || true
+    [[ -z "$latest" ]] && return
+
+    binary_name="decepticon-${os}-${arch}"
+    download_url="https://github.com/$REPO/releases/download/v${latest}/${binary_name}"
+
+    # Check if binary exists in the release (HEAD request)
+    if ! curl -sfI --max-time 5 "$download_url" >/dev/null 2>&1; then
+        touch "$marker"  # no binary yet, check again tomorrow
+        return
+    fi
+
+    echo -e "${CYAN}Upgrading to native launcher (v${latest})...${NC}"
+
+    local self
+    self=$(which decepticon 2>/dev/null || echo "$HOME/.local/bin/decepticon")
+    local tmp="/tmp/decepticon-go-$$"
+
+    if curl -fsSL --max-time 60 "$download_url" -o "$tmp" 2>/dev/null; then
+        chmod 755 "$tmp"
+        # Verify it's a real binary (not an HTML error page)
+        if file "$tmp" 2>/dev/null | grep -qiE "ELF|Mach-O"; then
+            mv "$tmp" "$self"
+            echo -e "${GREEN}Upgraded to Go launcher v${latest}.${NC}"
+            exec "$self" "$@"
+        else
+            rm -f "$tmp"
+            touch "$marker"
+        fi
+    else
+        touch "$marker"
+    fi
+}
+
+migrate_to_go_binary "$@"
+
 case "${1:-}" in
     ""|start)
         check_api_key
