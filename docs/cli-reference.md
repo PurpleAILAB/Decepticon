@@ -5,14 +5,14 @@
 | Command | Description |
 |---------|-------------|
 | `decepticon` | Start all services, open the terminal UI, and print the web dashboard URL |
+| `decepticon onboard` | Interactive setup wizard (provider, API key, model profile, LangSmith) |
+| `decepticon onboard --reset` | Reconfigure even if `.env` already exists |
 | `decepticon demo` | Run guided demo (Metasploitable 2, full kill chain + Sliver C2) |
-| `decepticon config` | Edit API keys and settings (opens `$EDITOR`) |
 | `decepticon stop` | Stop all services |
 | `decepticon status` | Show service status |
 | `decepticon logs [service]` | Follow service logs (default: `langgraph`) |
-| `decepticon victims` | Start vulnerable test targets (DVWA, Metasploitable 2) |
 | `decepticon kg-health` | Diagnose the Neo4j knowledge graph |
-| `decepticon update [-f]` | Pull latest Docker images (`-f` forces re-pull) |
+| `decepticon update` | Check for updates and apply them |
 | `decepticon remove` | Uninstall Decepticon completely |
 | `decepticon --version` | Show installed version |
 
@@ -73,17 +73,20 @@ Cycle with `Ctrl+G`, hide/show with `Ctrl+B`. A Web Canvas auto-starts for pan/z
 
 ### Slash Commands
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Show available commands and keyboard shortcuts |
-| `/clear` | Clear conversation history |
-| `/quit` | Exit the CLI |
+Available inside the interactive terminal UI:
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `/help` | `/?` | Show available commands and keyboard shortcuts |
+| `/clear` | | Clear conversation history |
+| `/resume [message]` | `/r` | Resume a paused run or continue previous session |
+| `/quit` | | Exit the CLI |
 
 ---
 
 ## Environment Variables
 
-These can be set in your `.env` file (edit with `decepticon config`) or as shell environment variables.
+These can be set in your `.env` file (configure with `decepticon onboard`) or as shell environment variables.
 
 ### Required (at least one LLM key)
 
@@ -92,12 +95,14 @@ These can be set in your `.env` file (edit with `decepticon config`) or as shell
 | `ANTHROPIC_API_KEY` | Anthropic Claude API key |
 | `OPENAI_API_KEY` | OpenAI API key (fallback) |
 | `GOOGLE_API_KEY` | Google Gemini API key (fallback) |
+| `MINIMAX_API_KEY` | MiniMax API key (fallback) |
 
 ### Model Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DECEPTICON_MODEL_PROFILE` | `eco` | Model profile: `eco`, `max`, or `test` |
+| `DECEPTICON_MODEL_PROVIDER` | `api` | Auth method: `api` (API keys) or `auth` (OAuth) |
 
 See [Models](models.md) for full profile details.
 

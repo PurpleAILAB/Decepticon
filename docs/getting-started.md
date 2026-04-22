@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2
-- An API key for at least one LLM provider (Anthropic, OpenAI, or Google)
+- An API key for at least one LLM provider (Anthropic, OpenAI, Google, or MiniMax) — or an OAuth subscription (Claude Code, Codex)
 
 That's it. Everything else runs inside containers.
 
@@ -22,18 +22,18 @@ This installs the `decepticon` CLI to your system.
 ## Configure
 
 ```bash
-decepticon config
+decepticon onboard
 ```
 
-Opens your `$EDITOR` with the `.env` file. Set at least one API key:
+The interactive setup wizard guides you through:
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-...     # Claude (recommended)
-OPENAI_API_KEY=sk-...            # GPT (optional fallback)
-GOOGLE_API_KEY=...               # Gemini (optional fallback)
-```
+1. **Authentication** — API key or OAuth (Claude Code, Codex)
+2. **Provider** — Anthropic, OpenAI, Google, or MiniMax
+3. **API Key** — Enter your provider key (skipped for OAuth)
+4. **Model Profile** — `eco` (balanced), `max` (performance), or `test` (development)
+5. **LangSmith** — Optional tracing for LLM observability
 
-Save and exit.
+Configuration is saved to `~/.decepticon/.env`. Run `decepticon onboard --reset` to reconfigure.
 
 ---
 
