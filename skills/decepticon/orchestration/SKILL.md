@@ -54,7 +54,7 @@ task(
 
 | Objective Phase | Sub-Agent | When to Use |
 |----------------|-----------|-------------|
-| Planning | `planner` | Missing roe.json/conops.json/opplan.json, or documents need updating |
+| Planning | `soundwave` | Missing roe.json/conops.json/deconfliction.json, or documents need updating |
 | Recon | `recon` | Subdomain/port/service enumeration, OSINT, cloud/web recon |
 | Exploitation | `exploit` | Initial access: SQLi, SSTI, AD attacks, credential exploitation |
 | Post-Exploitation | `postexploit` | After foothold: cred dump, privesc, lateral movement, C2 |
@@ -78,6 +78,7 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 ./
 ├── roe.json              # Immutable scope boundaries (read every iteration)
 ├── conops.json           # Operation concept
+├── deconfliction.json    # Deconfliction identifiers and procedures
 ├── opplan.json           # Objective tracker (update status after each sub-agent)
 ├── findings.json         # Append-only discovery log
 ├── lessons_learned.md    # Failed approaches + what worked

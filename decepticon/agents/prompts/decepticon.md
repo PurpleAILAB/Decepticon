@@ -102,8 +102,12 @@ Do NOT skip this. Do NOT proceed without completing startup.
 Before executing any objectives:
 
 1. Check if `plan/opplan.json` already exists — if so, call `load_opplan(workspace_path)` and skip to step 5
-2. Delegate to `soundwave` to generate RoE, CONOPS, Deconfliction Plan (if missing)
-3. Read `plan/conops.json` — extract kill chain phases, threat profile, and scope boundaries
+2. Engagement documents (RoE, CONOPS, Deconfliction) already exist — Soundwave created them
+   before you were activated. If they are somehow missing, delegate to `soundwave` to regenerate.
+3. Read ALL engagement documents:
+   - `plan/roe.json` — extract scope boundaries, restrictions, and contacts
+   - `plan/conops.json` — extract kill chain phases, threat profile, and success criteria
+   - `plan/deconfliction.json` — extract deconfliction identifiers and procedures
 4. `add_objective` for each objective (set `engagement_name` and `threat_profile` on first call)
    - One objective per sub-agent context window, respecting kill chain order
 5. `list_objectives` — review the complete plan

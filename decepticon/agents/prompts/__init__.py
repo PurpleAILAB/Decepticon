@@ -126,7 +126,7 @@ def _get_tool_prompt(tool_name: str, role: str | None = None) -> str:
 
 
 # ── Roles that get cross-cutting prompt patterns ─────────────────────────────
-# The orchestrator (decepticon) and planner don't do direct tool execution,
+# The orchestrator (decepticon) and soundwave don't do direct tool execution,
 # so they get a subset of the patterns.
 _OPERATIONAL_ROLES = {
     "recon",

@@ -48,8 +48,10 @@ What is the target or scope for this engagement?
 
 1. Read planning documents:
    ```
-   read_file("<engagement>/plan/opplan.json")
    read_file("<engagement>/plan/roe.json")
+   read_file("<engagement>/plan/conops.json")
+   read_file("<engagement>/plan/deconfliction.json")
+   read_file("<engagement>/plan/opplan.json")
    read_file("<engagement>/findings.md")
    ```
 2. Summarize progress to the operator:
@@ -60,26 +62,25 @@ What is the target or scope for this engagement?
 3. Ask: "Continue from where we left off?"
 4. Begin the Ralph execution loop
 
-## Step 3B: Start New Engagement
+## Step 3B: New Engagement (docs already created by Soundwave)
 
-1. Ask the operator for target/scope (if not already provided)
-2. Determine a descriptive slug from the target scope:
-   - Format: `<org>-<type>-<period>` (e.g., `acme-external-2026`, `internal-audit-q1`)
-   - Keep it short, lowercase, hyphenated
-3. Create workspace structure:
+Soundwave has already interviewed the operator and created the engagement documents
+(RoE, CONOPS, Deconfliction Plan) before the orchestrator was activated. The workspace
+and planning documents already exist.
+
+1. Verify documents exist:
    ```
-   bash(command="mkdir -p /workspace/<slug>/{plan,recon,exploit,post-exploit}")
+   bash(command="ls /workspace/<slug>/plan/roe.json /workspace/<slug>/plan/conops.json /workspace/<slug>/plan/deconfliction.json")
    ```
-4. Delegate to `planner` sub-agent to generate engagement documents:
+   If any are missing, delegate to `soundwave` to regenerate:
    ```
-   task("planner", "New engagement. Workspace: /workspace/<slug>/. Target: <target>. Interview the operator and generate RoE, CONOPS, and OPPLAN.")
+   task("soundwave", "Engagement workspace: /workspace/<slug>/. Regenerate missing planning documents.")
    ```
-5. Once planner completes → verify documents exist in `<slug>/plan/`
-6. **Check C2 Infrastructure** — If `opplan.json` contains post-exploitation objectives:
+2. **Check C2 Infrastructure**:
    ```
    bash(command="nc -z c2-sliver 31337 2>/dev/null && echo 'C2_REACHABLE' || echo 'C2_UNREACHABLE'")
    ```
    - If `C2_REACHABLE` → C2 framework is **Sliver** (server: `c2-sliver`, gRPC port 31337). Include this in ALL sub-agent delegations.
    - If `C2_UNREACHABLE` → C2 server is not available, skip C2-dependent objectives
    - **IMPORTANT**: The C2 framework is always Sliver regardless of the engagement name. Do NOT assume Metasploit from engagement names containing "msf".
-7. Begin the Ralph execution loop
+3. Begin the Ralph execution loop (Phase 1: read CONOPS → build OPPLAN)

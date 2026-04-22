@@ -19,7 +19,7 @@ metadata:
 1. Read all findings/*.md              (parse YAML frontmatter for metadata)
 2. Read all findings/attack-paths/PATH-*.md
 3. Read timeline.jsonl                 (activity log)
-4. Read plan/roe.json + plan/conops.json   (engagement context)
+4. Read plan/roe.json + plan/conops.json + plan/deconfliction.json  (engagement context)
 5. Read plan/opplan.json               (objective status summary)
 6. Generate report/executive-summary.md
 7. Generate report/technical-report.md

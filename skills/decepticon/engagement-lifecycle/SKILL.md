@@ -19,6 +19,7 @@ Before starting any engagement, verify:
 1. **Documents exist and are valid**:
    - [ ] `roe.json` — Rules of Engagement with scope, restrictions, contacts
    - [ ] `conops.json` — Concept of Operations with threat profile and kill chain phases
+   - [ ] `deconfliction.json` — Deconfliction identifiers and procedures
    - [ ] `opplan.json` — Operational Plan with sequenced, acceptance-gated objectives
    - [ ] All documents cross-reference consistently
 
@@ -28,7 +29,7 @@ Before starting any engagement, verify:
    - [ ] Operator config exists: `/workspace/.sliver-configs/decepticon.cfg`
    - [ ] Output directories created (`<engagement>/recon/`, `<engagement>/exploit/`, etc.)
 
-3. **If any document is missing**: Delegate to `planner` sub-agent first.
+3. **If any document is missing**: Delegate to `soundwave` sub-agent first.
 
 All paths below are relative to the engagement working directory (set via `cd` before commands run).
 
@@ -36,7 +37,7 @@ All paths below are relative to the engagement working directory (set via `cd` b
 
 | Type | Starting Phase | Sub-Agents Used | Key Consideration |
 |------|---------------|-----------------|-------------------|
-| Full Scope | Planning → Recon | All (planner, recon, exploit, postexploit) | Longest duration, most OPSEC-sensitive |
+| Full Scope | Planning → Recon | All (soundwave, recon, exploit, postexploit) | Longest duration, most OPSEC-sensitive |
 | Assumed Breach | Exploitation | exploit, postexploit | Skip recon, start from provided foothold |
 | Recon Only | Recon | recon only | No exploitation, intelligence gathering only |
 | Objective-Based | Varies | Targeted subset | Focus on specific crown jewels |
@@ -50,7 +51,7 @@ Read `roe.json` to determine engagement type and adjust phase ordering according
 Before transitioning between phases, verify the gate criteria from the `workflow` skill:
 
 ```
-Planning → Recon:    roe.json + conops.json + opplan.json exist and validated
+Planning → Recon:    roe.json + conops.json + deconfliction.json + opplan.json exist and validated
 Recon → Exploit:     Attack surface identified, targets prioritized, vulns catalogued
 Exploit → PostExploit: Initial foothold established, access type documented
 PostExploit → Report: All OPPLAN objectives resolved (passed or blocked)
