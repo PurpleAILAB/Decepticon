@@ -1,0 +1,52 @@
+# docker-compose.watch.yml — hot-reload overrides for development
+#
+# Requires Docker Compose 2.22+ (introduces the `develop.watch` key).
+# Kept separate from docker-compose.yml so OSS users on older Compose
+# versions don't hit "Additional property develop is not allowed".
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.watch.yml watch
+#   # or via make:
+#   make dev
+services:
+  langgraph:
+    develop:
+      watch:
+        - action: sync
+          path: ./decepticon
+          target: /app/decepticon
+        - action: sync
+          path: ./skills
+          target: /app/skills
+        - action: sync
+          path: ./langgraph.json
+          target: /app/langgraph.json
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./containers/langgraph.Dockerfile
+
+  web:
+    develop:
+      watch:
+        - action: sync
+          path: ./clients/web/src
+          target: /app/clients/web/src
+        - action: sync
+          path: ./clients/web/public
+          target: /app/clients/web/public
+        - action: rebuild
+          path: ./clients/web/package.json
+        - action: rebuild
+          path: ./containers/web.Dockerfile
+
+  cli:
+    develop:
+      watch:
+        - action: sync
+          path: ./clients/cli/src
+          target: /app/src
+        - action: rebuild
+          path: ./clients/cli/package.json
+        - action: rebuild
+          path: ./containers/cli.Dockerfile

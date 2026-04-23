@@ -154,22 +154,6 @@ services:
     networks:
       - decepticon-net
     restart: unless-stopped
-    # Dev hot-reload: activate with `docker compose watch` (ignored by `docker compose up`)
-    develop:
-      watch:
-        - action: sync
-          path: ./decepticon
-          target: /app/decepticon
-        - action: sync
-          path: ./skills
-          target: /app/skills
-        - action: sync
-          path: ./langgraph.json
-          target: /app/langgraph.json
-        - action: rebuild
-          path: ./pyproject.toml
-        - action: rebuild
-          path: ./containers/langgraph.Dockerfile
 
   # Web Dashboard — Next.js UI
   # Migrations run automatically at startup via web-entrypoint.sh (prisma migrate deploy).
@@ -199,18 +183,6 @@ services:
     networks:
       - decepticon-net
     restart: unless-stopped
-    develop:
-      watch:
-        - action: sync
-          path: ./clients/web/src
-          target: /app/clients/web/src
-        - action: sync
-          path: ./clients/web/public
-          target: /app/clients/web/public
-        - action: rebuild
-          path: ./clients/web/package.json
-        - action: rebuild
-          path: ./containers/web.Dockerfile
 
   # Ink CLI — Interactive terminal UI
   # Runs via: docker compose run --rm cli
@@ -234,15 +206,6 @@ services:
       - decepticon-net
     profiles:
       - cli
-    develop:
-      watch:
-        - action: sync
-          path: ./clients/cli/src
-          target: /app/src
-        - action: rebuild
-          path: ./clients/cli/package.json
-        - action: rebuild
-          path: ./containers/cli.Dockerfile
 
   # ── C2 Infrastructure (profile-based, default: c2-sliver) ───────────
   # Each C2 framework runs as a profile-based service on sandbox-net.

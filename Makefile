@@ -7,8 +7,9 @@
 # Both dev and prod run identical Docker containers.
 # The only difference: `watch` syncs local source changes into containers.
 
-COMPOSE     := docker compose
-COMPOSE_CLI := $(COMPOSE) --profile cli
+COMPOSE       := docker compose
+COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.watch.yml
+COMPOSE_CLI   := $(COMPOSE) --profile cli
 
 # Ensure DECEPTICON_HOME is always set so Docker Compose bind mounts resolve
 # correctly. Docker Compose cannot expand ~ in default values, so we must
@@ -24,7 +25,7 @@ export DECEPTICON_HOME ?= $(HOME)/.decepticon
 
 ## Build images and start with hot-reload (source changes auto-sync)
 dev:
-	$(COMPOSE) watch
+	$(COMPOSE_WATCH) watch
 
 ## Run interactive CLI in Docker (prod-like, requires `make dev` for backend)
 cli:
@@ -32,7 +33,7 @@ cli:
 
 ## Run interactive CLI locally (dev mode — starts backend with hot-reload, then local CLI)
 cli-dev: infra
-	@$(COMPOSE) watch --no-up --quiet langgraph &
+	@$(COMPOSE_WATCH) watch --no-up --quiet langgraph &
 	cd clients/cli && DECEPTICON_API_URL=$${DECEPTICON_API_URL:-http://localhost:2024} npm run dev
 
 # ── Production-like ──────────────────────────────────────────────
@@ -114,7 +115,7 @@ web:
 ## Start web dashboard in dev mode (Next.js + terminal WebSocket server)
 ## Automatically starts infra services with hot-reload, then local web.
 web-dev: infra web-db-ensure
-	@$(COMPOSE) watch --no-up --quiet langgraph &
+	@$(COMPOSE_WATCH) watch --no-up --quiet langgraph &
 	@echo "[web-dev] Starting terminal server (ws://localhost:3003)..."
 	@cd clients/web && npx tsx server/terminal-server.ts &
 	@echo "[web-dev] Starting Next.js dev server (http://localhost:3000)..."

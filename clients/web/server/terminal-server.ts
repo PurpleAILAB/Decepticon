@@ -79,6 +79,11 @@ wss.on("connection", async (ws: WebSocket, req) => {
     FORCE_COLOR: "1",
     DECEPTICON_AGENT: agentId,
     DECEPTICON_ENGAGEMENT_ID: engagementId,
+    // Explicitly set DECEPTICON_API_URL so the CLI subprocess resolves the
+    // correct internal Docker hostname (e.g. http://langgraph:2024) rather
+    // than falling back to localhost:2024, which is unreachable inside the
+    // web container.
+    DECEPTICON_API_URL: LANGGRAPH_API_URL,
   };
   if (threadId) {
     env.DECEPTICON_THREAD_ID = threadId;
