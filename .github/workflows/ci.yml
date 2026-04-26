@@ -28,8 +28,84 @@ permissions:
   contents: read
 
 jobs:
+  # Compute which areas of the repo were touched. Downstream jobs gate on
+  # these so a Go-only or docs-only change doesn't run the entire suite.
+  # Any change to ci.yml itself triggers everything (safety net).
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.app.outputs.python }}
+      cli: ${{ steps.app.outputs.cli }}
+      web: ${{ steps.app.outputs.web }}
+      docker-images: ${{ steps.docker.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: app
+        with:
+          filters: |
+            python:
+              - 'decepticon/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+            cli:
+              - 'clients/cli/**'
+              - 'clients/shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'clients/web/**'
+              - 'clients/shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+      # Per-image filter: filter name == image name so the matrix can pull
+      # `outputs.changes` directly as the list of images to build.
+      - uses: dorny/paths-filter@v3
+        id: docker
+        with:
+          filters: |
+            langgraph:
+              - 'containers/langgraph.Dockerfile'
+              - 'decepticon/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'skills/**'
+              - '.github/workflows/ci.yml'
+            litellm:
+              - 'containers/litellm.Dockerfile'
+              - 'config/litellm.yaml'
+              - '.github/workflows/ci.yml'
+            sandbox:
+              - 'containers/sandbox.Dockerfile'
+              - '.github/workflows/ci.yml'
+            cli:
+              - 'containers/cli.Dockerfile'
+              - 'clients/cli/**'
+              - 'clients/shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'containers/web.Dockerfile'
+              - 'clients/web/**'
+              - 'clients/cli/**'
+              - 'clients/shared/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            c2-sliver:
+              - 'containers/c2-sliver.Dockerfile'
+              - '.github/workflows/ci.yml'
+
   python:
     name: Python (lint + typecheck + test)
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,9 +134,9 @@ jobs:
           sys.exit(1 if s['errorCount'] > 0 else 0)
           "
       - name: Pytest with coverage
-        # -n auto runs tests in parallel across all available CPUs.
-        # GitHub-hosted runners have 4 vCPUs, so this cuts the suite from
-        # ~12 min to ~3 min. pytest-cov + xdist combine results correctly.
+        # -n auto runs tests in parallel across available CPUs (2 vCPU on
+        # GitHub-hosted ubuntu-latest, ~2x speedup). pytest-cov + xdist
+        # combine results correctly.
         run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30
       - name: Upload coverage artifact
         if: always()
@@ -72,6 +148,8 @@ jobs:
 
   cli:
     name: CLI (typecheck + test)
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +165,8 @@ jobs:
 
   web:
     name: Web (lint + build)
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,29 +187,20 @@ jobs:
 
   docker-build:
     name: Docker build (${{ matrix.image }})
+    needs: changes
+    if: needs.changes.outputs.docker-images != '[]'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - image: langgraph
-            dockerfile: containers/langgraph.Dockerfile
-          - image: litellm
-            dockerfile: containers/litellm.Dockerfile
-          - image: sandbox
-            dockerfile: containers/sandbox.Dockerfile
-          - image: cli
-            dockerfile: containers/cli.Dockerfile
-          - image: web
-            dockerfile: containers/web.Dockerfile
-          - image: c2-sliver
-            dockerfile: containers/c2-sliver.Dockerfile
+        image: ${{ fromJSON(needs.changes.outputs.docker-images) }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: containers/${{ matrix.image }}.Dockerfile
           push: false
           load: true
           tags: decepticon-${{ matrix.image }}:ci
@@ -152,6 +223,8 @@ jobs:
           path: trivy-${{ matrix.image }}.sarif
           if-no-files-found: ignore
 
+  # Security scans always run regardless of which paths changed —
+  # vulnerability databases update independently of repo state.
   security:
     name: Security (pip-audit + gitleaks)
     runs-on: ubuntu-latest
