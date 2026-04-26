@@ -1,12 +1,12 @@
 # ----------------------
-# Base — Node 22 LTS (Active LTS until 2027-04)
-# Build tools for native addons (node-pty, sharp)
+# build-base — Node 22 LTS + native build toolchain.
+# Used only by stages that compile native addons (node-pty, sharp).
 # ----------------------
-FROM node:22-slim AS base
+FROM node:22-slim AS build-base
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
     python3 \
@@ -15,9 +15,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # ----------------------
-# deps — install all workspace dependencies
+# deps — install full workspace dependencies (incl. devDependencies for build).
 # ----------------------
-FROM base AS deps
+FROM build-base AS deps
 
 WORKDIR /app
 
@@ -29,14 +29,18 @@ COPY clients/shared/streaming/package.json clients/shared/streaming/
 RUN npm ci --no-audit --no-fund
 
 # ----------------------
-# build — prisma generate + next build
+# build — prisma generate + next build.
+# Granular COPYs so unrelated files don't bust the build cache.
 # ----------------------
-FROM base AS build
+FROM build-base AS build
 
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY package.json package-lock.json ./
+COPY clients/web ./clients/web
+COPY clients/cli ./clients/cli
+COPY clients/shared ./clients/shared
 
 WORKDIR /app/clients/web
 
@@ -44,17 +48,15 @@ RUN npx prisma generate
 RUN npm run build
 
 # ----------------------
-# runtime — standalone output, minimal image
-# Includes terminal server + CLI for PTY embedding
+# runtime — minimal node:22-slim, NO build toolchain.
+# Native addons compiled in `build` are copied as prebuilt .node binaries;
+# python3/make/g++ are not needed at runtime and would add ~1GB of bloat.
 # ----------------------
 FROM node:22-slim AS runner
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     ca-certificates \
-    python3 \
-    make \
-    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -81,7 +83,10 @@ COPY --from=build --chown=nextjs:nodejs /app/clients/cli/src ./clients/cli/src
 COPY --from=build --chown=nextjs:nodejs /app/clients/cli/package.json ./clients/cli/package.json
 # Shared streaming library
 COPY --from=build --chown=nextjs:nodejs /app/clients/shared ./clients/shared
-# node_modules for terminal server (node-pty, ws, tsx) and CLI (ink, react)
+# node_modules carries the compiled native addons (node-pty, sharp) plus
+# tsx for running the terminal server. Production-only installs would drop
+# tsx (devDep), so we keep the full tree but rely on the `runner` stage
+# omitting build tools to keep the image lean.
 COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
 
 WORKDIR /app/clients/web

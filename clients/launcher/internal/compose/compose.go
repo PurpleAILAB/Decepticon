@@ -53,10 +53,36 @@ func (c *Compose) baseArgs() []string {
 	return []string{"compose", "-f", c.ComposeFile, "--env-file", c.EnvFile}
 }
 
+// readVersion returns the installed version from $DECEPTICON_HOME/.version,
+// or an empty string if the file is missing or unreadable. The launcher
+// (install + auto-update) is the single writer; compose falls back to :latest
+// when the marker is absent.
+func (c *Compose) readVersion() string {
+	data, err := os.ReadFile(filepath.Join(c.Home, ".version"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// composeEnv returns the parent environment with DECEPTICON_VERSION pinned
+// from the .version file. docker compose treats the process environment as
+// higher precedence than --env-file, so this overrides any stale value the
+// user may have written into .env and avoids the silent `:latest` drift
+// that occurs when the variable is unset.
+func (c *Compose) composeEnv() []string {
+	env := os.Environ()
+	if v := c.readVersion(); v != "" {
+		env = append(env, "DECEPTICON_VERSION="+v)
+	}
+	return env
+}
+
 // run executes a docker compose command and returns its output.
 func (c *Compose) run(args []string, interactive bool) error {
 	cmdArgs := append([]string{"compose", "-f", c.ComposeFile, "--env-file", c.EnvFile}, args...)
 	cmd := exec.Command("docker", cmdArgs...)
+	cmd.Env = c.composeEnv()
 	if interactive {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -107,10 +133,25 @@ func (c *Compose) Down() error {
 	return c.run(args, false)
 }
 
-// Pull pulls images for services with a version tag.
+// DownAndPurge tears down containers, networks, and named volumes. Used by
+// `decepticon remove` so a full uninstall doesn't leave gigabytes of
+// postgres/neo4j data behind.
+func (c *Compose) DownAndPurge() error {
+	args := AllProfiles()
+	args = append(args, "down", "--volumes", "--remove-orphans")
+	return c.run(args, false)
+}
+
+// Pull pulls images for services with a version tag. An explicit version
+// argument overrides the .version file (used by the updater right after a
+// new release lands). Empty version → fall back to whatever .version says.
 func (c *Compose) Pull(version string) error {
 	cmd := exec.Command("docker", append(c.baseArgs(), "pull")...)
-	cmd.Env = append(os.Environ(), "DECEPTICON_VERSION="+version)
+	if version != "" {
+		cmd.Env = append(os.Environ(), "DECEPTICON_VERSION="+version)
+	} else {
+		cmd.Env = c.composeEnv()
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -159,6 +200,7 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 	cmdArgs = append(cmdArgs, command...)
 
 	cmd := exec.Command("docker", cmdArgs...)
+	cmd.Env = c.composeEnv()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

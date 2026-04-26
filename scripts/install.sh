@@ -144,18 +144,22 @@ create_launcher() {
     esac
 
     local binary_name="decepticon-${os}-${arch}"
-    local download_url
 
     if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
-        info "Downloading launcher script (no release binary available)..."
-        curl -fsSL "$RAW_BASE/scripts/launcher.sh" -o "$bin_dir/decepticon"
-    else
-        download_url="https://github.com/$REPO/releases/download/v${DECEPTICON_VERSION}/${binary_name}"
-        info "Downloading launcher binary ($binary_name)..."
-        if ! curl -fsSL "$download_url" -o "$bin_dir/decepticon" 2>/dev/null; then
-            warn "Binary not available, falling back to launcher script..."
-            curl -fsSL "$RAW_BASE/scripts/launcher.sh" -o "$bin_dir/decepticon"
-        fi
+        error "Could not resolve a release version automatically."
+        error "Set VERSION explicitly with a tag from:"
+        error "  https://github.com/$REPO/releases"
+        error "Example: VERSION=<x.y.z> curl -fsSL https://decepticon.red/install | bash"
+        exit 1
+    fi
+
+    local download_url="https://github.com/$REPO/releases/download/v${DECEPTICON_VERSION}/${binary_name}"
+    info "Downloading launcher binary ($binary_name)..."
+    if ! curl -fsSL "$download_url" -o "$bin_dir/decepticon" 2>/dev/null; then
+        error "No launcher binary for ${os}/${arch} in v${DECEPTICON_VERSION}."
+        error "Supported targets: linux/amd64, linux/arm64, darwin/amd64, darwin/arm64."
+        error "If you need another target, please open an issue."
+        exit 1
     fi
 
     chmod 755 "$bin_dir/decepticon"

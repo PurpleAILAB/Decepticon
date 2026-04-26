@@ -58,7 +58,10 @@ jobs:
           sys.exit(1 if s['errorCount'] > 0 else 0)
           "
       - name: Pytest with coverage
-        run: uv run pytest --cov --cov-report=xml --cov-report=term --cov-fail-under=30
+        # -n auto runs tests in parallel across all available CPUs.
+        # GitHub-hosted runners have 4 vCPUs, so this cuts the suite from
+        # ~12 min to ~3 min. pytest-cov + xdist combine results correctly.
+        run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -110,6 +113,8 @@ jobs:
         include:
           - image: langgraph
             dockerfile: containers/langgraph.Dockerfile
+          - image: litellm
+            dockerfile: containers/litellm.Dockerfile
           - image: sandbox
             dockerfile: containers/sandbox.Dockerfile
           - image: cli
