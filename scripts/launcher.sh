@@ -66,10 +66,17 @@ check_for_update() {
 
     [[ -z "$latest" ]] && return  # offline / API error -- skip silently
 
-    # sort -V puts the higher version last; skip if current is already >= latest
-    local newer
-    newer=$(printf '%s\n%s' "$latest" "$current" | sort -V | tail -1)
-    [[ "$newer" == "$current" ]] && return  # already up to date or ahead
+    # Special case: install.sh writes ".version=latest" when no GitHub release
+    # existed at install time. `sort -V` orders the literal string "latest"
+    # AFTER any numeric version, so the comparison below would always treat
+    # the user as up-to-date and never auto-update. Force the upgrade path
+    # explicitly.
+    if [[ "$current" != "latest" ]]; then
+        # sort -V puts the higher version last; skip if current is already >= latest
+        local newer
+        newer=$(printf '%s\n%s' "$latest" "$current" | sort -V | tail -1)
+        [[ "$newer" == "$current" ]] && return  # already up to date or ahead
+    fi
 
     echo -e "${CYAN}Auto-updating: ${BOLD}v${current}${NC}${CYAN} -> ${BOLD}v${latest}${NC}"
 
@@ -263,7 +270,7 @@ case "${1:-}" in
         [[ -n "$_ver" ]] && export DECEPTICON_VERSION="$_ver"
 
         # Run CLI in foreground (interactive)
-        $COMPOSE_PROFILES run --rm --no-build cli
+        $COMPOSE_PROFILES run --rm cli
         ;;
 
     stop)
@@ -362,7 +369,7 @@ case "${1:-}" in
         ;&
 
     onboard)
-        $COMPOSE_PROFILES run --rm --no-build cli python -m decepticon.cli.app onboard
+        $COMPOSE_PROFILES run --rm cli python -m decepticon.cli.app onboard
         ;;
 
     demo)
@@ -413,7 +420,7 @@ case "${1:-}" in
         echo ""
 
         # Run CLI with auto-start message
-        $COMPOSE_PROFILES run --rm --no-build -e DECEPTICON_INITIAL_MESSAGE="Resume the demo engagement and execute all objectives." cli
+        $COMPOSE_PROFILES run --rm -e DECEPTICON_INITIAL_MESSAGE="Resume the demo engagement and execute all objectives." cli
         ;;
 
     victims)

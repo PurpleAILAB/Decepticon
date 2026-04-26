@@ -161,6 +161,37 @@ create_launcher() {
     chmod 755 "$bin_dir/decepticon"
 }
 
+# ── Detect stale `decepticon` in PATH ─────────────────────────────
+# A previous install via `npm link`, manual symlink, or alternate package
+# manager can leave a `decepticon` executable elsewhere on PATH. That stale
+# entry will shadow our launcher and produce confusing errors (e.g. node
+# MODULE_NOT_FOUND). Surface the conflict so the user can clean it up.
+detect_stale_launcher() {
+    local bin_dir="$1"
+    local found=()
+    local seen=":"
+    local IFS=':'
+    for d in $PATH; do
+        [[ -z "$d" ]] && continue
+        # Dedupe — PATH often lists the same dir twice (.bashrc + .profile etc.)
+        case "$seen" in *":$d:"*) continue;; esac
+        seen="$seen$d:"
+        if [[ -e "$d/decepticon" && "$d" != "$bin_dir" ]]; then
+            found+=("$d/decepticon")
+        fi
+    done
+
+    if [[ ${#found[@]} -gt 0 ]]; then
+        echo ""
+        warn "Found other 'decepticon' executable(s) on PATH:"
+        for f in "${found[@]}"; do
+            echo "  $f"
+        done
+        warn "These may shadow the launcher just installed at $bin_dir/decepticon."
+        echo -e "${DIM}Remove them, then run 'hash -r' or restart your shell.${NC}"
+    fi
+}
+
 # ── PATH setup (bash/zsh/fish) ────────────────────────────────────
 setup_path() {
     local bin_dir="$1"
@@ -271,6 +302,10 @@ main() {
     # PATH
     setup_path "$bin_dir"
 
+    # Stale launcher detection (runs after PATH setup so $bin_dir is the
+    # source of truth for "where the new launcher lives")
+    detect_stale_launcher "$bin_dir"
+
     # Docker images
     pull_images "$install_dir"
 
@@ -287,12 +322,20 @@ main() {
     echo -e "     ${BOLD}decepticon${NC}"
     echo ""
 
-    # Hint to reload shell
-    if ! echo "$PATH" | tr ':' '\n' | grep -qx "$bin_dir"; then
-        echo -e "  ${DIM}Restart your shell or run:${NC}"
-        echo -e "     ${BOLD}export PATH=\"$bin_dir:\$PATH\"${NC}"
-        echo ""
-    fi
+    # Reload-shell hint — always show it.
+    # Two failure modes a user can hit on a fresh shell:
+    #   (a) $bin_dir was just added to .bashrc/.zshrc/etc. but the current
+    #       shell hasn't sourced it yet → `decepticon` not found.
+    #   (b) The shell already has $bin_dir on PATH but a stale `decepticon`
+    #       (e.g. removed npm shim) is cached in its hash table → the wrong
+    #       binary is invoked or "No such file or directory" is reported.
+    # Spelling both fixes out unconditionally is cheaper than diagnosing
+    # either failure after the fact.
+    echo -e "  ${DIM}Reload your shell to pick up the new launcher:${NC}"
+    echo -e "     ${BOLD}exec \$SHELL${NC}     ${DIM}# or open a new terminal${NC}"
+    echo -e "  ${DIM}If $bin_dir is already on PATH (e.g. you upgraded), refresh the cache:${NC}"
+    echo -e "     ${BOLD}hash -r${NC}"
+    echo ""
 }
 
 main "$@"

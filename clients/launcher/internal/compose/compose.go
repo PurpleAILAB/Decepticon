@@ -125,7 +125,13 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 	for _, p := range profiles {
 		cmdArgs = append(cmdArgs, "--profile", p)
 	}
-	cmdArgs = append(cmdArgs, "run", "--rm", "--no-build")
+	// Note: --no-build is intentionally absent. `docker compose run` does
+	// not accept --no-build (only `up` does); passing it raises
+	// "unknown flag: --no-build" on every Compose version. The original
+	// concern (OSS users without source triggering a build) doesn't
+	// apply here because the cli image is pulled at install time and
+	// `run` only builds when the image is missing.
+	cmdArgs = append(cmdArgs, "run", "--rm")
 	for k, v := range env {
 		cmdArgs = append(cmdArgs, "-e", k+"="+v)
 	}

@@ -190,6 +190,13 @@ func WriteVersion(version string) error {
 }
 
 // CheckAndUpdate performs auto-update check. Returns true if update was applied.
+//
+// Update order is binary-first, then config files. If the binary update fails
+// we abort entirely so we never end up with new compose/litellm files driving
+// an old launcher (which has caused breakage in past releases when image
+// tags or compose schema changed). If config sync fails after a successful
+// binary update we keep the new binary and leave .version unwritten so the
+// next launch retries config sync.
 func CheckAndUpdate(currentVersion string, env map[string]string) bool {
 	if config.Get(env, "AUTO_UPDATE", "true") == "false" {
 		return false
@@ -206,15 +213,19 @@ func CheckAndUpdate(currentVersion string, env map[string]string) bool {
 
 	ui.Info(fmt.Sprintf("Update available: %s → %s", currentVersion, release.TagName))
 
-	// Use release tag for config files to avoid main branch drift
-	ref := release.TagName // e.g., "v1.0.7"
-	if err := SyncConfigFiles(ref); err != nil {
-		ui.Warning("Config sync failed: " + err.Error())
-	}
-
 	if err := SelfUpdate(release); err != nil {
 		ui.Warning("Self-update failed: " + err.Error())
 		return false
+	}
+
+	// Use release tag for config files to avoid main branch drift
+	ref := release.TagName // e.g., "v1.0.7"
+	if err := SyncConfigFiles(ref); err != nil {
+		ui.Warning("Binary updated but config sync failed: " + err.Error())
+		ui.Warning("Run 'decepticon update' to retry config sync.")
+		// Do not WriteVersion — leaving .version stale lets the next run
+		// retry the sync via this same code path.
+		return true
 	}
 
 	_ = WriteVersion(release.TagName)
