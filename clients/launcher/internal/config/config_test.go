@@ -87,8 +87,8 @@ func TestValidateAPIKeys(t *testing.T) {
 		t.Error("expected error for all-placeholder keys")
 	}
 
-	// One real key → ok
-	env["ANTHROPIC_API_KEY"] = "sk-ant-real-key"
+	// One real, well-formed key → ok
+	env["ANTHROPIC_API_KEY"] = "sk-ant-api03-realkeythatislongenough"
 	if err := ValidateAPIKeys(env); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -96,6 +96,54 @@ func TestValidateAPIKeys(t *testing.T) {
 	// Empty env → error
 	if err := ValidateAPIKeys(map[string]string{}); err == nil {
 		t.Error("expected error for empty env")
+	}
+}
+
+func TestValidateAPIKeys_RejectsBadFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+	}{
+		{"missing prefix", map[string]string{"ANTHROPIC_API_KEY": "no-prefix-key-of-decent-length"}},
+		{"too short", map[string]string{"OPENAI_API_KEY": "sk-short"}},
+		{"google missing prefix", map[string]string{"GOOGLE_API_KEY": "sk-wrongprefix-key-long-enough-here"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := ValidateAPIKeys(tt.env); err == nil {
+				t.Errorf("expected error for %s", tt.name)
+			}
+		})
+	}
+}
+
+func TestValidateAuth_AuthMode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	env := map[string]string{"DECEPTICON_MODEL_PROVIDER": "auth"}
+
+	// auth mode without credentials file → error
+	if err := ValidateAuth(env); err == nil {
+		t.Error("expected error when ~/.claude/.credentials.json is missing")
+	}
+
+	// auth mode with credentials file → ok
+	credDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(credDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(credDir, ".credentials.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAuth(env); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateAuth_UnknownMode(t *testing.T) {
+	env := map[string]string{"DECEPTICON_MODEL_PROVIDER": "telepathy"}
+	if err := ValidateAuth(env); err == nil {
+		t.Error("expected error for unknown provider mode")
 	}
 }
 

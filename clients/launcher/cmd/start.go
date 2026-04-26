@@ -46,10 +46,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if config.Get(env, "DECEPTICON_MODEL_PROVIDER", "api") == "api" {
-		if err := config.ValidateAPIKeys(env); err != nil {
-			ui.Warning(err.Error())
-		}
+	if err := config.ValidateAuth(env); err != nil {
+		return err
 	}
 
 	// 2.3. Ensure config files exist (docker-compose.yml, litellm.yaml, workspace)

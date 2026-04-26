@@ -22,12 +22,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Cold-start cost (prisma migrate + model-routing load + uvicorn bind):
+    # measured 136s on a fresh PostgreSQL volume; varies with disk speed.
+    # start_period absorbs environment variability — failures during this
+    # window don't count toward retries. test success at any moment flips
+    # healthy immediately, so the cushion costs no time on fast hosts.
+    # retries is the post-cushion grace for transient failures only;
+    # the launcher's --wait-timeout (DECEPTICON_STARTUP_TIMEOUT_SECONDS)
+    # is the single user-facing patience knob.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/readiness')"]
       interval: 5s
       timeout: 3s
-      retries: 20
-      start_period: 10s
+      retries: 12
+      start_period: 300s
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -84,10 +92,10 @@ services:
       - decepticon-net
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
-      interval: 15s
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 12
+      start_period: 90s
     restart: unless-stopped
 
   # Evasive Red Team Sandbox
@@ -142,15 +150,26 @@ services:
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    # Relaxed startup: langgraph has built-in retry for litellm/neo4j connections,
-    # so we don't block on healthchecks — cuts cold start by ~30-40s.
+    # Wait for litellm to be healthy: langgraph has retry logic but the launcher
+    # uses `compose up --wait` and needs healthy as the single readiness signal.
     depends_on:
       litellm:
-        condition: service_started
+        condition: service_healthy
       sandbox:
         condition: service_started
       neo4j:
-        condition: service_started
+        condition: service_healthy
+    # python urllib — same pattern as the litellm healthcheck. Runs entirely
+    # inside the container so host OS (Linux / macOS / Windows) is irrelevant;
+    # avoids relying on curl/wget being present in the langgraph base image.
+    # start_period covers FastAPI + graph-server boot after litellm flips
+    # healthy; retries is post-cushion grace.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2024/ok')"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 90s
     networks:
       - decepticon-net
     restart: unless-stopped
@@ -177,9 +196,20 @@ services:
       - ${DECEPTICON_HOME:-~/.decepticon}/workspace:/workspace
     depends_on:
       langgraph:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
+    # node http.get — Next.js standalone images include node but not curl/wget.
+    # `r.resume()` drains the body so the request finishes; without it the
+    # callback can resolve before close, leaving the process hanging until
+    # docker's healthcheck timeout fires. start_period covers prisma migrate
+    # + Next.js boot; retries is post-cushion grace.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', r => { r.resume(); process.exit(r.statusCode < 500 ? 0 : 1); }).on('error', () => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
     networks:
       - decepticon-net
     restart: unless-stopped
@@ -201,7 +231,7 @@ services:
       - DECEPTICON_VERSION=${DECEPTICON_VERSION:-}
     depends_on:
       langgraph:
-        condition: service_started
+        condition: service_healthy
     networks:
       - decepticon-net
     profiles:

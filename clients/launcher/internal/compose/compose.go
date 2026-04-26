@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
@@ -70,14 +71,33 @@ func (c *Compose) run(args []string, interactive bool) error {
 	return nil
 }
 
-// Up starts services in detached mode with the given profiles.
+// Up starts services in detached mode and blocks until healthchecks pass.
+//
+// `--wait` (Docker Compose 2.0+) makes `up` block until each service's compose
+// healthcheck transitions to healthy, eliminating the need for the launcher to
+// re-implement HTTP polling.
+//
+// `--wait-timeout` is the single user-facing patience knob. Override via
+// DECEPTICON_STARTUP_TIMEOUT_SECONDS for slower hardware. Default 600s
+// covers most environments after measuring 136s LiteLLM cold start in CI.
 func (c *Compose) Up(profiles ...string) error {
 	args := []string{}
 	for _, p := range profiles {
 		args = append(args, "--profile", p)
 	}
-	args = append(args, "up", "-d", "--no-build")
+	args = append(args, "up", "-d", "--no-build", "--wait", "--wait-timeout", startupTimeoutSeconds())
 	return c.run(args, false)
+}
+
+// startupTimeoutSeconds returns the --wait-timeout value as a string.
+// User override via DECEPTICON_STARTUP_TIMEOUT_SECONDS; falls back to 600s.
+func startupTimeoutSeconds() string {
+	if v := os.Getenv("DECEPTICON_STARTUP_TIMEOUT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return strconv.Itoa(n)
+		}
+	}
+	return "600"
 }
 
 // Down stops and removes containers using all profiles for clean teardown.

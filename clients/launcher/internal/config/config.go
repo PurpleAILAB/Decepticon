@@ -149,14 +149,101 @@ func IsPlaceholder(val string) bool {
 	return strings.HasSuffix(val, PlaceholderSuffix) || val == ""
 }
 
-// ValidateAPIKeys checks that at least one API key is a real value.
-func ValidateAPIKeys(env map[string]string) error {
-	for _, name := range APIKeyNames {
-		if val, ok := env[name]; ok && !IsPlaceholder(val) {
-			return nil
+// keyFormatRules maps an API key env var to its expected prefix and human-readable hint.
+// Format checks are intentionally lenient — providers occasionally evolve key shapes
+// (OpenAI shipped sk-proj-* in 2024, Anthropic sk-ant-api03-* etc.). The check only
+// rejects values that are obviously malformed (typos, missing prefix).
+var keyFormatRules = map[string]struct {
+	Prefix string
+	Hint   string
+}{
+	"ANTHROPIC_API_KEY": {Prefix: "sk-ant-", Hint: "Anthropic keys start with 'sk-ant-'"},
+	"OPENAI_API_KEY":    {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
+	"GOOGLE_API_KEY":    {Prefix: "AIza", Hint: "Google keys start with 'AIza'"},
+}
+
+// validateKeyFormat returns an empty string if the key looks valid, or a reason if not.
+func validateKeyFormat(name, val string) string {
+	if len(val) < 20 {
+		return "value is too short to be a valid API key"
+	}
+	if rule, ok := keyFormatRules[name]; ok {
+		if !strings.HasPrefix(val, rule.Prefix) {
+			return rule.Hint
 		}
 	}
-	return fmt.Errorf("no valid API key found; run 'decepticon onboard' to configure")
+	return ""
+}
+
+// ValidateAPIKeys checks that at least one API key is set with a valid format.
+// Returns a fatal error listing both unset keys and any format problems found.
+func ValidateAPIKeys(env map[string]string) error {
+	var validNames []string
+	invalidReasons := make(map[string]string)
+
+	for _, name := range APIKeyNames {
+		val := env[name]
+		if val == "" || IsPlaceholder(val) {
+			continue
+		}
+		if reason := validateKeyFormat(name, val); reason != "" {
+			invalidReasons[name] = reason
+			continue
+		}
+		validNames = append(validNames, name)
+	}
+
+	if len(validNames) > 0 {
+		return nil
+	}
+
+	var msg strings.Builder
+	msg.WriteString("no valid API key found.")
+	if len(invalidReasons) > 0 {
+		msg.WriteString(" Detected malformed key(s):")
+		for name, reason := range invalidReasons {
+			msg.WriteString(fmt.Sprintf("\n  %s: %s", name, reason))
+		}
+	}
+	msg.WriteString("\nRun 'decepticon onboard --reset' to reconfigure credentials.")
+	return fmt.Errorf("%s", msg.String())
+}
+
+// ValidateAuth ensures authentication is configured for the chosen provider mode.
+// "api" mode → at least one well-formed API key must be set.
+// "auth" mode → Claude Code credentials file must exist (LiteLLM mounts it read-only).
+func ValidateAuth(env map[string]string) error {
+	mode := Get(env, "DECEPTICON_MODEL_PROVIDER", "api")
+	switch mode {
+	case "api":
+		return ValidateAPIKeys(env)
+	case "auth":
+		return validateClaudeCredentials()
+	default:
+		return fmt.Errorf("unknown DECEPTICON_MODEL_PROVIDER: %q (expected 'api' or 'auth')", mode)
+	}
+}
+
+// validateClaudeCredentials verifies ~/.claude/.credentials.json exists and is a file.
+// Compose mounts this path into the LiteLLM container; if it's missing Docker creates
+// a directory at the bind target and authentication fails opaquely at runtime.
+func validateClaudeCredentials() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("locate home directory: %w", err)
+	}
+	path := filepath.Join(home, ".claude", ".credentials.json")
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return fmt.Errorf("Claude Code credentials not found at %s\nRun 'claude /login' (Claude Code CLI) to authenticate, then retry.", path)
+	}
+	if err != nil {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("expected credentials file at %s but found a directory.\nRemove it and run 'claude /login' to re-authenticate.", path)
+	}
+	return nil
 }
 
 // AppendEnvLine appends a KEY=VALUE line to an existing .env file.
