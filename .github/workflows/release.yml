@@ -209,7 +209,7 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/digests
           pattern: web-digest-*
