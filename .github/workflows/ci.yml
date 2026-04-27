@@ -41,7 +41,7 @@ jobs:
       docker-images: ${{ steps.docker.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: app
         with:
           filters: |
@@ -65,7 +65,7 @@ jobs:
               - '.github/workflows/ci.yml'
       # Per-image filter: filter name == image name so the matrix can pull
       # `outputs.changes` directly as the list of images to build.
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: docker
         with:
           filters: |
