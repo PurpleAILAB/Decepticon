@@ -1,4 +1,10 @@
-"""Tests for benchmark.harness.Harness."""
+"""Tests for benchmark.harness.Harness.
+
+Marked ``slow`` because several tests exercise the harness's wall-clock
+timeout / workspace teardown behavior and individually take ~120s. The
+PR fast lane (``-m "not slow"``) skips them for quick feedback; the
+main coverage lane runs the full set so coverage stays honest.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +17,8 @@ import pytest
 from benchmark.config import BenchmarkConfig
 from benchmark.harness import AgentResponse, Harness
 from benchmark.schemas import Challenge, SetupResult
+
+pytestmark = pytest.mark.slow
 
 
 def _make_challenge(tmp_path: Path) -> Challenge:

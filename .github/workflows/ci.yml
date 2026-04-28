@@ -149,7 +149,10 @@ jobs:
       # on every change. Coverage is enforced on main pushes (next step).
       - name: Pytest (PRs — fast, no coverage)
         if: github.event_name == 'pull_request'
-        run: uv run pytest -n auto -q
+        # Deselect tests marked `slow` (e.g. benchmark/test_harness wall-clock
+        # timeout cases) so PR feedback stays under a minute. Main coverage
+        # lane below still runs them.
+        run: uv run pytest -n auto -q -m "not slow"
       - name: Pytest with coverage (main — enforces threshold)
         if: github.event_name == 'push'
         run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30

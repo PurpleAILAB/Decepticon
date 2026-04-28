@@ -90,6 +90,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "asyncio: mark test as async (pytest-asyncio)",
+    "slow: integration-style tests that hit wall-clock timeouts or otherwise take seconds; deselected from the PR fast lane",
 ]
 addopts = [
     "--strict-markers",
