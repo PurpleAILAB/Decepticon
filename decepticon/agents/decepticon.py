@@ -33,7 +33,6 @@ is registered at the orchestrator level (see create_orchestrator), not here.
 """
 
 import os
-import subprocess
 from pathlib import Path
 from typing import Annotated, Literal, NotRequired
 
@@ -85,36 +84,33 @@ class OrchestratorState(AgentState):
 
 
 def _check_engagement_docs(state: dict) -> dict:
-    """Check Docker sandbox for existing engagement documents (roe + conops + deconfliction).
+    """Check the sandbox for existing engagement documents (roe + conops + deconfliction).
 
     When BENCHMARK_MODE env var is set (via .env → docker-compose), skip the
     doc check entirely and route straight to the decepticon agent.
+
+    Routes through DockerSandbox.execute() rather than calling docker exec
+    directly so all container access in this codebase shares one abstraction
+    (timeouts, encoding, exit-code handling) and adapting to a different
+    backend later only requires touching the backends package.
     """
     if os.getenv("BENCHMARK_MODE"):
         return {"has_engagement_docs": True}
 
     app_config = load_config()
-    container = app_config.docker.sandbox_container_name
+    sandbox = DockerSandbox(container_name=app_config.docker.sandbox_container_name)
     try:
-        result = subprocess.run(
-            [
-                "docker",
-                "exec",
-                container,
-                "sh",
-                "-c",
-                "ls /workspace/*/plan/roe.json /workspace/*/plan/conops.json"
-                " /workspace/*/plan/deconfliction.json 2>/dev/null | wc -l",
-            ],
-            capture_output=True,
-            text=True,
+        result = sandbox.execute(
+            "ls /workspace/*/plan/roe.json /workspace/*/plan/conops.json"
+            " /workspace/*/plan/deconfliction.json 2>/dev/null | wc -l",
             timeout=5,
         )
-        count = int(result.stdout.strip() or "0")
-        has_docs = count >= 3
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
-        has_docs = False
-    return {"has_engagement_docs": has_docs}
+        if result.exit_code != 0:
+            return {"has_engagement_docs": False}
+        count = int(result.output.strip() or "0")
+    except (FileNotFoundError, OSError, ValueError):
+        return {"has_engagement_docs": False}
+    return {"has_engagement_docs": count >= 3}
 
 
 def _route_agent(state: dict) -> Literal["soundwave", "decepticon"]:
