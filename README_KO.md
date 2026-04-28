@@ -54,11 +54,7 @@ decepticon           # 터미널 CLI 실행
 ```
 
 
-또는 웹 대시보드로 실행:
-
-```bash
-make web             # http://localhost:3000 에서 열림
-```
+웹 대시보드는 기본 스택에 포함되어 있어 `decepticon` 실행 후 <http://localhost:3000> 에서 바로 사용할 수 있습니다.
 
 → **[전체 설치 가이드](docs/getting-started.md)**
 

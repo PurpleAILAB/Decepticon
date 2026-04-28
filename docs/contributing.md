@@ -56,15 +56,15 @@ demo/                # Demo engagement fixtures
 Before opening a PR, run the quality checks:
 
 ```bash
-make quality         # Python lint + CLI typecheck + web lint (all in one)
+make quality         # Full gate: Python + CLI + Web (run before opening a PR)
 
-make lint            # Python only: ruff check + basedpyright
-make lint-fix        # Auto-fix Python lint issues
-make lint-cli        # TypeScript CLI typecheck
+make lint            # Python only: ruff check + ruff format --check + basedpyright
+make lint-fix        # Auto-fix Python lint and formatting
+make quality-cli     # CLI: typecheck + build + vitest
 make web-lint        # Web dashboard ESLint
 
 make test            # Python tests in Docker
-make test-cli        # CLI tests (vitest)
+make test-local      # Python tests locally (requires uv sync --dev)
 ```
 
 Minimum Python version: **3.13**
@@ -102,10 +102,10 @@ make test            # pytest in container
 make test-local      # pytest locally (requires: uv sync --dev)
 ```
 
-CLI tests use Vitest:
+CLI tests run via `make quality-cli` (typecheck + build + vitest), or directly:
 
 ```bash
-make test-cli
+npm run test --workspace=@decepticon/cli
 ```
 
 When adding a new agent or tool, add corresponding tests in `decepticon/tests/`.

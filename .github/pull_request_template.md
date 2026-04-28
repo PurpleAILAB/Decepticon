@@ -12,9 +12,8 @@
 
 <!-- How were these changes tested? -->
 
-- [ ] `make lint` passes
-- [ ] `make test-local` passes
-- [ ] Docker build succeeds (`make build`)
+- [ ] `make quality` passes (Python + CLI + Web)
+- [ ] `make smoke` succeeds (clean local build + OSS-style up + health checks)
 - [ ] Manual testing (describe below)
 
 ## Related Issues

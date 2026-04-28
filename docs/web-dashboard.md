@@ -8,17 +8,23 @@ The web dashboard is an open-source (Apache 2.0) browser-based control plane for
 
 ## Running the Dashboard
 
-**Full stack (Docker):**
+**End users:**
 ```bash
-make web
+decepticon
 ```
-Starts PostgreSQL, Neo4j, LangGraph, LiteLLM, and the web server. Open `http://localhost:3000`.
+The dashboard is part of the default service stack. Open <http://localhost:3000>.
 
-**Local dev server** (requires services already running):
+**Contributors (full stack with hot-reload):**
+```bash
+make dev
+```
+Builds and starts every service with source-sync hot-reload. Open <http://localhost:3000>.
+
+**Contributors (local Next.js dev server):**
 ```bash
 make web-dev
 ```
-Starts only the Next.js dev server with hot-reload. Assumes the database and LangGraph are reachable.
+Runs the Next.js dev server locally on the host while infra (postgres, neo4j, litellm, langgraph, sandbox) stays in Docker. Faster web iteration than `make dev`.
 
 ---
 
@@ -87,7 +93,7 @@ Per-objective progress board:
 ```bash
 make web-ee    # Switch to EE mode (links @decepticon/ee)
 make web-oss   # Switch back to OSS mode
-make web       # Restart after switching
+make dev       # Restart after switching
 ```
 
 ---
@@ -103,8 +109,9 @@ make web-migrate
 
 **Regenerate Prisma client** (after editing `prisma/schema.prisma`):
 ```bash
-make web-generate
+cd clients/web && npx prisma generate
 ```
+Or run `make web-build` to regenerate the client and build the dashboard in one step.
 
 Schema is at `clients/web/prisma/schema.prisma`. Key models: `User`, `Engagement`, `Finding`, `Objective`, `DefenseAction`.
 

@@ -47,11 +47,8 @@ decepticon
 Starts all services (LiteLLM, LangGraph, Neo4j, sandbox) and opens the interactive terminal UI.
 
 **Web Dashboard** (browser):
-```bash
-make web
-```
 
-Starts the full stack including PostgreSQL and opens the dashboard at `http://localhost:3000`.
+The web dashboard starts as part of the default stack — it's reachable at `http://localhost:3000` once `decepticon` (or `make dev` for contributors) is running.
 
 ---
 
@@ -79,7 +76,7 @@ The demo is read-only — it doesn't modify anything on your host.
 
 ## First Real Engagement
 
-1. Launch Decepticon (`decepticon` or `make web`)
+1. Launch Decepticon (`decepticon`) and open <http://localhost:3000>
 2. The **Soundwave** agent interviews you to define the engagement:
    - Target scope (IP range, URL, Git repo, file upload, or local path)
    - Threat actor profile
