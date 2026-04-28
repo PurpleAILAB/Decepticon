@@ -247,17 +247,24 @@ class ProxyConfig(BaseModel):
 
 
 class ModelAssignment(BaseModel):
-    """Primary + fallback model for an agent role.
+    """Primary + ordered fallbacks for an agent role.
 
-    Single fallback by design: cross-provider fallback past the first
-    alt method almost always indicates a real outage worth surfacing,
-    not silently chaining further.
+    ``fallbacks`` mirrors the credentials priority list past the
+    primary: every method the user configured below the first one
+    appears here, in order. langchain's ``ModelFallbackMiddleware``
+    walks these in sequence on primary failure.
     """
 
     primary: str
-    fallback: str | None = None
+    fallbacks: list[str] = Field(default_factory=list)
     temperature: float = 0.7
     max_tokens: int | None = None
+
+    @property
+    def fallback(self) -> str | None:
+        """First fallback or None. Kept for callers that read the
+        single-fallback shape; new code should use ``fallbacks``."""
+        return self.fallbacks[0] if self.fallbacks else None
 
     @field_validator("temperature")
     @classmethod
@@ -308,7 +315,7 @@ class LLMModelMapping(BaseModel):
                 continue
             assignments[role] = ModelAssignment(
                 primary=chain[0],
-                fallback=chain[1] if len(chain) > 1 else None,
+                fallbacks=chain[1:],
                 temperature=AGENT_TEMPERATURES.get(role, 0.7),
             )
         return cls(assignments=assignments)

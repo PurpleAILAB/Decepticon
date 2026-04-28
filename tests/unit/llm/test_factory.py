@@ -50,10 +50,25 @@ class TestLLMFactory:
     def test_router_accessible(self):
         assert self.factory.router is not None
 
-    def test_get_fallback_models_with_fallback(self):
+    def test_get_fallback_models_full_chain(self):
+        # Default mapping has all four API methods → 3 fallbacks per role.
         models = self.factory.get_fallback_models("recon")
-        assert len(models) == 1
-        assert models[0].model_name == "openai/gpt-5.4-nano"
+        names = [m.model_name for m in models]
+        assert names == [
+            "openai/gpt-5.4-nano",
+            "gemini/gemini-2.5-flash-lite",
+            # MiniMax has no LOW tier → drops out of the chain.
+        ]
+
+    def test_get_fallback_models_high_tier_includes_all_methods(self):
+        # decepticon is HIGH; every method has a HIGH model → 3 fallbacks.
+        models = self.factory.get_fallback_models("decepticon")
+        names = [m.model_name for m in models]
+        assert names == [
+            "openai/gpt-5.5",
+            "gemini/gemini-2.5-pro",
+            "minimax/MiniMax-M2.7",
+        ]
 
     def test_get_fallback_models_without_fallback(self):
         # Single-credential mapping → no fallback.

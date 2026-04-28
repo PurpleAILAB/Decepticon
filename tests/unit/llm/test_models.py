@@ -214,13 +214,21 @@ class TestModelAssignment:
     def test_defaults(self):
         a = ModelAssignment(primary="x")
         assert a.primary == "x"
-        assert a.fallback is None
+        assert a.fallbacks == []
+        assert a.fallback is None  # backwards-compat property
         assert a.temperature == 0.7
 
-    def test_with_fallback(self):
-        a = ModelAssignment(primary="a", fallback="b", temperature=0.3)
+    def test_with_single_fallback(self):
+        a = ModelAssignment(primary="a", fallbacks=["b"], temperature=0.3)
+        assert a.fallbacks == ["b"]
         assert a.fallback == "b"
         assert a.temperature == 0.3
+
+    def test_with_multi_fallback_chain(self):
+        a = ModelAssignment(primary="a", fallbacks=["b", "c", "d"])
+        assert a.fallbacks == ["b", "c", "d"]
+        # Backwards-compat property returns only the first fallback.
+        assert a.fallback == "b"
 
     def test_temperature_bounds(self):
         with pytest.raises(Exception):
@@ -243,7 +251,7 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "anthropic/claude-opus-4-7"
-        assert a.fallback is None
+        assert a.fallbacks == []
 
     def test_from_credentials_oauth_plus_api(self):
         creds = Credentials(
@@ -252,7 +260,47 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "auth/claude-opus-4-7"
-        assert a.fallback == "anthropic/claude-opus-4-7"
+        assert a.fallbacks == ["anthropic/claude-opus-4-7"]
+
+    def test_from_credentials_full_chain_high_tier(self):
+        # Every method configured → every method appears in the HIGH-tier chain
+        # in priority order. ModelFallbackMiddleware walks the full list.
+        creds = Credentials(
+            methods=[
+                AuthMethod.ANTHROPIC_OAUTH,
+                AuthMethod.ANTHROPIC_API,
+                AuthMethod.OPENAI_API,
+                AuthMethod.GOOGLE_API,
+                AuthMethod.MINIMAX_API,
+            ]
+        )
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        a = m.get_assignment("decepticon")
+        assert a.primary == "auth/claude-opus-4-7"
+        assert a.fallbacks == [
+            "anthropic/claude-opus-4-7",
+            "openai/gpt-5.5",
+            "gemini/gemini-2.5-pro",
+            "minimax/MiniMax-M2.7",
+        ]
+
+    def test_from_credentials_full_chain_low_tier_skips_minimax(self):
+        # MiniMax has no LOW model → drops out of the chain at LOW tier.
+        creds = Credentials(
+            methods=[
+                AuthMethod.ANTHROPIC_API,
+                AuthMethod.OPENAI_API,
+                AuthMethod.GOOGLE_API,
+                AuthMethod.MINIMAX_API,
+            ]
+        )
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        recon = m.get_assignment("recon")
+        assert recon.primary == "anthropic/claude-haiku-4-5"
+        assert recon.fallbacks == [
+            "openai/gpt-5.4-nano",
+            "gemini/gemini-2.5-flash-lite",
+        ]
 
     def test_from_credentials_low_tier_minimax_skipped(self):
         creds = Credentials(
@@ -261,7 +309,7 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         recon = m.get_assignment("recon")
         assert recon.primary == "openai/gpt-5.4-nano"
-        assert recon.fallback is None
+        assert recon.fallbacks == []
 
     def test_from_credentials_minimax_only_low_role_dropped(self):
         # No method supplies a LOW model → recon (LOW tier) is omitted from
@@ -286,8 +334,12 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_profile(ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "anthropic/claude-opus-4-7"
-        # OpenAI is the second API method by default → first fallback.
-        assert a.fallback == "openai/gpt-5.5"
+        # All four API methods chain in default priority order.
+        assert a.fallbacks == [
+            "openai/gpt-5.5",
+            "gemini/gemini-2.5-pro",
+            "minimax/MiniMax-M2.7",
+        ]
 
     def test_from_profile_string_input(self):
         for name in ("eco", "max", "test"):

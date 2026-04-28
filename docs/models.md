@@ -16,7 +16,7 @@ Three orthogonal axes:
 | **AuthMethod** | `anthropic_oauth` / `anthropic_api` / `openai_api` / `google_api` / `minimax_api`                  | Your credentials inventory |
 | **Profile** | `eco` / `max` / `test`                                                                                 | `DECEPTICON_MODEL_PROFILE` |
 
-For each agent, Decepticon resolves a tier (from the profile) and walks your AuthMethod priority list, emitting the model identifier that method provides at that tier. The first hit is the primary; the second is the fallback.
+For each agent, Decepticon resolves a tier (from the profile) and walks your AuthMethod priority list, emitting the model identifier that method provides at that tier. The first hit is the primary; **every remaining hit is queued as a fallback in priority order**. langchain's `ModelFallbackMiddleware` walks the queue on primary failure, trying each method in turn until one succeeds.
 
 ### Tier × AuthMethod matrix
 
@@ -164,9 +164,9 @@ The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e
 
 ## Failover behavior
 
-`ModelFallbackMiddleware` watches every LLM call. On primary failure (provider outage, 429 rate limit, context overflow, network error), it transparently retries with the fallback. Agents see no interruption — same conversation history, same tool call.
+`ModelFallbackMiddleware` (from `langchain.agents.middleware`) watches every LLM call. On primary failure (provider outage, 429 rate limit, context overflow, network error), it transparently retries each queued fallback in order until one succeeds. Agents see no interruption — same conversation history, same tool call.
 
-If both primary and fallback fail, the agent surfaces the error and stops. Decepticon doesn't silently chain past two methods: a third-stage failure almost always indicates a real outage that operators should notice.
+The middleware receives the full chain `[primary, *fallbacks]` from `LLMFactory.get_fallback_models(role)`. If the user has all five AuthMethods configured, that's a five-deep chain; with a single credential it's primary-only and the middleware short-circuits. The chain length scales with credentials inventory — no upper cap, no silent truncation. Only when every method fails does the agent surface the error.
 
 ---
 

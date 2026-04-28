@@ -20,12 +20,15 @@ class ModelRouter:
         return self.get_assignment(role).primary
 
     def resolve_with_fallback(self, role: str) -> list[str]:
-        """Return [primary, fallback] model names. Single-element if no fallback."""
+        """Return the full ordered chain: ``[primary, *fallbacks]``.
+
+        The chain mirrors the user's credentials priority list as
+        resolved at the agent's tier. ``ModelFallbackMiddleware``
+        consumes this directly: primary first, each fallback tried
+        in turn on failure.
+        """
         assignment = self.get_assignment(role)
-        chain = [assignment.primary]
-        if assignment.fallback:
-            chain.append(assignment.fallback)
-        return chain
+        return [assignment.primary, *assignment.fallbacks]
 
     def get_assignment(self, role: str) -> ModelAssignment:
         """Return full ModelAssignment for a role."""

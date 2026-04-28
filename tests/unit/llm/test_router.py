@@ -26,14 +26,23 @@ class TestModelRouter:
         assert self.router.resolve("decepticon") == "anthropic/claude-opus-4-7"
 
     def test_resolve_with_fallback_returns_chain(self):
+        # All four API methods configured → recon (LOW) skips MiniMax.
         chain = self.router.resolve_with_fallback("recon")
-        assert chain[0] == "anthropic/claude-haiku-4-5"
-        assert chain[1] == "openai/gpt-5.4-nano"
+        assert chain == [
+            "anthropic/claude-haiku-4-5",
+            "openai/gpt-5.4-nano",
+            "gemini/gemini-2.5-flash-lite",
+        ]
 
-    def test_resolve_with_fallback_high_tier(self):
+    def test_resolve_with_fallback_high_tier_full_chain(self):
+        # decepticon (HIGH) → every method contributes.
         chain = self.router.resolve_with_fallback("decepticon")
-        assert chain[0] == "anthropic/claude-opus-4-7"
-        assert chain[1] == "openai/gpt-5.5"
+        assert chain == [
+            "anthropic/claude-opus-4-7",
+            "openai/gpt-5.5",
+            "gemini/gemini-2.5-pro",
+            "minimax/MiniMax-M2.7",
+        ]
 
     def test_resolve_unknown_role_raises(self):
         with pytest.raises(KeyError, match="No model assignment"):

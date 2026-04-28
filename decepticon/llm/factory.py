@@ -201,17 +201,27 @@ class LLMFactory:
         return model
 
     def get_fallback_models(self, role: str) -> list[BaseChatModel]:
-        """Get fallback ChatModel instances for a role. Empty if no fallback."""
+        """Build the full ordered list of fallback ChatModel instances.
+
+        Each entry mirrors one entry from the agent's credentials chain
+        beyond the primary. The agent passes the result via
+        ``ModelFallbackMiddleware(*models)``, which tries them in order
+        until one succeeds.
+        """
         assignment = self._router.get_assignment(role)
-        if not assignment.fallback:
+        if not assignment.fallbacks:
             return []
 
         log.info(
-            "Creating fallback LLM for role '%s' → model '%s'",
+            "Creating %d fallback LLM(s) for role '%s' → %s",
+            len(assignment.fallbacks),
             role,
-            assignment.fallback,
+            assignment.fallbacks,
         )
-        return [self._create_chat_model(assignment.fallback, assignment.temperature)]
+        return [
+            self._create_chat_model(model, assignment.temperature)
+            for model in assignment.fallbacks
+        ]
 
     def _create_chat_model(self, model: str, temperature: float) -> BaseChatModel:
         """Create a ChatOpenAI instance routed through LiteLLM proxy."""
