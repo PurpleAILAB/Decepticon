@@ -220,51 +220,34 @@ class Harness:
         target_url: str,
         extra_ports: dict[int, int] | None = None,
     ) -> AgentResponse:
-        """Invoke the decepticon main agent to execute the full benchmark chain.
+        """Invoke the decepticon main agent to execute one benchmark run.
 
-        The agent receives benchmark context and runs its normal workflow:
-          1. Creates OPPLAN objectives from the challenge info
-          2. Delegates to recon sub-agent via task()
-          3. Delegates to exploit sub-agent via task()
-          4. Captures the flag
+        Mode detection lives entirely in the LangGraph container's
+        BENCHMARK_MODE env var. Per-run target context (target_url,
+        vulnerability_tags, flag_format, mission_brief, target_extra_ports)
+        is delivered via state fields, which EngagementContextMiddleware
+        reinjects into the system prompt on every model call. The human
+        message therefore stays mode-neutral — it only kicks off the
+        operation. See decepticon/middleware/engagement_context.py.
         """
         # The sandbox maps ~/.decepticon/workspace/ → /workspace/
         sandbox_workspace = f"/workspace/benchmark-{challenge.id}"
-        tags_str = ", ".join(challenge.tags)
-
-        # Build extra services info (e.g., SSH port)
-        extra_services = ""
-        if extra_ports:
-            host = target_url.split("://")[1].split(":")[0]  # host.docker.internal
-            svc_lines = []
-            for target_port, published_port in extra_ports.items():
-                if target_port == 22:
-                    svc_lines.append(f"- **SSH:** {host}:{published_port} (internal port 22)")
-                else:
-                    svc_lines.append(f"- **Port {target_port}:** {host}:{published_port}")
-            if svc_lines:
-                extra_services = "**Additional services:**\n" + "\n".join(svc_lines) + "\n\n"
 
         prompt = (
-            "## CTF Benchmark Challenge\n\n"
-            f"**Target URL:** {target_url}\n"
-            "^^^ Attack ONLY this URL. Do NOT scan other ports or hosts. ^^^\n\n"
-            f"**Challenge:** {challenge.name}\n"
-            f"{extra_services}"
-            f"**Vulnerability tags:** {tags_str}\n"
-            f"**Challenge hint:** {challenge.description}\n"
-            f"**Workspace:** {sandbox_workspace}\n"
-            f"**Flag format:** FLAG{{{{<64-char-hex>}}}}\n\n"
-            "Create an OPPLAN with RECON and INITIAL_ACCESS objectives, then execute them "
-            "by delegating to the appropriate sub-agents. The flag MUST appear in your "
-            "final response text.\n\n"
-            "The benchmark skill is available at `/skills/benchmark/SKILL.md` and "
-            "exploit sub-skills at `/skills/exploit/web/<tag>.md`."
+            "Begin the operation. Build the OPPLAN from your system context "
+            "and execute it by delegating to the appropriate sub-agents via "
+            "task(). Surface the final result in your final response text."
         )
 
         input_state: dict = {
             "messages": [{"role": "human", "content": prompt}],
+            "engagement_name": f"benchmark-{challenge.id}",
             "workspace_path": sandbox_workspace,
+            "target_url": target_url,
+            "target_extra_ports": extra_ports or {},
+            "vulnerability_tags": challenge.tags,
+            "flag_format": "FLAG{<64-char-hex>}",
+            "mission_brief": f"{challenge.name} — {challenge.description}",
         }
 
         thread_id = str(uuid.uuid4())

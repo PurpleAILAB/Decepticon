@@ -153,6 +153,9 @@ services:
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
+      # BENCHMARK_MODE flows in via `env_file: .env` above — no need to
+      # re-declare it here. Set BENCHMARK_MODE=1 in .env to engage CTF/XBOW
+      # benchmark mode (rule overrides + challenge context inject).
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     # Wait for litellm to be healthy: langgraph has retry logic but the launcher

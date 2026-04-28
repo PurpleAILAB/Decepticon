@@ -240,6 +240,71 @@ class TestHarness:
         result = harness._extract_message([])
         assert result == ""
 
+    @pytest.mark.asyncio
+    async def test_invoke_agent_passes_challenge_state_fields(self) -> None:
+        """`_invoke_agent` must put benchmark context on the run state, not the human prompt."""
+        captured: dict[str, object] = {}
+
+        class _FakeResp:
+            status_code = 200
+
+            def raise_for_status(self) -> None: ...
+            def json(self) -> dict[str, object]:
+                return {"messages": [{"type": "ai", "content": "ok"}]}
+
+        class _FakeClient:
+            async def __aenter__(self) -> "_FakeClient":
+                return self
+
+            async def __aexit__(self, *_a: object) -> None:
+                return None
+
+            async def post(self, _url: str, json: dict[str, object]) -> _FakeResp:
+                captured["payload"] = json
+                return _FakeResp()
+
+        harness = Harness(provider=MagicMock(), config=BenchmarkConfig())
+        challenge = Challenge(
+            id="XBEN-042-24",
+            name="Some Challenge",
+            description="A test mission brief.",
+            level=2,
+            tags=["sqli", "auth-bypass"],
+            compose_dir=Path("/tmp"),
+        )
+
+        with patch("benchmark.harness.httpx.AsyncClient", return_value=_FakeClient()):
+            await harness._invoke_agent(
+                challenge,
+                target_url="http://host.docker.internal:33042",
+                extra_ports={22: 2222},
+            )
+
+        payload = captured["payload"]
+        assert isinstance(payload, dict)
+        input_state = payload["input"]
+        assert isinstance(input_state, dict)
+
+        # Challenge context flows via state, not the human prompt.
+        assert input_state["target_url"] == "http://host.docker.internal:33042"
+        assert input_state["target_extra_ports"] == {22: 2222}
+        assert input_state["vulnerability_tags"] == ["sqli", "auth-bypass"]
+        assert input_state["flag_format"] == "FLAG{<64-char-hex>}"
+        assert "Some Challenge" in input_state["mission_brief"]
+        assert input_state["engagement_name"] == "benchmark-XBEN-042-24"
+        assert input_state["workspace_path"] == "/workspace/benchmark-XBEN-042-24"
+
+        # Human message is minimal — per-challenge target details flow only
+        # through state, not the human prompt. Mode detection itself is the
+        # responsibility of EngagementContextMiddleware (BENCHMARK_MODE env);
+        # the human message is just a kickoff trigger.
+        messages = input_state["messages"]
+        assert len(messages) == 1
+        human_text = messages[0]["content"]
+        assert "**Target URL:**" not in human_text
+        assert challenge.name not in human_text
+        assert challenge.description not in human_text
+
     def test_extract_message_collects_all_ai_messages(self) -> None:
         """Verify _extract_message collects all AI messages (sub-agent responses)."""
         harness = Harness(provider=MagicMock(), config=BenchmarkConfig())
