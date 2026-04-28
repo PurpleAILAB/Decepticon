@@ -99,6 +99,7 @@ def create_decepticon_agent():
     from decepticon.agents.postexploit import create_postexploit_agent
     from decepticon.agents.recon import create_recon_agent
     from decepticon.agents.reverser import create_reverser_agent
+
     # Wrap each sub-agent with StreamingRunnable so their tool calls, results,
     # and AI messages stream through both Python CLI (UIRenderer) and
     # LangGraph Platform HTTP API (get_stream_writer → custom events).

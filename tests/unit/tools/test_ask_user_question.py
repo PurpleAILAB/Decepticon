@@ -168,10 +168,7 @@ def test_rejects_too_few_options():
 
 
 def test_rejects_too_many_options():
-    too_many = [
-        {"label": f"L{i}", "description": f"D{i}"}
-        for i in range(MAX_OPTIONS + 1)
-    ]
+    too_many = [{"label": f"L{i}", "description": f"D{i}"} for i in range(MAX_OPTIONS + 1)]
     with patch(
         "decepticon.tools.interaction.ask_user.interrupt",
         return_value="Yes",

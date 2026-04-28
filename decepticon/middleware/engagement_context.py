@@ -57,7 +57,9 @@ class EngagementContextMiddleware(AgentMiddleware):
     def _inject(self, request):
         state = request.state or {}
         slug = state.get("engagement_name", "") if hasattr(state, "get") else ""
-        workspace = state.get("workspace_path", "/workspace") if hasattr(state, "get") else "/workspace"
+        workspace = (
+            state.get("workspace_path", "/workspace") if hasattr(state, "get") else "/workspace"
+        )
         if not slug:
             return request
 

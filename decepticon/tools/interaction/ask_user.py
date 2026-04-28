@@ -35,9 +35,7 @@ class QuestionOption(BaseModel):
             "' (Recommended)' when applicable."
         )
     )
-    description: str = Field(
-        description="One-line clarifier shown under the label in the picker."
-    )
+    description: str = Field(description="One-line clarifier shown under the label in the picker.")
 
 
 def _safe_writer():
