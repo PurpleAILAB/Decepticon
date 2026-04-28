@@ -61,17 +61,21 @@ def ask_user_question(
     options: Annotated[
         list[QuestionOption],
         Field(
-            min_length=2,
+            default_factory=list,
             max_length=5,
             description=(
-                "2–5 choices. Each entry needs a label (operator-facing, returned) "
-                "and a description (one-line clarifier). Never include an 'Other' "
-                "option here — set allow_other=True instead."
+                "0–5 choices. Each entry needs a label (operator-facing, returned) "
+                "and a description (one-line clarifier). Provide 2–4 plausible "
+                "guesses even for open-ended questions; the operator picks one or "
+                "types a custom answer via the Other fallback. Never include an "
+                "'Other' option here — set allow_other=True instead. May be left "
+                "empty when there is genuinely no useful guess to offer; the "
+                "picker then just collects free-text via Other."
             ),
         ),
-    ],
+    ] = [],
     multi_select: bool = False,
-    allow_other: bool = False,
+    allow_other: bool = True,
     tool_call_id: Annotated[str, InjectedToolCallId] = "",
 ) -> Any:
     """Ask the human operator a structured multiple-choice question and wait for the answer.

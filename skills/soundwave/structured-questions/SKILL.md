@@ -20,27 +20,25 @@ Pick the right channel for each round.
 
 ## When to call `ask_user_question`
 
-Use the tool whenever the answer space is small and enumerable. Typical cases:
+EVERY operator-facing question. There is no prose-question path. Provide
+2–5 best-guess options for the dimension and always set `allow_other=true`
+so the operator can override with a custom answer when none of your
+predefined options fit.
 
+Typical dimensions:
 - **Engagement type**: External / Internal / Hybrid / Assumed-breach / Physical
 - **Attack class**: Web / Cloud / AD / Mixed
-- **Scope window**: Business hours / 24x7 / Custom (with `allow_other=true` for the custom case)
+- **Scope window**: Business hours / 24x7 / Custom
 - **Posture choices**: OPSEC level (Loud / Quiet / Stealth)
 - **Confirmations**: Two-option Yes / No after a derived assumption
 - **Phase selection**: Multi-select over kill-chain phases (set `multi_select=true`)
+- **Free-form fields** (organization / IP range / contact): still use the tool —
+  list 2–4 plausible guesses + `allow_other=true`, the operator types the
+  actual value via the Other fallback if your guesses miss.
 
 The tool pauses the run while the operator picks, then resumes with the
 chosen `label` (or list of labels for multi-select, or free text when the
 operator chose `Other`). Treat the returned value as authoritative.
-
-## When to ask in prose instead
-
-Stick to plain prose for narrative or open-ended fields:
-
-- Organization / client name
-- Specific IP ranges, domains, hosts (anything you cannot enumerate ahead of time)
-- Custom OPSEC notes, escalation contact details, free-form rules
-- Anything that warrants a sentence-level answer
 
 ## Habits (the typed tool signature already encodes the schema)
 
