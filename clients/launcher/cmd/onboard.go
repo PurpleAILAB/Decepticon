@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
@@ -13,13 +14,35 @@ var resetFlag bool
 
 var onboardCmd = &cobra.Command{
 	Use:   "onboard",
-	Short: "Configure Decepticon (authentication, provider, model profile)",
+	Short: "Configure Decepticon (auth methods, model profile, observability)",
 	RunE:  runOnboard,
 }
 
 func init() {
 	onboardCmd.Flags().BoolVar(&resetFlag, "reset", false, "Reconfigure even if .env already exists")
 	rootCmd.AddCommand(onboardCmd)
+}
+
+// AuthMethod identifiers — must match decepticon/llm/models.py::AuthMethod.
+const (
+	methodAnthropicOAuth = "anthropic_oauth"
+	methodAnthropicAPI   = "anthropic_api"
+	methodOpenAIAPI      = "openai_api"
+	methodGoogleAPI      = "google_api"
+	methodMiniMaxAPI     = "minimax_api"
+)
+
+// methodOrder is the priority order surfaced in the wizard. The
+// resulting DECEPTICON_AUTH_PRIORITY preserves this order, filtered
+// to the methods the user actually selected. OAuth precedes the
+// matching API on purpose: a subscription primary should fall back
+// to the paid API only when the subscription quota is exhausted.
+var methodOrder = []string{
+	methodAnthropicOAuth,
+	methodAnthropicAPI,
+	methodOpenAIAPI,
+	methodGoogleAPI,
+	methodMiniMaxAPI,
 }
 
 func runOnboard(cmd *cobra.Command, args []string) error {
@@ -30,12 +53,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	}
 
 	var (
-		authMethod   string
-		llmProvider  string
-		apiKey       string
-		profile      string
-		useLangSmith bool
-		langSmithKey string
+		methods       []string
+		anthropicKey  string
+		openaiKey     string
+		geminiKey     string
+		minimaxKey    string
+		profile       string
+		useLangSmith  bool
+		langSmithKey  string
 	)
 
 	form := huh.NewForm(
@@ -43,103 +68,89 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Decepticon Setup").
-				Description("Configure authentication, LLM provider,\nmodel profile, and observability.\n\nUse ↑↓ to navigate, Enter to confirm."),
+				Description("Configure auth methods, model profile, and\nobservability.\n\nUse ↑↓ to navigate, space to toggle, Enter to confirm."),
 		),
 
-		// Step 1: Authentication method
+		// Step 1: Auth methods (multi-select)
 		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Authentication Method").
-				Description("How should Decepticon authenticate with LLM providers?").
+			huh.NewMultiSelect[string]().
+				Title("Auth Methods").
+				Description("Pick every credential you have. Each method is an\nindependent fallback in priority order shown.").
 				Options(
-					huh.NewOption("API Key — Direct API access via x-api-key header", "api"),
-					huh.NewOption("OAuth  — Subscription-based (Claude Code, Codex)", "auth"),
+					huh.NewOption("Claude Code OAuth — Anthropic subscription (auth/*)", methodAnthropicOAuth),
+					huh.NewOption("Anthropic API Key — sk-ant-...", methodAnthropicAPI),
+					huh.NewOption("OpenAI API Key    — sk-...", methodOpenAIAPI),
+					huh.NewOption("Google API Key    — AIza... (Gemini)", methodGoogleAPI),
+					huh.NewOption("MiniMax API Key   — eyJ...", methodMiniMaxAPI),
 				).
-				Value(&authMethod),
-		).Title("1 / 5  ·  Authentication").
-			Description("Choose how to connect to LLM services"),
-
-		// Step 2: Provider selection
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("LLM Provider").
-				Description("Which provider will power the agents?").
-				OptionsFunc(func() []huh.Option[string] {
-					if authMethod == "auth" {
-						return []huh.Option[string]{
-							huh.NewOption("Claude Code  — Anthropic OAuth", "claude-code"),
-							huh.NewOption("Codex        — coming soon", "codex"),
-						}
-					}
-					return []huh.Option[string]{
-						huh.NewOption("Anthropic  — Claude Opus / Sonnet / Haiku", "anthropic"),
-						huh.NewOption("OpenAI     — GPT-5.4 / GPT-4.1", "openai"),
-						huh.NewOption("Google     — Gemini 2.5 Flash", "google"),
-						huh.NewOption("MiniMax    — M2.7", "minimax"),
-					}
-				}, &authMethod).
-				Value(&llmProvider),
-		).Title("2 / 5  ·  Provider").
-			Description("Select your primary LLM provider"),
-
-		// Step 3: API key input (only for api mode)
-		huh.NewGroup(
-			huh.NewInput().
-				TitleFunc(func() string {
-					switch llmProvider {
-					case "anthropic":
-						return "Anthropic API Key"
-					case "openai":
-						return "OpenAI API Key"
-					case "google":
-						return "Google API Key"
-					case "minimax":
-						return "MiniMax API Key"
-					}
-					return "API Key"
-				}, &llmProvider).
-				PlaceholderFunc(func() string {
-					switch llmProvider {
-					case "anthropic":
-						return "sk-ant-..."
-					case "openai":
-						return "sk-..."
-					case "google":
-						return "AIza..."
-					case "minimax":
-						return "eyJ..."
-					}
-					return ""
-				}, &llmProvider).
-				EchoMode(huh.EchoModePassword).
-				Value(&apiKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("API key is required")
+				Value(&methods).
+				Validate(func(s []string) error {
+					if len(s) == 0 {
+						return fmt.Errorf("select at least one credential")
 					}
 					return nil
 				}),
-		).Title("3 / 5  ·  Credentials").
-			Description("Enter your provider API key").
-			WithHideFunc(func() bool {
-				return authMethod == "auth"
-			}),
+		).Title("1 / 4  ·  Credentials").
+			Description("Select all that apply"),
 
-		// Step 4: Model profile
+		// Step 2a: Anthropic API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Anthropic API Key").
+				Placeholder("sk-ant-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&anthropicKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  Anthropic API").
+			WithHideFunc(func() bool { return !contains(methods, methodAnthropicAPI) }),
+
+		// Step 2b: OpenAI API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("OpenAI API Key").
+				Placeholder("sk-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&openaiKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  OpenAI API").
+			WithHideFunc(func() bool { return !contains(methods, methodOpenAIAPI) }),
+
+		// Step 2c: Google API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Google (Gemini) API Key").
+				Placeholder("AIza...").
+				EchoMode(huh.EchoModePassword).
+				Value(&geminiKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  Google API").
+			WithHideFunc(func() bool { return !contains(methods, methodGoogleAPI) }),
+
+		// Step 2d: MiniMax API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("MiniMax API Key").
+				Placeholder("eyJ...").
+				EchoMode(huh.EchoModePassword).
+				Value(&minimaxKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  MiniMax API").
+			WithHideFunc(func() bool { return !contains(methods, methodMiniMaxAPI) }),
+
+		// Step 3: Model profile
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Model Profile").
-				Description("Controls which models each agent tier uses").
+				Description("eco  per-agent tier (recommended)\nmax  every agent on HIGH (expensive)\ntest every agent on LOW (development)").
 				Options(
-					huh.NewOption("eco  — Opus + Sonnet + Haiku mix (recommended)", "eco"),
-					huh.NewOption("max  — Opus everywhere (expensive)", "max"),
-					huh.NewOption("test — Haiku only (for development)", "test"),
+					huh.NewOption("eco  — per-agent tier (recommended)", "eco"),
+					huh.NewOption("max  — every agent on HIGH (expensive)", "max"),
+					huh.NewOption("test — every agent on LOW (development)", "test"),
 				).
 				Value(&profile),
-		).Title("4 / 5  ·  Performance").
-			Description("Balance between cost and capability"),
+		).Title("3 / 4  ·  Profile"),
 
-		// Step 5: LangSmith tracing
+		// Step 4a: LangSmith toggle
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Enable LangSmith?").
@@ -147,50 +158,51 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Affirmative("Yes").
 				Negative("No").
 				Value(&useLangSmith),
-		).Title("5 / 5  ·  Observability").
-			Description("Optional tracing integration"),
+		).Title("4 / 4  ·  Observability"),
 
-		// LangSmith API key (only when enabled)
+		// Step 4b: LangSmith key
 		huh.NewGroup(
 			huh.NewInput().
 				Title("LangSmith API Key").
 				Placeholder("lsv2_...").
 				EchoMode(huh.EchoModePassword).
 				Value(&langSmithKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("LangSmith API key is required")
-					}
-					return nil
-				}),
-		).Title("5 / 5  ·  Observability").
-			Description("Enter your LangSmith credentials").
-			WithHideFunc(func() bool {
-				return !useLangSmith
-			}),
+				Validate(nonEmpty),
+		).Title("4 / 4  ·  LangSmith").
+			WithHideFunc(func() bool { return !useLangSmith }),
 	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("setup cancelled: %w", err)
 	}
 
-	// Build values map
-	values := map[string]string{
-		"DECEPTICON_MODEL_PROFILE":  profile,
-		"DECEPTICON_MODEL_PROVIDER": authMethod,
+	// huh.MultiSelect returns selected values in option order, not the
+	// order the user toggled. Re-derive the priority by walking
+	// methodOrder and keeping only what the user picked.
+	priority := make([]string, 0, len(methods))
+	for _, m := range methodOrder {
+		if contains(methods, m) {
+			priority = append(priority, m)
+		}
 	}
 
-	if authMethod == "api" && apiKey != "" {
-		switch llmProvider {
-		case "anthropic":
-			values["ANTHROPIC_API_KEY"] = apiKey
-		case "openai":
-			values["OPENAI_API_KEY"] = apiKey
-		case "google":
-			values["GEMINI_API_KEY"] = apiKey
-		case "minimax":
-			values["MINIMAX_API_KEY"] = apiKey
-		}
+	values := map[string]string{
+		"DECEPTICON_MODEL_PROFILE":    profile,
+		"DECEPTICON_AUTH_PRIORITY":    strings.Join(priority, ","),
+		"DECEPTICON_AUTH_CLAUDE_CODE": boolStr(contains(methods, methodAnthropicOAuth)),
+	}
+
+	if anthropicKey != "" {
+		values["ANTHROPIC_API_KEY"] = anthropicKey
+	}
+	if openaiKey != "" {
+		values["OPENAI_API_KEY"] = openaiKey
+	}
+	if geminiKey != "" {
+		values["GEMINI_API_KEY"] = geminiKey
+	}
+	if minimaxKey != "" {
+		values["MINIMAX_API_KEY"] = minimaxKey
 	}
 
 	if useLangSmith && langSmithKey != "" {
@@ -208,8 +220,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Green.Render("  ✓ Configuration saved"))
 	fmt.Println()
 	fmt.Println(ui.Dim.Render("  ┌──────────────────────────────────┐"))
-	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Auth      ") + ui.Dim.Render(authMethod))
-	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Provider  ") + ui.Dim.Render(llmProvider))
+	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Methods   ") + ui.Dim.Render(strings.Join(priority, ", ")))
 	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Profile   ") + ui.Dim.Render(profile))
 	if useLangSmith {
 		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  LangSmith ") + ui.Green.Render("enabled"))
@@ -220,4 +231,27 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	ui.DimText("  Run 'decepticon' to start the platform")
 	return nil
+}
+
+func contains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func nonEmpty(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return fmt.Errorf("value is required")
+	}
+	return nil
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
