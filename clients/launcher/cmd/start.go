@@ -106,7 +106,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 		cliEnv["WEB_PORT"] = port
 	}
 
-	// Pass through terminal
+	// Pass through terminal. Services are intentionally left running on CLI exit
+	// so re-entry is fast (cold start is ~75s); use 'decepticon stop' to shut
+	// the stack down.
 	if err := c.RunInteractive(
 		[]string{compose.Profiles.CLI},
 		"cli",
@@ -115,15 +117,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("CLI exited: %w", err)
 	}
 
-	// 6. Stop services after CLI exits
-	ui.DimText("CLI exited. Stopping services...")
-	_ = c.Down()
-
-	// Check if decepticon is running outside docker (dev mode)
-	if os.Getenv("DECEPTICON_DEV") == "true" {
-		ui.DimText("Dev mode: services kept running")
-	}
-
+	ui.DimText("CLI exited. Services kept running — run 'decepticon stop' to shut down.")
 	return nil
 }
 
