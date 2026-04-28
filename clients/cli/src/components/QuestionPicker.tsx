@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { TextInput } from "@inkjs/ui";
 import { useTerminalSize } from "../hooks/useTerminalSize.js";
-import type { ActiveQuestion, AskUserOption } from "../types.js";
+import type { ActiveQuestion } from "../types.js";
 
 interface QuestionPickerProps {
   question: ActiveQuestion;
@@ -11,9 +11,6 @@ interface QuestionPickerProps {
 }
 
 const OTHER_LABEL = "Other (type your answer)";
-
-/** Index sentinel for the "Other" entry when allow_other is true. */
-const otherIndexFor = (options: AskUserOption[]) => options.length;
 
 /** Single-select / multi-select picker with optional free-text "Other" fallback.
  *
@@ -35,7 +32,7 @@ export const QuestionPicker = React.memo(function QuestionPicker({
   const { columns } = useTerminalSize();
   const { question: text, header, options, multiSelect, allowOther } = question;
 
-  const otherIndex = otherIndexFor(options);
+  const otherIndex = options.length; // Sentinel slot when allowOther is true.
   const totalEntries = options.length + (allowOther ? 1 : 0);
 
   const [cursor, setCursor] = useState(0);
@@ -43,8 +40,9 @@ export const QuestionPicker = React.memo(function QuestionPicker({
   const [otherMode, setOtherMode] = useState(false);
   const [otherKey, setOtherKey] = useState(0);
 
-  // Reset state when the question changes (defensive — REPL re-mounts on new
-  // question, but cheap to keep).
+  // Reset cursor/checked/mode whenever a new question (different sourceId)
+  // arrives. The component instance is reused across consecutive questions,
+  // so React state would otherwise carry over from the previous picker.
   useEffect(() => {
     setCursor(0);
     setChecked(new Set());
