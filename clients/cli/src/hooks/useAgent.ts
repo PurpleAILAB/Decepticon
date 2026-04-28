@@ -87,6 +87,8 @@ interface UseAgentReturn {
   streamStats: StreamStats | null;
   /** Currently active agent name (e.g. "decepticon", "recon"). */
   activeAgent: string | null;
+  /** Persistent assistant id ("soundwave" | "decepticon") — shown when no subagent is streaming. */
+  assistantId: string;
   /** Queued message to auto-submit on completion. */
   queuedMessage: string | null;
   /** Pending operator question while a picker is awaiting an answer. */
@@ -130,6 +132,7 @@ export function useAgent({
   const [pendingTool, setPendingTool] = useState<PendingTool | null>(null);
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  const [assistantId, setAssistantId] = useState<string>(INITIAL_ASSISTANT_ID);
   const [error, setError] = useState<string | null>(null);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
   const [activeQuestion, setActiveQuestion] = useState<ActiveQuestion | null>(null);
@@ -298,6 +301,7 @@ export function useAgent({
             const slug = data.engagement ?? "";
             pendingHandoffRef.current = slug || "(unnamed)";
             assistantIdRef.current = "decepticon";
+            setAssistantId("decepticon");
             addEvent({
               type: "system",
               content: slug
@@ -674,14 +678,28 @@ export function useAgent({
         setActiveAgent("decepticon");
         setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
 
+        // Engagement context flows in as regular state fields. A small
+        // middleware on the agent side picks engagement_name + workspace_path
+        // out of state and injects them into the model's system prompt —
+        // the LangGraph-idiomatic way to surface launcher-set context to the
+        // LLM without polluting user messages.
+        const slug = process.env.DECEPTICON_ENGAGEMENT;
+        const input: Record<string, unknown> = {
+          messages: [{ role: "user", content: message }],
+        };
+        if (slug) {
+          input.engagement_name = slug;
+          // Sandbox /workspace is bound to this engagement directory, so the
+          // agent always sees its workspace at /workspace regardless of slug.
+          input.workspace_path = "/workspace";
+        }
+
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
             assistantIdRef.current,
             {
-              input: {
-                messages: [{ role: "user", content: message }],
-              },
+              input,
               ...STREAM_OPTIONS,
               onDisconnect: "continue",
               signal: abortController.signal,
@@ -905,6 +923,7 @@ export function useAgent({
     pendingTool,
     streamStats,
     activeAgent,
+    assistantId,
     queuedMessage,
     activeQuestion,
     answerQuestion,

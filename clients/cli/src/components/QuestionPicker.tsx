@@ -148,7 +148,7 @@ export const QuestionPicker = React.memo(function QuestionPicker({
               <Text color={focused ? "cyan" : undefined}>
                 {focused ? "▸ " : "  "}
                 {checkbox}
-                {opt.label}
+                {`${i + 1}. ${opt.label}`}
               </Text>
               {opt.description ? (
                 <Text dimColor>{`  — ${opt.description}`}</Text>
@@ -161,7 +161,7 @@ export const QuestionPicker = React.memo(function QuestionPicker({
           <Box flexDirection="row">
             <Text color={cursor === otherIndex && !otherMode ? "cyan" : undefined}>
               {cursor === otherIndex && !otherMode ? "▸ " : "  "}
-              {OTHER_LABEL}
+              {`${options.length + 1}. ${OTHER_LABEL}`}
             </Text>
           </Box>
         )}

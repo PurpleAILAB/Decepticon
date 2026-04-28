@@ -29,6 +29,8 @@ const TOOL_DISPLAY: Record<string, string> = {
   grep: "Grep",
   execute: "Execute",
   write_todos: "Todos",
+  ask_user_question: "Ask",
+  complete_engagement_planning: "Plan complete",
 };
 
 // ── Tool call header ──────────────────────────────────────────────

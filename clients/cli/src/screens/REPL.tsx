@@ -298,6 +298,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
               runState={agent.runState}
               onSubmit={handleSubmit}
               activeAgent={agent.activeAgent}
+              assistantId={agent.assistantId}
               queuedMessage={agent.queuedMessage}
               onEditQueue={agent.enqueue}
             />
