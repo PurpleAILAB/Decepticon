@@ -37,6 +37,14 @@ INLINE_LIMIT = 15_000  # ≤15K chars: return directly in tool result
 OFFLOAD_THRESHOLD = 100_000  # 15K–100K: save to file, return summary + preview
 # >5M: size watchdog in docker_sandbox.py kills the command (SIZE_WATCHDOG_CHARS)
 
+# ─── Scratch-file TTL prune (bounds /workspace/.scratch/ growth) ──────────
+# Files persist long enough for the agent's grep/read multi-pass workflow,
+# then expire so the dir does not grow unboundedly across long engagements.
+# Process-level throttle keeps the prune off the hot path of every bash call.
+SCRATCH_TTL_MINUTES = 60
+SCRATCH_PRUNE_INTERVAL = 600  # seconds between prune attempts (per process)
+_last_scratch_prune: float = 0.0
+
 # ─── ANSI escape code pattern ────────────────────────────────────────────
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
 
@@ -117,6 +125,31 @@ def set_sandbox(sandbox: DockerSandbox) -> None:
 def get_sandbox() -> DockerSandbox | None:
     """Return the current DockerSandbox instance (for wiring progress callbacks)."""
     return _sandbox
+
+
+async def _prune_old_scratch() -> None:
+    """Drop scratch files older than SCRATCH_TTL_MINUTES.
+
+    Throttled to SCRATCH_PRUNE_INTERVAL between attempts so the bash() hot
+    path pays for cleanup at most every ~10 minutes per process. Best-effort:
+    a failure here must never block the agent's command.
+    """
+    global _last_scratch_prune
+    if _sandbox is None:
+        return
+    now = time.monotonic()
+    if now - _last_scratch_prune < SCRATCH_PRUNE_INTERVAL:
+        return
+    _last_scratch_prune = now
+    try:
+        await asyncio.to_thread(
+            _sandbox.execute,
+            f"find /workspace/.scratch -type f -mmin +{SCRATCH_TTL_MINUTES} "
+            "-delete 2>/dev/null || true",
+            timeout=5,
+        )
+    except Exception:
+        pass
 
 
 async def _offload_large_output(output: str, command: str, session: str) -> str:
@@ -213,6 +246,9 @@ async def bash(
     """
     if _sandbox is None:
         raise RuntimeError("DockerSandbox not initialized. Call set_sandbox() first.")
+
+    # Best-effort TTL prune of /workspace/.scratch/ (throttled internally)
+    await _prune_old_scratch()
 
     # Background mode: send command and return immediately
     if background and command:
