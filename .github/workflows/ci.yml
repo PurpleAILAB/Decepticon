@@ -116,6 +116,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      # Cache the resolved virtualenv across runs. setup-uv's enable-cache
+      # only caches the uv binary's HTTP cache, not the materialized .venv,
+      # so a cold uv sync still rebuilds the env every time. Keying on
+      # uv.lock + pyproject.toml + python version means the cache is only
+      # invalidated when dependencies actually change.
+      - name: Cache .venv
+        id: venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
       - run: uv sync --dev
       - name: Ruff lint
         run: uv run ruff check .
@@ -133,13 +144,17 @@ jobs:
           print(f\"basedpyright: {s['errorCount']} errors, {s['warningCount']} warnings, {s['informationCount']} info\")
           sys.exit(1 if s['errorCount'] > 0 else 0)
           "
-      - name: Pytest with coverage
-        # -n auto runs tests in parallel across available CPUs (2 vCPU on
-        # GitHub-hosted ubuntu-latest, ~2x speedup). pytest-cov + xdist
-        # combine results correctly.
+      # PRs run tests without coverage instrumentation — coverage adds ~3x
+      # runtime and PR feedback latency matters more than coverage tracking
+      # on every change. Coverage is enforced on main pushes (next step).
+      - name: Pytest (PRs — fast, no coverage)
+        if: github.event_name == 'pull_request'
+        run: uv run pytest -n auto -q
+      - name: Pytest with coverage (main — enforces threshold)
+        if: github.event_name == 'push'
         run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30
       - name: Upload coverage artifact
-        if: always()
+        if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml
