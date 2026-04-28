@@ -26,9 +26,10 @@ OPPLAN replaces TodoListMiddleware with domain-specific objective tracking:
   - State transition validation with dependency checking
 
 Sub-agents are passed as CompiledSubAgent, wrapping existing agent factories
-(create_soundwave_agent, create_recon_agent, create_exploit_agent,
-create_postexploit_agent) so they run with their full middleware stack and
-skill sets intact.
+(create_recon_agent, create_exploit_agent, create_postexploit_agent, and the
+specialist analyst/reverser/contract_auditor/cloud_hunter/ad_operator agents)
+so they run with their full middleware stack and skill sets intact. Soundwave
+is registered at the orchestrator level (see create_orchestrator), not here.
 """
 
 import os
@@ -162,23 +163,18 @@ def create_decepticon_agent():
     from decepticon.agents.postexploit import create_postexploit_agent
     from decepticon.agents.recon import create_recon_agent
     from decepticon.agents.reverser import create_reverser_agent
-    from decepticon.agents.soundwave import create_soundwave_agent
-
     # Wrap each sub-agent with StreamingRunnable so their tool calls, results,
     # and AI messages stream through both Python CLI (UIRenderer) and
     # LangGraph Platform HTTP API (get_stream_writer → custom events).
+    #
+    # Soundwave is intentionally NOT a sub-agent here: it is registered at the
+    # orchestrator level (create_orchestrator) and routed to whenever
+    # engagement docs are missing. Soundwave is designed standalone (no
+    # SubAgentMiddleware, no bash tool — see soundwave.py module docstring),
+    # so document regeneration goes through the orchestrator routing, not
+    # decepticon delegation. Document edits while docs already exist are
+    # handled by decepticon's FilesystemMiddleware directly.
     subagents = [
-        CompiledSubAgent(
-            name="soundwave",
-            description=(
-                "Document writer agent. Generates engagement document bundles: RoE, CONOPS, "
-                "Deconfliction Plan. Use when engagement documents are missing or need updating. "
-                "Interviews the user, produces JSON documents, validates against schemas. "
-                "Does NOT manage OPPLAN — the orchestrator owns OPPLAN directly. "
-                "Saves results to /workspace/"
-            ),
-            runnable=StreamingRunnable(create_soundwave_agent(), "soundwave"),
-        ),
         CompiledSubAgent(
             name="recon",
             description=(
