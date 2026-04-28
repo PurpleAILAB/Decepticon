@@ -171,13 +171,17 @@ func (i pickerItem) Description() string {
 }
 
 type pickerKeyMap struct {
+	// Quit reuses the list's built-in `q` / ctrl+c binding — we only intercept
+	// the keystroke so we can set a quit result before tea.Quit. We do NOT
+	// publish it through AdditionalShortHelpKeys (the default keymap already
+	// renders "q quit"); doing so produced a duplicate hint.
 	Quit   key.Binding
 	Delete key.Binding
 }
 
 func newPickerKeys() pickerKeyMap {
 	return pickerKeyMap{
-		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c")),
 		Delete: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 	}
 }
@@ -195,6 +199,11 @@ type pickerModel struct {
 	list list.Model
 	keys pickerKeyMap
 
+	// Last reported terminal size — kept so we can recompute list height
+	// whenever the confirm overlay shows or hides.
+	width  int
+	height int
+
 	// Inline delete confirmation overlay.
 	confirmDelete bool
 	deleteTarget  string
@@ -203,6 +212,39 @@ type pickerModel struct {
 	result   pickerResult
 	chosen   pickerItem
 	quitting bool
+}
+
+// resizeList recomputes the list dimensions for the current window size,
+// shrinking by the actual rendered height of the confirm overlay (computed
+// at the live terminal width) when it is visible.
+func (m *pickerModel) resizeList() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	height := m.height - 2
+	if m.confirmDelete {
+		// Render the overlay at the current width and reserve its exact
+		// height + the leading newline that View() inserts before it. This
+		// keeps the layout correct even when the body wraps on narrow
+		// terminals.
+		overlay := m.renderConfirmOverlay()
+		height -= lipgloss.Height(overlay) + 1
+	}
+	if height < 1 {
+		height = 1
+	}
+	m.list.SetSize(m.width, height)
+}
+
+// renderConfirmOverlay produces the boxed delete-confirm dialog. Shared
+// between resizeList (for height measurement) and View (for actual render).
+func (m pickerModel) renderConfirmOverlay() string {
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		confirmTextStyle.Render(fmt.Sprintf("Permanently delete '%s'?", m.deleteTarget)),
+		confirmHintStyle.Render("Removes ~/.decepticon/workspace/"+m.deleteTarget+"/ and all contents."),
+		confirmHintStyle.Render("Press [y] to confirm, [n] / [esc] to cancel."),
+	)
+	return confirmStyle.Render(body)
 }
 
 func newPickerModel(home string, entries []engagementEntry) pickerModel {
@@ -216,8 +258,8 @@ func newPickerModel(home string, entries []engagementEntry) pickerModel {
 	l.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ef4444"))
 
 	keys := newPickerKeys()
-	l.AdditionalShortHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete, keys.Quit} }
-	l.AdditionalFullHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete, keys.Quit} }
+	l.AdditionalShortHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete} }
+	l.AdditionalFullHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete} }
 
 	return pickerModel{home: home, list: l, keys: keys}
 }
@@ -239,7 +281,9 @@ func (m pickerModel) Init() tea.Cmd { return nil }
 func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.list.SetSize(msg.Width, msg.Height-2)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.resizeList()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -250,10 +294,12 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = os.RemoveAll(target)
 				m.confirmDelete = false
 				m.deleteTarget = ""
+				m.resizeList()
 				return m.refresh(), nil
 			case "n", "esc":
 				m.confirmDelete = false
 				m.deleteTarget = ""
+				m.resizeList()
 				return m, nil
 			}
 			return m, nil
@@ -269,6 +315,7 @@ func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if it, ok := m.list.SelectedItem().(pickerItem); ok && !it.isNew {
 				m.confirmDelete = true
 				m.deleteTarget = it.slug
+				m.resizeList()
 			}
 			return m, nil
 		}
@@ -309,12 +356,7 @@ func (m pickerModel) View() tea.View {
 	}
 	content := m.list.View()
 	if m.confirmDelete {
-		body := lipgloss.JoinVertical(lipgloss.Left,
-			confirmTextStyle.Render(fmt.Sprintf("Permanently delete '%s'?", m.deleteTarget)),
-			confirmHintStyle.Render("Removes ~/.decepticon/workspace/"+m.deleteTarget+"/ and all contents."),
-			confirmHintStyle.Render("Press [y] to confirm, [n] / [esc] to cancel."),
-		)
-		content += "\n" + confirmStyle.Render(body)
+		content += "\n" + m.renderConfirmOverlay()
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
