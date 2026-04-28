@@ -234,9 +234,18 @@ All three must validate against `decepticon.core.schemas` (RoE, CONOPS, Deconfli
 
 ### Completion Signal
 
-After writing all three files, output exactly:
+After writing and validating all three files, call the
+`complete_engagement_planning` tool with the workspace slug. The CLI uses
+the tool's emitted event to switch the active assistant from Soundwave to
+Decepticon so the operator's next message lands on the operations agent
+without restarting the CLI.
+
+After the tool returns, your closing chat message should confirm the
+handoff in plain prose, for example:
 
 ```
-PLANNING COMPLETE — RoE, CONOPS, and Deconfliction Plan written to <workspace>/plan/
+Planning complete for engagement <slug>. Decepticon will pick up from your next message.
 ```
+
+Do **not** call `complete_engagement_planning` more than once per engagement.
 </SOCRATIC_INTERVIEW>

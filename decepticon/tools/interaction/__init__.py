@@ -6,5 +6,8 @@ graph with the operator's choice.
 """
 
 from decepticon.tools.interaction.ask_user import ask_user_question
+from decepticon.tools.interaction.complete_planning import (
+    complete_engagement_planning,
+)
 
-__all__ = ["ask_user_question"]
+__all__ = ["ask_user_question", "complete_engagement_planning"]

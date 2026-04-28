@@ -12,7 +12,8 @@ export type SubagentEventType =
   | "subagent_tool_call"
   | "subagent_tool_result"
   | "subagent_message"
-  | "ask_user_question";
+  | "ask_user_question"
+  | "engagement_ready";
 
 /** One choice presented in an ask_user_question picker. */
 export interface AskUserOption {
@@ -42,6 +43,8 @@ export interface SubagentCustomEvent {
   options?: AskUserOption[];
   multi_select?: boolean;
   allow_other?: boolean;
+  // engagement_ready field — slug whose planning bundle is now complete.
+  engagement?: string;
 }
 
 /** Minimal event shape accepted by shared utility functions. */

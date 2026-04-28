@@ -98,11 +98,17 @@ interface UseAgentReturn {
   addSystemEvent: (content: string) => void;
 }
 
-// Launcher injects DECEPTICON_ASSISTANT_ID after the engagement picker:
+// Initial assistant_id from the launcher's engagement picker:
 // - "soundwave" for new engagements (interview lane)
 // - "decepticon" for resuming an existing engagement
 // Defaults to "decepticon" when launched directly (legacy / dev workflows).
-const ASSISTANT_ID = process.env.DECEPTICON_ASSISTANT_ID || "decepticon";
+//
+// When soundwave finishes its interview and emits the `engagement_ready`
+// custom event, the active assistant is flipped in-flight to "decepticon"
+// and the next operator message starts a fresh thread on that assistant —
+// no CLI restart needed.
+const INITIAL_ASSISTANT_ID =
+  process.env.DECEPTICON_ASSISTANT_ID || "decepticon";
 
 export function useAgent({
   apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024",
@@ -138,6 +144,13 @@ export function useAgent({
   // emission LangGraph fires when the ToolNode re-executes the tool body
   // after Command(resume=...).
   const askedQuestionIds = useRef<Set<string>>(new Set());
+  // Active LangGraph assistant. Soundwave's complete_engagement_planning
+  // tool flips this to "decepticon" mid-flight; the next submit() then opens
+  // a fresh thread on the new assistant.
+  const assistantIdRef = useRef<string>(INITIAL_ASSISTANT_ID);
+  // Slug captured from the engagement_ready event — kept for system-level
+  // logging when the handoff fires.
+  const pendingHandoffRef = useRef<string | null>(null);
 
   // Derived for backward compatibility
   const isStreaming = runState === "streaming" || runState === "connecting";
@@ -276,6 +289,23 @@ export function useAgent({
             setActiveAgent("decepticon");
             setPendingTool(null);
             break;
+
+          case "engagement_ready": {
+            // Soundwave finished writing the planning bundle. Flip the
+            // active assistant so the next submit() lands on decepticon.
+            // The current run continues to completion (soundwave's closing
+            // message); thread handoff fires from handleStreamComplete.
+            const slug = data.engagement ?? "";
+            pendingHandoffRef.current = slug || "(unnamed)";
+            assistantIdRef.current = "decepticon";
+            addEvent({
+              type: "system",
+              content: slug
+                ? `Engagement '${slug}' planning complete — Decepticon will pick up your next message.`
+                : "Engagement planning complete — Decepticon will pick up your next message.",
+            });
+            break;
+          }
 
           case "ask_user_question": {
             // The backend tool body re-runs once on Command(resume=...) so the
@@ -489,6 +519,17 @@ export function useAgent({
       runIdRef.current = null;
       resetStreamState();
 
+      // Engagement handoff: soundwave's complete_engagement_planning tool
+      // flipped assistantIdRef to "decepticon" during this run. Drop the
+      // soundwave thread so the next submit opens a fresh decepticon
+      // thread. Reset askedQuestionIds since they were per-thread.
+      if (pendingHandoffRef.current) {
+        threadIdRef.current = null;
+        lastCountRef.current = 0;
+        askedQuestionIds.current.clear();
+        pendingHandoffRef.current = null;
+      }
+
       // Auto-submit queued message
       const pending = queuedMessageRef.current;
       if (pending) {
@@ -608,7 +649,7 @@ export function useAgent({
             try {
               const thread = await client.threads.create();
               threadIdRef.current = thread.thread_id;
-              await saveThread(thread.thread_id, ASSISTANT_ID, message);
+              await saveThread(thread.thread_id, assistantIdRef.current, message);
               break;
             } catch (err) {
               if (attempt === maxRetries) {
@@ -636,7 +677,7 @@ export function useAgent({
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
-            ASSISTANT_ID,
+            assistantIdRef.current,
             {
               input: {
                 messages: [{ role: "user", content: message }],
@@ -723,7 +764,7 @@ export function useAgent({
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
-            ASSISTANT_ID,
+            assistantIdRef.current,
             {
               command: { resume: value },
               ...STREAM_OPTIONS,
@@ -785,7 +826,7 @@ export function useAgent({
           try {
             const stream = client.runs.stream(
               threadIdRef.current!,
-              ASSISTANT_ID,
+              assistantIdRef.current,
               {
                 command: { resume: value ?? true },
                 ...STREAM_OPTIONS,
