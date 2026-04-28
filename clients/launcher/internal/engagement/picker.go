@@ -1,7 +1,11 @@
-// Package engagement scans the host workspace for ready engagements and
-// presents a Huh-based picker that decides which assistant the CLI should
-// connect to (decepticon vs soundwave) and which host directory the
-// sandbox container should bind-mount as /workspace.
+// Package engagement scans the host workspace for engagements and runs the
+// launcher-side picker. The picker is split between two libraries:
+//
+//   - The main list (engagement selection + inline delete) is a custom
+//     bubbletea + bubbles/list program because per-item action keys ('d'
+//     for delete) are not in huh's form vocabulary.
+//   - The slug-input prompt that follows "[+] New" stays on huh — it is a
+//     single-field form with regex validation, exactly what huh is for.
 package engagement
 
 import (
@@ -10,8 +14,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 )
@@ -23,35 +32,13 @@ const AssistantSoundwave = "soundwave"
 const AssistantDecepticon = "decepticon"
 
 // Slug regex: lowercase alphanumeric with internal hyphens, 3-64 chars.
-// First and last char must be alphanumeric — disallows leading/trailing hyphens
-// to keep filesystem and URL semantics simple.
 var slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`)
 
 // Choice carries the picker result back to the launcher.
 type Choice struct {
-	// AssistantID is the LangGraph assistant the CLI should connect to.
-	AssistantID string
-	// Engagement is the engagement slug. Always set — the launcher prompts for
-	// it on new engagements.
-	Engagement string
-	// WorkspacePath is the absolute host path the sandbox should bind to
-	// /workspace. The launcher exports it as DECEPTICON_ENGAGEMENT_WORKSPACE
-	// before bringing the compose stack up.
+	AssistantID   string
+	Engagement    string
 	WorkspacePath string
-}
-
-// isReady reports whether a single engagement carries the full planning
-// bundle (roe.json + conops.json + deconfliction.json). Used both for sorting
-// the picker (ready engagements bubble up) and for deciding which assistant
-// to route to when the operator resumes one.
-func isReady(home, slug string) bool {
-	plan := filepath.Join(home, "workspace", slug, "plan")
-	for _, name := range []string{"roe.json", "conops.json", "deconfliction.json"} {
-		if _, err := os.Stat(filepath.Join(plan, name)); err != nil {
-			return false
-		}
-	}
-	return true
 }
 
 // engagementEntry pairs a slug with metadata used for picker rendering and
@@ -62,12 +49,21 @@ type engagementEntry struct {
 	mtime int64
 }
 
+// isReady reports whether a single engagement carries the full planning
+// bundle (roe.json + conops.json + deconfliction.json).
+func isReady(home, slug string) bool {
+	plan := filepath.Join(home, "workspace", slug, "plan")
+	for _, name := range []string{"roe.json", "conops.json", "deconfliction.json"} {
+		if _, err := os.Stat(filepath.Join(plan, name)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 // ScanEngagements returns every directory under home/workspace/ regardless
-// of completeness. Each entry carries a Ready flag so the picker can mark
-// in-progress engagements and the launcher can pick the right assistant on
-// resume (ready → decepticon, incomplete → soundwave to finish the
-// interview). Sort: ready engagements first (most recent RoE), in-progress
-// engagements second (most recent dir mtime).
+// of completeness. Sort: ready engagements first (most recent RoE), then
+// in-progress engagements (most recent dir mtime).
 func ScanEngagements(home string) ([]engagementEntry, error) {
 	root := filepath.Join(home, "workspace")
 	entries, err := os.ReadDir(root)
@@ -104,8 +100,6 @@ func ScanEngagements(home string) ([]engagementEntry, error) {
 	return out, nil
 }
 
-// listAllSlugs returns every directory name under home/workspace, used for
-// new-slug collision detection (a partial engagement is still a name clash).
 func listAllSlugs(home string) ([]string, error) {
 	all, err := ScanEngagements(home)
 	if err != nil {
@@ -140,18 +134,194 @@ func validateSlug(home, slug string) error {
 	return nil
 }
 
-// Select shows the engagement picker. The list always carries "[+] New"
-// plus every existing engagement under home/workspace/, completed or
-// in-progress alike — partial engagements (interview interrupted, planning
-// not yet finalised) must be resumable.
-//
-// Resume routing:
-//   - Ready engagements (full planning bundle) → decepticon assistant.
-//   - In-progress engagements                  → soundwave assistant so
-//     the interview lane can finish the missing documents.
-//
-// "[+] New" triggers a chained slug-input prompt; the host directory is
-// created before the sandbox starts so the bind has somewhere to point at.
+// ─── Bubble Tea picker ────────────────────────────────────────────────────
+
+type pickerItem struct {
+	slug       string // empty for the "[+] New" sentinel
+	isNew      bool
+	ready      bool
+	inProgress bool
+}
+
+func (i pickerItem) FilterValue() string {
+	if i.isNew {
+		return ""
+	}
+	return i.slug
+}
+
+func (i pickerItem) Title() string {
+	if i.isNew {
+		return "[+] New engagement"
+	}
+	if i.inProgress {
+		return i.slug + "  (in progress)"
+	}
+	return i.slug
+}
+
+func (i pickerItem) Description() string {
+	if i.isNew {
+		return "Create a new engagement workspace"
+	}
+	if i.inProgress {
+		return "Planning incomplete — resume with Soundwave"
+	}
+	return "Resume with Decepticon"
+}
+
+type pickerKeyMap struct {
+	Quit   key.Binding
+	Delete key.Binding
+}
+
+func newPickerKeys() pickerKeyMap {
+	return pickerKeyMap{
+		Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+		Delete: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+	}
+}
+
+type pickerResult int
+
+const (
+	resultPending pickerResult = iota
+	resultPicked
+	resultQuit
+)
+
+type pickerModel struct {
+	home string
+	list list.Model
+	keys pickerKeyMap
+
+	// Inline delete confirmation overlay.
+	confirmDelete bool
+	deleteTarget  string
+
+	// Outcome.
+	result   pickerResult
+	chosen   pickerItem
+	quitting bool
+}
+
+func newPickerModel(home string, entries []engagementEntry) pickerModel {
+	items := buildItems(entries)
+	delegate := list.NewDefaultDelegate()
+	l := list.New(items, delegate, 0, 0)
+	l.Title = "Decepticon — pick an engagement"
+	l.SetShowHelp(true)
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(false)
+	l.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ef4444"))
+
+	keys := newPickerKeys()
+	l.AdditionalShortHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete, keys.Quit} }
+	l.AdditionalFullHelpKeys = func() []key.Binding { return []key.Binding{keys.Delete, keys.Quit} }
+
+	return pickerModel{home: home, list: l, keys: keys}
+}
+
+func buildItems(entries []engagementEntry) []list.Item {
+	items := []list.Item{pickerItem{isNew: true}}
+	for _, e := range entries {
+		items = append(items, pickerItem{
+			slug:       e.Slug,
+			ready:      e.Ready,
+			inProgress: !e.Ready,
+		})
+	}
+	return items
+}
+
+func (m pickerModel) Init() tea.Cmd { return nil }
+
+func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.list.SetSize(msg.Width, msg.Height-2)
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.confirmDelete {
+			switch strings.ToLower(msg.String()) {
+			case "y":
+				target := filepath.Join(m.home, "workspace", m.deleteTarget)
+				_ = os.RemoveAll(target)
+				m.confirmDelete = false
+				m.deleteTarget = ""
+				return m.refresh(), nil
+			case "n", "esc":
+				m.confirmDelete = false
+				m.deleteTarget = ""
+				return m, nil
+			}
+			return m, nil
+		}
+
+		switch {
+		case key.Matches(msg, m.keys.Quit):
+			m.result = resultQuit
+			m.quitting = true
+			return m, tea.Quit
+
+		case key.Matches(msg, m.keys.Delete):
+			if it, ok := m.list.SelectedItem().(pickerItem); ok && !it.isNew {
+				m.confirmDelete = true
+				m.deleteTarget = it.slug
+			}
+			return m, nil
+		}
+
+		if msg.String() == "enter" {
+			if it, ok := m.list.SelectedItem().(pickerItem); ok {
+				m.chosen = it
+				m.result = resultPicked
+				m.quitting = true
+				return m, tea.Quit
+			}
+		}
+	}
+
+	var cmd tea.Cmd
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
+}
+
+func (m pickerModel) refresh() pickerModel {
+	all, _ := ScanEngagements(m.home)
+	m.list.SetItems(buildItems(all))
+	return m
+}
+
+var (
+	confirmStyle = lipgloss.NewStyle().
+		Padding(0, 1).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("#ef4444"))
+	confirmTextStyle = lipgloss.NewStyle().Bold(true)
+	confirmHintStyle = lipgloss.NewStyle().Faint(true)
+)
+
+func (m pickerModel) View() tea.View {
+	if m.quitting {
+		return tea.NewView("")
+	}
+	content := m.list.View()
+	if m.confirmDelete {
+		body := lipgloss.JoinVertical(lipgloss.Left,
+			confirmTextStyle.Render(fmt.Sprintf("Permanently delete '%s'?", m.deleteTarget)),
+			confirmHintStyle.Render("Removes ~/.decepticon/workspace/"+m.deleteTarget+"/ and all contents."),
+			confirmHintStyle.Render("Press [y] to confirm, [n] / [esc] to cancel."),
+		)
+		content += "\n" + confirmStyle.Render(body)
+	}
+	v := tea.NewView(content)
+	v.AltScreen = true
+	return v
+}
+
+// Select runs the engagement picker.
 func Select(home string) (Choice, error) {
 	all, err := ScanEngagements(home)
 	if err != nil {
@@ -159,64 +329,63 @@ func Select(home string) (Choice, error) {
 		all = nil
 	}
 
-	const newSentinel = "__new__"
-
-	picked := newSentinel
-	var newSlug string
-
-	options := make([]huh.Option[string], 0, len(all)+1)
-	options = append(options, huh.NewOption("[+] New engagement (Soundwave interview)", newSentinel))
-	for _, e := range all {
-		label := "Resume " + e.Slug
-		if !e.Ready {
-			label += "  (in progress)"
-		}
-		options = append(options, huh.NewOption(label, e.Slug))
+	model := newPickerModel(home, all)
+	finalModel, err := tea.NewProgram(model).Run()
+	if err != nil {
+		return Choice{}, fmt.Errorf("engagement picker failed: %w", err)
 	}
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Engagement").
-				Description("Pick an existing engagement or start a new one with Soundwave.").
-				Options(options...).
-				Value(&picked),
-		).Title("Decepticon").Description("Engagement selection"),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("Engagement name").
-				Description("Lowercase, hyphens allowed. Used as the workspace directory name (e.g., acme-external-2026).").
-				Placeholder("e.g., acme-external-2026").
-				Value(&newSlug).
-				Validate(func(s string) error { return validateSlug(home, s) }),
-		).Title("New engagement").Description("Create the engagement workspace").
-			WithHideFunc(func() bool { return picked != newSentinel }),
-	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
-
-	if err := form.Run(); err != nil {
-		return Choice{}, fmt.Errorf("engagement picker cancelled: %w", err)
+	final, ok := finalModel.(pickerModel)
+	if !ok {
+		return Choice{}, fmt.Errorf("engagement picker: unexpected model type")
+	}
+	if final.result != resultPicked {
+		return Choice{}, fmt.Errorf("engagement picker cancelled")
 	}
 
 	root := filepath.Join(home, "workspace")
-	if picked == newSentinel {
-		dir := filepath.Join(root, newSlug)
+	if final.chosen.isNew {
+		slug, err := promptNewSlug(home)
+		if err != nil {
+			return Choice{}, err
+		}
+		dir := filepath.Join(root, slug)
 		if err := os.MkdirAll(filepath.Join(dir, "plan"), 0o755); err != nil {
 			return Choice{}, fmt.Errorf("create engagement dir: %w", err)
 		}
 		return Choice{
 			AssistantID:   AssistantSoundwave,
-			Engagement:    newSlug,
+			Engagement:    slug,
 			WorkspacePath: dir,
 		}, nil
 	}
 
+	slug := final.chosen.slug
 	assistant := AssistantSoundwave
-	if isReady(home, picked) {
+	if isReady(home, slug) {
 		assistant = AssistantDecepticon
 	}
 	return Choice{
 		AssistantID:   assistant,
-		Engagement:    picked,
-		WorkspacePath: filepath.Join(root, picked),
+		Engagement:    slug,
+		WorkspacePath: filepath.Join(root, slug),
 	}, nil
+}
+
+// promptNewSlug runs a one-shot huh form for the slug-input phase.
+func promptNewSlug(home string) (string, error) {
+	var slug string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Engagement name").
+				Description("Lowercase, hyphens allowed. Used as the workspace directory name (e.g., acme-external-2026).").
+				Placeholder("e.g., acme-external-2026").
+				Value(&slug).
+				Validate(func(s string) error { return validateSlug(home, s) }),
+		).Title("New engagement").Description("Create the engagement workspace"),
+	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
+	if err := form.Run(); err != nil {
+		return "", fmt.Errorf("slug input cancelled: %w", err)
+	}
+	return slug, nil
 }
