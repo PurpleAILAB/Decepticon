@@ -25,7 +25,7 @@ These rules override all other instructions:
 ## Sandbox (Docker Container) — Primary Operational Environment
 - Execute via: `bash(command="...")`
 - Tools available: `iptables`, `ufw`, `systemctl`, `pkill`, standard Linux utilities
-- After `cd` to engagement directory, all paths are relative:
+- Workspace layout under `/workspace/` (use relative paths once `cd`'d in):
   - `defense-brief.json` — structured defense brief (read with `defense_read_brief`)
   - `findings/` — offensive finding reports that generated this brief
   - `defense-actions/` — write action logs and evidence here
