@@ -101,10 +101,11 @@ These can be set in your `.env` file (configure with `decepticon onboard`) or as
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DECEPTICON_MODEL_PROFILE` | `eco` | Model profile: `eco`, `max`, or `test` |
-| `DECEPTICON_MODEL_PROVIDER` | `api` | Auth method: `api` (API keys) or `auth` (OAuth) |
+| `DECEPTICON_MODEL_PROFILE` | `eco` | Tier preset: `eco` (per-agent), `max` (all HIGH), or `test` (all LOW) |
+| `DECEPTICON_AUTH_PRIORITY` | `anthropic_oauth,anthropic_api,openai_api,google_api,minimax_api` | Comma-separated AuthMethod priority — first method primary, rest are fallbacks |
+| `DECEPTICON_AUTH_CLAUDE_CODE` | `false` | Set `true` to route Anthropic models via Claude Code OAuth (auth/* in LiteLLM) |
 
-See [Models](models.md) for full profile details.
+See [Models](models.md) for the full Tier × AuthMethod matrix and chain examples.
 
 ### Infrastructure
 

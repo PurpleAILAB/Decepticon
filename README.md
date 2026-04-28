@@ -143,15 +143,27 @@ The vulnerability research pipeline (Scanner → Detector → Verifier → Explo
 
 ## Models
 
-Three profiles via LiteLLM proxy. Each role has a primary model and automatic fallback.
+Tier-based, credentials-aware fallback chain. You tell Decepticon which credentials you have — Anthropic API, Claude Code OAuth, OpenAI API, Google API, MiniMax API — in priority order; it builds the primary→fallback chain at every tier from there.
 
-| Profile | Orchestrator | Exploit | Recon | Use case |
-|---------|-------------|---------|-------|---------|
-| **eco** (default) | Opus 4.7 | Sonnet 4.6 | Haiku 4.5 | Production |
-| **max** | Opus 4.7 | Opus 4.7 | Sonnet 4.6 | High-value targets |
-| **test** | Haiku 4.5 | Haiku 4.5 | Haiku 4.5 | Development / CI |
+The active **profile** decides each agent's tier:
 
-Set via `DECEPTICON_MODEL_PROFILE=eco` in your `.env`. Provider outage or rate limit → seamless fallback.
+| Profile | Tier per agent | Use case |
+|---------|----------------|----------|
+| **eco** (default) | per-agent (HIGH for orchestrator/exploiter/patcher/analyst, MID for execution, LOW for recon/scanner/soundwave) | Production |
+| **max** | every agent on HIGH | High-value targets |
+| **test** | every agent on LOW | Development / CI |
+
+**Tier × method matrix**:
+
+|                   | HIGH                    | MID                      | LOW                                |
+|-------------------|--------------------------|---------------------------|-------------------------------------|
+| `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
+| `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
+| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5.4-nano                        |
+| `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
+| `minimax_api`     | MiniMax-M2.7             | MiniMax-M2.5              | — *(falls through to next method)*  |
+
+Configure with `decepticon onboard`; set the profile via `DECEPTICON_MODEL_PROFILE=eco` in `.env`. Provider outage or rate limit → seamless fallback to the next method in your priority list.
 
 → **[Full model reference](docs/models.md)**
 

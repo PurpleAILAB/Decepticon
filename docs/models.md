@@ -1,95 +1,194 @@
 # Models
 
-Decepticon routes LLM requests through a [LiteLLM](https://github.com/BerriAI/litellm) proxy, which supports Anthropic, OpenAI, and Google backends with automatic failover.
+Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, and MiniMax behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
+
+You don't pick agent-by-agent models manually. You tell Decepticon which credentials you have, in what order of preference; it builds the chain.
 
 ---
 
-## Model Profiles
+## How model selection works
 
-Three profiles control which models are assigned to which agent roles.
+Three orthogonal axes:
 
-### `eco` — Production (default)
+| Axis        | Values                                                                                                | Decided by              |
+|-------------|--------------------------------------------------------------------------------------------------------|--------------------------|
+| **Tier**    | `HIGH` / `MID` / `LOW`                                                                                 | Agent (e.g. orchestrator → HIGH, recon → LOW), overridable by profile |
+| **AuthMethod** | `anthropic_oauth` / `anthropic_api` / `openai_api` / `google_api` / `minimax_api`                  | Your credentials inventory |
+| **Profile** | `eco` / `max` / `test`                                                                                 | `DECEPTICON_MODEL_PROFILE` |
 
-Balanced cost and performance. Recommended for most engagements.
+For each agent, Decepticon resolves a tier (from the profile) and walks your AuthMethod priority list, emitting the model identifier that method provides at that tier. The first hit is the primary; the second is the fallback.
 
-| Role | Primary | Fallback |
-|------|---------|---------|
-| Orchestrator | `claude-opus-4-7` | `gpt-5.4` |
-| Planner | `claude-opus-4-7` | `gpt-5.4` |
-| Soundwave | `claude-haiku-4-5` | `gemini-2.5-flash` |
-| Exploit | `claude-sonnet-4-6` | `gpt-4.1` |
-| Recon | `claude-haiku-4-5` | `gemini-2.5-flash` |
-| Post-Exploit | `claude-sonnet-4-6` | `gpt-4.1` |
+### Tier × AuthMethod matrix
 
-### `max` — High-value targets
+|                     | **HIGH**                       | **MID**                        | **LOW**                            |
+|---------------------|--------------------------------|--------------------------------|------------------------------------|
+| `anthropic_api`     | `anthropic/claude-opus-4-7`    | `anthropic/claude-sonnet-4-6`  | `anthropic/claude-haiku-4-5`       |
+| `anthropic_oauth`   | `auth/claude-opus-4-7`         | `auth/claude-sonnet-4-6`       | `auth/claude-haiku-4-5`            |
+| `openai_api`        | `openai/gpt-5.5`               | `openai/gpt-5.4`               | `openai/gpt-5.4-nano`              |
+| `google_api`        | `gemini/gemini-2.5-pro`        | `gemini/gemini-2.5-flash`      | `gemini/gemini-2.5-flash-lite`     |
+| `minimax_api`       | `minimax/MiniMax-M2.7`         | `minimax/MiniMax-M2.5`         | — *(falls through to next method)* |
 
-Opus or Sonnet everywhere. Use for complex engagements where accuracy matters more than cost.
-
-| Role | Primary | Fallback |
-|------|---------|---------|
-| Orchestrator | `claude-opus-4-7` | `gpt-5.4` |
-| Planner | `claude-opus-4-7` | `claude-sonnet-4-6` |
-| Soundwave | `claude-sonnet-4-6` | `claude-haiku-4-5` |
-| Exploit | `claude-opus-4-7` | `claude-sonnet-4-6` |
-| Recon | `claude-sonnet-4-6` | `claude-opus-4-7` |
-| Post-Exploit | `claude-opus-4-7` | `claude-sonnet-4-6` |
-
-### `test` — Development / CI
-
-Haiku everywhere. No fallback. Minimizes cost during development and automated testing.
-
-| Role | Primary | Fallback |
-|------|---------|---------|
-| All roles | `claude-haiku-4-5` | — |
+When a method has no model at the requested tier (MiniMax LOW), the resolver skips it and continues with the next method in your priority list.
 
 ---
 
-## Setting the Profile
+## Profiles
 
-In your `.env` file (edit with `decepticon config`):
+`DECEPTICON_MODEL_PROFILE` (default: `eco`) controls which tier each agent runs at.
+
+### `eco` — per-agent tier (production default)
+
+Each agent runs at the tier suited to its workload:
+
+| Tier  | Agents                                                                                          |
+|-------|-------------------------------------------------------------------------------------------------|
+| HIGH  | `decepticon`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`              |
+| MID   | `exploit`, `detector`, `verifier`, `postexploit`, `defender`, `ad_operator`, `cloud_hunter`, `reverser` |
+| LOW   | `soundwave`, `recon`, `scanner`                                                                 |
+
+### `max` — every agent on HIGH
+
+For high-value targets where accuracy outweighs cost. Forces every agent to the HIGH tier.
+
+### `test` — every agent on LOW
+
+For development / CI. Forces every agent to the cheapest tier (Haiku-class).
+
+---
+
+## Credentials inventory
+
+Your inventory is built at startup from environment variables, written by `decepticon onboard`.
 
 ```bash
-DECEPTICON_MODEL_PROFILE=eco    # eco | max | test
+# Priority order (first = preferred). Defaults to:
+#   anthropic_oauth,anthropic_api,openai_api,google_api,minimax_api
+DECEPTICON_AUTH_PRIORITY=anthropic_oauth,openai_api
+
+# Set true if you have an active Claude Code OAuth subscription
+# (anthropic_oauth in the priority list above).
+DECEPTICON_AUTH_CLAUDE_CODE=true
+
+# Per-method credentials. Placeholder values (`your-..-key-here`) are
+# treated as "not configured" and silently dropped from the inventory.
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+GEMINI_API_KEY=AIza...
+MINIMAX_API_KEY=eyJ...
 ```
 
-The default is `eco` if not set.
+The factory walks the priority list, drops methods whose detection check fails (placeholder API key, or `DECEPTICON_AUTH_CLAUDE_CODE=false`), and uses what's left.
 
 ---
 
-## Fallback Chain
+## Fallback chain examples
 
-`ModelFallbackMiddleware` handles failover transparently. When the primary model returns an error (provider outage, rate limit, context length exceeded), it automatically retries with the fallback model.
+All examples assume the `eco` profile.
 
-The switch is seamless — the agent continues with no interruption.
+### Single API key (Anthropic only)
+
+```
+DECEPTICON_AUTH_PRIORITY=anthropic_api
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+| Agent (tier)     | Primary                       | Fallback |
+|------------------|-------------------------------|----------|
+| decepticon (HIGH)| `anthropic/claude-opus-4-7`   | —        |
+| exploit (MID)    | `anthropic/claude-sonnet-4-6` | —        |
+| recon (LOW)      | `anthropic/claude-haiku-4-5`  | —        |
+
+No fallback — only one credential.
+
+### Single API key (OpenAI only)
+
+```
+DECEPTICON_AUTH_PRIORITY=openai_api
+OPENAI_API_KEY=sk-...
+```
+
+| Agent (tier)     | Primary               | Fallback |
+|------------------|------------------------|----------|
+| decepticon (HIGH)| `openai/gpt-5.5`      | —        |
+| exploit (MID)    | `openai/gpt-5.4`      | —        |
+| recon (LOW)      | `openai/gpt-5.4-nano` | —        |
+
+### Claude Code OAuth + Anthropic API (subscription primary, paid fallback)
+
+```
+DECEPTICON_AUTH_PRIORITY=anthropic_oauth,anthropic_api
+DECEPTICON_AUTH_CLAUDE_CODE=true
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+| Agent (tier)     | Primary                  | Fallback                         |
+|------------------|---------------------------|----------------------------------|
+| decepticon (HIGH)| `auth/claude-opus-4-7`   | `anthropic/claude-opus-4-7`     |
+| exploit (MID)    | `auth/claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6`   |
+| recon (LOW)      | `auth/claude-haiku-4-5`  | `anthropic/claude-haiku-4-5`    |
+
+OAuth runs primary (no API cost). When the subscription quota hits, fallback drops to the paid API key — same model family, same quality.
+
+### Mixed providers (Anthropic + OpenAI)
+
+```
+DECEPTICON_AUTH_PRIORITY=anthropic_api,openai_api
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+```
+
+| Agent (tier)     | Primary                       | Fallback                |
+|------------------|-------------------------------|-------------------------|
+| decepticon (HIGH)| `anthropic/claude-opus-4-7`   | `openai/gpt-5.5`        |
+| exploit (MID)    | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
+| recon (LOW)      | `anthropic/claude-haiku-4-5`  | `openai/gpt-5.4-nano`   |
+
+Cross-provider fallback — when Anthropic hits a rate limit or outage, OpenAI takes over seamlessly.
+
+### MiniMax-only (LOW gap)
+
+```
+DECEPTICON_AUTH_PRIORITY=minimax_api
+MINIMAX_API_KEY=eyJ...
+```
+
+| Agent (tier)     | Primary                | Notes                                     |
+|------------------|------------------------|-------------------------------------------|
+| decepticon (HIGH)| `minimax/MiniMax-M2.7` | OK                                        |
+| exploit (MID)    | `minimax/MiniMax-M2.5` | OK                                        |
+| recon (LOW)      | *(role unassigned)*    | MiniMax has no LOW model and no fallback method |
+
+The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e.g. `openai_api`) to fill the LOW slot.
 
 ---
 
-## Supported Models
+## Failover behavior
 
-Models are referenced using LiteLLM's `provider/model` format in `decepticon/llm/models.py`.
+`ModelFallbackMiddleware` watches every LLM call. On primary failure (provider outage, 429 rate limit, context overflow, network error), it transparently retries with the fallback. Agents see no interruption — same conversation history, same tool call.
 
-| Provider | Model ID | Notes |
-|----------|----------|-------|
-| Anthropic | `anthropic/claude-opus-4-7` | Most capable |
-| Anthropic | `anthropic/claude-sonnet-4-6` | Balanced |
-| Anthropic | `anthropic/claude-haiku-4-5` | Fast, low cost |
-| OpenAI | `openai/gpt-5.4` | GPT fallback for Opus |
-| OpenAI | `openai/gpt-4.1` | GPT fallback for Sonnet |
-| Google | `gemini/gemini-2.5-flash` | Gemini fallback for Haiku |
-
-Any model supported by LiteLLM can be added. Edit `config/litellm.yaml` to add new providers or routes.
+If both primary and fallback fail, the agent surfaces the error and stops. Decepticon doesn't silently chain past two methods: a third-stage failure almost always indicates a real outage that operators should notice.
 
 ---
 
-## LiteLLM Proxy
+## LiteLLM proxy
 
-All LLM traffic flows through the LiteLLM proxy container (`port 4000`). This provides:
+All traffic flows through the LiteLLM container on port 4000. The proxy provides:
 
-- **Unified API** — agents use one endpoint regardless of backend
-- **Usage tracking** — token consumption per model, per agent role
-- **Rate limiting** — configurable per provider
-- **Billing aggregation** — cost attribution across providers
+- **Unified API** — agents call one endpoint, model identifier picks the backend
+- **Usage tracking** — tokens per model per agent role
+- **Rate limiting** — per-provider knobs
+- **Cost attribution** — billing data aggregated across providers
 
-Configuration: `config/litellm.yaml`
+Configuration: `config/litellm.yaml`. Authentication: `LITELLM_MASTER_KEY` in `.env`.
 
-Authentication: set `LITELLM_MASTER_KEY` in your `.env` file.
+---
+
+## Adding a model
+
+To wire in a new provider model:
+
+1. Add a `model_list` entry to `config/litellm.yaml` with the LiteLLM `provider/model` identifier and the env var that holds the key.
+2. Add the model identifier to the appropriate cell of `METHOD_MODELS` in `decepticon/llm/models.py`.
+3. If introducing a new AuthMethod, also add it to `AuthMethod`, the factory's `_API_METHOD_ENV` map, and the onboard wizard's option list.
+
+Tests in `tests/unit/llm/test_models.py` will catch dropped tiers or missing matrix entries.

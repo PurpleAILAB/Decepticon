@@ -146,15 +146,27 @@ Decepticon은 OPPLAN을 읽고 열린 경로를 통해 목표를 추적합니다
 
 ## 모델
 
-LiteLLM 프록시를 통한 3가지 프로필. 각 역할에는 기본 모델과 자동 폴백이 있습니다.
+Tier 기반, 자격증명-aware 폴백 체인. 사용 가능한 자격증명(Anthropic API, Claude Code OAuth, OpenAI API, Google API, MiniMax API)을 우선순위 순으로 알려주면, 모든 tier에서 primary→fallback 체인이 자동 구성됩니다.
 
-| 프로필 | 오케스트레이터 | 익스플로잇 | 정찰 | 사용 케이스 |
-|--------|-------------|----------|------|-----------|
-| **eco** (기본) | Opus 4.7 | Sonnet 4.6 | Haiku 4.5 | 프로덕션 |
-| **max** | Opus 4.7 | Opus 4.7 | Sonnet 4.6 | 고가치 타깃 |
-| **test** | Haiku 4.5 | Haiku 4.5 | Haiku 4.5 | 개발 / CI |
+활성 **프로파일**이 각 에이전트의 tier를 결정:
 
-`.env`에서 `DECEPTICON_MODEL_PROFILE=eco`로 설정. 프로바이더 장애나 속도 제한 시 자동 폴백.
+| 프로파일 | 에이전트당 tier | 사용 케이스 |
+|----------|------------------|-------------|
+| **eco** (기본) | 에이전트별 (orchestrator/exploiter/patcher/analyst=HIGH, execution=MID, recon/scanner/soundwave=LOW) | 프로덕션 |
+| **max** | 모든 에이전트 HIGH | 고가치 타깃 |
+| **test** | 모든 에이전트 LOW | 개발 / CI |
+
+**Tier × Method 매트릭스**:
+
+|                   | HIGH                    | MID                      | LOW                                |
+|-------------------|--------------------------|---------------------------|-------------------------------------|
+| `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
+| `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
+| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5.4-nano                        |
+| `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
+| `minimax_api`     | MiniMax-M2.7             | MiniMax-M2.5              | — *(다음 method로 fall-through)*    |
+
+`decepticon onboard`로 설정. `.env`에서 `DECEPTICON_MODEL_PROFILE=eco`로 프로파일 변경. 프로바이더 장애나 속도 제한 시 우선순위의 다음 method로 자동 폴백.
 
 → **[모델 전체 레퍼런스](docs/models.md)**
 

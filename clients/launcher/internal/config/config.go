@@ -210,19 +210,44 @@ func ValidateAPIKeys(env map[string]string) error {
 	return fmt.Errorf("%s", msg.String())
 }
 
-// ValidateAuth ensures authentication is configured for the chosen provider mode.
-// "api" mode → at least one well-formed API key must be set.
-// "auth" mode → Claude Code credentials file must exist (LiteLLM mounts it read-only).
+// ValidateAuth ensures at least one valid AuthMethod is configured.
+//
+// OAuth path: DECEPTICON_AUTH_CLAUDE_CODE=true (set by the onboard wizard
+// when Claude Code OAuth is selected) requires a parseable
+// ~/.claude/.credentials.json with an access token. LiteLLM mounts the
+// file read-only at runtime; missing or empty fails opaquely on the
+// first prompt unless we catch it here.
+//
+// API path: at least one ANTHROPIC / OPENAI / GEMINI / MINIMAX_API_KEY
+// must be set to a non-placeholder, well-formed value.
+//
+// At least one path must succeed. When OAuth is requested and its
+// credentials file is broken, the API path is checked as a fallback;
+// if both fail, the OAuth error is surfaced because that was the
+// user's explicit choice.
 func ValidateAuth(env map[string]string) error {
-	mode := Get(env, "DECEPTICON_MODEL_PROVIDER", "api")
-	switch mode {
-	case "api":
-		return ValidateAPIKeys(env)
-	case "auth":
-		return validateClaudeCredentials()
-	default:
-		return fmt.Errorf("unknown DECEPTICON_MODEL_PROVIDER: %q (expected 'api' or 'auth')", mode)
+	oauthEnabled := isTruthy(Get(env, "DECEPTICON_AUTH_CLAUDE_CODE", ""))
+	apiErr := ValidateAPIKeys(env)
+
+	if oauthEnabled {
+		if oauthErr := validateClaudeCredentials(); oauthErr == nil {
+			return nil
+		} else if apiErr == nil {
+			return nil
+		} else {
+			return oauthErr
+		}
 	}
+
+	return apiErr
+}
+
+func isTruthy(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // validateClaudeCredentials verifies ~/.claude/.credentials.json exists, is a regular

@@ -40,7 +40,7 @@ OPENAI_API_KEY=your-openai-key-here
 DECEPTICON_MODEL_PROFILE=eco
 
 # Another comment
-DECEPTICON_MODEL_PROVIDER=api
+DECEPTICON_AUTH_PRIORITY=anthropic_api
 `
 	if err := os.WriteFile(envFile, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -117,12 +117,13 @@ func TestValidateAPIKeys_RejectsBadFormat(t *testing.T) {
 	}
 }
 
-func TestValidateAuth_AuthMode(t *testing.T) {
+func TestValidateAuth_OAuth(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	env := map[string]string{"DECEPTICON_MODEL_PROVIDER": "auth"}
+	// OAuth requested, no API keys configured.
+	env := map[string]string{"DECEPTICON_AUTH_CLAUDE_CODE": "true"}
 
-	// auth mode without credentials file → error
+	// OAuth path without credentials file → error
 	if err := ValidateAuth(env); err == nil {
 		t.Error("expected error when ~/.claude/.credentials.json is missing")
 	}
@@ -177,10 +178,29 @@ func TestValidateAuth_AuthMode(t *testing.T) {
 	}
 }
 
-func TestValidateAuth_UnknownMode(t *testing.T) {
-	env := map[string]string{"DECEPTICON_MODEL_PROVIDER": "telepathy"}
+func TestValidateAuth_OAuthFallsBackToAPIKey(t *testing.T) {
+	// OAuth requested but file missing; a valid API key satisfies the
+	// "at least one method works" rule.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	env := map[string]string{
+		"DECEPTICON_AUTH_CLAUDE_CODE": "true",
+		"ANTHROPIC_API_KEY":           "sk-ant-api03-realkeythatislongenough",
+	}
+	if err := ValidateAuth(env); err != nil {
+		t.Errorf("expected fallback to API key when OAuth file missing: %v", err)
+	}
+}
+
+func TestValidateAuth_NeitherConfigured(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// No OAuth, no real API keys.
+	env := map[string]string{
+		"ANTHROPIC_API_KEY": "your-anthropic-key-here",
+	}
 	if err := ValidateAuth(env); err == nil {
-		t.Error("expected error for unknown provider mode")
+		t.Error("expected error when neither OAuth nor any API key is configured")
 	}
 }
 
