@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/compose"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
@@ -33,18 +32,12 @@ func init() {
 
 func runRemove(cmd *cobra.Command, args []string) error {
 	if !removeYes {
-		var confirm bool
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Remove Decepticon?").
-					Description("This will stop all services, remove Docker images, and delete configuration.").
-					Affirmative("Yes, remove").
-					Negative("Cancel").
-					Value(&confirm),
-			),
+		confirm, err := ui.Confirm(
+			"Remove Decepticon?",
+			"This will stop all services, remove Docker images, and delete configuration.",
+			"Yes, remove", "Cancel",
 		)
-		if err := form.Run(); err != nil || !confirm {
+		if err != nil || !confirm {
 			ui.Info("Removal cancelled")
 			return nil
 		}
@@ -72,17 +65,11 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	// Phase 3: Remove config directory
 	var preserveWorkspace bool
 	if !removeYes {
-		form := huh.NewForm(
-			huh.NewGroup(
-				huh.NewConfirm().
-					Title("Preserve workspace data?").
-					Description(filepath.Join(home, "workspace")).
-					Affirmative("Yes, keep my data").
-					Negative("No, delete everything").
-					Value(&preserveWorkspace),
-			),
+		preserveWorkspace, _ = ui.Confirm(
+			"Preserve workspace data?",
+			filepath.Join(home, "workspace"),
+			"Yes, keep my data", "No, delete everything",
 		)
-		_ = form.Run()
 	}
 
 	userHome, _ := os.UserHomeDir()

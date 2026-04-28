@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
-	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/spf13/cobra"
@@ -29,157 +29,117 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	var (
-		authMethod   string
-		llmProvider  string
-		apiKey       string
-		profile      string
-		useLangSmith bool
-		langSmithKey string
-	)
-
-	form := huh.NewForm(
-		// Intro
-		huh.NewGroup(
-			huh.NewNote().
-				Title("Decepticon Setup").
-				Description("Configure authentication, LLM provider,\nmodel profile, and observability.\n\nUse ↑↓ to navigate, Enter to confirm."),
-		),
-
-		// Step 1: Authentication method
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Authentication Method").
-				Description("How should Decepticon authenticate with LLM providers?").
-				Options(
-					huh.NewOption("API Key — Direct API access via x-api-key header", "api"),
-					huh.NewOption("OAuth  — Subscription-based (Claude Code, Codex)", "auth"),
-				).
-				Value(&authMethod),
-		).Title("1 / 5  ·  Authentication").
-			Description("Choose how to connect to LLM services"),
-
-		// Step 2: Provider selection
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("LLM Provider").
-				Description("Which provider will power the agents?").
-				OptionsFunc(func() []huh.Option[string] {
-					if authMethod == "auth" {
-						return []huh.Option[string]{
-							huh.NewOption("Claude Code  — Anthropic OAuth", "claude-code"),
-							huh.NewOption("Codex        — coming soon", "codex"),
-						}
-					}
-					return []huh.Option[string]{
-						huh.NewOption("Anthropic  — Claude Opus / Sonnet / Haiku", "anthropic"),
-						huh.NewOption("OpenAI     — GPT-5.4 / GPT-4.1", "openai"),
-						huh.NewOption("Google     — Gemini 2.5 Flash", "google"),
-						huh.NewOption("MiniMax    — M2.7", "minimax"),
-					}
-				}, &authMethod).
-				Value(&llmProvider),
-		).Title("2 / 5  ·  Provider").
-			Description("Select your primary LLM provider"),
-
-		// Step 3: API key input (only for api mode)
-		huh.NewGroup(
-			huh.NewInput().
-				TitleFunc(func() string {
-					switch llmProvider {
-					case "anthropic":
-						return "Anthropic API Key"
-					case "openai":
-						return "OpenAI API Key"
-					case "google":
-						return "Google API Key"
-					case "minimax":
-						return "MiniMax API Key"
-					}
-					return "API Key"
-				}, &llmProvider).
-				PlaceholderFunc(func() string {
-					switch llmProvider {
-					case "anthropic":
-						return "sk-ant-..."
-					case "openai":
-						return "sk-..."
-					case "google":
-						return "AIza..."
-					case "minimax":
-						return "eyJ..."
-					}
-					return ""
-				}, &llmProvider).
-				EchoMode(huh.EchoModePassword).
-				Value(&apiKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("API key is required")
-					}
-					return nil
-				}),
-		).Title("3 / 5  ·  Credentials").
-			Description("Enter your provider API key").
-			WithHideFunc(func() bool {
-				return authMethod == "auth"
-			}),
-
-		// Step 4: Model profile
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Model Profile").
-				Description("Controls which models each agent tier uses").
-				Options(
-					huh.NewOption("eco  — Opus + Sonnet + Haiku mix (recommended)", "eco"),
-					huh.NewOption("max  — Opus everywhere (expensive)", "max"),
-					huh.NewOption("test — Haiku only (for development)", "test"),
-				).
-				Value(&profile),
-		).Title("4 / 5  ·  Performance").
-			Description("Balance between cost and capability"),
-
-		// Step 5: LangSmith tracing
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Enable LangSmith?").
-				Description("LLM observability and trace collection").
-				Affirmative("Yes").
-				Negative("No").
-				Value(&useLangSmith),
-		).Title("5 / 5  ·  Observability").
-			Description("Optional tracing integration"),
-
-		// LangSmith API key (only when enabled)
-		huh.NewGroup(
-			huh.NewInput().
-				Title("LangSmith API Key").
-				Placeholder("lsv2_...").
-				EchoMode(huh.EchoModePassword).
-				Value(&langSmithKey).
-				Validate(func(s string) error {
-					if s == "" {
-						return fmt.Errorf("LangSmith API key is required")
-					}
-					return nil
-				}),
-		).Title("5 / 5  ·  Observability").
-			Description("Enter your LangSmith credentials").
-			WithHideFunc(func() bool {
-				return !useLangSmith
-			}),
-	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
-
-	if err := form.Run(); err != nil {
-		return fmt.Errorf("setup cancelled: %w", err)
+	requiredKey := func(s string) error {
+		if s == "" {
+			return fmt.Errorf("required")
+		}
+		return nil
 	}
 
-	// Build values map
+	// Step 0 — welcome note.
+	if err := ui.Continue(
+		"Decepticon Setup",
+		"Configure authentication, LLM provider, model profile, and observability.",
+	); err != nil {
+		return cancelled(err)
+	}
+
+	// Step 1 — authentication method.
+	authMethod, err := ui.Select(
+		"1 / 5 · Authentication",
+		"Choose how to connect to LLM services",
+		[]ui.SelectOption{
+			{Label: "API Key", Description: "Direct API access via x-api-key header", Value: "api"},
+			{Label: "OAuth", Description: "Subscription-based (Claude Code, Codex)", Value: "auth"},
+		},
+	)
+	if err != nil {
+		return cancelled(err)
+	}
+
+	// Step 2 — provider selection (options depend on auth method).
+	var providerOpts []ui.SelectOption
+	if authMethod == "auth" {
+		providerOpts = []ui.SelectOption{
+			{Label: "Claude Code", Description: "Anthropic OAuth", Value: "claude-code"},
+			{Label: "Codex", Description: "coming soon", Value: "codex"},
+		}
+	} else {
+		providerOpts = []ui.SelectOption{
+			{Label: "Anthropic", Description: "Claude Opus / Sonnet / Haiku", Value: "anthropic"},
+			{Label: "OpenAI", Description: "GPT-5.4 / GPT-4.1", Value: "openai"},
+			{Label: "Google", Description: "Gemini 2.5 Flash", Value: "google"},
+			{Label: "MiniMax", Description: "M2.7", Value: "minimax"},
+		}
+	}
+	llmProvider, err := ui.Select(
+		"2 / 5 · Provider",
+		"Select your primary LLM provider",
+		providerOpts,
+	)
+	if err != nil {
+		return cancelled(err)
+	}
+
+	// Step 3 — API key (only when auth method is "api").
+	var apiKey string
+	if authMethod == "api" {
+		title, placeholder := apiKeyLabels(llmProvider)
+		apiKey, err = ui.Input(ui.InputOptions{
+			Title:       "3 / 5 · " + title,
+			Description: "Enter your provider API key",
+			Placeholder: placeholder,
+			Password:    true,
+			Validate:    requiredKey,
+		})
+		if err != nil {
+			return cancelled(err)
+		}
+	}
+
+	// Step 4 — model profile.
+	profile, err := ui.Select(
+		"4 / 5 · Performance",
+		"Balance between cost and capability",
+		[]ui.SelectOption{
+			{Label: "eco", Description: "Opus + Sonnet + Haiku mix (recommended)", Value: "eco"},
+			{Label: "max", Description: "Opus everywhere (expensive)", Value: "max"},
+			{Label: "test", Description: "Haiku only (for development)", Value: "test"},
+		},
+	)
+	if err != nil {
+		return cancelled(err)
+	}
+
+	// Step 5 — LangSmith tracing toggle.
+	useLangSmith, err := ui.Confirm(
+		"5 / 5 · Observability",
+		"Enable LangSmith for LLM observability and trace collection?",
+		"Yes", "No",
+	)
+	if err != nil {
+		return cancelled(err)
+	}
+
+	var langSmithKey string
+	if useLangSmith {
+		langSmithKey, err = ui.Input(ui.InputOptions{
+			Title:       "5 / 5 · LangSmith API Key",
+			Description: "Enter your LangSmith credentials",
+			Placeholder: "lsv2_...",
+			Password:    true,
+			Validate:    requiredKey,
+		})
+		if err != nil {
+			return cancelled(err)
+		}
+	}
+
+	// Build values map and write .env.
 	values := map[string]string{
 		"DECEPTICON_MODEL_PROFILE":  profile,
 		"DECEPTICON_MODEL_PROVIDER": authMethod,
 	}
-
 	if authMethod == "api" && apiKey != "" {
 		switch llmProvider {
 		case "anthropic":
@@ -192,7 +152,6 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			values["MINIMAX_API_KEY"] = apiKey
 		}
 	}
-
 	if useLangSmith && langSmithKey != "" {
 		values["LANGSMITH_TRACING"] = "true"
 		values["LANGSMITH_API_KEY"] = langSmithKey
@@ -203,7 +162,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write .env: %w", err)
 	}
 
-	// Summary
+	// Summary card.
 	fmt.Println()
 	fmt.Println(ui.Green.Render("  ✓ Configuration saved"))
 	fmt.Println()
@@ -220,4 +179,28 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println()
 	ui.DimText("  Run 'decepticon' to start the platform")
 	return nil
+}
+
+// apiKeyLabels returns the input title and placeholder for the given provider.
+func apiKeyLabels(provider string) (title, placeholder string) {
+	switch provider {
+	case "anthropic":
+		return "Anthropic API Key", "sk-ant-..."
+	case "openai":
+		return "OpenAI API Key", "sk-..."
+	case "google":
+		return "Google API Key", "AIza..."
+	case "minimax":
+		return "MiniMax API Key", "eyJ..."
+	}
+	return "API Key", ""
+}
+
+// cancelled converts a prompt cancellation into a setup-cancelled error,
+// passing other errors through unchanged.
+func cancelled(err error) error {
+	if errors.Is(err, ui.ErrPromptCancelled) {
+		return fmt.Errorf("setup cancelled")
+	}
+	return err
 }
