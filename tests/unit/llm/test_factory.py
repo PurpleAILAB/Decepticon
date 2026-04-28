@@ -133,10 +133,19 @@ class TestResolveCredentials:
         creds = _resolve_credentials()
         assert creds.methods == [AuthMethod.OPENAI_API, AuthMethod.ANTHROPIC_API]
 
-    def test_placeholder_rejected(self, monkeypatch):
+    def test_placeholder_falls_back_to_all_api_methods(self, monkeypatch):
+        """When every detected method is a placeholder/missing, the resolver
+        falls back to the all-API-methods inventory so module-level agent
+        constructors stay importable in CI / dev shells without keys."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "your-anthropic-key-here")
         for k in ("OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY"):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
-        assert _resolve_credentials().methods == []
+        creds = _resolve_credentials()
+        assert creds.methods == [
+            AuthMethod.ANTHROPIC_API,
+            AuthMethod.OPENAI_API,
+            AuthMethod.GOOGLE_API,
+            AuthMethod.MINIMAX_API,
+        ]

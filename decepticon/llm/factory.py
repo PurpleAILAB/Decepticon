@@ -98,6 +98,14 @@ def _resolve_credentials() -> Credentials:
 
       - API methods: their key env var is set to a non-placeholder
       - OAuth methods: their boolean env var is set truthy
+
+    When **nothing** is detected — typical of CI / dev shells where
+    onboard hasn't run — falls back to all four API methods. This keeps
+    module-level ``graph = create_X_agent()`` calls importable so the
+    test suite (and tools like langgraph Studio) can load agents
+    without API keys present. Real LLM calls under that fallback will
+    fail at request time with a provider 401, which is the correct
+    surface for that misconfiguration.
     """
     priority_raw = os.getenv("DECEPTICON_AUTH_PRIORITY", "")
     if priority_raw.strip():
@@ -121,6 +129,13 @@ def _resolve_credentials() -> Credentials:
         elif method in _OAUTH_METHOD_ENV:
             if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")):
                 methods.append(method)
+
+    if not methods:
+        log.info(
+            "No credentials detected in environment; using all-API-methods "
+            "fallback so module-level agent constructors stay importable"
+        )
+        return Credentials.all_api_methods()
 
     return Credentials(methods=methods)
 
