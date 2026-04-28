@@ -35,7 +35,13 @@ release:
   github:
     owner: PurpleAILAB
     name: Decepticon
-  draft: false
+  # Publish as draft so the GitHub `releases/latest` endpoint (used by the
+  # launcher's auto-update) does NOT see this version until every Docker
+  # image is verified on GHCR. The publish-release job in
+  # .github/workflows/release.yml flips draft → published once all images
+  # exist, closing the release-atomicity gap that previously let the
+  # launcher pull a tag whose images were still mid-push.
+  draft: true
   prerelease: auto
   name_template: "v{{.Version}}"
 

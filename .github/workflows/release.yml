@@ -91,9 +91,11 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          # Only publish the version tag here — `:latest` is promoted by the
+          # publish-release job AFTER every image has been verified on GHCR,
+          # so a half-finished release never updates the moving tag.
           tags: |
             ghcr.io/purpleailab/${{ matrix.image }}:${{ steps.version.outputs.version }}
-            ghcr.io/purpleailab/${{ matrix.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -219,9 +221,10 @@ jobs:
         id: manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
+          # Same rule as the docker matrix: only the version tag here.
+          # `:latest` is promoted by publish-release after verification.
           docker buildx imagetools create \
             --tag ghcr.io/purpleailab/decepticon-web:${{ steps.version.outputs.version }} \
-            --tag ghcr.io/purpleailab/decepticon-web:latest \
             $(printf 'ghcr.io/purpleailab/decepticon-web@sha256:%s ' *)
           digest=$(docker buildx imagetools inspect \
             ghcr.io/purpleailab/decepticon-web:${{ steps.version.outputs.version }} \
@@ -258,3 +261,76 @@ jobs:
         with:
           name: sbom-decepticon-web
           path: sbom-decepticon-web.cdx.json
+
+  # Atomic release gate. Waits until every Docker image AND the launcher
+  # binaries are pushed, verifies each :<version> manifest exists on GHCR,
+  # then promotes :<version> → :latest and flips the GitHub release from
+  # draft → published. Until this job succeeds:
+  #   - GitHub `releases/latest` keeps returning the previous version, so
+  #     the launcher's auto-update never points users at images that are
+  #     still mid-push.
+  #   - The :latest tag is not moved, so `${DECEPTICON_VERSION:-latest}`
+  #     fallbacks keep resolving to the previous (working) release.
+  publish-release:
+    name: Verify images & publish release
+    needs: [launcher, docker, docker-web-merge]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify all version-tagged images exist on GHCR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          images=(
+            decepticon-litellm
+            decepticon-langgraph
+            decepticon-sandbox
+            decepticon-cli
+            decepticon-c2-sliver
+            decepticon-web
+          )
+          for img in "${images[@]}"; do
+            ref="ghcr.io/purpleailab/${img}:${VERSION}"
+            echo "Verifying ${ref}"
+            docker buildx imagetools inspect "${ref}" >/dev/null
+          done
+
+      - name: Promote :<version> → :latest
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          images=(
+            decepticon-litellm
+            decepticon-langgraph
+            decepticon-sandbox
+            decepticon-cli
+            decepticon-c2-sliver
+            decepticon-web
+          )
+          for img in "${images[@]}"; do
+            src="ghcr.io/purpleailab/${img}:${VERSION}"
+            dst="ghcr.io/purpleailab/${img}:latest"
+            echo "Promoting ${src} → ${dst}"
+            docker buildx imagetools create --tag "${dst}" "${src}"
+          done
+
+      - name: Publish GitHub release (undraft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "v${{ steps.version.outputs.version }}" --draft=false
