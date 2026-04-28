@@ -71,12 +71,16 @@ def _is_real_key(value: str) -> bool:
     Onboard-written keys pass; values like ``your-anthropic-key-here``
     or empty strings are treated as "not configured" so the resolved
     Credentials inventory stays honest.
+
+    Match the launcher's IsPlaceholder check (``-key-here`` suffix) so
+    a real key that happens to contain the substring elsewhere is not
+    accidentally rejected.
     """
     v = value.strip()
     if not v:
         return False
     lower = v.lower()
-    if "key-here" in lower or lower.startswith("your-"):
+    if lower.startswith("your-") or lower.endswith("-key-here"):
         return False
     return True
 

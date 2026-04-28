@@ -1,35 +1,226 @@
-"""Unit tests for decepticon.llm.models"""
+"""Unit tests for decepticon.llm.models — tier-based, credentials-aware mapping."""
 
 import pytest
 
 from decepticon.llm.models import (
-    GPT_5,
-    HAIKU,
-    OPUS,
-    SONNET,
+    AGENT_TEMPERATURES,
+    AGENT_TIERS,
+    METHOD_MODELS,
+    AuthMethod,
+    Credentials,
     LLMModelMapping,
     ModelAssignment,
     ModelProfile,
     ProxyConfig,
+    Tier,
+    resolve_chain,
 )
+
+
+# ── Enum sanity ─────────────────────────────────────────────────────────
+
+
+class TestTier:
+    def test_values(self):
+        assert Tier.HIGH == "high"
+        assert Tier.MID == "mid"
+        assert Tier.LOW == "low"
+
+    def test_iteration_complete(self):
+        assert {t for t in Tier} == {Tier.HIGH, Tier.MID, Tier.LOW}
+
+
+class TestAuthMethod:
+    def test_values(self):
+        assert AuthMethod.ANTHROPIC_API == "anthropic_api"
+        assert AuthMethod.ANTHROPIC_OAUTH == "anthropic_oauth"
+        assert AuthMethod.OPENAI_API == "openai_api"
+        assert AuthMethod.GOOGLE_API == "google_api"
+        assert AuthMethod.MINIMAX_API == "minimax_api"
+
+    def test_anthropic_api_and_oauth_distinct(self):
+        assert AuthMethod.ANTHROPIC_API != AuthMethod.ANTHROPIC_OAUTH
+
+
+class TestModelProfile:
+    def test_values(self):
+        assert ModelProfile.ECO == "eco"
+        assert ModelProfile.MAX == "max"
+        assert ModelProfile.TEST == "test"
+
+
+# ── Tier × Method matrix ────────────────────────────────────────────────
+
+
+class TestMethodModels:
+    def test_anthropic_api_full_tier_coverage(self):
+        m = METHOD_MODELS[AuthMethod.ANTHROPIC_API]
+        assert m[Tier.HIGH] == "anthropic/claude-opus-4-7"
+        assert m[Tier.MID] == "anthropic/claude-sonnet-4-6"
+        assert m[Tier.LOW] == "anthropic/claude-haiku-4-5"
+
+    def test_anthropic_oauth_routes_to_auth_prefix(self):
+        m = METHOD_MODELS[AuthMethod.ANTHROPIC_OAUTH]
+        assert m[Tier.HIGH] == "auth/claude-opus-4-7"
+        assert m[Tier.MID] == "auth/claude-sonnet-4-6"
+        assert m[Tier.LOW] == "auth/claude-haiku-4-5"
+
+    def test_openai_full_tier_coverage(self):
+        m = METHOD_MODELS[AuthMethod.OPENAI_API]
+        assert m[Tier.HIGH] == "openai/gpt-5.5"
+        assert m[Tier.MID] == "openai/gpt-5.4"
+        assert m[Tier.LOW] == "openai/gpt-5.4-nano"
+
+    def test_google_full_tier_coverage(self):
+        m = METHOD_MODELS[AuthMethod.GOOGLE_API]
+        assert m[Tier.HIGH] == "gemini/gemini-2.5-pro"
+        assert m[Tier.MID] == "gemini/gemini-2.5-flash"
+        assert m[Tier.LOW] == "gemini/gemini-2.5-flash-lite"
+
+    def test_minimax_no_low_tier(self):
+        m = METHOD_MODELS[AuthMethod.MINIMAX_API]
+        assert m[Tier.HIGH] == "minimax/MiniMax-M2.7"
+        assert m[Tier.MID] == "minimax/MiniMax-M2.5"
+        assert Tier.LOW not in m
+
+
+# ── Per-agent tier table ────────────────────────────────────────────────
+
+
+class TestAgentTiers:
+    def test_high_tier_agents(self):
+        for role in (
+            "decepticon",
+            "exploiter",
+            "patcher",
+            "contract_auditor",
+            "analyst",
+            "vulnresearch",
+        ):
+            assert AGENT_TIERS[role] == Tier.HIGH
+
+    def test_mid_tier_agents(self):
+        for role in (
+            "exploit",
+            "detector",
+            "verifier",
+            "postexploit",
+            "defender",
+            "ad_operator",
+            "cloud_hunter",
+            "reverser",
+        ):
+            assert AGENT_TIERS[role] == Tier.MID
+
+    def test_low_tier_agents(self):
+        for role in ("soundwave", "recon", "scanner"):
+            assert AGENT_TIERS[role] == Tier.LOW
+
+    def test_all_agents_have_temperature(self):
+        for role in AGENT_TIERS:
+            assert role in AGENT_TEMPERATURES
+
+    def test_temperatures_in_valid_range(self):
+        for role, t in AGENT_TEMPERATURES.items():
+            assert 0.0 <= t <= 2.0, f"{role}: {t} out of range"
+
+
+# ── Credentials ─────────────────────────────────────────────────────────
+
+
+class TestCredentials:
+    def test_default_empty(self):
+        c = Credentials()
+        assert c.methods == []
+
+    def test_explicit_methods(self):
+        c = Credentials(methods=[AuthMethod.ANTHROPIC_API, AuthMethod.OPENAI_API])
+        assert c.methods == [AuthMethod.ANTHROPIC_API, AuthMethod.OPENAI_API]
+
+    def test_all_api_methods_helper(self):
+        c = Credentials.all_api_methods()
+        assert c.methods == [
+            AuthMethod.ANTHROPIC_API,
+            AuthMethod.OPENAI_API,
+            AuthMethod.GOOGLE_API,
+            AuthMethod.MINIMAX_API,
+        ]
+
+
+# ── resolve_chain ───────────────────────────────────────────────────────
+
+
+class TestResolveChain:
+    def test_anthropic_api_only_high(self):
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["anthropic/claude-opus-4-7"]
+
+    def test_oauth_only_high(self):
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["auth/claude-opus-4-7"]
+
+    def test_oauth_then_api_high(self):
+        # Subscription primary, paid API fallback when quota hits.
+        creds = Credentials(
+            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API]
+        )
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["auth/claude-opus-4-7", "anthropic/claude-opus-4-7"]
+
+    def test_oauth_then_openai_low(self):
+        creds = Credentials(
+            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API]
+        )
+        chain = resolve_chain(Tier.LOW, creds)
+        assert chain == ["auth/claude-haiku-4-5", "openai/gpt-5.4-nano"]
+
+    def test_minimax_low_falls_through(self):
+        # MiniMax has no LOW tier; chain should skip and continue with the
+        # next method in priority order.
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API])
+        chain = resolve_chain(Tier.LOW, creds)
+        assert chain == ["openai/gpt-5.4-nano"]
+
+    def test_minimax_only_low_returns_empty(self):
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API])
+        chain = resolve_chain(Tier.LOW, creds)
+        assert chain == []
+
+    def test_empty_credentials_returns_empty(self):
+        assert resolve_chain(Tier.HIGH, Credentials()) == []
+
+    def test_priority_order_preserved(self):
+        creds = Credentials(
+            methods=[
+                AuthMethod.OPENAI_API,
+                AuthMethod.ANTHROPIC_API,
+                AuthMethod.GOOGLE_API,
+            ]
+        )
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == [
+            "openai/gpt-5.5",
+            "anthropic/claude-opus-4-7",
+            "gemini/gemini-2.5-pro",
+        ]
+
+
+# ── ModelAssignment ─────────────────────────────────────────────────────
 
 
 class TestModelAssignment:
     def test_defaults(self):
-        assignment = ModelAssignment(primary="test-model")
-        assert assignment.primary == "test-model"
-        assert assignment.fallback is None
-        assert assignment.temperature == 0.7
-        assert assignment.max_tokens is None
+        a = ModelAssignment(primary="x")
+        assert a.primary == "x"
+        assert a.fallback is None
+        assert a.temperature == 0.7
 
     def test_with_fallback(self):
-        assignment = ModelAssignment(
-            primary="model-a",
-            fallback="model-b",
-            temperature=0.3,
-        )
-        assert assignment.fallback == "model-b"
-        assert assignment.temperature == 0.3
+        a = ModelAssignment(primary="a", fallback="b", temperature=0.3)
+        assert a.fallback == "b"
+        assert a.temperature == 0.3
 
     def test_temperature_bounds(self):
         with pytest.raises(Exception):
@@ -38,129 +229,87 @@ class TestModelAssignment:
             ModelAssignment(primary="x", temperature=-0.1)
 
 
+# ── LLMModelMapping ─────────────────────────────────────────────────────
+
+
 class TestLLMModelMapping:
-    def test_default_roles_exist(self):
-        mapping = LLMModelMapping()
-        assert mapping.decepticon is not None
-        assert mapping.recon is not None
-        assert mapping.exploit is not None
-        assert mapping.analyst is not None
-        assert mapping.soundwave is not None
-        assert mapping.postexploit is not None
-
-    def test_get_assignment_valid(self):
-        mapping = LLMModelMapping()
-        assignment = mapping.get_assignment("recon")
-        assert assignment.primary == HAIKU
-
-    def test_get_assignment_invalid(self):
-        mapping = LLMModelMapping()
+    def test_get_assignment_unknown_raises(self):
+        m = LLMModelMapping()
         with pytest.raises(KeyError):
-            mapping.get_assignment("nonexistent")
+            m.get_assignment("nonexistent")
 
-    def test_strategic_agents_use_opus(self):
-        """Orchestrator needs strongest reasoning — Opus 4.7."""
-        mapping = LLMModelMapping()
-        assert mapping.get_assignment("decepticon").primary == OPUS
+    def test_from_credentials_anthropic_only_eco(self):
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        a = m.get_assignment("decepticon")
+        assert a.primary == "anthropic/claude-opus-4-7"
+        assert a.fallback is None
 
-    def test_precision_agent_uses_sonnet(self):
-        """Exploit needs precision + tool calling balance — Sonnet 4.6."""
-        mapping = LLMModelMapping()
-        assert mapping.get_assignment("exploit").primary == SONNET
+    def test_from_credentials_oauth_plus_api(self):
+        creds = Credentials(
+            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API]
+        )
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        a = m.get_assignment("decepticon")
+        assert a.primary == "auth/claude-opus-4-7"
+        assert a.fallback == "anthropic/claude-opus-4-7"
 
-    def test_tactical_agents_cross_provider_fallback(self):
-        """Tactical agents fall back across providers for resilience."""
-        mapping = LLMModelMapping()
-        # Recon: Anthropic (Haiku) primary → Gemini fallback
-        recon = mapping.get_assignment("recon")
-        assert "anthropic" in recon.primary
-        assert "gemini" in recon.fallback
-        # PostExploit: Anthropic primary → OpenAI fallback
-        post = mapping.get_assignment("postexploit")
-        assert "anthropic" in post.primary
-        assert "openai" in post.fallback
+    def test_from_credentials_low_tier_minimax_skipped(self):
+        creds = Credentials(
+            methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API]
+        )
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        recon = m.get_assignment("recon")
+        assert recon.primary == "openai/gpt-5.4-nano"
+        assert recon.fallback is None
 
-    def test_all_roles_have_fallback(self):
-        """Every role has a fallback for resilience (eco profile)."""
-        mapping = LLMModelMapping()
-        for role in (
-            "decepticon",
-            "soundwave",
-            "exploit",
-            "analyst",
-            "recon",
-            "postexploit",
-        ):
-            assert mapping.get_assignment(role).fallback is not None
+    def test_from_credentials_minimax_only_low_role_dropped(self):
+        # No method supplies a LOW model → recon (LOW tier) is omitted from
+        # the mapping. HIGH/MID roles still resolve.
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API])
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        with pytest.raises(KeyError):
+            m.get_assignment("recon")
+        assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M2.7"
 
+    def test_max_profile_promotes_recon_to_high(self):
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.MAX)
+        assert m.get_assignment("recon").primary == "anthropic/claude-opus-4-7"
 
-class TestModelProfile:
-    """Profile-based model preset tests."""
+    def test_test_profile_demotes_decepticon_to_low(self):
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.TEST)
+        assert m.get_assignment("decepticon").primary == "anthropic/claude-haiku-4-5"
 
-    def test_eco_profile_matches_bare_constructor(self):
-        eco = LLMModelMapping.from_profile("eco")
-        bare = LLMModelMapping()
-        for role in (
-            "decepticon",
-            "soundwave",
-            "exploit",
-            "analyst",
-            "recon",
-            "postexploit",
-        ):
-            assert eco.get_assignment(role).primary == bare.get_assignment(role).primary
-            assert eco.get_assignment(role).fallback == bare.get_assignment(role).fallback
+    def test_from_profile_uses_all_api_methods(self):
+        m = LLMModelMapping.from_profile(ModelProfile.ECO)
+        a = m.get_assignment("decepticon")
+        assert a.primary == "anthropic/claude-opus-4-7"
+        # OpenAI is the second API method by default → first fallback.
+        assert a.fallback == "openai/gpt-5.5"
 
-    def test_max_profile_uses_opus_everywhere(self):
-        """Max profile puts Opus on all roles except recon (Sonnet) and soundwave (Sonnet)."""
-        maxp = LLMModelMapping.from_profile(ModelProfile.MAX)
-        for role in ("decepticon", "exploit", "analyst", "postexploit"):
-            assert maxp.get_assignment(role).primary == OPUS
-        assert maxp.get_assignment("recon").primary == SONNET
-        assert maxp.get_assignment("soundwave").primary == SONNET
-
-    def test_max_profile_anthropic_only_fallbacks(self):
-        """Max profile fallbacks stay within Anthropic where possible."""
-        maxp = LLMModelMapping.from_profile("max")
-        for role in ("exploit", "analyst", "postexploit"):
-            assert maxp.get_assignment(role).fallback == SONNET
-        assert maxp.get_assignment("recon").fallback == OPUS
-        assert maxp.get_assignment("decepticon").fallback == GPT_5
-
-    def test_test_profile_all_haiku(self):
-        """Test profile uses Haiku everywhere for minimum cost."""
-        test = LLMModelMapping.from_profile("test")
-        for role in (
-            "decepticon",
-            "soundwave",
-            "exploit",
-            "analyst",
-            "recon",
-            "postexploit",
-        ):
-            assignment = test.get_assignment(role)
-            assert assignment.primary == HAIKU
-            assert assignment.fallback is None
-
-    def test_profile_from_string(self):
-        """Profile can be created from string value."""
+    def test_from_profile_string_input(self):
         for name in ("eco", "max", "test"):
-            mapping = LLMModelMapping.from_profile(name)
-            assert mapping is not None
+            assert LLMModelMapping.from_profile(name) is not None
 
     def test_invalid_profile_raises(self):
         with pytest.raises(ValueError):
             LLMModelMapping.from_profile("nonexistent")
 
-    def test_profile_enum_values(self):
-        assert ModelProfile.ECO == "eco"
-        assert ModelProfile.MAX == "max"
-        assert ModelProfile.TEST == "test"
+    def test_temperatures_carried_through(self):
+        creds = Credentials.all_api_methods()
+        m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
+        assert m.get_assignment("decepticon").temperature == 0.4
+        assert m.get_assignment("exploit").temperature == 0.3
+
+
+# ── ProxyConfig ─────────────────────────────────────────────────────────
 
 
 class TestProxyConfig:
     def test_defaults(self):
-        config = ProxyConfig()
-        assert config.url == "http://localhost:4000"
-        assert config.timeout == 120
-        assert config.max_retries == 2
+        c = ProxyConfig()
+        assert c.url == "http://localhost:4000"
+        assert c.timeout == 120
+        assert c.max_retries == 2
