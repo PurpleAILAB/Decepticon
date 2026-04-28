@@ -263,6 +263,12 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     tool_prompts = [s for s in shared if s == "bash"]
     fragments = [s for s in shared if s != "bash"]
 
+    # Cross-cutting language policy — applies to every agent. Prepended once
+    # so every prompt picks up the same operator-language directive without
+    # per-agent edits.
+    if "language" not in fragments:
+        fragments = ["language", *fragments]
+
     prompt = PromptBuilder(name).with_tool_prompts(tool_prompts).with_shared(fragments).build()
 
     # Apply Claude 4.x compatibility shim (no-op for other model families).

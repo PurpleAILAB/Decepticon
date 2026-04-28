@@ -49,7 +49,7 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
-from decepticon.middleware import OPPLANMiddleware
+from decepticon.middleware import EngagementContextMiddleware, OPPLANMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
@@ -202,6 +202,7 @@ def create_decepticon_agent():
 
     # Assemble middleware stack
     middleware = [
+        EngagementContextMiddleware(),
         DecepticonSkillsMiddleware(
             backend=backend, sources=["/skills/decepticon/", "/skills/shared/"]
         ),

@@ -37,6 +37,7 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
+from decepticon.middleware import EngagementContextMiddleware
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
 from decepticon.tools.interaction import ask_user_question, complete_engagement_planning
 
@@ -74,6 +75,7 @@ def create_soundwave_agent():
 
     # Assemble middleware stack
     middleware = [
+        EngagementContextMiddleware(),
         DecepticonSkillsMiddleware(backend=backend, sources=["/skills/soundwave/"]),
         FilesystemMiddleware(backend=backend),
     ]
