@@ -6,25 +6,119 @@ Provider API keys are configured in .env / docker-compose.yml.
 Architecture:
     LLMFactory(proxy, mapping)
       → get_model("recon")  → ChatOpenAI(model="anthropic/claude-haiku-4-5")
-      → get_fallback_models("recon") → [ChatOpenAI(model="gemini/gemini-2.5-flash")]
+      → get_fallback_models("recon") → [ChatOpenAI(model="openai/gpt-5.4-nano")]
                                          ↓
                         LiteLLM proxy → Anthropic/OpenAI/Google/etc.
 
-Profile-aware: when no explicit mapping is provided, resolves
-DECEPTICON_MODEL_PROFILE (eco/max/test) from DecepticonConfig.
+Profile-aware: when no explicit mapping is provided, builds a
+credentials-aware mapping from environment variables. The factory
+inspects which credentials are configured (non-placeholder API keys
+plus the OAuth toggle) and respects ``DECEPTICON_AUTH_PRIORITY`` for
+ordering AuthMethods in the fallback chain.
 """
 
 from __future__ import annotations
+
+import os
 
 import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 
 from decepticon.core.logging import get_logger
-from decepticon.llm.models import LLMModelMapping, ModelProfile, ProxyConfig
+from decepticon.llm.models import (
+    AuthMethod,
+    Credentials,
+    LLMModelMapping,
+    ModelProfile,
+    ProxyConfig,
+)
 from decepticon.llm.router import ModelRouter
 
 log = get_logger("llm.factory")
+
+
+# Default ordering when DECEPTICON_AUTH_PRIORITY is not set. OAuth methods
+# precede the matching API method so a subscription primary falls back to
+# the paid API only when the subscription quota hits — not the other way.
+_DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
+    AuthMethod.ANTHROPIC_OAUTH,
+    AuthMethod.ANTHROPIC_API,
+    AuthMethod.OPENAI_API,
+    AuthMethod.GOOGLE_API,
+    AuthMethod.MINIMAX_API,
+)
+
+# Each AuthMethod's detection rule:
+#   - API methods: presence of a non-placeholder env var
+#   - OAuth methods: an explicit "true" boolean env var (set by the
+#     onboard wizard after a successful OAuth handshake)
+_API_METHOD_ENV: dict[AuthMethod, str] = {
+    AuthMethod.ANTHROPIC_API: "ANTHROPIC_API_KEY",
+    AuthMethod.OPENAI_API: "OPENAI_API_KEY",
+    AuthMethod.GOOGLE_API: "GEMINI_API_KEY",
+    AuthMethod.MINIMAX_API: "MINIMAX_API_KEY",
+}
+
+_OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
+    AuthMethod.ANTHROPIC_OAUTH: "DECEPTICON_AUTH_CLAUDE_CODE",
+}
+
+
+def _is_real_key(value: str) -> bool:
+    """Reject empty values and the placeholders shipped in .env.example.
+
+    Onboard-written keys pass; values like ``your-anthropic-key-here``
+    or empty strings are treated as "not configured" so the resolved
+    Credentials inventory stays honest.
+    """
+    v = value.strip()
+    if not v:
+        return False
+    lower = v.lower()
+    if "key-here" in lower or lower.startswith("your-"):
+        return False
+    return True
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("true", "1", "yes", "on")
+
+
+def _resolve_credentials() -> Credentials:
+    """Build Credentials from environment variables.
+
+    Walks ``DECEPTICON_AUTH_PRIORITY`` (comma-separated AuthMethod
+    values; defaults to ``_DEFAULT_AUTH_PRIORITY``) and includes only
+    methods whose detection rule passes:
+
+      - API methods: their key env var is set to a non-placeholder
+      - OAuth methods: their boolean env var is set truthy
+    """
+    priority_raw = os.getenv("DECEPTICON_AUTH_PRIORITY", "")
+    if priority_raw.strip():
+        priority: list[AuthMethod] = []
+        for token in priority_raw.split(","):
+            token = token.strip().lower()
+            if not token:
+                continue
+            try:
+                priority.append(AuthMethod(token))
+            except ValueError:
+                log.warning("Unknown method in DECEPTICON_AUTH_PRIORITY: %s", token)
+    else:
+        priority = list(_DEFAULT_AUTH_PRIORITY)
+
+    methods: list[AuthMethod] = []
+    for method in priority:
+        if method in _API_METHOD_ENV:
+            if _is_real_key(os.getenv(_API_METHOD_ENV[method], "")):
+                methods.append(method)
+        elif method in _OAUTH_METHOD_ENV:
+            if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")):
+                methods.append(method)
+
+    return Credentials(methods=methods)
 
 
 class LLMFactory:
@@ -33,23 +127,27 @@ class LLMFactory:
     Routes all models through LiteLLM proxy. Supports primary + fallback
     model resolution via ModelRouter.
 
-    When constructed without an explicit mapping, uses the model profile
-    from DecepticonConfig (env: DECEPTICON_MODEL_PROFILE).
+    When constructed without an explicit mapping, builds one from the
+    user's credentials inventory and the model profile from
+    DecepticonConfig (env: ``DECEPTICON_MODEL_PROFILE``).
     """
 
     def __init__(
         self,
         proxy: ProxyConfig | None = None,
         mapping: LLMModelMapping | None = None,
+        credentials: Credentials | None = None,
         profile: ModelProfile | str | None = None,
     ):
         self._proxy = proxy or self._resolve_proxy_config()
         if mapping is not None:
             self._mapping = mapping
-        elif profile is not None:
-            self._mapping = LLMModelMapping.from_profile(profile)
         else:
-            self._mapping = self._resolve_profile_mapping()
+            creds = credentials if credentials is not None else _resolve_credentials()
+            resolved_profile = profile if profile is not None else self._resolve_profile()
+            self._mapping = LLMModelMapping.from_credentials_and_profile(
+                creds, resolved_profile
+            )
         self._router = ModelRouter(self._mapping)
         self._cache: dict[str, BaseChatModel] = {}
 
@@ -67,14 +165,11 @@ class LLMFactory:
         )
 
     @staticmethod
-    def _resolve_profile_mapping() -> LLMModelMapping:
-        """Resolve model mapping from config's model_profile + model_provider settings."""
+    def _resolve_profile() -> ModelProfile:
+        """Resolve the model profile from DecepticonConfig (env var)."""
         from decepticon.core.config import load_config
 
-        config = load_config()
-        return LLMModelMapping.from_profile(config.model_profile).with_provider(
-            config.model_provider
-        )
+        return load_config().model_profile
 
     @property
     def proxy_url(self) -> str:

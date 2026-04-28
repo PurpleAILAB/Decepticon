@@ -1,50 +1,51 @@
-"""LLM model definitions — per-role model assignments with profile-based presets.
+"""LLM model definitions — tier-based, credentials-aware mappings.
 
-Two orthogonal axes control model selection:
+Three orthogonal axes control model selection:
 
-  Profile  — which model tier to use (cost/performance tradeoff)
-  Provider — how to authenticate (api key vs OAuth subscription)
+  Tier        — model power level (HIGH / MID / LOW)
+  AuthMethod  — specific way to authenticate (anthropic_api,
+                anthropic_oauth, openai_api, google_api, minimax_api)
+  Profile     — eco (per-agent tier) / max (all HIGH) / test (all LOW)
 
-Profiles:
-  eco  — Balanced Anthropic-first ensemble (production engagements)
-  max  — Maximum performance, Opus everywhere (high-value targets)
-  test — Haiku-only, cheapest possible (development and CI)
+The profile decides each agent's *tier*. The user's *credentials inventory*
+— a list of AuthMethods in priority order — decides the fallback chain at
+that tier. Each AuthMethod is a distinct credential: Anthropic API key
+and Claude Code OAuth are two different methods, can both be configured,
+and can be ordered independently in the priority list.
 
-Providers:
-  api  — API keys (x-api-key header), standard LiteLLM routing
-  auth — Claude Code OAuth subscription (Bearer token), no API cost
+Examples
+--------
+User has [anthropic_api, openai_api]. Profile=eco.
+  decepticon (HIGH) → primary=anthropic/claude-opus-4-7, fallback=openai/gpt-5.5
+  recon (LOW)       → primary=anthropic/claude-haiku-4-5, fallback=openai/gpt-5.4-nano
 
-Usage:
-  mapping = LLMModelMapping.from_profile("eco").with_provider("auth")
+User has [anthropic_oauth, anthropic_api]. Profile=eco.
+  decepticon (HIGH) → primary=auth/claude-opus-4-7, fallback=anthropic/claude-opus-4-7
+  (OAuth subscription primary, paid API as fallback when subscription quota hits.)
 
-  DECEPTICON_MODEL_PROFILE=eco   (env var, default: eco)
-  DECEPTICON_MODEL_PROVIDER=auth (env var, default: api)
+User has [anthropic_oauth] only. Profile=eco.
+  decepticon (HIGH) → primary=auth/claude-opus-4-7, fallback=None
 
-With provider=auth, all anthropic/* primary models are automatically
-remapped to auth/* so they route through the OAuth handler.
-Fallbacks stay on the api provider as a paid safety net.
+User has [openai_api]. Profile=eco.
+  decepticon (HIGH) → primary=openai/gpt-5.5, fallback=None
+  recon (LOW)       → primary=openai/gpt-5.4-nano, fallback=None
 
-Profiles (April 2026):
+Tier × AuthMethod matrix
+------------------------
+                    HIGH                          MID                            LOW
+  anthropic_api    claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
+  anthropic_oauth  auth/claude-opus-4-7          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
+  openai_api       gpt-5.5                       gpt-5.4                        gpt-5.4-nano
+  google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
+  minimax_api      MiniMax-M2.7                  MiniMax-M2.5                   — (falls through)
 
-  eco:
-    Orchestrator  Opus 4.7        → GPT-5.4         $5/$25
-    Soundwave     Haiku 4.5       → Gemini 2.5 Flash $1/$5
-    Exploit       Sonnet 4.6      → GPT-4.1         $3/$15
-    Recon         Haiku 4.5       → Gemini 2.5 Flash $1/$5
-    PostExploit   Sonnet 4.6      → GPT-4.1         $3/$15
+Profiles
+--------
+  eco   per-agent tier (production default)
+  max   every agent on HIGH (high-value targets)
+  test  every agent on LOW (development / CI)
 
-  max:
-    Orchestrator  Opus 4.7        → GPT-5.4         $5/$25
-    Soundwave     Sonnet 4.6      → Haiku 4.5       $3/$15
-    Exploit       Opus 4.7        → Sonnet 4.6      $5/$25
-    Recon         Sonnet 4.6      → Opus 4.7        $3/$15
-    PostExploit   Opus 4.7        → Sonnet 4.6      $5/$25
-
-  test:
-    All roles     Haiku 4.5       → (none)           $1/$5
-
-Model names use LiteLLM provider-prefix format for direct proxy routing.
-Fallbacks activate via ModelFallbackMiddleware on API failure (outage, rate limit).
+Model identifiers verified against provider docs as of 2026-04-28.
 """
 
 from __future__ import annotations
@@ -54,35 +55,186 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, field_validator
 
 
+# ── Tier and AuthMethod enums ───────────────────────────────────────────
+
+
+class Tier(StrEnum):
+    """Model power level — orthogonal to authentication method."""
+
+    HIGH = "high"
+    MID = "mid"
+    LOW = "low"
+
+
+class AuthMethod(StrEnum):
+    """A specific way to authenticate to a model provider.
+
+    Each method routes to its own model identifier in LiteLLM and
+    requires its own credential. Anthropic has two methods (API key
+    via x-api-key, and Claude Code OAuth via Bearer token); these are
+    independent credentials and can both be configured and prioritized
+    separately.
+    """
+
+    ANTHROPIC_API = "anthropic_api"
+    ANTHROPIC_OAUTH = "anthropic_oauth"  # Claude Code subscription
+    OPENAI_API = "openai_api"
+    # OPENAI_OAUTH = "openai_oauth"  # Codex subscription — coming soon
+    GOOGLE_API = "google_api"
+    MINIMAX_API = "minimax_api"
+
+
+# ── Tier × AuthMethod → model_id matrix ─────────────────────────────────
+# When a (method, tier) entry is missing (e.g. minimax_api LOW), the chain
+# resolver skips that method for that tier and falls through to the next
+# method in priority order.
+
+METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
+    AuthMethod.ANTHROPIC_API: {
+        Tier.HIGH: "anthropic/claude-opus-4-7",
+        Tier.MID: "anthropic/claude-sonnet-4-6",
+        Tier.LOW: "anthropic/claude-haiku-4-5",
+    },
+    AuthMethod.ANTHROPIC_OAUTH: {
+        Tier.HIGH: "auth/claude-opus-4-7",
+        Tier.MID: "auth/claude-sonnet-4-6",
+        Tier.LOW: "auth/claude-haiku-4-5",
+    },
+    AuthMethod.OPENAI_API: {
+        Tier.HIGH: "openai/gpt-5.5",
+        Tier.MID: "openai/gpt-5.4",
+        Tier.LOW: "openai/gpt-5.4-nano",
+    },
+    AuthMethod.GOOGLE_API: {
+        Tier.HIGH: "gemini/gemini-2.5-pro",
+        Tier.MID: "gemini/gemini-2.5-flash",
+        Tier.LOW: "gemini/gemini-2.5-flash-lite",
+    },
+    AuthMethod.MINIMAX_API: {
+        Tier.HIGH: "minimax/MiniMax-M2.7",
+        Tier.MID: "minimax/MiniMax-M2.5",
+        # MiniMax has no LOW-tier light variant — falls through.
+    },
+}
+
+
+# ── Per-agent tier and temperature ──────────────────────────────────────
+# eco profile uses these directly. max promotes everything to HIGH.
+# test demotes everything to LOW.
+
+AGENT_TIERS: dict[str, Tier] = {
+    # HIGH — deep reasoning, multi-step planning, source-level analysis,
+    # long context accumulation. Failure cost is mission-critical.
+    "decepticon": Tier.HIGH,
+    "exploiter": Tier.HIGH,
+    "patcher": Tier.HIGH,
+    "contract_auditor": Tier.HIGH,
+    "analyst": Tier.HIGH,
+    "vulnresearch": Tier.HIGH,
+    # MID — precision execution, code generation, structured judgment.
+    # Tool-heavy with moderate iteration.
+    "exploit": Tier.MID,
+    "detector": Tier.MID,
+    "verifier": Tier.MID,
+    "postexploit": Tier.MID,
+    "defender": Tier.MID,
+    "ad_operator": Tier.MID,
+    "cloud_hunter": Tier.MID,
+    "reverser": Tier.MID,
+    # LOW — high-throughput, low reasoning depth. Recon / triage / docs.
+    "soundwave": Tier.LOW,
+    "recon": Tier.LOW,
+    "scanner": Tier.LOW,
+}
+
+AGENT_TEMPERATURES: dict[str, float] = {
+    "decepticon": 0.4,
+    "soundwave": 0.4,
+    "exploit": 0.3,
+    "exploiter": 0.2,
+    "detector": 0.2,
+    "verifier": 0.2,
+    "patcher": 0.2,
+    "postexploit": 0.3,
+    "defender": 0.2,
+    "ad_operator": 0.2,
+    "cloud_hunter": 0.2,
+    "contract_auditor": 0.2,
+    "reverser": 0.2,
+    "analyst": 0.2,
+    "scanner": 0.2,
+    "vulnresearch": 0.4,
+    "recon": 0.3,
+}
+
+
+# ── Profile ─────────────────────────────────────────────────────────────
+
+
 class ModelProfile(StrEnum):
-    """Model cost/performance profile (tier)."""
+    """Tier preset that overlays AGENT_TIERS."""
 
     ECO = "eco"
     MAX = "max"
     TEST = "test"
 
 
-class ModelProvider(StrEnum):
-    """Authentication provider for LLM requests.
+def _resolve_tier(role: str, profile: ModelProfile) -> Tier:
+    """Resolve the effective tier for a role under a profile."""
+    if profile == ModelProfile.MAX:
+        return Tier.HIGH
+    if profile == ModelProfile.TEST:
+        return Tier.LOW
+    return AGENT_TIERS[role]
 
-    api  — API keys via x-api-key header (default)
-    auth — Claude Code OAuth subscription via Bearer token, no API cost
+
+# ── Credentials ─────────────────────────────────────────────────────────
+
+
+class Credentials(BaseModel):
+    """User's available LLM credentials, in priority order.
+
+    ``methods`` lists each configured AuthMethod, ordered by user
+    preference. Each entry is an independent credential — having both
+    ``ANTHROPIC_OAUTH`` and ``ANTHROPIC_API`` is valid and useful
+    (subscription primary, paid API as fallback). Order in this list
+    becomes the model fallback order at every tier.
     """
 
-    API = "api"
-    AUTH = "auth"
+    methods: list[AuthMethod] = Field(default_factory=list)
+
+    @classmethod
+    def all_api_methods(cls) -> Credentials:
+        """All four API methods in default priority order. Used as a
+        development convenience and for tests that want a fully-populated
+        inventory without specifying it inline."""
+        return cls(
+            methods=[
+                AuthMethod.ANTHROPIC_API,
+                AuthMethod.OPENAI_API,
+                AuthMethod.GOOGLE_API,
+                AuthMethod.MINIMAX_API,
+            ]
+        )
 
 
-# ── Model constants ──────────────────────────────────────────────────────
-OPUS = "anthropic/claude-opus-4-7"
-SONNET = "anthropic/claude-sonnet-4-6"
-HAIKU = "anthropic/claude-haiku-4-5"
-GPT_5 = "openai/gpt-5.4"
-GPT_4 = "openai/gpt-4.1"
-GEMINI_FLASH = "gemini/gemini-2.5-flash"
-MINIMAX = "minimax/MiniMax-M2.7"
-MINIMAX_HIGHSPEED = "minimax/MiniMax-M2.7-highspeed"
-OLLAMA_LOCAL = "ollama/llama3.2"
+def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
+    """Build the model chain (primary first, then fallbacks) for a tier.
+
+    Walks ``credentials.methods`` in order, picking the model for each
+    method at the given tier from ``METHOD_MODELS``. When a method has
+    no entry at that tier (minimax_api LOW), it's skipped and the chain
+    continues with the next method.
+    """
+    chain: list[str] = []
+    for method in credentials.methods:
+        model = METHOD_MODELS[method].get(tier)
+        if model is not None:
+            chain.append(model)
+    return chain
+
+
+# ── Configuration models ────────────────────────────────────────────────
 
 
 class ProxyConfig(BaseModel):
@@ -95,7 +247,12 @@ class ProxyConfig(BaseModel):
 
 
 class ModelAssignment(BaseModel):
-    """Primary + fallback model for an agent role."""
+    """Primary + fallback model for an agent role.
+
+    Single fallback by design: cross-provider fallback past the first
+    alt method almost always indicates a real outage worth surfacing,
+    not silently chaining further.
+    """
 
     primary: str
     fallback: str | None = None
@@ -111,278 +268,64 @@ class ModelAssignment(BaseModel):
 
 
 class LLMModelMapping(BaseModel):
-    """Role → model assignment mapping.
+    """Role → ModelAssignment, built from credentials + profile.
 
-    Model names use LiteLLM provider-prefix format for direct routing.
-    Use from_profile() to get a preset configuration.
+    Construct via :meth:`from_credentials_and_profile` or
+    :meth:`from_profile` (which assumes all-API-methods credentials).
     """
 
-    # ── Strategic tier ──────────────────────────────────────────────
-    # Reasoning-heavy, few iterations, quality > cost
-
-    decepticon: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=GPT_5,
-            temperature=0.4,
-        )
-    )
-
-    # ── Document tier ──────────────────────────────────────────────
-    # Structured JSON generation from interviews, schema-guided output
-
-    soundwave: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=HAIKU,
-            fallback=GEMINI_FLASH,
-            temperature=0.4,
-        )
-    )
-
-    # ── Precision tier ──────────────────────────────────────────────
-    # High-stakes execution, moderate iterations, precision critical
-
-    exploit: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=GPT_4,
-            temperature=0.3,
-        )
-    )
-
-    analyst: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            # Source review + chain reasoning benefits from higher-tier
-            # reasoning. Sonnet primary, Opus fallback so the chain
-            # planner gets a smarter model when rate limits hit.
-            primary=SONNET,
-            fallback=OPUS,
-            temperature=0.2,
-        )
-    )
-
-    reverser: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=OPUS,
-            temperature=0.2,
-        )
-    )
-
-    contract_auditor: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=SONNET,
-            temperature=0.2,
-        )
-    )
-
-    cloud_hunter: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=OPUS,
-            temperature=0.2,
-        )
-    )
-
-    ad_operator: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=OPUS,
-            temperature=0.2,
-        )
-    )
-
-    # ── Tactical tier ───────────────────────────────────────────────
-    # Tool-heavy, many iterations, speed + cost efficiency matter
-
-    recon: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=HAIKU,
-            fallback=GEMINI_FLASH,
-            temperature=0.3,
-        )
-    )
-
-    postexploit: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=GPT_4,
-            temperature=0.3,
-        )
-    )
-
-    defender: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=HAIKU,
-            temperature=0.2,
-        )
-    )
-
-    # ── Vulnresearch pipeline tier ─────────────────────────────────
-    # Five specialist sub-agents with scale-tuned model assignments.
-
-    vulnresearch: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=GPT_5,
-            temperature=0.4,
-        )
-    )
-
-    scanner: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=HAIKU,
-            fallback=GEMINI_FLASH,
-            temperature=0.2,
-        )
-    )
-
-    detector: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=GPT_4,
-            temperature=0.2,
-        )
-    )
-
-    verifier: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=SONNET,
-            fallback=GPT_4,
-            temperature=0.2,
-        )
-    )
-
-    patcher: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=SONNET,
-            temperature=0.2,
-        )
-    )
-
-    exploiter: ModelAssignment = Field(
-        default_factory=lambda: ModelAssignment(
-            primary=OPUS,
-            fallback=SONNET,
-            temperature=0.2,
-        )
-    )
+    assignments: dict[str, ModelAssignment] = Field(default_factory=dict)
 
     def get_assignment(self, role: str) -> ModelAssignment:
         """Get model assignment for a role.
 
-        Raises KeyError if role not found.
+        Raises KeyError if the role has no assignment (e.g. credentials
+        are empty, or the role isn't in AGENT_TIERS).
         """
-        if not hasattr(self, role):
+        if role not in self.assignments:
             raise KeyError(f"No model assignment for role: {role}")
-        return getattr(self, role)
+        return self.assignments[role]
+
+    @classmethod
+    def from_credentials_and_profile(
+        cls,
+        credentials: Credentials,
+        profile: ModelProfile | str = ModelProfile.ECO,
+    ) -> LLMModelMapping:
+        """Build a mapping from a credentials inventory + profile.
+
+        For each agent in ``AGENT_TIERS``: resolve the effective tier
+        under the profile, then build the chain from credentials. If
+        credentials produce no chain at all (empty methods list), the
+        role is skipped — callers will fail at LLM init time.
+        """
+        profile = ModelProfile(profile)
+        assignments: dict[str, ModelAssignment] = {}
+        for role in AGENT_TIERS:
+            tier = _resolve_tier(role, profile)
+            chain = resolve_chain(tier, credentials)
+            if not chain:
+                continue
+            assignments[role] = ModelAssignment(
+                primary=chain[0],
+                fallback=chain[1] if len(chain) > 1 else None,
+                temperature=AGENT_TEMPERATURES.get(role, 0.7),
+            )
+        return cls(assignments=assignments)
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | str) -> LLMModelMapping:
-        """Create a model mapping from a named profile.
+        """Build with the default credentials (all four API methods, default
+        priority). Used by tests and dev convenience — production code
+        should pass an explicit Credentials inventory."""
+        return cls.from_credentials_and_profile(Credentials.all_api_methods(), profile)
 
-        Profiles:
-          eco  — Balanced Anthropic-first (Opus/Sonnet/Haiku mix)
-          max  — Maximum performance (Opus + Sonnet everywhere)
-          test — Cheapest possible (Haiku-only, no fallbacks)
-        """
-        profile = ModelProfile(profile)
 
-        if profile == ModelProfile.ECO:
-            return cls()
-
-        if profile == ModelProfile.MAX:
-            return cls(
-                decepticon=ModelAssignment(
-                    primary=OPUS,
-                    fallback=GPT_5,
-                    temperature=0.4,
-                ),
-                soundwave=ModelAssignment(
-                    primary=SONNET,
-                    fallback=HAIKU,
-                    temperature=0.4,
-                ),
-                exploit=ModelAssignment(
-                    primary=OPUS,
-                    fallback=SONNET,
-                    temperature=0.3,
-                ),
-                analyst=ModelAssignment(
-                    primary=OPUS,
-                    fallback=SONNET,
-                    temperature=0.2,
-                ),
-                recon=ModelAssignment(
-                    primary=SONNET,
-                    fallback=OPUS,
-                    temperature=0.3,
-                ),
-                postexploit=ModelAssignment(
-                    primary=OPUS,
-                    fallback=SONNET,
-                    temperature=0.3,
-                ),
-                defender=ModelAssignment(
-                    primary=OPUS,
-                    fallback=SONNET,
-                    temperature=0.2,
-                ),
-            )
-
-        if profile == ModelProfile.TEST:
-            return cls(
-                decepticon=ModelAssignment(primary=HAIKU, temperature=0.4),
-                soundwave=ModelAssignment(primary=HAIKU, temperature=0.4),
-                exploit=ModelAssignment(primary=HAIKU, temperature=0.3),
-                analyst=ModelAssignment(primary=HAIKU, temperature=0.2),
-                reverser=ModelAssignment(primary=HAIKU, temperature=0.2),
-                contract_auditor=ModelAssignment(primary=HAIKU, temperature=0.2),
-                cloud_hunter=ModelAssignment(primary=HAIKU, temperature=0.2),
-                ad_operator=ModelAssignment(primary=HAIKU, temperature=0.2),
-                recon=ModelAssignment(primary=HAIKU, temperature=0.3),
-                postexploit=ModelAssignment(primary=HAIKU, temperature=0.3),
-                defender=ModelAssignment(primary=HAIKU, temperature=0.2),
-                vulnresearch=ModelAssignment(primary=HAIKU, temperature=0.4),
-                scanner=ModelAssignment(primary=HAIKU, temperature=0.2),
-                detector=ModelAssignment(primary=HAIKU, temperature=0.2),
-                verifier=ModelAssignment(primary=HAIKU, temperature=0.2),
-                patcher=ModelAssignment(primary=HAIKU, temperature=0.2),
-                exploiter=ModelAssignment(primary=HAIKU, temperature=0.2),
-            )
-
-        raise ValueError(f"Unknown profile: {profile}")  # type: ignore[unreachable]
-
-    def with_provider(self, provider: ModelProvider | str) -> "LLMModelMapping":
-        """Return a new mapping with primary models remapped for the given provider.
-
-        ModelProvider.AUTH  — remap ``anthropic/*`` primaries to ``auth/*``
-                              so they route through the Claude Code OAuth handler.
-                              Fallbacks are kept on the API provider as a paid
-                              safety net when the subscription hits limits.
-        ModelProvider.API   — no-op, returns self unchanged.
-
-        Only ``anthropic/`` primaries are remapped; GPT/Gemini/etc. are left as-is.
-        """
-        provider = ModelProvider(provider)
-        if provider == ModelProvider.API:
-            return self
-
-        def _remap(assignment: ModelAssignment) -> ModelAssignment:
-            primary = assignment.primary
-            if primary.startswith("anthropic/"):
-                model_id = primary.split("/", 1)[1]
-                primary = f"auth/{model_id}"
-            return ModelAssignment(
-                primary=primary,
-                fallback=assignment.fallback,
-                temperature=assignment.temperature,
-                max_tokens=assignment.max_tokens,
-            )
-
-        return self.model_copy(
-            update={field: _remap(getattr(self, field)) for field in self.__class__.model_fields}
-        )
+# `from __future__ import annotations` defers field-annotation evaluation,
+# so pydantic needs a final rebuild pass once every referenced symbol is
+# in scope. Skipping this leaves Credentials/LLMModelMapping in a "not
+# fully defined" state and any instantiation raises.
+Credentials.model_rebuild()
+LLMModelMapping.model_rebuild()
+ModelAssignment.model_rebuild()
+ProxyConfig.model_rebuild()

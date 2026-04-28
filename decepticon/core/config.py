@@ -2,6 +2,11 @@
 
 LLM model assignments are defined in decepticon.llm.models (LLMModelMapping).
 This config handles infrastructure settings: proxy connection and Docker sandbox.
+
+Credentials (which provider keys are present, in what priority) are detected
+by ``decepticon.llm.factory._resolve_credentials`` directly from environment
+variables (``ANTHROPIC_API_KEY`` etc., ``DECEPTICON_PROVIDER_PRIORITY``,
+``DECEPTICON_AUTH_CLAUDE_CODE``) and so don't appear in this schema.
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
-from decepticon.llm.models import ModelProfile, ModelProvider
+from decepticon.llm.models import ModelProfile
 
 
 def _project_root() -> Path:
@@ -64,21 +69,24 @@ class DockerConfig(BaseModel):
 class DecepticonConfig(BaseSettings):
     """Root configuration.
 
-    Set DECEPTICON_MODEL_PROFILE to switch model presets:
-      eco  — Balanced Anthropic-first (production)
-      max  — Opus everywhere (high-value targets)
-      test — Haiku-only (development/CI, $1/$5 per MTok)
+    Set DECEPTICON_MODEL_PROFILE to switch tier presets:
+      eco  — per-agent tier (production default)
+      max  — every agent on HIGH (high-value targets)
+      test — every agent on LOW (development / CI)
 
-    Set DECEPTICON_MODEL_PROVIDER to control authentication:
-      api  — API keys via x-api-key header (default)
-      auth — Claude Code OAuth subscription, no API cost
+    Provider routing is driven by environment variables, not this schema:
+      DECEPTICON_PROVIDER_PRIORITY  comma-separated provider order
+                                    (default: anthropic,openai,google,minimax)
+      DECEPTICON_AUTH_CLAUDE_CODE   "true" → route Anthropic via OAuth
+      ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / MINIMAX_API_KEY
+                                    detected by the LLM factory; placeholder
+                                    values are ignored.
     """
 
     model_config = {"env_prefix": "DECEPTICON_", "env_nested_delimiter": "__"}
 
     debug: bool = False
     model_profile: ModelProfile = ModelProfile.ECO
-    model_provider: ModelProvider = ModelProvider.API
     llm: LLMConfig = Field(default_factory=LLMConfig)
     docker: DockerConfig = Field(default_factory=DockerConfig)
 
