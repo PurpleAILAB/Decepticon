@@ -314,12 +314,22 @@ def create_orchestrator():
     # The orchestrator-level decepticon agent is left raw — its own AI text
     # is short orchestration scaffolding; the user-visible streaming comes
     # from its sub-agents (recon/exploit/...) which are already wrapped.
-    soundwave = StreamingRunnable(create_soundwave_agent(), "soundwave")
+    #
+    # add_node requires a Runnable, callable, or dict — StreamingRunnable is
+    # neither a Runnable subclass nor a callable, so it can only be used as a
+    # CompiledSubAgent.runnable (where SubAgentMiddleware calls .ainvoke()
+    # directly). An async wrapper bridges that gap for the orchestrator node
+    # without touching the StreamingRunnable contract used elsewhere.
+    soundwave_runner = StreamingRunnable(create_soundwave_agent(), "soundwave")
+
+    async def soundwave_node(state, config=None):
+        return await soundwave_runner.ainvoke(state, config)
+
     decepticon = create_decepticon_agent()
 
     builder = StateGraph(OrchestratorState)
     builder.add_node("check_docs", _check_engagement_docs)
-    builder.add_node("soundwave", soundwave)
+    builder.add_node("soundwave", soundwave_node)
     builder.add_node("decepticon", decepticon)
 
     builder.add_edge(START, "check_docs")
