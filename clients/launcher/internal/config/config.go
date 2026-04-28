@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,7 +158,7 @@ var keyFormatRules = map[string]struct {
 	Prefix string
 	Hint   string
 }{
-	"ANTHROPIC_API_KEY": {Prefix: "sk-ant-", Hint: "Anthropic keys start with 'sk-ant-'"},
+	"ANTHROPIC_API_KEY": {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
 	"OPENAI_API_KEY":    {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
 	"GOOGLE_API_KEY":    {Prefix: "AIza", Hint: "Google keys start with 'AIza'"},
 }
@@ -224,9 +225,11 @@ func ValidateAuth(env map[string]string) error {
 	}
 }
 
-// validateClaudeCredentials verifies ~/.claude/.credentials.json exists and is a file.
-// Compose mounts this path into the LiteLLM container; if it's missing Docker creates
-// a directory at the bind target and authentication fails opaquely at runtime.
+// validateClaudeCredentials verifies ~/.claude/.credentials.json exists, is a regular
+// file, parses as JSON, and carries an access token in one of the shapes the LiteLLM
+// claude_code_handler accepts (claudeAiOauth.accessToken, top-level accessToken, or
+// legacy oauthToken). Compose mounts this path into the LiteLLM container; if it's
+// missing or empty, authentication fails opaquely on the first prompt instead of here.
 func validateClaudeCredentials() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -243,7 +246,37 @@ func validateClaudeCredentials() error {
 	if info.IsDir() {
 		return fmt.Errorf("expected credentials file at %s but found a directory.\nRemove it and run 'claude /login' to re-authenticate.", path)
 	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w\nCheck file permissions and re-run.", path, err)
+	}
+	var creds map[string]any
+	if err := json.Unmarshal(raw, &creds); err != nil {
+		return fmt.Errorf("credentials file at %s is not valid JSON: %w\nRun 'claude /login' to re-authenticate.", path, err)
+	}
+	if extractClaudeAccessToken(creds) == "" {
+		return fmt.Errorf("no access token found in %s\nRun 'claude /login' to re-authenticate.", path)
+	}
 	return nil
+}
+
+// extractClaudeAccessToken walks the credentials JSON in the same resolution order as
+// the LiteLLM handler (config/claude_code_handler.py): current nested format first,
+// then legacy top-level keys. Returns "" if no usable token is present.
+func extractClaudeAccessToken(creds map[string]any) string {
+	if oauth, ok := creds["claudeAiOauth"].(map[string]any); ok {
+		if tok, _ := oauth["accessToken"].(string); tok != "" {
+			return tok
+		}
+	}
+	if tok, _ := creds["accessToken"].(string); tok != "" {
+		return tok
+	}
+	if tok, _ := creds["oauthToken"].(string); tok != "" {
+		return tok
+	}
+	return ""
 }
 
 // AppendEnvLine appends a KEY=VALUE line to an existing .env file.

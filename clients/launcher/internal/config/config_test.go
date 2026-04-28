@@ -127,16 +127,53 @@ func TestValidateAuth_AuthMode(t *testing.T) {
 		t.Error("expected error when ~/.claude/.credentials.json is missing")
 	}
 
-	// auth mode with credentials file → ok
 	credDir := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(credDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(credDir, ".credentials.json"), []byte("{}"), 0o600); err != nil {
+	credPath := filepath.Join(credDir, ".credentials.json")
+
+	// malformed JSON → error
+	if err := os.WriteFile(credPath, []byte("not-json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAuth(env); err == nil {
+		t.Error("expected error for malformed credentials JSON")
+	}
+
+	// valid JSON but no access token → error
+	if err := os.WriteFile(credPath, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAuth(env); err == nil {
+		t.Error("expected error when credentials JSON has no access token")
+	}
+
+	// current nested format (claudeAiOauth.accessToken) → ok
+	current := `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-test-token-of-sufficient-length"}}`
+	if err := os.WriteFile(credPath, []byte(current), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateAuth(env); err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Errorf("unexpected error for current format: %v", err)
+	}
+
+	// legacy top-level accessToken → ok
+	legacy := `{"accessToken":"sk-ant-oat01-legacy-token"}`
+	if err := os.WriteFile(credPath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAuth(env); err != nil {
+		t.Errorf("unexpected error for legacy accessToken format: %v", err)
+	}
+
+	// legacy oauthToken → ok
+	legacyOAuth := `{"oauthToken":"sk-ant-oat01-emulator-token"}`
+	if err := os.WriteFile(credPath, []byte(legacyOAuth), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAuth(env); err != nil {
+		t.Errorf("unexpected error for legacy oauthToken format: %v", err)
 	}
 }
 
