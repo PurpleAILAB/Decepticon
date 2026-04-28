@@ -351,6 +351,31 @@ export function useAgent({
           continue;
         }
 
+        // Belt-and-braces: a LangGraph interrupt() bubbles up as an
+        // `updates` chunk with `__interrupt__` even if the preceding custom
+        // event was lost. Surface the picker from the interrupt payload so
+        // the run never silently ends with the operator stranded.
+        if (event.event === "updates") {
+          const updates = event.data as
+            | { __interrupt__?: Array<{ value?: unknown }> }
+            | undefined;
+          const interrupts = updates?.__interrupt__;
+          if (Array.isArray(interrupts)) {
+            for (const it of interrupts) {
+              const v = it?.value;
+              if (
+                v &&
+                typeof v === "object" &&
+                "type" in v &&
+                (v as { type: unknown }).type === "ask_user_question"
+              ) {
+                handleCustomEvent(v as SubagentCustomEvent);
+              }
+            }
+          }
+          continue;
+        }
+
         if (event.event !== "values") continue;
 
         const data = event.data as {
@@ -449,9 +474,10 @@ export function useAgent({
 
       // The stream ended because the backend tool called langgraph.interrupt
       // and is waiting for the operator's pick. Keep runState=paused so the
-      // REPL renders the picker; do not clear abort/run refs because the
-      // run is genuinely still alive on the server.
+      // REPL renders the picker, but null abortRef so a follow-up submit/
+      // cancel is not silently blocked by a completed AbortController.
       if (activeQuestionRef.current) {
+        abortRef.current = null;
         return;
       }
 
@@ -555,6 +581,9 @@ export function useAgent({
             .catch(() => {});
         }
         runIdRef.current = null;
+        // Clear any leftover picker so a fresh submit does not render on top
+        // of a stale ask_user_question.
+        setActiveQuestion(null);
       }
 
       setRunState("connecting");
