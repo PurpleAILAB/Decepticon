@@ -8,6 +8,7 @@ import (
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/compose"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/engagement"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/health"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
@@ -97,10 +98,22 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// 5. Launch CLI
 	fmt.Println()
+
+	// Engagement picker: pick the LangGraph assistant the CLI will connect to.
+	// New engagement → soundwave (interview lane). Resume → decepticon.
+	choice, err := engagement.Select(home)
+	if err != nil {
+		return err
+	}
+
 	ui.Info("Launching Decepticon CLI...")
 
 	cliEnv := map[string]string{
-		"DECEPTICON_VERSION": version,
+		"DECEPTICON_VERSION":      version,
+		"DECEPTICON_ASSISTANT_ID": choice.AssistantID,
+	}
+	if choice.Engagement != "" {
+		cliEnv["DECEPTICON_ENGAGEMENT"] = choice.Engagement
 	}
 	if port := config.Get(env, "WEB_PORT", "3000"); port != "" {
 		cliEnv["WEB_PORT"] = port

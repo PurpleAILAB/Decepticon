@@ -98,7 +98,11 @@ interface UseAgentReturn {
   addSystemEvent: (content: string) => void;
 }
 
-const ASSISTANT_ID = "decepticon";
+// Launcher injects DECEPTICON_ASSISTANT_ID after the engagement picker:
+// - "soundwave" for new engagements (interview lane)
+// - "decepticon" for resuming an existing engagement
+// Defaults to "decepticon" when launched directly (legacy / dev workflows).
+const ASSISTANT_ID = process.env.DECEPTICON_ASSISTANT_ID || "decepticon";
 
 export function useAgent({
   apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024",
