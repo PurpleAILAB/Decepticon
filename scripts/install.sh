@@ -22,7 +22,6 @@ RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
 DIM='\033[0;2m'
 BOLD='\033[1m'
 NC='\033[0m'
@@ -32,7 +31,6 @@ info()    { echo -e "${DIM}$*${NC}"; }
 success() { echo -e "${GREEN}$*${NC}"; }
 warn()    { echo -e "${YELLOW}$*${NC}"; }
 error()   { echo -e "${RED}$*${NC}" >&2; }
-bold()    { echo -e "${BOLD}$*${NC}"; }
 
 # ── Pre-flight checks ────────────────────────────────────────────
 preflight() {
@@ -97,18 +95,20 @@ download_files() {
     # docker-compose.yml (always overwrite — this is infrastructure, not user config)
     curl -fsSL "$RAW_BASE/docker-compose.yml" -o "$install_dir/docker-compose.yml"
 
-    # .env (only if not exists — never overwrite user's API keys)
-    if [[ ! -f "$install_dir/.env" ]]; then
-        curl -fsSL "$RAW_BASE/.env.example" -o "$install_dir/.env"
-        # Inject the actual install path (Docker Compose can't expand ~)
-        echo "DECEPTICON_HOME=$install_dir" >> "$install_dir/.env"
-        info "Created .env from template. You'll need to add your API keys."
-    else
-        # Ensure DECEPTICON_HOME is set in existing .env (upgrade path)
+    # .env.example — reference template only. Do NOT auto-create .env: the
+    # onboard wizard checks for the file's presence to decide whether to run,
+    # so a pre-seeded template would silently skip first-time configuration.
+    curl -fsSL "$RAW_BASE/.env.example" -o "$install_dir/.env.example"
+
+    # Existing .env (upgrade path) — preserve user's keys, just ensure
+    # DECEPTICON_HOME points at the current install dir.
+    if [[ -f "$install_dir/.env" ]]; then
         if ! grep -q "^DECEPTICON_HOME=" "$install_dir/.env" 2>/dev/null; then
             echo "DECEPTICON_HOME=$install_dir" >> "$install_dir/.env"
         fi
         info ".env already exists, preserving your configuration."
+    else
+        info "No .env yet — run 'decepticon onboard' to create one."
     fi
 
     # LiteLLM config
@@ -125,7 +125,6 @@ download_files() {
 # ── Download launcher binary ─────────────────────────────────────
 create_launcher() {
     local bin_dir="$1"
-    local install_dir="$2"
 
     mkdir -p "$bin_dir"
 
@@ -267,7 +266,13 @@ pull_images() {
 
     echo ""
     info "Pulling Docker images (this may take a few minutes)..."
-    (cd "$install_dir" && docker compose --env-file .env --profile cli pull) || {
+    # No --env-file: .env doesn't exist yet (onboard hasn't run). All
+    # ${VAR} interpolations in docker-compose.yml have :-defaults, and we
+    # inject DECEPTICON_VERSION/HOME explicitly so the image tags resolve.
+    (cd "$install_dir" && \
+        DECEPTICON_VERSION="$DECEPTICON_VERSION" \
+        DECEPTICON_HOME="$install_dir" \
+        docker compose --profile cli pull) || {
         warn "Warning: Failed to pull some images."
         info "You can pull them manually later: decepticon update"
     }
@@ -300,7 +305,7 @@ main() {
     success "Configuration files downloaded."
 
     # Launcher
-    create_launcher "$bin_dir" "$install_dir"
+    create_launcher "$bin_dir"
     success "Launcher installed to $bin_dir/decepticon"
 
     # PATH
