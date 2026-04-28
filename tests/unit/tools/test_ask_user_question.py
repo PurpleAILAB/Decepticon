@@ -12,7 +12,6 @@ from decepticon.tools.interaction import ask_user_question
 # Pydantic constraints expressed in the tool signature; mirrored here so the
 # tests document the contract without re-importing private constants.
 HEADER_MAX_CHARS = 12
-MIN_OPTIONS = 2
 MAX_OPTIONS = 5
 
 
@@ -158,13 +157,15 @@ def test_rejects_header_longer_than_max():
             _invoke(header=too_long)
 
 
-def test_rejects_too_few_options():
+def test_accepts_empty_options():
+    """The tool now allows zero options so the operator can answer free-form
+    via the Other fallback; a single option is also valid."""
     with patch(
         "decepticon.tools.interaction.ask_user.interrupt",
-        return_value="Yes",
+        return_value="typed answer",
     ):
-        with pytest.raises(ValidationError):
-            _invoke(options=[{"label": "A", "description": "only one"}])
+        assert _invoke(options=[], allow_other=True) == "typed answer"
+        assert _invoke(options=[{"label": "Solo", "description": "only one"}]) == "typed answer"
 
 
 def test_rejects_too_many_options():
@@ -177,9 +178,8 @@ def test_rejects_too_many_options():
             _invoke(options=too_many)
 
 
-def test_accepts_min_and_max_option_counts():
-    """Boundary check — MIN_OPTIONS and MAX_OPTIONS should both be valid."""
-    boundary_min = [{"label": f"L{i}", "description": f"D{i}"} for i in range(MIN_OPTIONS)]
+def test_accepts_max_option_counts():
+    """Boundary check — the upper limit MAX_OPTIONS must remain valid."""
     boundary_max = [{"label": f"L{i}", "description": f"D{i}"} for i in range(MAX_OPTIONS)]
     with (
         patch(
@@ -191,7 +191,6 @@ def test_accepts_min_and_max_option_counts():
             return_value="L0",
         ),
     ):
-        assert _invoke(options=boundary_min) == "L0"
         assert _invoke(options=boundary_max) == "L0"
 
 

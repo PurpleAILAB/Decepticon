@@ -59,7 +59,6 @@ def ask_user_question(
     options: Annotated[
         list[QuestionOption],
         Field(
-            default_factory=list,
             max_length=5,
             description=(
                 "0–5 choices. Each entry needs a label (operator-facing, returned) "
