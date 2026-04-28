@@ -13,6 +13,10 @@ var stopCmd = &cobra.Command{
 		c := compose.New()
 		ui.Info("Stopping Decepticon services...")
 		c.RemoveOrphanedCLI()
+		// Clear bash-tool scratch buffers before tearing the stack down so
+		// /workspace/.scratch does not accumulate across engagements. Must run
+		// while the sandbox is still up; CleanScratch is a no-op otherwise.
+		c.CleanScratch()
 		if err := c.Down(); err != nil {
 			return err
 		}

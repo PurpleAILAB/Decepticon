@@ -210,6 +210,17 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 	return nil
 }
 
+// CleanScratch removes /workspace/.scratch inside the running sandbox.
+// Best-effort: silently no-ops when the sandbox is not running so a stale
+// scratch directory can be retired without forcing the user to bring the
+// stack up just for cleanup.
+func (c *Compose) CleanScratch() {
+	cmd := exec.Command("docker", "exec", "decepticon-sandbox", "rm", "-rf", "/workspace/.scratch")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	_ = cmd.Run()
+}
+
 // RemoveOrphanedCLI removes any leftover CLI containers.
 func (c *Compose) RemoveOrphanedCLI() {
 	// Best-effort cleanup of orphaned CLI containers
