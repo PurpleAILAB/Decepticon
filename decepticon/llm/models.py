@@ -54,7 +54,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ── Tier and AuthMethod enums ───────────────────────────────────────────
 
 

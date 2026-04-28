@@ -6,7 +6,7 @@ Provider API keys are configured in .env / docker-compose.yml.
 Architecture:
     LLMFactory(proxy, mapping)
       → get_model("recon")  → ChatOpenAI(model="anthropic/claude-haiku-4-5")
-      → get_fallback_models("recon") → [ChatOpenAI(model="openai/gpt-5.4-nano")]
+      → get_fallback_models("recon") → [ChatOpenAI(model="openai/gpt-5-nano")]
                                          ↓
                         LiteLLM proxy → Anthropic/OpenAI/Google/etc.
 
@@ -149,9 +149,7 @@ class LLMFactory:
         else:
             creds = credentials if credentials is not None else _resolve_credentials()
             resolved_profile = profile if profile is not None else self._resolve_profile()
-            self._mapping = LLMModelMapping.from_credentials_and_profile(
-                creds, resolved_profile
-            )
+            self._mapping = LLMModelMapping.from_credentials_and_profile(creds, resolved_profile)
         self._router = ModelRouter(self._mapping)
         self._cache: dict[str, BaseChatModel] = {}
 
@@ -219,8 +217,7 @@ class LLMFactory:
             assignment.fallbacks,
         )
         return [
-            self._create_chat_model(model, assignment.temperature)
-            for model in assignment.fallbacks
+            self._create_chat_model(model, assignment.temperature) for model in assignment.fallbacks
         ]
 
     def _create_chat_model(self, model: str, temperature: float) -> BaseChatModel:

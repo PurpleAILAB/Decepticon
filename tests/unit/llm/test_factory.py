@@ -19,9 +19,7 @@ class TestLLMFactory:
         self.proxy = ProxyConfig(url="http://localhost:4000", api_key="test-key")
         # Build an explicit mapping so the test doesn't depend on env vars.
         creds = Credentials.all_api_methods()
-        self.mapping = LLMModelMapping.from_credentials_and_profile(
-            creds, ModelProfile.ECO
-        )
+        self.mapping = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         self.factory = LLMFactory(self.proxy, self.mapping)
 
     def test_factory_initializes(self):
@@ -73,9 +71,7 @@ class TestLLMFactory:
     def test_get_fallback_models_without_fallback(self):
         # Single-credential mapping → no fallback.
         creds = Credentials(methods=[AuthMethod.OPENAI_API])
-        mapping = LLMModelMapping.from_credentials_and_profile(
-            creds, ModelProfile.ECO
-        )
+        mapping = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         factory = LLMFactory(self.proxy, mapping)
         assert factory.get_fallback_models("recon") == []
 

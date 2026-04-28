@@ -16,7 +16,6 @@ from decepticon.llm.models import (
     resolve_chain,
 )
 
-
 # ── Enum sanity ─────────────────────────────────────────────────────────
 
 
@@ -163,16 +162,12 @@ class TestResolveChain:
 
     def test_oauth_then_api_high(self):
         # Subscription primary, paid API fallback when quota hits.
-        creds = Credentials(
-            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API]
-        )
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         chain = resolve_chain(Tier.HIGH, creds)
         assert chain == ["auth/claude-opus-4-7", "anthropic/claude-opus-4-7"]
 
     def test_oauth_then_openai_low(self):
-        creds = Credentials(
-            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API]
-        )
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API])
         chain = resolve_chain(Tier.LOW, creds)
         assert chain == ["auth/claude-haiku-4-5", "openai/gpt-5-nano"]
 
@@ -254,9 +249,7 @@ class TestLLMModelMapping:
         assert a.fallbacks == []
 
     def test_from_credentials_oauth_plus_api(self):
-        creds = Credentials(
-            methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API]
-        )
+        creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "auth/claude-opus-4-7"
@@ -303,9 +296,7 @@ class TestLLMModelMapping:
         ]
 
     def test_from_credentials_low_tier_minimax_skipped(self):
-        creds = Credentials(
-            methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API]
-        )
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         recon = m.get_assignment("recon")
         assert recon.primary == "openai/gpt-5-nano"
