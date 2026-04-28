@@ -4,7 +4,7 @@ Claude 4.x compatibility layer for Decepticon system prompts.
 Background
 ----------
 Anthropic introduced stricter refusal classification around the Opus 4.7
-release window. Claude 4.x models (opus-4-6, sonnet-4-6, haiku-4-5, and
+release window. Claude 4.x models (opus-4-7, sonnet-4-6, haiku-4-5, and
 newer) increasingly refuse red-team framed system prompts even when the
 operator is authorized and the engagement is contracted. See #53.
 

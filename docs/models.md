@@ -14,8 +14,8 @@ Balanced cost and performance. Recommended for most engagements.
 
 | Role | Primary | Fallback |
 |------|---------|---------|
-| Orchestrator | `claude-opus-4-6` | `gpt-5.4` |
-| Planner | `claude-opus-4-6` | `gpt-5.4` |
+| Orchestrator | `claude-opus-4-7` | `gpt-5.4` |
+| Planner | `claude-opus-4-7` | `gpt-5.4` |
 | Soundwave | `claude-haiku-4-5` | `gemini-2.5-flash` |
 | Exploit | `claude-sonnet-4-6` | `gpt-4.1` |
 | Recon | `claude-haiku-4-5` | `gemini-2.5-flash` |
@@ -27,12 +27,12 @@ Opus or Sonnet everywhere. Use for complex engagements where accuracy matters mo
 
 | Role | Primary | Fallback |
 |------|---------|---------|
-| Orchestrator | `claude-opus-4-6` | `gpt-5.4` |
-| Planner | `claude-opus-4-6` | `claude-sonnet-4-6` |
+| Orchestrator | `claude-opus-4-7` | `gpt-5.4` |
+| Planner | `claude-opus-4-7` | `claude-sonnet-4-6` |
 | Soundwave | `claude-sonnet-4-6` | `claude-haiku-4-5` |
-| Exploit | `claude-opus-4-6` | `claude-sonnet-4-6` |
-| Recon | `claude-sonnet-4-6` | `claude-opus-4-6` |
-| Post-Exploit | `claude-opus-4-6` | `claude-sonnet-4-6` |
+| Exploit | `claude-opus-4-7` | `claude-sonnet-4-6` |
+| Recon | `claude-sonnet-4-6` | `claude-opus-4-7` |
+| Post-Exploit | `claude-opus-4-7` | `claude-sonnet-4-6` |
 
 ### `test` — Development / CI
 
@@ -70,7 +70,7 @@ Models are referenced using LiteLLM's `provider/model` format in `decepticon/llm
 
 | Provider | Model ID | Notes |
 |----------|----------|-------|
-| Anthropic | `anthropic/claude-opus-4-6` | Most capable |
+| Anthropic | `anthropic/claude-opus-4-7` | Most capable |
 | Anthropic | `anthropic/claude-sonnet-4-6` | Balanced |
 | Anthropic | `anthropic/claude-haiku-4-5` | Fast, low cost |
 | OpenAI | `openai/gpt-5.4` | GPT fallback for Opus |

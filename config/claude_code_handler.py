@@ -207,7 +207,7 @@ def _build_headers(access_token: str) -> dict[str, str]:
 class ClaudeCodeCustomHandler(CustomLLM):
     """LiteLLM custom handler that routes requests through Claude Code OAuth.
 
-    Model names: auth/claude-opus-4-6, auth/claude-sonnet-4-6, etc.
+    Model names: auth/claude-opus-4-7, auth/claude-sonnet-4-6, etc.
     The part after the ``/`` maps to the actual Anthropic model ID.
     """
 

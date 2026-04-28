@@ -27,18 +27,18 @@ Fallbacks stay on the api provider as a paid safety net.
 Profiles (April 2026):
 
   eco:
-    Orchestrator  Opus 4.6        → GPT-5.4         $5/$25
+    Orchestrator  Opus 4.7        → GPT-5.4         $5/$25
     Soundwave     Haiku 4.5       → Gemini 2.5 Flash $1/$5
     Exploit       Sonnet 4.6      → GPT-4.1         $3/$15
     Recon         Haiku 4.5       → Gemini 2.5 Flash $1/$5
     PostExploit   Sonnet 4.6      → GPT-4.1         $3/$15
 
   max:
-    Orchestrator  Opus 4.6        → GPT-5.4         $5/$25
+    Orchestrator  Opus 4.7        → GPT-5.4         $5/$25
     Soundwave     Sonnet 4.6      → Haiku 4.5       $3/$15
-    Exploit       Opus 4.6        → Sonnet 4.6      $5/$25
-    Recon         Sonnet 4.6      → Opus 4.6        $3/$15
-    PostExploit   Opus 4.6        → Sonnet 4.6      $5/$25
+    Exploit       Opus 4.7        → Sonnet 4.6      $5/$25
+    Recon         Sonnet 4.6      → Opus 4.7        $3/$15
+    PostExploit   Opus 4.7        → Sonnet 4.6      $5/$25
 
   test:
     All roles     Haiku 4.5       → (none)           $1/$5
@@ -74,7 +74,7 @@ class ModelProvider(StrEnum):
 
 
 # ── Model constants ──────────────────────────────────────────────────────
-OPUS = "anthropic/claude-opus-4-6"
+OPUS = "anthropic/claude-opus-4-7"
 SONNET = "anthropic/claude-sonnet-4-6"
 HAIKU = "anthropic/claude-haiku-4-5"
 GPT_5 = "openai/gpt-5.4"

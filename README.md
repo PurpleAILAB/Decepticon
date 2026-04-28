@@ -147,8 +147,8 @@ Three profiles via LiteLLM proxy. Each role has a primary model and automatic fa
 
 | Profile | Orchestrator | Exploit | Recon | Use case |
 |---------|-------------|---------|-------|---------|
-| **eco** (default) | Opus 4.6 | Sonnet 4.6 | Haiku 4.5 | Production |
-| **max** | Opus 4.6 | Opus 4.6 | Sonnet 4.6 | High-value targets |
+| **eco** (default) | Opus 4.7 | Sonnet 4.6 | Haiku 4.5 | Production |
+| **max** | Opus 4.7 | Opus 4.7 | Sonnet 4.6 | High-value targets |
 | **test** | Haiku 4.5 | Haiku 4.5 | Haiku 4.5 | Development / CI |
 
 Set via `DECEPTICON_MODEL_PROFILE=eco` in your `.env`. Provider outage or rate limit → seamless fallback.

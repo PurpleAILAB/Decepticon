@@ -59,7 +59,7 @@ class TestLLMModelMapping:
             mapping.get_assignment("nonexistent")
 
     def test_strategic_agents_use_opus(self):
-        """Orchestrator needs strongest reasoning — Opus 4.6."""
+        """Orchestrator needs strongest reasoning — Opus 4.7."""
         mapping = LLMModelMapping()
         assert mapping.get_assignment("decepticon").primary == OPUS
 

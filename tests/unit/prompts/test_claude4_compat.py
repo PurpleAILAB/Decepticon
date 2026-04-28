@@ -30,12 +30,12 @@ class TestIsClaude4Family:
     @pytest.mark.parametrize(
         "model",
         [
-            "anthropic/claude-opus-4-6",
+            "anthropic/claude-opus-4-7",
             "anthropic/claude-sonnet-4-6",
             "anthropic/claude-haiku-4-5",
             "claude-opus-4-7",
             "openrouter/anthropic/claude-sonnet-4-5-20250929",
-            "bedrock/anthropic.claude-opus-4-6-v1:0",
+            "bedrock/anthropic.claude-opus-4-7-v1:0",
         ],
     )
     def test_positive(self, model: str) -> None:
@@ -109,7 +109,7 @@ class TestApplyClaude4Compat:
 
     def test_applies_for_claude4(self) -> None:
         prompt = "You are an offensive security Recon agent."
-        out = apply_claude4_compat(prompt, "anthropic/claude-opus-4-6")
+        out = apply_claude4_compat(prompt, "anthropic/claude-opus-4-7")
         assert out.startswith("AUTHORIZATION CONTEXT:")
         assert "Discovery" in out
         assert "authorized security assessment" in out
@@ -129,4 +129,4 @@ class TestApplyClaude4Compat:
     def test_env_disable(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DECEPTICON_CLAUDE4_COMPAT", "0")
         prompt = "Red Team Recon engagement."
-        assert apply_claude4_compat(prompt, "claude-opus-4-6") == prompt
+        assert apply_claude4_compat(prompt, "claude-opus-4-7") == prompt

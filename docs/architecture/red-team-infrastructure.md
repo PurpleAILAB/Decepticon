@@ -255,12 +255,12 @@ Decepticon은 5개 에이전트가 전체 레드팀 킬 체인을 커버한다. 
 
 ```mermaid
 graph TD
-    subgraph Orchestrator["Decepticon Orchestrator (Opus 4.6)"]
+    subgraph Orchestrator["Decepticon Orchestrator (Opus 4.7)"]
         RALPH["Ralph Loop<br/>opplan.json 읽기 → 목표 선택 → 위임"]
     end
 
     subgraph Agents["Sub-Agents"]
-        PLAN["Planner<br/>(Opus 4.6)<br/>문서 생성"]
+        PLAN["Planner<br/>(Opus 4.7)<br/>문서 생성"]
         RECON["Recon<br/>(Haiku 4.5)<br/>정찰"]
         EXPLOIT["Exploit<br/>(Sonnet 4.6)<br/>초기 침투"]
         POST["PostExploit<br/>(Sonnet 4.6)<br/>후속 작전 + C2"]

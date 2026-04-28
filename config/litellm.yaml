@@ -3,7 +3,7 @@
 # =============================================================================
 # This file configures the LiteLLM Proxy server as the central LLM gateway.
 #
-# Model names use LiteLLM provider-prefix format (e.g., "anthropic/claude-opus-4-6")
+# Model names use LiteLLM provider-prefix format (e.g., "anthropic/claude-opus-4-7")
 # matching the names in decepticon/llm/models.py. Agents send these names directly;
 # the proxy resolves them to the correct provider endpoint + API key.
 #
@@ -21,9 +21,9 @@
 
 model_list:
   # ── Anthropic ────────────────────────────────────────────────────────
-  - model_name: anthropic/claude-opus-4-6
+  - model_name: anthropic/claude-opus-4-7
     litellm_params:
-      model: anthropic/claude-opus-4-6
+      model: anthropic/claude-opus-4-7
       api_key: os.environ/ANTHROPIC_API_KEY
 
   - model_name: anthropic/claude-sonnet-4-6
@@ -67,9 +67,9 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
 
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
-  - model_name: auth/claude-opus-4-6
+  - model_name: auth/claude-opus-4-7
     litellm_params:
-      model: auth/claude-opus-4-6
+      model: auth/claude-opus-4-7
 
   - model_name: auth/claude-sonnet-4-6
     litellm_params:
