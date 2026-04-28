@@ -41,7 +41,7 @@ def test_engagement_config_defaults() -> None:
     assert config.max_iterations == 50
     assert config.vaccine_mode == VaccineMode.BATCH
     assert config.langgraph_url == "http://localhost:8123"
-    assert config.workspace == Path("/workspace/engagement")
+    assert config.workspace == Path("/workspace")
 
 
 def test_engagement_config_agent_selection() -> None:
@@ -70,7 +70,7 @@ def test_engagement_state_defaults() -> None:
     assert state.objectives_blocked == []
     assert state.findings_discovered == []
     assert state.iteration_history == []
-    assert state.workspace == "/workspace/engagement"
+    assert state.workspace == "/workspace"
     assert state.target == ""
     assert state.resumed_at is None
 

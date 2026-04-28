@@ -42,7 +42,6 @@ func TestScanReady_OnlyDirsWithFullBundle(t *testing.T) {
 	mkBundle("bravo", true)    // partial — missing two
 	mkBundle("charlie", false) // ready
 
-	// Add a stray non-engagement directory.
 	if err := os.MkdirAll(filepath.Join(home, "workspace", "junk"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -97,5 +96,56 @@ func TestScanReady_OrdersByMostRecentRoeMtime(t *testing.T) {
 		if got[i] != slug {
 			t.Errorf("position %d: expected %q, got %q (full: %v)", i, slug, got[i], got)
 		}
+	}
+}
+
+func TestValidateSlug_AcceptsReasonableSlugs(t *testing.T) {
+	home := t.TempDir()
+	for _, slug := range []string{
+		"acme-external-2026",
+		"q1-internal",
+		"engagement-001",
+		"abc123",
+	} {
+		if err := validateSlug(home, slug); err != nil {
+			t.Errorf("expected %q valid, got %v", slug, err)
+		}
+	}
+}
+
+func TestValidateSlug_RejectsBadShape(t *testing.T) {
+	home := t.TempDir()
+	tests := []struct {
+		name string
+		slug string
+	}{
+		{"too short", "ab"},
+		{"too long", "a" + string(make([]byte, 64)) + "b"},
+		{"uppercase", "Acme-2026"},
+		{"underscore", "acme_2026"},
+		{"leading hyphen", "-acme"},
+		{"trailing hyphen", "acme-"},
+		{"empty", ""},
+		{"path traversal", "../etc"},
+		{"slash", "acme/2026"},
+		{"unicode", "acme™"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateSlug(home, tt.slug); err == nil {
+				t.Errorf("expected %q (%s) to be rejected", tt.slug, tt.name)
+			}
+		})
+	}
+}
+
+func TestValidateSlug_RejectsCollisionWithExistingDir(t *testing.T) {
+	home := t.TempDir()
+	// Even a partial / orphan engagement directory should block reuse.
+	if err := os.MkdirAll(filepath.Join(home, "workspace", "acme-2026"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSlug(home, "acme-2026"); err == nil {
+		t.Error("expected collision rejection")
 	}
 }

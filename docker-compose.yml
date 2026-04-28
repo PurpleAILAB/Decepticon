@@ -119,7 +119,12 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
     volumes:
-      - ${DECEPTICON_HOME:-~/.decepticon}/workspace:/workspace
+      # Bind is engagement-scoped. The launcher sets DECEPTICON_ENGAGEMENT_WORKSPACE
+      # to <home>/workspace/<slug> after the engagement picker, so the agent only
+      # ever sees its own engagement at /workspace. When the launcher is not in
+      # play (raw `make dev`, benchmark harness, dev workflows), the fallback is
+      # the whole tree under <home>/workspace.
+      - ${DECEPTICON_ENGAGEMENT_WORKSPACE:-${DECEPTICON_HOME:-~/.decepticon}/workspace}:/workspace
     mem_limit: 4g
     cpus: 2.0
     pids_limit: 1024

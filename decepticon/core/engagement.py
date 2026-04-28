@@ -72,7 +72,7 @@ class EngagementConfig(BaseModel):
         description="Maps ObjectivePhase values to LangGraph assistant_id names",
     )
     workspace: Path = Field(
-        default=Path("/workspace/engagement"),
+        default=Path("/workspace"),
         description="Workspace directory for findings, state, and scratch files",
     )
 
@@ -126,7 +126,7 @@ class EngagementState(BaseModel):
     iteration_history: list[IterationResult] = Field(
         default_factory=list, description="Per-iteration execution records"
     )
-    workspace: str = Field(default="/workspace/engagement", description="Workspace directory path")
+    workspace: str = Field(default="/workspace", description="Workspace directory path")
     target: str = Field(default="", description="Target specification")
     started_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
