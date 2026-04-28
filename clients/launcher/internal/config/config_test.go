@@ -106,7 +106,7 @@ func TestValidateAPIKeys_RejectsBadFormat(t *testing.T) {
 	}{
 		{"missing prefix", map[string]string{"ANTHROPIC_API_KEY": "no-prefix-key-of-decent-length"}},
 		{"too short", map[string]string{"OPENAI_API_KEY": "sk-short"}},
-		{"google missing prefix", map[string]string{"GOOGLE_API_KEY": "sk-wrongprefix-key-long-enough-here"}},
+		{"google missing prefix", map[string]string{"GEMINI_API_KEY": "sk-wrongprefix-key-long-enough-here"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

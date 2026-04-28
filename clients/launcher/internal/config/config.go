@@ -141,7 +141,7 @@ func writeEnvFromString(tmpl string, outputPath string, values map[string]string
 var APIKeyNames = []string{
 	"ANTHROPIC_API_KEY",
 	"OPENAI_API_KEY",
-	"GOOGLE_API_KEY",
+	"GEMINI_API_KEY",
 	"MINIMAX_API_KEY",
 }
 
@@ -160,7 +160,7 @@ var keyFormatRules = map[string]struct {
 }{
 	"ANTHROPIC_API_KEY": {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
 	"OPENAI_API_KEY":    {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
-	"GOOGLE_API_KEY":    {Prefix: "AIza", Hint: "Google keys start with 'AIza'"},
+	"GEMINI_API_KEY":    {Prefix: "AIza", Hint: "Gemini keys start with 'AIza'"},
 }
 
 // validateKeyFormat returns an empty string if the key looks valid, or a reason if not.

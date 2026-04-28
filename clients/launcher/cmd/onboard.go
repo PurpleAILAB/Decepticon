@@ -187,7 +187,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		case "openai":
 			values["OPENAI_API_KEY"] = apiKey
 		case "google":
-			values["GOOGLE_API_KEY"] = apiKey
+			values["GEMINI_API_KEY"] = apiKey
 		case "minimax":
 			values["MINIMAX_API_KEY"] = apiKey
 		}

@@ -94,7 +94,7 @@ These can be set in your `.env` file (configure with `decepticon onboard`) or as
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Anthropic Claude API key |
 | `OPENAI_API_KEY` | OpenAI API key (fallback) |
-| `GOOGLE_API_KEY` | Google Gemini API key (fallback) |
+| `GEMINI_API_KEY` | Google Gemini API key (fallback) |
 | `MINIMAX_API_KEY` | MiniMax API key (fallback) |
 
 ### Model Configuration
