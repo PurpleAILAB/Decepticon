@@ -42,7 +42,15 @@ export type AgentEventType =
   | "delegate"
   | "system"
   | "subagent_start"
-  | "subagent_end";
+  | "subagent_end"
+  | "ask_user_question"
+  | "ask_user_answer";
+
+/** One choice in an ask_user_question picker. */
+export interface AskUserOption {
+  label: string;
+  description: string;
+}
 
 /** A single displayable event in the agent activity stream. */
 export interface AgentEvent {
@@ -55,6 +63,25 @@ export interface AgentEvent {
   /** Sub-agent name if event originated from a sub-agent. */
   subagent?: string;
   timestamp: number;
+  // ask_user_question payload (for type === "ask_user_question").
+  // `sourceId` is the deduplication key from the backend tool_call_id.
+  sourceId?: string;
+  question?: string;
+  header?: string;
+  options?: AskUserOption[];
+  multiSelect?: boolean;
+  allowOther?: boolean;
+}
+
+/** A pending operator question — present while a picker is awaiting input. */
+export interface ActiveQuestion {
+  /** tool_call_id from the backend; deduplicates re-emissions on resume. */
+  sourceId: string;
+  question: string;
+  header: string;
+  options: AskUserOption[];
+  multiSelect: boolean;
+  allowOther: boolean;
 }
 
 // SubAgentSession is exported from @decepticon/streaming

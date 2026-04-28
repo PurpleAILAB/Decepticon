@@ -11,7 +11,14 @@ export type SubagentEventType =
   | "subagent_end"
   | "subagent_tool_call"
   | "subagent_tool_result"
-  | "subagent_message";
+  | "subagent_message"
+  | "ask_user_question";
+
+/** One choice presented in an ask_user_question picker. */
+export interface AskUserOption {
+  label: string;
+  description: string;
+}
 
 /** Custom event payload from StreamingRunnable's get_stream_writer(). */
 export interface SubagentCustomEvent {
@@ -26,6 +33,15 @@ export interface SubagentCustomEvent {
   status?: string;
   cancelled?: boolean;
   error?: boolean;
+  // ask_user_question fields. `id` is the LangChain tool_call_id and is used
+  // by consumers to deduplicate the second emission that fires when LangGraph
+  // re-executes the tool body after Command(resume=...).
+  id?: string;
+  question?: string;
+  header?: string;
+  options?: AskUserOption[];
+  multi_select?: boolean;
+  allow_other?: boolean;
 }
 
 /** Minimal event shape accepted by shared utility functions. */

@@ -17,7 +17,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { Client } from "@langchain/langgraph-sdk";
 import { saveThread, touchThread, loadThreadByIndex } from "../utils/threadStore.js";
-import type { AgentEvent } from "../types.js";
+import type { ActiveQuestion, AgentEvent, AskUserOption } from "../types.js";
 import {
   type SubagentCustomEvent,
   STREAM_OPTIONS,
@@ -89,6 +89,10 @@ interface UseAgentReturn {
   activeAgent: string | null;
   /** Queued message to auto-submit on completion. */
   queuedMessage: string | null;
+  /** Pending operator question while a picker is awaiting an answer. */
+  activeQuestion: ActiveQuestion | null;
+  /** Submit a structured answer to the current ask_user_question prompt. */
+  answerQuestion: (value: string | string[]) => void;
   error: string | null;
   clearEvents: () => void;
   addSystemEvent: (content: string) => void;
@@ -118,10 +122,18 @@ export function useAgent({
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [queuedMessage, setQueuedMessage] = useState<string | null>(null);
+  const [activeQuestion, setActiveQuestion] = useState<ActiveQuestion | null>(null);
 
   // Ref for runState to avoid stale closures in async callbacks
   const runStateRef = useRef<RunState>(runState);
   runStateRef.current = runState;
+  // Mirror activeQuestion so handleStreamComplete can check it without stale state.
+  const activeQuestionRef = useRef<ActiveQuestion | null>(activeQuestion);
+  activeQuestionRef.current = activeQuestion;
+  // tool_call_ids the CLI has already shown a picker for. Dedupes the second
+  // emission LangGraph fires when the ToolNode re-executes the tool body
+  // after Command(resume=...).
+  const askedQuestionIds = useRef<Set<string>>(new Set());
 
   // Derived for backward compatibility
   const isStreaming = runState === "streaming" || runState === "connecting";
@@ -260,6 +272,48 @@ export function useAgent({
             setActiveAgent("decepticon");
             setPendingTool(null);
             break;
+
+          case "ask_user_question": {
+            // The backend tool body re-runs once on Command(resume=...) so the
+            // same custom event arrives twice. Dedupe by tool_call_id.
+            const sourceId = data.id ?? "";
+            if (sourceId && askedQuestionIds.current.has(sourceId)) {
+              break;
+            }
+            if (sourceId) askedQuestionIds.current.add(sourceId);
+
+            const question = data.question ?? "";
+            const header = data.header ?? "";
+            const options = (data.options ?? []) as AskUserOption[];
+            const multiSelect = !!data.multi_select;
+            const allowOther = !!data.allow_other;
+
+            addEvent({
+              type: "ask_user_question",
+              content: question,
+              subagent: data.agent,
+              sourceId,
+              question,
+              header,
+              options,
+              multiSelect,
+              allowOther,
+            });
+            setPendingTool(null);
+            setActiveQuestion({
+              sourceId,
+              question,
+              header,
+              options,
+              multiSelect,
+              allowOther,
+            });
+            // The backend interrupt() will pause the stream; flag the run as
+            // paused immediately so the REPL hides the normal prompt and
+            // shows the picker.
+            setRunState("paused");
+            break;
+          }
         }
       };
 
@@ -391,19 +445,26 @@ export function useAgent({
 
   const handleStreamComplete = useCallback(
     (abortController: AbortController) => {
-      if (!abortController.signal.aborted) {
-        abortRef.current = null;
-        runIdRef.current = null;
-        resetStreamState();
+      if (abortController.signal.aborted) return;
 
-        // Auto-submit queued message
-        const pending = queuedMessageRef.current;
-        if (pending) {
-          queuedMessageRef.current = null;
-          setQueuedMessage(null);
-          // Defer to next tick so React state settles
-          setTimeout(() => submitRef.current(pending), 0);
-        }
+      // The stream ended because the backend tool called langgraph.interrupt
+      // and is waiting for the operator's pick. Keep runState=paused so the
+      // REPL renders the picker; do not clear abort/run refs because the
+      // run is genuinely still alive on the server.
+      if (activeQuestionRef.current) {
+        return;
+      }
+
+      abortRef.current = null;
+      runIdRef.current = null;
+      resetStreamState();
+
+      // Auto-submit queued message
+      const pending = queuedMessageRef.current;
+      if (pending) {
+        queuedMessageRef.current = null;
+        setQueuedMessage(null);
+        setTimeout(() => submitRef.current(pending), 0);
       }
     },
     [resetStreamState],
@@ -454,9 +515,10 @@ export function useAgent({
     }
 
     runIdRef.current = null;
-    // Clear queued message on hard cancel
+    // Clear queued message and any pending picker on hard cancel
     queuedMessageRef.current = null;
     setQueuedMessage(null);
+    setActiveQuestion(null);
     resetStreamState();
     addEvent({ type: "system", content: "Cancelled." });
   }, [addEvent, resetStreamState]);
@@ -471,6 +533,8 @@ export function useAgent({
     runIdRef.current = null;
     queuedMessageRef.current = null;
     setQueuedMessage(null);
+    setActiveQuestion(null);
+    askedQuestionIds.current.clear();
     setRunState("idle");
   }, []);
 
@@ -576,6 +640,82 @@ export function useAgent({
   // Ref to submit for use in deferred auto-submit (avoids stale closure)
   const submitRef = useRef(submit);
   submitRef.current = submit;
+
+  // ── Answer a structured ask_user_question prompt ───────────────
+
+  const answerQuestion = useCallback(
+    (value: string | string[]): void => {
+      const current = activeQuestionRef.current;
+      if (!current) return;
+
+      const display = Array.isArray(value) ? value.join(", ") : value;
+      addEvent({
+        type: "ask_user_answer",
+        content: display,
+        subagent: "soundwave",
+        sourceId: current.sourceId,
+      });
+      setActiveQuestion(null);
+
+      if (!threadIdRef.current) {
+        addEvent({ type: "system", content: "No active thread — cannot resume." });
+        setRunState("idle");
+        return;
+      }
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      const runResume = async () => {
+        const client = clientRef.current;
+        setError(null);
+
+        try {
+          const state = await client.threads.getState(threadIdRef.current!);
+          const msgs = (state.values as { messages?: unknown[] })?.messages;
+          if (msgs) lastCountRef.current = msgs.length;
+        } catch { /* proceed with current count */ }
+
+        if (abortController.signal.aborted) return;
+
+        setRunState("streaming");
+        setPendingTool(null);
+        setStreamStats({
+          startTime: Date.now(),
+          totalTokens: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+        });
+
+        try {
+          const stream = client.runs.stream(
+            threadIdRef.current!,
+            ASSISTANT_ID,
+            {
+              command: { resume: value },
+              ...STREAM_OPTIONS,
+              onDisconnect: "continue",
+              signal: abortController.signal,
+            },
+          );
+          await processStream(stream, abortController);
+        } catch (err) {
+          if (abortController.signal.aborted) return;
+          setError(err instanceof Error ? err.message : "Answer submit failed");
+        }
+        handleStreamComplete(abortController);
+      };
+
+      runResume().catch((err) => {
+        if (abortController.signal.aborted) return;
+        setError(err instanceof Error ? err.message : "Answer submit error");
+        abortRef.current = null;
+        runIdRef.current = null;
+        resetStreamState();
+      });
+    },
+    [addEvent, processStream, handleStreamComplete, resetStreamState],
+  );
 
   // ── Resume (pause point OR previous session) ───────────────────
 
@@ -692,6 +832,8 @@ export function useAgent({
     streamStats,
     activeAgent,
     queuedMessage,
+    activeQuestion,
+    answerQuestion,
     error,
     clearEvents,
     addSystemEvent,
