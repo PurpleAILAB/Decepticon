@@ -53,10 +53,13 @@ async function createThread(engagementId: string, agentId: string): Promise<stri
 wss.on("connection", async (ws: WebSocket, req) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
   const engagementId = url.searchParams.get("engagementId") ?? "";
+  // engagementSlug is the folder name under ~/.decepticon/workspace/.
+  // It identifies the engagement directory the CLI will operate inside;
+  // engagementId is the DB record cuid passed to LangGraph thread metadata.
+  const engagementSlug = url.searchParams.get("engagementSlug") ?? "";
   const agentId = url.searchParams.get("agentId") ?? "soundwave";
   let threadId = url.searchParams.get("threadId") ?? "";
 
-  // Create a thread if none provided
   if (!threadId) {
     try {
       threadId = await createThread(engagementId, agentId);
@@ -66,23 +69,25 @@ wss.on("connection", async (ws: WebSocket, req) => {
     }
   }
 
-  // Send thread ID to web client so it can save to localStorage
   if (threadId && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "threadId", threadId }));
   }
 
-  console.log(`[terminal-server] Connection: engagement=${engagementId} agent=${agentId} thread=${threadId}`);
+  console.log(
+    `[terminal-server] Connection: engagement=${engagementId} slug=${engagementSlug} agent=${agentId} thread=${threadId}`,
+  );
 
   const env: Record<string, string> = {
     ...process.env as Record<string, string>,
     TERM: "xterm-256color",
     FORCE_COLOR: "1",
-    DECEPTICON_AGENT: agentId,
-    DECEPTICON_ENGAGEMENT_ID: engagementId,
-    // Explicitly set DECEPTICON_API_URL so the CLI subprocess resolves the
-    // correct internal Docker hostname (e.g. http://langgraph:2024) rather
-    // than falling back to localhost:2024, which is unreachable inside the
-    // web container.
+    // Names align with the CLI's expectations (clients/cli/src/hooks/useAgent.ts):
+    // DECEPTICON_ASSISTANT_ID picks the LangGraph assistant; DECEPTICON_ENGAGEMENT
+    // is the folder slug used for system-level logging and the engagement_ready
+    // handoff. Internal Docker hostname for the LangGraph endpoint is forwarded
+    // explicitly so the CLI subprocess does not fall back to localhost.
+    DECEPTICON_ASSISTANT_ID: agentId,
+    DECEPTICON_ENGAGEMENT: engagementSlug,
     DECEPTICON_API_URL: LANGGRAPH_API_URL,
   };
   if (threadId) {

@@ -8,6 +8,11 @@ const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? ""
 
 const WORKSPACE_SUBDIRS = ["plan", "recon", "exploit", "findings", "post-exploit"];
 
+// Slug regex matches the Go launcher (clients/launcher/internal/engagement/picker.go).
+// Web and launcher share one engagement-naming policy so directories created
+// from either side surface in the other's picker without quoting/encoding hacks.
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
+
 export async function GET() {
   try {
     const { userId } = await requireAuth();
@@ -80,15 +85,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Sanitize name to prevent path traversal
-    const safeName = path.basename(name);
-    if (!safeName || safeName !== name) {
+    // Engagement name doubles as the workspace slug. Enforce the same regex
+    // the launcher uses so a name created here works as a folder name and a
+    // future "Resume <slug>" picker entry without further escaping.
+    if (!SLUG_RE.test(name)) {
       return NextResponse.json(
-        { error: "Invalid engagement name — must not contain path separators" },
+        {
+          error:
+            "Invalid engagement name — must be 3-64 chars, lowercase letters / digits / internal hyphens",
+        },
         { status: 400 }
       );
     }
-    const wsPath = path.join(WORKSPACE, safeName);
+    const wsPath = path.join(WORKSPACE, name);
 
     const engagement = await prisma.engagement.create({
       data: {

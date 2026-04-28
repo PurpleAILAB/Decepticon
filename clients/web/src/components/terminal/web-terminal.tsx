@@ -12,18 +12,29 @@ import { useEffect, useRef, useCallback } from "react";
 const TERMINAL_WS_URL = process.env.NEXT_PUBLIC_TERMINAL_WS_URL ?? "ws://localhost:3003";
 
 interface WebTerminalProps {
+  /** Engagement DB cuid — used as LangGraph thread metadata. */
   engagementId: string;
+  /** Engagement folder slug — used to scope the sandbox /workspace bind. */
+  engagementSlug: string;
   agentId?: string;
   className?: string;
   onThreadId?: (threadId: string) => void;
 }
 
-export function WebTerminal({ engagementId, agentId = "soundwave", className, onThreadId }: WebTerminalProps) {
+export function WebTerminal({
+  engagementId,
+  engagementSlug,
+  agentId = "soundwave",
+  className,
+  onThreadId,
+}: WebTerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   const connectedRef = useRef(false);
   const engagementIdRef = useRef(engagementId);
   engagementIdRef.current = engagementId;
+  const engagementSlugRef = useRef(engagementSlug);
+  engagementSlugRef.current = engagementSlug;
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
   const onThreadIdRef = useRef(onThreadId);
@@ -78,9 +89,13 @@ export function WebTerminal({ engagementId, agentId = "soundwave", className, on
     fit.fit();
 
     const eid = engagementIdRef.current;
+    const slug = engagementSlugRef.current;
     const aid = agentIdRef.current;
 
-    const wsUrl = `${TERMINAL_WS_URL}?engagementId=${encodeURIComponent(eid)}&agentId=${encodeURIComponent(aid)}`;
+    const wsUrl =
+      `${TERMINAL_WS_URL}?engagementId=${encodeURIComponent(eid)}` +
+      `&engagementSlug=${encodeURIComponent(slug)}` +
+      `&agentId=${encodeURIComponent(aid)}`;
     const ws = new WebSocket(wsUrl);
 
     let disposed = false;
