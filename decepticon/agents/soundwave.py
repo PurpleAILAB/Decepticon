@@ -38,6 +38,7 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.tools.interaction import ask_user_question
 
 # Resolve paths relative to repo root
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -89,7 +90,7 @@ def create_soundwave_agent():
     agent = create_agent(
         llm,
         system_prompt=system_prompt,
-        tools=[],
+        tools=[ask_user_question],
         middleware=middleware,
         name="soundwave",
     ).with_config({"recursion_limit": 200})
