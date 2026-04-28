@@ -159,9 +159,9 @@ The active **profile** decides each agent's tier:
 |-------------------|--------------------------|---------------------------|-------------------------------------|
 | `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
 | `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
-| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5.4-nano                        |
+| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5-nano                        |
 | `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
-| `minimax_api`     | MiniMax-M2.7             | MiniMax-M2.5              | — *(falls through to next method)*  |
+| `minimax_api`     | MiniMax-M2.5             | MiniMax-M2.5-lightning              | — *(falls through to next method)*  |
 
 Configure with `decepticon onboard`; set the profile via `DECEPTICON_MODEL_PROFILE=eco` in `.env`. Provider outage or rate limit → seamless fallback to the next method in your priority list.
 

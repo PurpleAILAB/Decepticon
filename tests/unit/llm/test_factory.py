@@ -55,7 +55,7 @@ class TestLLMFactory:
         models = self.factory.get_fallback_models("recon")
         names = [m.model_name for m in models]
         assert names == [
-            "openai/gpt-5.4-nano",
+            "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
             # MiniMax has no LOW tier → drops out of the chain.
         ]
@@ -67,7 +67,7 @@ class TestLLMFactory:
         assert names == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.7",
+            "minimax/MiniMax-M2.5",
         ]
 
     def test_get_fallback_models_without_fallback(self):

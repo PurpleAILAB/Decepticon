@@ -69,7 +69,7 @@ class TestMethodModels:
         m = METHOD_MODELS[AuthMethod.OPENAI_API]
         assert m[Tier.HIGH] == "openai/gpt-5.5"
         assert m[Tier.MID] == "openai/gpt-5.4"
-        assert m[Tier.LOW] == "openai/gpt-5.4-nano"
+        assert m[Tier.LOW] == "openai/gpt-5-nano"
 
     def test_google_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.GOOGLE_API]
@@ -79,8 +79,8 @@ class TestMethodModels:
 
     def test_minimax_no_low_tier(self):
         m = METHOD_MODELS[AuthMethod.MINIMAX_API]
-        assert m[Tier.HIGH] == "minimax/MiniMax-M2.7"
-        assert m[Tier.MID] == "minimax/MiniMax-M2.5"
+        assert m[Tier.HIGH] == "minimax/MiniMax-M2.5"
+        assert m[Tier.MID] == "minimax/MiniMax-M2.5-lightning"
         assert Tier.LOW not in m
 
 
@@ -174,14 +174,14 @@ class TestResolveChain:
             methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API]
         )
         chain = resolve_chain(Tier.LOW, creds)
-        assert chain == ["auth/claude-haiku-4-5", "openai/gpt-5.4-nano"]
+        assert chain == ["auth/claude-haiku-4-5", "openai/gpt-5-nano"]
 
     def test_minimax_low_falls_through(self):
         # MiniMax has no LOW tier; chain should skip and continue with the
         # next method in priority order.
         creds = Credentials(methods=[AuthMethod.MINIMAX_API, AuthMethod.OPENAI_API])
         chain = resolve_chain(Tier.LOW, creds)
-        assert chain == ["openai/gpt-5.4-nano"]
+        assert chain == ["openai/gpt-5-nano"]
 
     def test_minimax_only_low_returns_empty(self):
         creds = Credentials(methods=[AuthMethod.MINIMAX_API])
@@ -281,7 +281,7 @@ class TestLLMModelMapping:
             "anthropic/claude-opus-4-7",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.7",
+            "minimax/MiniMax-M2.5",
         ]
 
     def test_from_credentials_full_chain_low_tier_skips_minimax(self):
@@ -298,7 +298,7 @@ class TestLLMModelMapping:
         recon = m.get_assignment("recon")
         assert recon.primary == "anthropic/claude-haiku-4-5"
         assert recon.fallbacks == [
-            "openai/gpt-5.4-nano",
+            "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
         ]
 
@@ -308,7 +308,7 @@ class TestLLMModelMapping:
         )
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         recon = m.get_assignment("recon")
-        assert recon.primary == "openai/gpt-5.4-nano"
+        assert recon.primary == "openai/gpt-5-nano"
         assert recon.fallbacks == []
 
     def test_from_credentials_minimax_only_low_role_dropped(self):
@@ -318,7 +318,7 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         with pytest.raises(KeyError):
             m.get_assignment("recon")
-        assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M2.7"
+        assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M2.5"
 
     def test_max_profile_promotes_recon_to_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
@@ -338,7 +338,7 @@ class TestLLMModelMapping:
         assert a.fallbacks == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.7",
+            "minimax/MiniMax-M2.5",
         ]
 
     def test_from_profile_string_input(self):

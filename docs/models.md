@@ -24,9 +24,9 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 |---------------------|--------------------------------|--------------------------------|------------------------------------|
 | `anthropic_api`     | `anthropic/claude-opus-4-7`    | `anthropic/claude-sonnet-4-6`  | `anthropic/claude-haiku-4-5`       |
 | `anthropic_oauth`   | `auth/claude-opus-4-7`         | `auth/claude-sonnet-4-6`       | `auth/claude-haiku-4-5`            |
-| `openai_api`        | `openai/gpt-5.5`               | `openai/gpt-5.4`               | `openai/gpt-5.4-nano`              |
+| `openai_api`        | `openai/gpt-5.5`               | `openai/gpt-5.4`               | `openai/gpt-5-nano`              |
 | `google_api`        | `gemini/gemini-2.5-pro`        | `gemini/gemini-2.5-flash`      | `gemini/gemini-2.5-flash-lite`     |
-| `minimax_api`       | `minimax/MiniMax-M2.7`         | `minimax/MiniMax-M2.5`         | — *(falls through to next method)* |
+| `minimax_api`       | `minimax/MiniMax-M2.5`         | `minimax/MiniMax-M2.5-lightning`         | — *(falls through to next method)* |
 
 When a method has no model at the requested tier (MiniMax LOW), the resolver skips it and continues with the next method in your priority list.
 
@@ -111,7 +111,7 @@ OPENAI_API_KEY=sk-...
 |------------------|------------------------|----------|
 | decepticon (HIGH)| `openai/gpt-5.5`      | —        |
 | exploit (MID)    | `openai/gpt-5.4`      | —        |
-| recon (LOW)      | `openai/gpt-5.4-nano` | —        |
+| recon (LOW)      | `openai/gpt-5-nano` | —        |
 
 ### Claude Code OAuth + Anthropic API (subscription primary, paid fallback)
 
@@ -141,7 +141,7 @@ OPENAI_API_KEY=sk-...
 |------------------|-------------------------------|-------------------------|
 | decepticon (HIGH)| `anthropic/claude-opus-4-7`   | `openai/gpt-5.5`        |
 | exploit (MID)    | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
-| recon (LOW)      | `anthropic/claude-haiku-4-5`  | `openai/gpt-5.4-nano`   |
+| recon (LOW)      | `anthropic/claude-haiku-4-5`  | `openai/gpt-5-nano`   |
 
 Cross-provider fallback — when Anthropic hits a rate limit or outage, OpenAI takes over seamlessly.
 
@@ -154,8 +154,8 @@ MINIMAX_API_KEY=eyJ...
 
 | Agent (tier)     | Primary                | Notes                                     |
 |------------------|------------------------|-------------------------------------------|
-| decepticon (HIGH)| `minimax/MiniMax-M2.7` | OK                                        |
-| exploit (MID)    | `minimax/MiniMax-M2.5` | OK                                        |
+| decepticon (HIGH)| `minimax/MiniMax-M2.5` | OK                                        |
+| exploit (MID)    | `minimax/MiniMax-M2.5-lightning` | OK                                        |
 | recon (LOW)      | *(role unassigned)*    | MiniMax has no LOW model and no fallback method |
 
 The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e.g. `openai_api`) to fill the LOW slot.

@@ -17,7 +17,7 @@ Examples
 --------
 User has [anthropic_api, openai_api]. Profile=eco.
   decepticon (HIGH) → primary=anthropic/claude-opus-4-7, fallback=openai/gpt-5.5
-  recon (LOW)       → primary=anthropic/claude-haiku-4-5, fallback=openai/gpt-5.4-nano
+  recon (LOW)       → primary=anthropic/claude-haiku-4-5, fallback=openai/gpt-5-nano
 
 User has [anthropic_oauth, anthropic_api]. Profile=eco.
   decepticon (HIGH) → primary=auth/claude-opus-4-7, fallback=anthropic/claude-opus-4-7
@@ -28,16 +28,16 @@ User has [anthropic_oauth] only. Profile=eco.
 
 User has [openai_api]. Profile=eco.
   decepticon (HIGH) → primary=openai/gpt-5.5, fallback=None
-  recon (LOW)       → primary=openai/gpt-5.4-nano, fallback=None
+  recon (LOW)       → primary=openai/gpt-5-nano, fallback=None
 
 Tier × AuthMethod matrix
 ------------------------
                     HIGH                          MID                            LOW
   anthropic_api    claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
   anthropic_oauth  auth/claude-opus-4-7          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
-  openai_api       gpt-5.5                       gpt-5.4                        gpt-5.4-nano
+  openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
-  minimax_api      MiniMax-M2.7                  MiniMax-M2.5                   — (falls through)
+  minimax_api      MiniMax-M2.5                  MiniMax-M2.5-lightning         — (falls through)
 
 Profiles
 --------
@@ -103,7 +103,7 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.OPENAI_API: {
         Tier.HIGH: "openai/gpt-5.5",
         Tier.MID: "openai/gpt-5.4",
-        Tier.LOW: "openai/gpt-5.4-nano",
+        Tier.LOW: "openai/gpt-5-nano",
     },
     AuthMethod.GOOGLE_API: {
         Tier.HIGH: "gemini/gemini-2.5-pro",
@@ -111,9 +111,10 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.LOW: "gemini/gemini-2.5-flash-lite",
     },
     AuthMethod.MINIMAX_API: {
-        Tier.HIGH: "minimax/MiniMax-M2.7",
-        Tier.MID: "minimax/MiniMax-M2.5",
-        # MiniMax has no LOW-tier light variant — falls through.
+        Tier.HIGH: "minimax/MiniMax-M2.5",
+        Tier.MID: "minimax/MiniMax-M2.5-lightning",
+        # MiniMax line has no LOW-tier light variant — falls through to
+        # the next configured method.
     },
 }
 

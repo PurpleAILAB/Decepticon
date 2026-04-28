@@ -30,7 +30,7 @@ class TestModelRouter:
         chain = self.router.resolve_with_fallback("recon")
         assert chain == [
             "anthropic/claude-haiku-4-5",
-            "openai/gpt-5.4-nano",
+            "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
         ]
 
@@ -41,7 +41,7 @@ class TestModelRouter:
             "anthropic/claude-opus-4-7",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.7",
+            "minimax/MiniMax-M2.5",
         ]
 
     def test_resolve_unknown_role_raises(self):

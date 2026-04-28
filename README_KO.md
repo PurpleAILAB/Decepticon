@@ -162,9 +162,9 @@ Tier 기반, 자격증명-aware 폴백 체인. 사용 가능한 자격증명(Ant
 |-------------------|--------------------------|---------------------------|-------------------------------------|
 | `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
 | `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
-| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5.4-nano                        |
+| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5-nano                        |
 | `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
-| `minimax_api`     | MiniMax-M2.7             | MiniMax-M2.5              | — *(다음 method로 fall-through)*    |
+| `minimax_api`     | MiniMax-M2.5             | MiniMax-M2.5-lightning              | — *(다음 method로 fall-through)*    |
 
 `decepticon onboard`로 설정. `.env`에서 `DECEPTICON_MODEL_PROFILE=eco`로 프로파일 변경. 프로바이더 장애나 속도 제한 시 우선순위의 다음 method로 자동 폴백.
 
