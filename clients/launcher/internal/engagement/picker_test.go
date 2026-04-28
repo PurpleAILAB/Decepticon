@@ -7,95 +7,117 @@ import (
 	"time"
 )
 
-func TestScanReady_NoWorkspace(t *testing.T) {
+func mkPlan(t *testing.T, home, slug string, files ...string) {
+	t.Helper()
+	plan := filepath.Join(home, "workspace", slug, "plan")
+	if err := os.MkdirAll(plan, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range files {
+		if err := os.WriteFile(filepath.Join(plan, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func mkBareDir(t *testing.T, home, name string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, "workspace", name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScanEngagements_NoWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	got, err := ScanReady(dir)
+	got, err := ScanEngagements(dir)
 	if err != nil {
-		t.Fatalf("ScanReady: %v", err)
+		t.Fatalf("ScanEngagements: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("expected empty result, got %v", got)
 	}
 }
 
-func TestScanReady_OnlyDirsWithFullBundle(t *testing.T) {
+func TestScanEngagements_ReadyAndInProgress(t *testing.T) {
 	home := t.TempDir()
-	mkBundle := func(slug string, partial bool) {
-		plan := filepath.Join(home, "workspace", slug, "plan")
-		if err := os.MkdirAll(plan, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		write := func(name string) {
-			if err := os.WriteFile(filepath.Join(plan, name), []byte("{}"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		write("roe.json")
-		if partial {
-			return
-		}
-		write("conops.json")
-		write("deconfliction.json")
-	}
 
-	mkBundle("alpha", false)   // ready
-	mkBundle("bravo", true)    // partial — missing two
-	mkBundle("charlie", false) // ready
+	// Full bundle → ready.
+	mkPlan(t, home, "alpha", "roe.json", "conops.json", "deconfliction.json")
+	// Only roe → in progress.
+	mkPlan(t, home, "bravo", "roe.json")
+	// Empty engagement directory (no plan/) → still in progress.
+	mkBareDir(t, home, "charlie")
 
-	if err := os.MkdirAll(filepath.Join(home, "workspace", "junk"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := ScanReady(home)
+	got, err := ScanEngagements(home)
 	if err != nil {
-		t.Fatalf("ScanReady: %v", err)
+		t.Fatalf("ScanEngagements: %v", err)
 	}
-	if len(got) != 2 {
-		t.Fatalf("expected 2 ready, got %d (%v)", len(got), got)
+	if len(got) != 3 {
+		t.Fatalf("expected 3 entries, got %d (%v)", len(got), got)
 	}
-	seen := map[string]bool{got[0]: true, got[1]: true}
-	if !seen["alpha"] || !seen["charlie"] {
-		t.Errorf("expected alpha+charlie, got %v", got)
+	byName := map[string]engagementEntry{got[0].Slug: got[0], got[1].Slug: got[1], got[2].Slug: got[2]}
+	if !byName["alpha"].Ready {
+		t.Errorf("alpha should be ready, got %v", byName["alpha"])
+	}
+	if byName["bravo"].Ready {
+		t.Errorf("bravo (only roe) should not be ready")
+	}
+	if byName["charlie"].Ready {
+		t.Errorf("charlie (empty dir) should not be ready")
 	}
 }
 
-func TestScanReady_OrdersByMostRecentRoeMtime(t *testing.T) {
+func TestScanEngagements_ReadyEngagementsBubbleUp(t *testing.T) {
 	home := t.TempDir()
-	mkReady := func(slug string, mtime time.Time) {
-		plan := filepath.Join(home, "workspace", slug, "plan")
-		if err := os.MkdirAll(plan, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for _, n := range []string{"roe.json", "conops.json", "deconfliction.json"} {
-			path := filepath.Join(plan, n)
-			if err := os.WriteFile(path, []byte("{}"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if n == "roe.json" {
-				if err := os.Chtimes(path, mtime, mtime); err != nil {
-					t.Fatal(err)
-				}
-			}
-		}
-	}
-
 	now := time.Now()
-	mkReady("oldest", now.Add(-2*time.Hour))
-	mkReady("newest", now)
-	mkReady("mid", now.Add(-1*time.Hour))
 
-	got, err := ScanReady(home)
+	// Bare in-progress dir, MOST recent.
+	mkBareDir(t, home, "fresh-incomplete")
+	if err := os.Chtimes(
+		filepath.Join(home, "workspace", "fresh-incomplete"),
+		now, now,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// Ready, OLDEST.
+	mkPlan(t, home, "old-ready", "roe.json", "conops.json", "deconfliction.json")
+	old := now.Add(-2 * time.Hour)
+	if err := os.Chtimes(
+		filepath.Join(home, "workspace", "old-ready", "plan", "roe.json"),
+		old, old,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ScanEngagements(home)
 	if err != nil {
-		t.Fatalf("ScanReady: %v", err)
+		t.Fatalf("ScanEngagements: %v", err)
 	}
-	want := []string{"newest", "mid", "oldest"}
-	if len(got) != len(want) {
-		t.Fatalf("expected %v, got %v", want, got)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(got))
 	}
-	for i, slug := range want {
-		if got[i] != slug {
-			t.Errorf("position %d: expected %q, got %q (full: %v)", i, slug, got[i], got)
-		}
+	if got[0].Slug != "old-ready" {
+		t.Errorf("expected ready engagement first; got %v", got)
+	}
+	if got[1].Slug != "fresh-incomplete" {
+		t.Errorf("expected in-progress engagement second; got %v", got)
+	}
+}
+
+func TestIsReady(t *testing.T) {
+	home := t.TempDir()
+	mkPlan(t, home, "complete", "roe.json", "conops.json", "deconfliction.json")
+	mkPlan(t, home, "partial", "roe.json", "conops.json")
+
+	if !isReady(home, "complete") {
+		t.Errorf("complete should be ready")
+	}
+	if isReady(home, "partial") {
+		t.Errorf("partial should not be ready")
+	}
+	if isReady(home, "missing") {
+		t.Errorf("nonexistent dir should not be ready")
 	}
 }
 

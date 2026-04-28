@@ -40,11 +40,35 @@ type Choice struct {
 	WorkspacePath string
 }
 
-// ScanReady returns the slugs under home/workspace/ that already carry the
-// full ready-bundle (roe.json + conops.json + deconfliction.json). Slugs are
-// returned sorted by most-recently-modified RoE first so the operator's
-// active work surfaces at the top of the picker.
-func ScanReady(home string) ([]string, error) {
+// isReady reports whether a single engagement carries the full planning
+// bundle (roe.json + conops.json + deconfliction.json). Used both for sorting
+// the picker (ready engagements bubble up) and for deciding which assistant
+// to route to when the operator resumes one.
+func isReady(home, slug string) bool {
+	plan := filepath.Join(home, "workspace", slug, "plan")
+	for _, name := range []string{"roe.json", "conops.json", "deconfliction.json"} {
+		if _, err := os.Stat(filepath.Join(plan, name)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// engagementEntry pairs a slug with metadata used for picker rendering and
+// downstream assistant selection.
+type engagementEntry struct {
+	Slug  string
+	Ready bool
+	mtime int64
+}
+
+// ScanEngagements returns every directory under home/workspace/ regardless
+// of completeness. Each entry carries a Ready flag so the picker can mark
+// in-progress engagements and the launcher can pick the right assistant on
+// resume (ready → decepticon, incomplete → soundwave to finish the
+// interview). Sort: ready engagements first (most recent RoE), in-progress
+// engagements second (most recent dir mtime).
+func ScanEngagements(home string) ([]engagementEntry, error) {
 	root := filepath.Join(home, "workspace")
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -54,49 +78,42 @@ func ScanReady(home string) ([]string, error) {
 		return nil, fmt.Errorf("read workspace: %w", err)
 	}
 
-	type slugMTime struct {
-		slug  string
-		mtime int64
-	}
-	var ready []slugMTime
+	var out []engagementEntry
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		plan := filepath.Join(root, e.Name(), "plan")
-		roe, err1 := os.Stat(filepath.Join(plan, "roe.json"))
-		_, err2 := os.Stat(filepath.Join(plan, "conops.json"))
-		_, err3 := os.Stat(filepath.Join(plan, "deconfliction.json"))
-		if err1 != nil || err2 != nil || err3 != nil {
-			continue
+		slug := e.Name()
+		entry := engagementEntry{Slug: slug, Ready: isReady(home, slug)}
+		if entry.Ready {
+			if st, err := os.Stat(filepath.Join(root, slug, "plan", "roe.json")); err == nil {
+				entry.mtime = st.ModTime().Unix()
+			}
+		} else if info, err := e.Info(); err == nil {
+			entry.mtime = info.ModTime().Unix()
 		}
-		ready = append(ready, slugMTime{slug: e.Name(), mtime: roe.ModTime().Unix()})
+		out = append(out, entry)
 	}
-	sort.SliceStable(ready, func(i, j int) bool { return ready[i].mtime > ready[j].mtime })
 
-	out := make([]string, len(ready))
-	for i, r := range ready {
-		out[i] = r.slug
-	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Ready != out[j].Ready {
+			return out[i].Ready
+		}
+		return out[i].mtime > out[j].mtime
+	})
 	return out, nil
 }
 
 // listAllSlugs returns every directory name under home/workspace, used for
 // new-slug collision detection (a partial engagement is still a name clash).
 func listAllSlugs(home string) ([]string, error) {
-	root := filepath.Join(home, "workspace")
-	entries, err := os.ReadDir(root)
+	all, err := ScanEngagements(home)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("read workspace: %w", err)
+		return nil, err
 	}
-	var out []string
-	for _, e := range entries {
-		if e.IsDir() {
-			out = append(out, e.Name())
-		}
+	out := make([]string, len(all))
+	for i, e := range all {
+		out[i] = e.Slug
 	}
 	return out, nil
 }
@@ -123,19 +140,23 @@ func validateSlug(home, slug string) error {
 	return nil
 }
 
-// Select shows the engagement picker. When ready engagements exist the
-// operator picks one or chooses "[+] New". For "new", a second prompt
-// captures the slug (validated + collision-checked), creates the host
-// directory, and the launcher uses that directory as the sandbox bind.
+// Select shows the engagement picker. The list always carries "[+] New"
+// plus every existing engagement under home/workspace/, completed or
+// in-progress alike — partial engagements (interview interrupted, planning
+// not yet finalised) must be resumable.
 //
-// When the workspace has zero ready engagements (first-time install), the
-// picker still prompts for a slug — the operator must commit to a name
-// before the sandbox starts.
+// Resume routing:
+//   - Ready engagements (full planning bundle) → decepticon assistant.
+//   - In-progress engagements                  → soundwave assistant so
+//     the interview lane can finish the missing documents.
+//
+// "[+] New" triggers a chained slug-input prompt; the host directory is
+// created before the sandbox starts so the bind has somewhere to point at.
 func Select(home string) (Choice, error) {
-	ready, err := ScanReady(home)
+	all, err := ScanEngagements(home)
 	if err != nil {
 		ui.Warning("Could not scan engagements: " + err.Error())
-		ready = nil
+		all = nil
 	}
 
 	const newSentinel = "__new__"
@@ -143,34 +164,35 @@ func Select(home string) (Choice, error) {
 	picked := newSentinel
 	var newSlug string
 
-	groups := []*huh.Group{}
-
-	if len(ready) > 0 {
-		options := make([]huh.Option[string], 0, len(ready)+1)
-		options = append(options, huh.NewOption("[+] New engagement (Soundwave interview)", newSentinel))
-		for _, slug := range ready {
-			options = append(options, huh.NewOption("Resume "+slug, slug))
+	options := make([]huh.Option[string], 0, len(all)+1)
+	options = append(options, huh.NewOption("[+] New engagement (Soundwave interview)", newSentinel))
+	for _, e := range all {
+		label := "Resume " + e.Slug
+		if !e.Ready {
+			label += "  (in progress)"
 		}
-		groups = append(groups, huh.NewGroup(
+		options = append(options, huh.NewOption(label, e.Slug))
+	}
+
+	form := huh.NewForm(
+		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Engagement").
 				Description("Pick an existing engagement or start a new one with Soundwave.").
 				Options(options...).
 				Value(&picked),
-		).Title("Decepticon").Description("Engagement selection"))
-	}
+		).Title("Decepticon").Description("Engagement selection"),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Engagement name").
+				Description("Lowercase, hyphens allowed. Used as the workspace directory name (e.g., acme-external-2026).").
+				Placeholder("e.g., acme-external-2026").
+				Value(&newSlug).
+				Validate(func(s string) error { return validateSlug(home, s) }),
+		).Title("New engagement").Description("Create the engagement workspace").
+			WithHideFunc(func() bool { return picked != newSentinel }),
+	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
-	groups = append(groups, huh.NewGroup(
-		huh.NewInput().
-			Title("Engagement name").
-			Description("Lowercase, hyphens allowed. Used as the workspace directory name (e.g., acme-external-2026).").
-			Placeholder("e.g., acme-external-2026").
-			Value(&newSlug).
-			Validate(func(s string) error { return validateSlug(home, s) }),
-	).Title("New engagement").Description("Create the engagement workspace").
-		WithHideFunc(func() bool { return picked != newSentinel }))
-
-	form := huh.NewForm(groups...).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 	if err := form.Run(); err != nil {
 		return Choice{}, fmt.Errorf("engagement picker cancelled: %w", err)
 	}
@@ -188,8 +210,12 @@ func Select(home string) (Choice, error) {
 		}, nil
 	}
 
+	assistant := AssistantSoundwave
+	if isReady(home, picked) {
+		assistant = AssistantDecepticon
+	}
 	return Choice{
-		AssistantID:   AssistantDecepticon,
+		AssistantID:   assistant,
 		Engagement:    picked,
 		WorkspacePath: filepath.Join(root, picked),
 	}, nil
