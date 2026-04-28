@@ -1,7 +1,7 @@
 """complete_engagement_planning — signal soundwave-to-decepticon handoff.
 
 Soundwave calls this exactly once after RoE / CONOPS / Deconfliction Plan
-have been written, validated, and saved to ``/workspace/<slug>/plan/``. The
+have been written, validated, and saved to ``/workspace/plan/``. The
 emitted custom event tells the CLI to switch its LangGraph assistant_id from
 ``soundwave`` to ``decepticon`` so the next operator message lands on the
 operations agent without the operator restarting the CLI.
@@ -32,7 +32,7 @@ def complete_engagement_planning(
             max_length=64,
             description=(
                 "Slug of the engagement whose planning bundle is now complete "
-                "(matches the workspace directory under /workspace/<slug>/)."
+                "(matches the workspace directory under /workspace/)."
             ),
         ),
     ],
@@ -41,7 +41,7 @@ def complete_engagement_planning(
     """Signal that engagement planning is finished and hand off to Decepticon.
 
     Call this tool exactly once, after RoE, CONOPS, and the Deconfliction Plan
-    have all been written under ``/workspace/<engagement_name>/plan/`` and
+    have all been written under ``/workspace/plan/`` and
     validated against their schemas. The CLI will switch the active assistant
     to Decepticon and the operator's next message starts the operations
     phase.

@@ -411,7 +411,7 @@ Individual findings combine into attack chains. Document these explicitly — th
 ### Directory Layout
 
 ```
-/workspace/<slug>/
+/workspace/
 ├── roe.json                               # Rules of Engagement (read-only)
 ├── conops.json                            # Threat actor profile
 ├── opplan.json                            # Objectives tracker

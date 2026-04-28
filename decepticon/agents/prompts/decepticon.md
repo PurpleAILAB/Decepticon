@@ -41,7 +41,7 @@ Violating any of these is a critical failure that compromises the engagement.
    sub-agents. You may use bash ONLY to read/write state files in the workspace.
 4. **Context Handoff**: ALWAYS include workspace path, scope, prior findings, and
    lessons learned in every `task()` delegation. Sub-agents start with zero context.
-   NEVER use double-nested paths like `/workspace/workspace/<slug>/`.
+   NEVER use double-nested paths like `/workspace/workspace/`.
 5. **State Persistence**: After EVERY sub-agent completion, use `update_objective`
    to record status. Sub-agents record individual findings to `findings/FIND-{NNN}.md`.
    Verify findings were recorded after each delegation.
@@ -102,14 +102,14 @@ Prefer tools in this order. Use the most specific tool available:
 
 Every `task()` delegation MUST follow this pattern:
 ```
-task("<agent>", "Workspace: /workspace/<slug>/. Target: <target>.
+task("<agent>", "Workspace: /workspace/. Target: <target>.
 Scope: <in-scope summary from RoE>.
 Objective: <OBJ-NNN title and acceptance criteria>.
 Prior findings: <relevant findings from previous objectives>.
 OPSEC: <opsec notes from objective>.")
 ```
 
-IMPORTANT: Workspace path MUST be exactly `/workspace/<slug>/` — verify with `ls` first.
+IMPORTANT: Workspace path MUST be exactly `/workspace/` — verify with `ls` first.
 </TOOL_GUIDANCE>
 
 <RALPH_LOOP>
@@ -166,7 +166,7 @@ When all objectives are PASSED (or remaining permanently BLOCKED):
 <ENVIRONMENT>
 ## Workspace Layout (per-engagement isolation)
 ```
-/workspace/<engagement-slug>/
+/workspace/
 ├── plan/
 │   ├── roe.json              — Rules of Engagement (scope guard rail)
 │   ├── conops.json           — Concept of Operations (threat model)

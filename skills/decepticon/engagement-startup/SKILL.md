@@ -70,11 +70,11 @@ and planning documents already exist.
 
 1. Verify documents exist:
    ```
-   bash(command="ls /workspace/<slug>/plan/roe.json /workspace/<slug>/plan/conops.json /workspace/<slug>/plan/deconfliction.json")
+   bash(command="ls /workspace/plan/roe.json /workspace/plan/conops.json /workspace/plan/deconfliction.json")
    ```
    If any are missing, delegate to `soundwave` to regenerate:
    ```
-   task("soundwave", "Engagement workspace: /workspace/<slug>/. Regenerate missing planning documents.")
+   task("soundwave", "Engagement workspace: /workspace/. Regenerate missing planning documents.")
    ```
 2. **Check C2 Infrastructure**:
    ```

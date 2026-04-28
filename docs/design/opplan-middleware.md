@@ -587,7 +587,7 @@ middleware = [
 
 ```markdown
 ## Execution Loop (Before)
-1. **Read** `/workspace/<engagement>/plan/opplan.json`
+1. **Read** `/workspace/plan/opplan.json`
 2. **Select** next pending objective
 3. **Delegate** via task()
 4. **Evaluate** result

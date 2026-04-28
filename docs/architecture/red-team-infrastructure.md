@@ -296,9 +296,9 @@ graph TD
 Planner 에이전트는 sandbox에 접근하지 않는다. 사용자와 대화하여 engagement 문서를 생성한다.
 
 ```
-Planner Agent → write_file() → /workspace/<slug>/plan/roe.json
-                                /workspace/<slug>/plan/conops.json
-                                /workspace/<slug>/plan/opplan.json
+Planner Agent → write_file() → /workspace/plan/roe.json
+                                /workspace/plan/conops.json
+                                /workspace/plan/opplan.json
 ```
 
 #### Phase 2: Reconnaissance (직접 실행)
@@ -321,7 +321,7 @@ sequenceDiagram
     T-->>K: findings
     K-->>LG: vulnerabilities found
 
-    Note over LG: 결과 → /workspace/<slug>/recon/report_msf2.md
+    Note over LG: 결과 → /workspace/recon/report_msf2.md
 ```
 
 #### Phase 3: Exploitation (직접 실행 + 비콘 배포)
@@ -348,7 +348,7 @@ sequenceDiagram
     K->>T: implant 전송 + 실행
     T->>C2: beacon callback (HTTPS :443)
 
-    Note over LG: 결과 → /workspace/<slug>/exploit/shells.json
+    Note over LG: 결과 → /workspace/exploit/shells.json
 ```
 
 #### Phase 4: Post-Exploitation (C2 클라이언트 → 서버 → 비콘)
@@ -386,7 +386,7 @@ sequenceDiagram
     C2->>B: SOCKS proxy 활성화
     Note over B: 내부 네트워크 접근 가능
 
-    Note over LG: 결과 → /workspace/<slug>/post-exploit/
+    Note over LG: 결과 → /workspace/post-exploit/
 ```
 
 ---
@@ -597,7 +597,7 @@ stateDiagram-v2
 ## 9. Workspace 디렉토리 구조
 
 ```
-/workspace/<engagement-slug>/
+/workspace/
 ├── plan/
 │   ├── roe.json                  ← 스코프 정의 (매 단계에서 검증)
 │   ├── conops.json               ← 위협 모델, 킬 체인

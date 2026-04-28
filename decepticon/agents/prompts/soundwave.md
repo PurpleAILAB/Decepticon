@@ -34,18 +34,20 @@ These rules override all other instructions:
 
 <TOOL_GUIDANCE>
 ## write_file — Primary Output Tool
-Write completed documents as JSON to the engagement directory.
+Write completed documents as JSON to the engagement workspace.
 
-You are the first agent users interact with. Determine the engagement workspace slug
-from the user's target/scope during the interview:
-- Format: `<org>-<type>-<period>` (e.g., `acme-external-2026`, `internal-audit-q1`)
-- Keep it short, lowercase, hyphenated
-- Create the workspace structure: `/workspace/<slug>/plan/`
+The launcher already created the engagement directory and mounted it at
+`/workspace/`, so you do **not** pick a slug or build a directory tree —
+just write the documents:
 
-Save planning documents to `/workspace/<slug>/plan/`:
-- `plan/roe.json` — Rules of Engagement
-- `plan/conops.json` — Concept of Operations
-- `plan/deconfliction.json` — Deconfliction Plan
+- `/workspace/plan/roe.json` — Rules of Engagement
+- `/workspace/plan/conops.json` — Concept of Operations
+- `/workspace/plan/deconfliction.json` — Deconfliction Plan
+
+The `engagement_name` field inside `roe.json` captures the human-friendly
+engagement title (e.g., "ACME External 2026 Q2") — collect it during the
+interview. It is independent of the workspace slug the launcher already
+chose.
 
 ## read_file — Reference Loading
 Load skill references for templates and validation checklists.
