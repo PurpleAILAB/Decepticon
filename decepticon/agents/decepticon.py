@@ -303,33 +303,24 @@ def create_orchestrator():
     """
     from decepticon.agents.soundwave import create_soundwave_agent
 
-    # Wrap soundwave with StreamingRunnable so its AI messages and tool calls
-    # emit `subagent_*` custom events during execution. Without this wrapping,
-    # soundwave runs as a raw subgraph node — LangGraph doesn't propagate the
-    # subgraph's intermediate state to the top-level `values` stream, so the
-    # CLI sees nothing until soundwave completes (output appears all at once)
-    # and the active-agent indicator stays on the orchestrator's default
-    # ("decepticon") instead of switching to "soundwave".
+    # Both subgraph nodes are added raw. LangGraph's streamSubgraphs=true
+    # (set by the CLI/web in STREAM_OPTIONS) propagates each subgraph's
+    # intermediate values-mode state to the parent stream automatically, so
+    # AI messages and tool calls inside soundwave/decepticon surface in the
+    # CLI as they happen. Wrapping the soundwave node with a custom async
+    # function silently disables that propagation — the wrapper is no longer
+    # a compiled-graph node, just an async callable, and the runtime stops
+    # forwarding interior state events.
     #
-    # The orchestrator-level decepticon agent is left raw — its own AI text
-    # is short orchestration scaffolding; the user-visible streaming comes
-    # from its sub-agents (recon/exploit/...) which are already wrapped.
-    #
-    # add_node requires a Runnable, callable, or dict — StreamingRunnable is
-    # neither a Runnable subclass nor a callable, so it can only be used as a
-    # CompiledSubAgent.runnable (where SubAgentMiddleware calls .ainvoke()
-    # directly). An async wrapper bridges that gap for the orchestrator node
-    # without touching the StreamingRunnable contract used elsewhere.
-    soundwave_runner = StreamingRunnable(create_soundwave_agent(), "soundwave")
-
-    async def soundwave_node(state, config=None):
-        return await soundwave_runner.ainvoke(state, config)
-
+    # The ask_user_question tool emits its own custom event via
+    # get_stream_writer() inside the tool body, so the picker UX does not
+    # depend on subgraph wrapping.
+    soundwave = create_soundwave_agent()
     decepticon = create_decepticon_agent()
 
     builder = StateGraph(OrchestratorState)
     builder.add_node("check_docs", _check_engagement_docs)
-    builder.add_node("soundwave", soundwave_node)
+    builder.add_node("soundwave", soundwave)
     builder.add_node("decepticon", decepticon)
 
     builder.add_edge(START, "check_docs")
