@@ -30,7 +30,7 @@ bash(command, session="main", background=False, timeout=120, is_input=False, des
 | `is_input` | `False` | Set True ONLY when sending input to a waiting interactive process |
 | `description` | `""` | Short label for UI display |
 
-### bash_output(session) — fetch new output / completion status
+### bash_output(session="main") — fetch new output / completion status
 
 Returns the diff since the last call PLUS one of:
 - `[RUNNING elapsed=Ts]` — still working

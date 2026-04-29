@@ -32,9 +32,8 @@ from decepticon.backends.docker_sandbox import DockerSandbox, _interpret_exit_co
 
 _sandbox: DockerSandbox | None = None
 
-# ─── Multi-tier output thresholds (Claude Code best practice) ─────────────
-INLINE_LIMIT = 15_000  # ≤15K chars: return directly in tool result
-OFFLOAD_THRESHOLD = 100_000  # 15K–100K: save to file, return summary + preview
+# ─── Output size thresholds ──────────────────────────────────────────────
+INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to /workspace/.scratch/
 # >5M: size watchdog in docker_sandbox.py kills the command (SIZE_WATCHDOG_CHARS)
 
 # ─── Scratch-file TTL prune (bounds /workspace/.scratch/ growth) ──────────
@@ -210,7 +209,7 @@ async def bash(
     RETURNS:
     - Command output (stdout). On failure, exit code + semantic hint appended
       (e.g., "Exit code: 127 — command not found").
-    - For large outputs (>100K chars): auto-saved to /workspace/.scratch/ with
+    - For large outputs (>15K chars): auto-saved to /workspace/.scratch/ with
       preview returned. Use read_file or grep to access full content.
     - [BACKGROUND]: Command started in session. Do NOT check immediately — do other work first.
     - [AUTO-BACKGROUND]: Command was running >60s and auto-converted to background.
