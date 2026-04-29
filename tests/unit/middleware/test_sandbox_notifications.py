@@ -85,3 +85,49 @@ def test_multiple_completions_aggregate_into_one_message():
     content = msgs[0].content
     assert "a" in content and "b" in content
     assert content.count("<system-reminder>") == 1
+
+
+import asyncio
+
+
+def test_abefore_model_emits_same_reminder_as_before_model():
+    sandbox = _sandbox_with_tracker()
+    sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
+    sandbox._jobs.mark_complete("scan", exit_code=0)
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    update = asyncio.run(mw.abefore_model(_state(HumanMessage(content="hi")), runtime=None))
+
+    assert update is not None
+    msg = update["messages"][0]
+    assert isinstance(msg, HumanMessage)
+    assert "<system-reminder>" in msg.content
+    assert "scan" in msg.content
+
+
+def test_concurrent_before_model_calls_each_session_notified_once():
+    """Two threads both fire before_model on the same middleware after a job
+    completed. Exactly one of them should emit; the other should see _notified
+    already includes the session and return None."""
+    import threading as _t
+    sandbox = _sandbox_with_tracker()
+    sandbox._jobs.register("scan", command="nmap", initial_markers=1)
+    sandbox._jobs.mark_complete("scan", exit_code=0)
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    barrier = _t.Barrier(2)
+    results = []
+    results_lock = _t.Lock()
+
+    def worker():
+        barrier.wait()
+        r = mw.before_model(_state(HumanMessage(content="hi")), runtime=None)
+        with results_lock:
+            results.append(r)
+
+    threads = [_t.Thread(target=worker) for _ in range(2)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    emitted = [r for r in results if r is not None]
+    assert len(emitted) == 1, f"Expected exactly one emission, got {len(emitted)}"
