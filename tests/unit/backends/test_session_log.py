@@ -328,3 +328,44 @@ def test_execute_async_poll_loop_capture_timeout_continues():
     assert isinstance(result, str)
     # Either [TIMEOUT] (loop ran out) or [ERROR] (poll path bailed out) is acceptable
     assert "[TIMEOUT]" in result or "[ERROR]" in result
+
+
+def test_poll_loop_capture_errors_dont_falsely_trigger_stall_detection():
+    """A burst of transient TimeoutExpired during polling must not cause
+    stall detection to mis-fire when the next successful capture shows
+    a non-baseline screen (e.g. command produced output earlier)."""
+    import asyncio
+
+    mgr = TmuxSessionManager("loaded", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("loaded")
+
+    # Sequence: baseline → 3 transient timeouts → success with new marker (DONE)
+    captures = [
+        "[DCPTN:0:/tmp] ",  # baseline (1 marker)
+        _sp.TimeoutExpired(cmd="docker exec", timeout=10),  # poll 1
+        _sp.TimeoutExpired(cmd="docker exec", timeout=10),  # poll 2
+        _sp.TimeoutExpired(cmd="docker exec", timeout=10),  # poll 3
+        "[DCPTN:0:/tmp] ls\noutput line\n[DCPTN:0:/tmp] ",  # poll 4: success, NEW marker -> command done
+    ]
+
+    def fake_capture():
+        v = captures.pop(0)
+        if isinstance(v, BaseException):
+            raise v
+        return v
+
+    with (
+        patch.object(mgr, "_capture", side_effect=fake_capture),
+        patch.object(mgr, "_send", return_value=None),
+        patch.object(mgr, "_clear_screen", return_value=None),
+        patch.object(mgr, "initialize", return_value=None),
+        patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01),
+        patch("decepticon.backends.docker_sandbox.STALL_SECONDS", 0.05),
+    ):
+        result = asyncio.run(mgr.execute_async(command="ls", is_input=False, timeout=2))
+
+    # Must reach the DONE branch, not falsely return [interactive].
+    assert "interactive" not in result, f"False stall detected: {result!r}"
+    # And not [TIMEOUT] either — the loop should have detected completion.
+    assert "[TIMEOUT]" not in result, f"Should have completed: {result!r}"
+    assert "[ERROR]" not in result, f"Should not have errored: {result!r}"

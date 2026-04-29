@@ -230,11 +230,9 @@ class TmuxSessionManager:
 
         try:
             baseline = self._capture()
-        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        except RuntimeError as e:
             error_msg = str(e)
-            if isinstance(e, RuntimeError) and (
-                "no server running" in error_msg or "session not found" in error_msg
-            ):
+            if "no server running" in error_msg or "session not found" in error_msg:
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
@@ -248,11 +246,13 @@ class TmuxSessionManager:
                         f"Try using a different session name."
                     )
             else:
-                return (
-                    f"[ERROR] Sandbox capture failed: {e}\n"
-                    f"docker exec timed out or the tmux session is hung. "
-                    f'Retry, or terminate with bash_kill(session="{self.session}").'
-                )
+                return f"[ERROR] Sandbox error: {e}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return (
+                f"[ERROR] Sandbox capture failed: {e}\n"
+                f"docker exec timed out or the tmux session is hung. "
+                f'Retry, or terminate with bash_kill(session="{self.session}").'
+            )
 
         initial_count = len(PS1_PATTERN.findall(baseline))
 
@@ -273,8 +273,8 @@ class TmuxSessionManager:
             time.sleep(POLL_INTERVAL)
             try:
                 screen = self._capture()
-            except (RuntimeError, OSError, subprocess.TimeoutExpired) as poll_err:
-                if isinstance(poll_err, RuntimeError) and "no server running" in str(poll_err):
+            except RuntimeError as poll_err:
+                if "no server running" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (
@@ -282,8 +282,14 @@ class TmuxSessionManager:
                         f"The command likely killed the shell process (e.g. pkill bash).\n"
                         f"Session will auto-recover on next bash() call."
                     )
-                # Transient capture failure (timeout / OS error) — keep polling.
+                # Other RuntimeError — keep polling, reset stall timer
+                log.debug("transient RuntimeError in poll loop: %s", poll_err)
+                last_change_time = time.time()
+                continue
+            except (OSError, subprocess.TimeoutExpired) as poll_err:
+                # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
+                last_change_time = time.time()
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))
@@ -383,11 +389,9 @@ class TmuxSessionManager:
 
         try:
             baseline = await asyncio.to_thread(self._capture)
-        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+        except RuntimeError as e:
             error_msg = str(e)
-            if isinstance(e, RuntimeError) and (
-                "no server running" in error_msg or "session not found" in error_msg
-            ):
+            if "no server running" in error_msg or "session not found" in error_msg:
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
@@ -401,11 +405,13 @@ class TmuxSessionManager:
                         f"Try using a different session name."
                     )
             else:
-                return (
-                    f"[ERROR] Sandbox capture failed: {e}\n"
-                    f"docker exec timed out or the tmux session is hung. "
-                    f'Retry, or terminate with bash_kill(session="{self.session}").'
-                )
+                return f"[ERROR] Sandbox error: {e}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            return (
+                f"[ERROR] Sandbox capture failed: {e}\n"
+                f"docker exec timed out or the tmux session is hung. "
+                f'Retry, or terminate with bash_kill(session="{self.session}").'
+            )
 
         initial_count = len(PS1_PATTERN.findall(baseline))
 
@@ -428,8 +434,8 @@ class TmuxSessionManager:
             await asyncio.sleep(POLL_INTERVAL)  # CancelledError delivered here
             try:
                 screen = await asyncio.to_thread(self._capture)
-            except (RuntimeError, OSError, subprocess.TimeoutExpired) as poll_err:
-                if isinstance(poll_err, RuntimeError) and "no server running" in str(poll_err):
+            except RuntimeError as poll_err:
+                if "no server running" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (
@@ -437,8 +443,14 @@ class TmuxSessionManager:
                         f"The command likely killed the shell process (e.g. pkill bash).\n"
                         f"Session will auto-recover on next bash() call."
                     )
-                # Transient capture failure (timeout / OS error) — keep polling.
+                # Other RuntimeError — keep polling, reset stall timer
+                log.debug("transient RuntimeError in poll loop: %s", poll_err)
+                last_change_time = time.time()
+                continue
+            except (OSError, subprocess.TimeoutExpired) as poll_err:
+                # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
+                last_change_time = time.time()
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))

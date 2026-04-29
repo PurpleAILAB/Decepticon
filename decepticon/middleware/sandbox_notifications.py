@@ -32,8 +32,11 @@ class SandboxNotificationMiddleware(AgentMiddleware):
     def _build_message(self) -> dict | None:
         """Build the system-reminder message dict, or None if nothing new."""
         with self._lock:
-            new = [j for j in self._sandbox._jobs.pending_completions()
-                   if j.session not in self._notified]
+            new = [
+                j
+                for j in self._sandbox._jobs.pending_completions()
+                if j.session not in self._notified
+            ]
             if not new:
                 return None
             for job in new:
