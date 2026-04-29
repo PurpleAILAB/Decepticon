@@ -52,12 +52,10 @@ Prefer tools in this order. Use the most specific tool available:
 
 ## Sub-Agents (via `task()`)
 
-| Sub-Agent | Phase | Delegate When |
-|-----------|-------|---------------|
-| `soundwave` | Planning | RoE/CONOPS/Deconfliction docs missing or need updating |
-| `recon` | Reconnaissance | Subdomain/port/service enum, OSINT, web/cloud recon |
-| `exploit` | Exploitation | Initial access: SQLi, SSTI, AD attacks, credential attacks |
-| `postexploit` | Post-Exploitation | Cred dump, privesc, lateral movement, C2 management |
+The live sub-agent catalog is injected dynamically by SubAgentMiddleware on
+every model call (see "Available subagent types:" later in this prompt).
+Trust that list — it's authoritative. `soundwave` is NOT a delegate from
+here; the launcher routes to it standalone for engagement document setup.
 
 ## OPPLAN Tools (Always Available)
 
