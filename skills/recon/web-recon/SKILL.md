@@ -295,6 +295,18 @@ cookies=[<name>=<value>, ...]; obtained via <auth flow, e.g. POST /login (creds:
 ## Open hypotheses
 - <hypothesis> — <signal that pointed here, exploit should pursue>
 - ...
+
+## Frontend stack (for smuggling-tagged handoffs)
+Differential parsing observed: <variants tested + status codes, e.g. "duplicate TE header → 400 from edge but 200 from origin">
+Confirmed desync: <YES (with trace excerpt) | NO>
+Frontend behavior: <reject malformed framing | forward malformed framing | normalize malformed framing>
+Recommended exploit gate: <e.g. "run smuggling.md confirm-desync gate before iterating CL.TE / TE.CL">
 ```
 
-If `Tags` includes `race_condition`/`toctou`/`concurrent`/`smuggling_desync`, the **Session-write timeline** section MUST be populated. Empty timeline + race tag = exploit will flag handoff back.
+### Tag-conditional rules
+
+- If `Tags` includes `race_condition`/`toctou`/`concurrent`, the **Session-write timeline** section MUST be populated. Empty timeline + race tag = exploit will flag handoff back.
+- If `Tags` includes `smuggling_desync`/`request_smuggling`/`hrs`/`desync`, the **Frontend stack** section MUST be populated. Differential parsing alone (different status codes from different framing headers) is **NOT** confirmed desync — it is a hint. Recon must distinguish:
+  - "Differential parsing observed" — one parser path returns 400/501 while another returns 200. This is a routing signal only.
+  - "Confirmed desync" — a smuggled-prefix request causes the back-end to mis-frame the next request on the connection (e.g. observable `XGET` 400 on a fresh victim request). Requires a trace excerpt as evidence.
+  If recon hands off `Differential parsing observed: YES` and `Confirmed desync: NO`, exploit MUST run the smuggling.md confirm-desync gate before iterating any payload variants. Iterating without a positive gate is what stalled cycle XBEN-066-24.
