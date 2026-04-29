@@ -15,10 +15,6 @@ Tool surface:
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from deepagents.backends import CompositeBackend, FilesystemBackend
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
 from langchain.agents import create_agent
@@ -29,6 +25,7 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
+from decepticon.middleware import FilesystemMiddlewareNoExecute
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
@@ -39,7 +36,6 @@ from decepticon.tools.research.tools import (
     kg_stats,
 )
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_patcher_agent():
@@ -57,17 +53,14 @@ def create_patcher_agent():
 
     system_prompt = load_prompt("patcher", shared=["bash"])
 
-    backend = CompositeBackend(
-        default=sandbox,
-        routes={"/skills/": FilesystemBackend(root_dir=_REPO_ROOT / "skills", virtual_mode=True)},
-    )
+    backend = sandbox
 
     middleware = [
         DecepticonSkillsMiddleware(
             backend=backend,
             sources=["/skills/patcher/", "/skills/shared/"],
         ),
-        FilesystemMiddleware(backend=backend),
+        FilesystemMiddlewareNoExecute(backend=backend),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

@@ -33,10 +33,6 @@ is intentionally NOT a sub-agent here: the launcher routes to its standalone
 assistant when document generation is needed.
 """
 
-from pathlib import Path
-
-from deepagents.backends import CompositeBackend, FilesystemBackend
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgentMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
@@ -49,13 +45,13 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
-from decepticon.middleware import EngagementContextMiddleware, OPPLANMiddleware
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.bash import bash
+from decepticon.middleware import (
+    DecepticonSkillsMiddleware,
+    EngagementContextMiddleware,
+    FilesystemMiddlewareNoExecute,
+    OPPLANMiddleware,
+)
 from decepticon.tools.bash.bash import set_sandbox
-
-# Resolve paths relative to repo root
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_decepticon_agent():
@@ -66,8 +62,6 @@ def create_decepticon_agent():
       - SubAgentMiddleware: task() tool for delegating to specialist sub-agents
       - OPPLANMiddleware: 5 CRUD tools for objective tracking (Claude Code V2 Task pattern)
       - ModelFallbackMiddleware: opus 4.6 primary → gpt-5.4 fallback on failure
-      - CompositeBackend: /skills/* → host FS (read-only), default → Docker sandbox
-
     Returns a compiled LangGraph agent ready for invocation.
     """
     config = load_config()
@@ -84,11 +78,11 @@ def create_decepticon_agent():
 
     system_prompt = load_prompt("decepticon", shared=["bash"])
 
-    # Route /skills/ to host filesystem; everything else goes into the container
-    backend = CompositeBackend(
-        default=sandbox,
-        routes={"/skills/": FilesystemBackend(root_dir=_REPO_ROOT / "skills", virtual_mode=True)},
-    )
+    # Single backend: DockerSandbox provides /workspace/ AND /skills/ (skills
+    # are bind-mounted into the sandbox container at /skills/, see
+    # docker-compose.yml). All file I/O goes through the sandbox so the
+    # langgraph process never reads from the host filesystem.
+    backend = sandbox
 
     # Build sub-agents from existing agent factories
     from decepticon.agents.ad_operator import create_ad_operator_agent
@@ -207,7 +201,7 @@ def create_decepticon_agent():
         DecepticonSkillsMiddleware(
             backend=backend, sources=["/skills/decepticon/", "/skills/shared/"]
         ),
-        FilesystemMiddleware(backend=backend),
+        FilesystemMiddlewareNoExecute(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
     ]
@@ -224,7 +218,7 @@ def create_decepticon_agent():
     agent = create_agent(
         llm,
         system_prompt=system_prompt,
-        tools=[bash],
+        tools=[],
         middleware=middleware,
         name="decepticon",
     )

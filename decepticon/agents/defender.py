@@ -6,21 +6,16 @@ middleware stack precisely.
 Middleware stack (selected for defense):
   1. SafeCommandMiddleware    — block offensive/destructive bash patterns
   2. SkillsMiddleware         — progressive disclosure of defender SKILL.md knowledge
-  3. FilesystemMiddleware     — ls/read/write/edit/glob/grep/execute tools
+  3. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools (no execute; use bash)
   4. ModelFallbackMiddleware  — haiku 4.5 → gemini 2.5 flash fallback on primary failure
   5. SummarizationMiddleware  — auto-compact when context budget exceeded
   6. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
   7. PatchToolCallsMiddleware  — repair dangling tool calls
 
-Backend routing (CompositeBackend):
-  /skills/*  → FilesystemBackend (host FS, read-only SKILL.md access)
-  default    → DockerSandbox     (all file ops + defensive command execution)
+Backend: DockerSandbox (single backend; /skills/ is bind-mounted into the
+sandbox container — see docker-compose.yml).
 """
 
-from pathlib import Path
-
-from deepagents.backends import CompositeBackend, FilesystemBackend
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
 from langchain.agents import create_agent
@@ -31,6 +26,7 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerDefenseBackend, DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
+from decepticon.middleware import FilesystemMiddlewareNoExecute
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
 from decepticon.tools.bash import bash
 from decepticon.tools.bash.bash import set_sandbox
@@ -43,16 +39,12 @@ from decepticon.tools.defense.tools import (
 )
 from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 
-# Resolve paths relative to repo root
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_defender_agent():
     """Initialize the Defender Agent using langchain create_agent() directly.
 
-    Context engineering decisions:
-      - CompositeBackend: /skills/* → host FS (read-only), default → Docker sandbox
-      - SafeCommandMiddleware: blocks offensive/destructive patterns before execution
+    Context engineering decisions:      - SafeCommandMiddleware: blocks offensive/destructive patterns before execution
       - ModelFallbackMiddleware: primary → fallback on failure
       - No TodoListMiddleware: defense-brief.json handles task tracking
       - No SubAgentMiddleware: Decepticon orchestrator handles agent delegation
@@ -83,13 +75,8 @@ def create_defender_agent():
     set_defense_backend(defense_backend)
 
     system_prompt = load_prompt("defender", shared=["bash"])
-
-    # Route /skills/ to host filesystem; everything else goes into the container.
-    # Engagement files in /workspace/ are auto-synced to host via bind mount.
-    backend = CompositeBackend(
-        default=sandbox,
-        routes={"/skills/": FilesystemBackend(root_dir=_REPO_ROOT / "skills", virtual_mode=True)},
-    )
+    # Skills + workspace both live inside the sandbox (skills bind-mounted at /skills/).
+    backend = sandbox
 
     # Assemble middleware stack
     middleware = [
@@ -97,7 +84,7 @@ def create_defender_agent():
             backend=backend,
             sources=["/skills/defender/", "/skills/shared/"],
         ),
-        FilesystemMiddleware(backend=backend),
+        FilesystemMiddlewareNoExecute(backend=backend),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

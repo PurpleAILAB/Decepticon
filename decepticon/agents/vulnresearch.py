@@ -22,10 +22,6 @@ Design notes:
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from deepagents.backends import CompositeBackend, FilesystemBackend
-from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgentMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
@@ -39,10 +35,10 @@ from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.middleware import OPPLANMiddleware
+from decepticon.middleware import FilesystemMiddlewareNoExecute
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
 from decepticon.tools.research.tools import kg_query, kg_stats
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def create_vulnresearch_agent():
@@ -68,10 +64,7 @@ def create_vulnresearch_agent():
 
     system_prompt = load_prompt("vulnresearch", shared=[])
 
-    backend = CompositeBackend(
-        default=sandbox,
-        routes={"/skills/": FilesystemBackend(root_dir=_REPO_ROOT / "skills", virtual_mode=True)},
-    )
+    backend = sandbox
 
     # Import factories lazily so a broken sub-agent definition surfaces
     # at instantiation time, not at module-import time (matching
@@ -139,7 +132,7 @@ def create_vulnresearch_agent():
         DecepticonSkillsMiddleware(
             backend=backend, sources=["/skills/vulnresearch/", "/skills/shared/"]
         ),
-        FilesystemMiddleware(backend=backend),
+        FilesystemMiddlewareNoExecute(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
     ]
