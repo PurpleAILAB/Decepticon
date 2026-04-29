@@ -510,67 +510,98 @@ class Harness:
         self._active_thread_id = thread_id
         self._active_run_id = None
 
+        # Tracks whether the polling loop observed a terminal status. If
+        # _invoke_agent exits via any early-return path (httpx.ConnectError,
+        # run-submission Exception, polling Exception, or outer cancellation)
+        # WITHOUT having observed terminal, finally: schedules a cancel/verify
+        # so the run does not orphan into the next challenge.
+        terminal_observed = False
+
         client = get_client(url=self.config.langgraph_url)
         try:
-            # Pre-create the thread with a fixed id we control.
-            await client.threads.create(thread_id=thread_id)
-            run = await client.runs.create(
-                thread_id,
-                "decepticon",
-                input=input_state,
-                config={
-                    "configurable": {"workspace": sandbox_workspace},
-                    "recursion_limit": 400,
-                },
-                # SDK does not auto-enable LangSmith tracing even when the
-                # langgraph container has LANGSMITH_TRACING=true; pass an
-                # explicit project_name so traces show up in the dashboard.
-                langsmith_tracing={"project_name": "benchmark"},
-            )
-            run_id = run["run_id"]
-            self._active_run_id = run_id
-        except httpx.ConnectError:
-            log.warning("Cannot reach LangGraph at %s", self.config.langgraph_url)
-            return AgentResponse(text="", thread_id=thread_id)
-        except Exception as exc:
-            log.warning("Run submission failed for %s: %s", challenge.id, exc)
-            return AgentResponse(text="", thread_id=thread_id)
+            try:
+                # Pre-create the thread with a fixed id we control.
+                await client.threads.create(thread_id=thread_id)
+                run = await client.runs.create(
+                    thread_id,
+                    "decepticon",
+                    input=input_state,
+                    config={
+                        "configurable": {"workspace": sandbox_workspace},
+                        "recursion_limit": 400,
+                    },
+                    # SDK does not auto-enable LangSmith tracing even when the
+                    # langgraph container has LANGSMITH_TRACING=true; pass an
+                    # explicit project_name so traces show up in the dashboard.
+                    langsmith_tracing={"project_name": "benchmark"},
+                )
+                run_id = run["run_id"]
+                self._active_run_id = run_id
+            except httpx.ConnectError:
+                log.warning("Cannot reach LangGraph at %s", self.config.langgraph_url)
+                # Run never created — no orphan to cancel; mark as observed
+                # so finally: skips the cancel/verify path.
+                terminal_observed = True
+                return AgentResponse(text="", thread_id=thread_id)
+            except Exception as exc:
+                log.warning("Run submission failed for %s: %s", challenge.id, exc)
+                terminal_observed = True
+                return AgentResponse(text="", thread_id=thread_id)
 
-        # Poll status until terminal. Avoid client.runs.join() because its
-        # internal request_reconnect logic ignores asyncio.CancelledError, so
-        # the outer asyncio.wait_for cannot enforce the wall-clock timeout.
-        # asyncio.sleep IS cancellation-aware — that gives run_challenge a
-        # clean cancellation point so timeout + _cancel_active_runs work.
-        terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
-        try:
-            while True:
-                # Cap each runs.get at 10s so a stuck httpx connection cannot
-                # swallow the outer asyncio.wait_for cancellation indefinitely.
+            # Poll status until terminal. Avoid client.runs.join() because its
+            # internal request_reconnect logic ignores asyncio.CancelledError,
+            # so the outer asyncio.wait_for cannot enforce the wall-clock
+            # timeout. asyncio.sleep IS cancellation-aware — that gives
+            # run_challenge a clean cancellation point so timeout +
+            # _cancel_active_runs work.
+            terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
+            try:
+                while True:
+                    # Cap each runs.get at 10s so a stuck httpx connection cannot
+                    # swallow the outer asyncio.wait_for cancellation indefinitely.
+                    try:
+                        run_status = await asyncio.wait_for(
+                            client.runs.get(thread_id, run_id), timeout=10.0
+                        )
+                        status = (
+                            run_status.get("status")
+                            if isinstance(run_status, dict) else None
+                        )
+                        if status in terminal:
+                            terminal_observed = True
+                            break
+                    except asyncio.TimeoutError:
+                        # Per-poll timeout — keep looping; outer wait_for handles
+                        # the wall-clock budget.
+                        pass
+                    await asyncio.sleep(5)
+                state_data = await asyncio.wait_for(
+                    client.threads.get_state(thread_id), timeout=30.0
+                )
+            except Exception as exc:
+                log.warning("Run polling failed for %s: %s", challenge.id, exc)
+                return AgentResponse(text="", thread_id=thread_id)
+
+            # ThreadState looks like {"values": {...}, "next": [...], ...}.
+            values: object = (
+                state_data.get("values") if isinstance(state_data, dict) else None
+            )
+            if not isinstance(values, dict):
+                values = state_data if isinstance(state_data, dict) else {}
+            text = self._extract_message(values)
+            return AgentResponse(text=text, thread_id=thread_id)
+        finally:
+            # If we exit before the polling loop observed terminal status —
+            # via raised exception, outer cancellation, or polling-exception
+            # early return — the run is still alive on langgraph's side.
+            # Cancel + verify so it doesn't orphan into the next challenge.
+            if not terminal_observed and self._active_run_id is not None:
                 try:
-                    run_status = await asyncio.wait_for(
-                        client.runs.get(thread_id, run_id), timeout=10.0
+                    await self._cancel_and_verify_terminal()
+                except Exception as exc:
+                    log.warning(
+                        "harness.escalation: orphan-run cancel failed: %s", exc
                     )
-                    status = run_status.get("status") if isinstance(run_status, dict) else None
-                    if status in terminal:
-                        break
-                except asyncio.TimeoutError:
-                    # Per-poll timeout — keep looping; outer wait_for handles
-                    # the wall-clock budget.
-                    pass
-                await asyncio.sleep(5)
-            state_data = await asyncio.wait_for(
-                client.threads.get_state(thread_id), timeout=30.0
-            )
-        except Exception as exc:
-            log.warning("Run polling failed for %s: %s", challenge.id, exc)
-            return AgentResponse(text="", thread_id=thread_id)
-
-        # ThreadState looks like {"values": {...}, "next": [...], ...}.
-        values: object = state_data.get("values") if isinstance(state_data, dict) else None
-        if not isinstance(values, dict):
-            values = state_data if isinstance(state_data, dict) else {}
-        text = self._extract_message(values)
-        return AgentResponse(text=text, thread_id=thread_id)
 
     def _extract_message(self, data: object) -> str:
         """Extract the final assistant message text from a LangGraph run response."""
