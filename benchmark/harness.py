@@ -16,7 +16,7 @@ from langgraph_sdk import get_client
 
 from benchmark.config import BenchmarkConfig
 from benchmark.providers.base import BaseBenchmarkProvider
-from benchmark.schemas import Challenge, ChallengeResult
+from benchmark.schemas import CancelOutcome, Challenge, ChallengeResult
 from decepticon.core.engagement import EngagementState, IterationResult
 
 log = logging.getLogger(__name__)
@@ -80,6 +80,63 @@ class Harness:
             log.warning(
                 "Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc
             )
+
+    async def _cancel_and_verify_terminal(
+        self, *, deadline_seconds: int = 30
+    ) -> tuple[CancelOutcome, str | None]:
+        """Cancel the active run AND verify it reached terminal status.
+
+        Returns ``(outcome, terminal_status)``. Outcome is recorded on the
+        ChallengeResult so observers/critics can detect cancel/teardown
+        races without scraping LangSmith.
+
+        Sequence:
+            1. Fire-and-forget cancel via ``_cancel_active_runs`` (rollback,
+               wait=False, bounded by 5s).
+            2. Poll ``runs.get`` every 2s for up to ``deadline_seconds``,
+               looking for terminal status.
+            3. If terminal reached → return ("rollback", <status>). Caller
+               is now safe to teardown the target.
+            4. If NOT terminal within deadline → return ("failed", None).
+               Caller should escalate (container restart) before teardown.
+        """
+        thread_id = getattr(self, "_active_thread_id", None)
+        run_id = getattr(self, "_active_run_id", None)
+        if not thread_id or not run_id:
+            return ("clean", None)
+
+        await self._cancel_active_runs()
+
+        client = get_client(url=self.config.langgraph_url)
+        terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
+        deadline = time.time() + deadline_seconds
+        last_status: str | None = None
+
+        while time.time() < deadline:
+            try:
+                run_status = await asyncio.wait_for(
+                    client.runs.get(thread_id, run_id), timeout=5.0
+                )
+                last_status = (
+                    run_status.get("status") if isinstance(run_status, dict) else None
+                )
+                if last_status in terminal:
+                    log.info(
+                        "Run %s reached terminal status %s after cancel",
+                        run_id, last_status,
+                    )
+                    return ("rollback", last_status)
+            except asyncio.TimeoutError:
+                pass
+            except Exception as exc:
+                log.warning("Status poll failed during verify-terminal: %s", exc)
+            await asyncio.sleep(2)
+
+        log.warning(
+            "Run %s did NOT reach terminal status within %ds (last=%s)",
+            run_id, deadline_seconds, last_status,
+        )
+        return ("failed", last_status)
 
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
@@ -245,12 +302,22 @@ class Harness:
             result.thread_id = agent_resp.thread_id
             result.token_count = agent_resp.token_count
             result.agent_summary = agent_resp.text[:500] if agent_resp.text else None
+            # Normal-success path: run reached terminal status via natural
+            # completion. Safe to teardown immediately.
+            result.cancel_outcome = "clean"
+            result.terminal_status_at_teardown = "success"
+            self.provider.teardown(challenge)
             return result
 
         except asyncio.TimeoutError:
-            # Cancel any in-flight LangGraph runs on this thread so the
-            # graph stops consuming sandbox+LLM resources after we give up.
-            await self._cancel_active_runs()
+            # Cancel + verify-terminal BEFORE teardown so the graph node is
+            # not still hitting the target when we tear it down (cycle-5/6
+            # connection-refused trace pattern). Cancel is best-effort with a
+            # 30s deadline; if the run does not reach terminal in that window,
+            # cancel_outcome="failed" tells the next critic loop the cancel
+            # didn't dislodge the run, and the next pre-cycle sandbox restart
+            # is the resolution path.
+            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal()
             # Agent timed out, but may have written flags to workspace
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text and "FLAG{" in workspace_text:
@@ -266,8 +333,12 @@ class Harness:
                 )
                 result = self.provider.evaluate(challenge, state, workspace)
                 result.duration_seconds = round(time.time() - start, 2)
+                result.cancel_outcome = cancel_outcome
+                result.terminal_status_at_teardown = terminal_status
+                self.provider.teardown(challenge)
                 return result
 
+            self.provider.teardown(challenge)
             return ChallengeResult(
                 challenge_id=challenge.id,
                 challenge_name=challenge.name,
@@ -276,8 +347,15 @@ class Harness:
                 passed=False,
                 error=f"Timeout after {self.config.timeout}s",
                 duration_seconds=round(time.time() - start, 2),
+                cancel_outcome=cancel_outcome,
+                terminal_status_at_teardown=terminal_status,
             )
         except Exception as exc:
+            # Unexpected exception path — same discipline: cancel + verify
+            # terminal before teardown so we don't tear the target out from
+            # under a still-running graph node.
+            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal()
+            self.provider.teardown(challenge)
             return ChallengeResult(
                 challenge_id=challenge.id,
                 challenge_name=challenge.name,
@@ -286,9 +364,13 @@ class Harness:
                 passed=False,
                 error=str(exc),
                 duration_seconds=round(time.time() - start, 2),
+                cancel_outcome=cancel_outcome,
+                terminal_status_at_teardown=terminal_status,
             )
         finally:
-            self.provider.teardown(challenge)
+            # Workspace cleanup is safe in unconditional finally — it doesn't
+            # race with the LangGraph run. Target teardown moved into each
+            # branch above so it only fires AFTER cancel-and-verify-terminal.
             if self.config.cleanup_workspaces and workspace.exists():
                 shutil.rmtree(workspace, ignore_errors=True)
 
