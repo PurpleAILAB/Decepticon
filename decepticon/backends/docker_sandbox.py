@@ -13,6 +13,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import functools
 import io
 import logging
@@ -579,6 +580,82 @@ def _truncate(text: str) -> str:
         f"to preserve complete results ...]\n\n"
         f"{text[-tail_chars:]}"
     )
+
+
+# ─── Background job tracking ─────────────────────────────────────────────
+
+
+@dataclasses.dataclass
+class BackgroundJob:
+    """Metadata for one background command in a tmux session.
+
+    A session holds at most one BackgroundJob — sequential reuse replaces.
+    """
+
+    session: str
+    command: str
+    initial_markers: int
+    started_at: float
+    status: str = "running"          # running | done
+    exit_code: int | None = None
+    completed_at: float | None = None
+    consumed: bool = False
+
+    @property
+    def elapsed(self) -> float:
+        end = self.completed_at if self.completed_at is not None else time.time()
+        return end - self.started_at
+
+
+class BackgroundJobTracker:
+    """In-memory background-job registry keyed by session name."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, BackgroundJob] = {}
+        self._lock = threading.RLock()
+
+    def register(self, session: str, command: str, initial_markers: int) -> BackgroundJob:
+        with self._lock:
+            job = BackgroundJob(
+                session=session,
+                command=command,
+                initial_markers=initial_markers,
+                started_at=time.time(),
+            )
+            self._jobs[session] = job
+            return job
+
+    def get(self, session: str) -> BackgroundJob | None:
+        with self._lock:
+            return self._jobs.get(session)
+
+    def mark_complete(self, session: str, exit_code: int) -> None:
+        with self._lock:
+            job = self._jobs.get(session)
+            if job is None or job.status != "running":
+                return
+            job.status = "done"
+            job.exit_code = exit_code
+            job.completed_at = time.time()
+
+    def mark_consumed(self, session: str) -> None:
+        with self._lock:
+            job = self._jobs.get(session)
+            if job is not None:
+                job.consumed = True
+
+    def pending_completions(self) -> list[BackgroundJob]:
+        with self._lock:
+            return [j for j in self._jobs.values()
+                    if j.status == "done" and not j.consumed]
+
+    def all_jobs(self) -> list[BackgroundJob]:
+        with self._lock:
+            return list(self._jobs.values())
+
+    def remove(self, session: str) -> None:
+        with self._lock:
+            self._jobs.pop(session, None)
 
 
 # ─── DockerSandbox ────────────────────────────────────────────────────────
