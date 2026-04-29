@@ -1,5 +1,11 @@
 from decepticon.tools.ad.tools import AD_TOOLS
-from decepticon.tools.bash import bash
+from decepticon.tools.bash import (
+    BASH_TOOLS,
+    bash,
+    bash_kill,
+    bash_output,
+    bash_status,
+)
 from decepticon.tools.cloud.tools import CLOUD_TOOLS
 from decepticon.tools.contracts.tools import CONTRACT_TOOLS
 from decepticon.tools.references.tools import REFERENCES_TOOLS
@@ -12,6 +18,10 @@ from decepticon.tools.web.tools import WEB_TOOLS
 
 __all__ = [
     "bash",
+    "bash_kill",
+    "bash_output",
+    "bash_status",
+    "BASH_TOOLS",
     "AD_TOOLS",
     "CLOUD_TOOLS",
     "CONTRACT_TOOLS",

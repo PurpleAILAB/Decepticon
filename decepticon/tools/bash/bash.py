@@ -28,7 +28,7 @@ import time
 
 from langchain_core.tools import tool
 
-from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.backends.docker_sandbox import DockerSandbox, _interpret_exit_code
 
 _sandbox: DockerSandbox | None = None
 
@@ -280,3 +280,100 @@ async def bash(
         return await _offload_large_output(result, command, session)
 
     return result
+
+
+@tool
+async def bash_output(session: str = "main") -> str:
+    """Retrieve new output from a sandbox session since the last call.
+
+    WHEN TO USE:
+    - After bash(..., background=True) to fetch progress or results.
+    - After receiving a <system-reminder> notification that a session completed.
+    - To re-read a session you've stepped away from while doing other work.
+
+    RETURNS:
+    - "[RUNNING elapsed=Ts] session=... command=...\\n<diff>"
+    - "[DONE exit=N elapsed=Ts] session=... command=...\\n<diff>"
+      (the DONE line is delivered ONCE — after this call the job is "consumed")
+    - "[IDLE] No background job in session 'X'."
+
+    Args:
+        session: Session name passed to bash(..., background=True).
+    """
+    if _sandbox is None:
+        raise RuntimeError("DockerSandbox not initialized.")
+
+    job = await asyncio.to_thread(_sandbox.poll_completion, session)
+    diff_raw = await asyncio.to_thread(_sandbox.read_session_log_diff, session)
+    diff = _sanitize_output(diff_raw) if diff_raw else ""
+
+    if job is None:
+        if diff:
+            return f"[IDLE] No background job in session '{session}'.\n{diff}"
+        return f"[IDLE] No background job in session '{session}'."
+
+    if job.status == "done":
+        _sandbox._jobs.mark_consumed(session)
+        hint = _interpret_exit_code(job.exit_code or 0) if job.exit_code is not None else ""
+        body = diff if diff else "(no new output)"
+        return (
+            f"[DONE exit={job.exit_code}{hint} elapsed={job.elapsed:.1f}s] "
+            f"session='{session}' command='{job.command}'\n{body}"
+        )
+
+    body = diff if diff else "(no new output yet)"
+    return (
+        f"[RUNNING elapsed={job.elapsed:.1f}s] "
+        f"session='{session}' command='{job.command}'\n{body}"
+    )
+
+
+@tool
+async def bash_kill(session: str) -> str:
+    """Forcefully terminate a sandbox session.
+
+    Sends Ctrl+C, kills the tmux session, and clears local job tracking.
+    The pipe-pane log file is preserved at /workspace/.sessions/<session>.log.
+
+    Args:
+        session: Session name to terminate.
+    """
+    if _sandbox is None:
+        raise RuntimeError("DockerSandbox not initialized.")
+
+    await asyncio.to_thread(_sandbox.kill_session, session)
+    return (
+        f"[KILLED] session '{session}' terminated. "
+        f"Log preserved at /workspace/.sessions/{session}.log."
+    )
+
+
+@tool
+async def bash_status() -> str:
+    """List all known sandbox sessions with running and completed jobs.
+
+    Use before launching a new background job to spot conflicts, or to
+    detect stale sessions for cleanup.
+    """
+    if _sandbox is None:
+        raise RuntimeError("DockerSandbox not initialized.")
+
+    initial = _sandbox._jobs.all_jobs()
+    if not initial:
+        return "[EMPTY] No tracked background jobs."
+
+    for job in initial:
+        if job.status == "running":
+            await asyncio.to_thread(_sandbox.poll_completion, job.session)
+
+    rows = ["session | status | elapsed | command",
+            "--------+--------+---------+--------"]
+    for j in _sandbox._jobs.all_jobs():
+        if j.status == "running":
+            status = "running"
+        else:
+            status = f"done(exit={j.exit_code})"
+            if j.consumed:
+                status += " consumed"
+        rows.append(f"{j.session} | {status} | {j.elapsed:.1f}s | {j.command[:60]}")
+    return "\n".join(rows)
