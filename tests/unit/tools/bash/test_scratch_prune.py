@@ -3,6 +3,7 @@
 import asyncio
 import importlib
 import logging
+import time
 from unittest.mock import MagicMock
 
 bash_mod = importlib.import_module("decepticon.tools.bash.bash")
@@ -12,7 +13,9 @@ def test_prune_failure_logged_as_warning(caplog):
     sandbox = MagicMock()
     sandbox.execute = MagicMock(side_effect=RuntimeError("docker exec failed"))
     bash_mod.set_sandbox(sandbox)
-    bash_mod._last_scratch_prune = 0.0  # force the prune attempt this call
+    # Force the throttle to pass: place the last prune well before now-SCRATCH_PRUNE_INTERVAL.
+    # Plain 0.0 fails on hosts where time.monotonic() < SCRATCH_PRUNE_INTERVAL (fresh boot).
+    bash_mod._last_scratch_prune = time.monotonic() - bash_mod.SCRATCH_PRUNE_INTERVAL - 1
 
     # Project's "decepticon" parent logger sets propagate=False; restore for caplog.
     parent = logging.getLogger("decepticon")
