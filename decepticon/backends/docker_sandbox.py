@@ -683,6 +683,7 @@ class DockerSandbox(BaseSandbox):
         self._managers_lock = threading.RLock()
         self._jobs = BackgroundJobTracker()
         self._log_offsets: dict[str, int] = {}
+        self._log_offsets_lock = threading.RLock()
 
     def _get_manager(self, session: str) -> TmuxSessionManager:
         with self._managers_lock:
@@ -786,16 +787,18 @@ class DockerSandbox(BaseSandbox):
         if not results or results[0].error or results[0].content is None:
             return ""
         full = results[0].content
-        prev_offset = self._log_offsets.get(session, 0)
-        if prev_offset > len(full):
-            prev_offset = 0
-        new_bytes = full[prev_offset:]
-        self._log_offsets[session] = len(full)
+        with self._log_offsets_lock:
+            prev_offset = self._log_offsets.get(session, 0)
+            if prev_offset > len(full):
+                prev_offset = 0
+            new_bytes = full[prev_offset:]
+            self._log_offsets[session] = len(full)
         return new_bytes.decode("utf-8", errors="replace")
 
     def reset_session_log_offset(self, session: str) -> None:
         """Forget the read offset (used after kill / GC)."""
-        self._log_offsets.pop(session, None)
+        with self._log_offsets_lock:
+            self._log_offsets.pop(session, None)
 
     # ── Tmux execution (for bash tool) ───────────────────────────────────
 

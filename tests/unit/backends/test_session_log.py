@@ -106,7 +106,6 @@ def test_sandbox_has_log_offsets_dict():
     assert sandbox._log_offsets == {}
 
 
-from unittest.mock import patch
 from deepagents.backends.protocol import FileDownloadResponse
 
 
@@ -183,3 +182,36 @@ def test_read_session_log_diff_returns_empty_when_file_missing():
         ]
         diff = sandbox.read_session_log_diff("scan")
     assert diff == ""
+
+
+def test_read_session_log_diff_concurrent_does_not_double_count():
+    """20 threads reading the same session log must collectively consume
+    each byte exactly once — no overlap, no gaps."""
+    sandbox = DockerSandbox(container_name="test")
+    payload = b"x" * 1000
+
+    def fake_download(paths):
+        return [_file_response(paths[0], payload)]
+
+    with patch.object(sandbox, "download_files", side_effect=fake_download):
+        barrier = threading.Barrier(20)
+        results: list[str] = []
+        results_lock = threading.Lock()
+
+        def worker():
+            barrier.wait()
+            r = sandbox.read_session_log_diff("scan")
+            with results_lock:
+                results.append(r)
+
+        threads = [threading.Thread(target=worker) for _ in range(20)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+    # Exactly one thread sees the full payload; the other 19 see ""
+    full_reads = [r for r in results if r]
+    empty_reads = [r for r in results if not r]
+    assert len(full_reads) == 1
+    assert len(empty_reads) == 19
+    assert full_reads[0] == "x" * 1000
+    assert sandbox._log_offsets["scan"] == 1000
