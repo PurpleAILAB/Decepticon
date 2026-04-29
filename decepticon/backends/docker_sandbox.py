@@ -774,6 +774,29 @@ class DockerSandbox(BaseSandbox):
                 )
         return responses
 
+    def read_session_log_diff(self, session: str) -> str:
+        """Return new bytes appended to /workspace/.sessions/<session>.log
+        since the previous call (or the whole file on first call).
+
+        Per-process offset tracking only — restart resets to 0 (safe fallback).
+        File truncation/rotation also resets to 0.
+        """
+        log_path = f"/workspace/.sessions/{session}.log"
+        results = self.download_files([log_path])
+        if not results or results[0].error or results[0].content is None:
+            return ""
+        full = results[0].content
+        prev_offset = self._log_offsets.get(session, 0)
+        if prev_offset > len(full):
+            prev_offset = 0
+        new_bytes = full[prev_offset:]
+        self._log_offsets[session] = len(full)
+        return new_bytes.decode("utf-8", errors="replace")
+
+    def reset_session_log_offset(self, session: str) -> None:
+        """Forget the read offset (used after kill / GC)."""
+        self._log_offsets.pop(session, None)
+
     # ── Tmux execution (for bash tool) ───────────────────────────────────
 
     def execute_tmux(

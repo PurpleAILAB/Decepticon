@@ -104,3 +104,82 @@ def test_sandbox_has_log_offsets_dict():
     sandbox = DockerSandbox(container_name="test")
     assert isinstance(sandbox._log_offsets, dict)
     assert sandbox._log_offsets == {}
+
+
+from unittest.mock import patch
+from deepagents.backends.protocol import FileDownloadResponse
+
+
+def _file_response(path: str, content: bytes) -> FileDownloadResponse:
+    return FileDownloadResponse(path=path, content=content, error=None)
+
+
+def test_read_session_log_diff_returns_full_log_on_first_call():
+    sandbox = DockerSandbox(container_name="test")
+
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [
+            _file_response("/workspace/.sessions/scan.log", b"line1\nline2\nline3\n"),
+        ]
+        diff = sandbox.read_session_log_diff("scan")
+
+    assert "line1" in diff and "line3" in diff
+
+
+def test_read_session_log_diff_returns_only_new_bytes_on_second_call():
+    sandbox = DockerSandbox(container_name="test")
+
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"old\n")]
+        sandbox.read_session_log_diff("scan")
+
+        mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"old\nnew\n")]
+        diff = sandbox.read_session_log_diff("scan")
+
+    assert "old" not in diff and "new" in diff
+
+
+def test_read_session_log_diff_empty_when_no_new_bytes():
+    sandbox = DockerSandbox(container_name="test")
+
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"data\n")]
+        sandbox.read_session_log_diff("scan")
+        diff = sandbox.read_session_log_diff("scan")
+
+    assert diff == ""
+
+
+def test_read_session_log_diff_recovers_when_file_truncated():
+    sandbox = DockerSandbox(container_name="test")
+
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"a" * 100)]
+        sandbox.read_session_log_diff("scan")
+
+        # File shrank (rotation / external truncation)
+        mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"x" * 5)]
+        diff = sandbox.read_session_log_diff("scan")
+
+    assert diff == "xxxxx"
+
+
+def test_reset_session_log_offset_clears_state():
+    sandbox = DockerSandbox(container_name="test")
+    sandbox._log_offsets["scan"] = 42
+    sandbox.reset_session_log_offset("scan")
+    assert "scan" not in sandbox._log_offsets
+
+
+def test_read_session_log_diff_returns_empty_when_file_missing():
+    sandbox = DockerSandbox(container_name="test")
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [
+            FileDownloadResponse(
+                path="/workspace/.sessions/scan.log",
+                content=None,
+                error="file_not_found",
+            ),
+        ]
+        diff = sandbox.read_session_log_diff("scan")
+    assert diff == ""
