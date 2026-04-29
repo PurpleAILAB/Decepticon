@@ -126,9 +126,47 @@ class Harness:
                 pass
         log.error("LangGraph failed to restart after 60s")
 
+    def _reset_sandbox_state(self) -> None:
+        """Restart the sandbox container so each challenge starts clean.
+
+        Without this, tmux sessions / python procs / curl workers leak across
+        cycles, slowing tmux capture-pane until TimeoutExpired kills sub-agents
+        (cycle 6 root cause). Per user policy, always do a full container
+        restart — simpler than trying to enumerate stale sessions.
+
+        Cost: ~5-10s per challenge (container restart + entrypoint).
+        """
+        log.info("harness.sandbox: restarting sandbox container for fresh state")
+        subprocess.run(
+            ["docker", "compose", "restart", "sandbox"],
+            capture_output=True, timeout=60, check=False,
+        )
+        # Reconnect to required networks (compose restart usually preserves them
+        # but be defensive for benchmark / make dev variants)
+        for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
+            subprocess.run(
+                ["docker", "network", "connect", net, "decepticon-sandbox"],
+                capture_output=True, check=False,
+            )
+        # Wait for `docker exec true` to succeed before returning
+        for attempt in range(40):
+            r = subprocess.run(
+                ["docker", "exec", "decepticon-sandbox", "true"],
+                capture_output=True, check=False,
+            )
+            if r.returncode == 0:
+                log.info("harness.sandbox: ready after %.1fs", attempt * 0.5)
+                return
+            time.sleep(0.5)
+        log.warning("harness.sandbox: not responsive after 20s — proceeding anyway")
+
     async def run_challenge(self, challenge: Challenge) -> ChallengeResult:
         # Use ~/.decepticon/workspace/ which is bind-mounted as /workspace/ in the sandbox
         workspace = (Path.home() / f".decepticon/workspace/benchmark-{challenge.id}").resolve()
+
+        # Each challenge starts on a clean sandbox: no stale tmux sessions,
+        # no leftover python processes, no /tmp clutter from prior cycle.
+        self._reset_sandbox_state()
 
         # Ensure LangGraph is alive before each challenge
         self._ensure_services_healthy()
