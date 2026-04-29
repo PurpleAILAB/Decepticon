@@ -215,3 +215,28 @@ def test_read_session_log_diff_concurrent_does_not_double_count():
     assert len(empty_reads) == 19
     assert full_reads[0] == "x" * 1000
     assert sandbox._log_offsets["scan"] == 1000
+
+
+def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
+    sandbox = DockerSandbox(container_name="test")
+    mgr = sandbox._get_manager("scan")  # populate the cache
+    TmuxSessionManager._initialized.add("scan")
+
+    with patch.object(mgr, "_docker_tmux") as mock_tmux:
+        sandbox.kill_session("scan")
+
+    sent_calls = [c.args[0] for c in mock_tmux.call_args_list]
+    assert any(c[0] == "send-keys" and c[-1] == "C-c" for c in sent_calls)
+    assert any(c[0] == "kill-session" for c in sent_calls)
+    assert "scan" not in sandbox._managers
+    assert "scan" not in TmuxSessionManager._initialized
+
+
+def test_kill_session_swallows_errors():
+    sandbox = DockerSandbox(container_name="test")
+    mgr = sandbox._get_manager("flaky")
+
+    with patch.object(mgr, "_docker_tmux", side_effect=RuntimeError("boom")):
+        sandbox.kill_session("flaky")  # must not raise
+
+    assert "flaky" not in sandbox._managers

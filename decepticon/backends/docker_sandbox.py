@@ -888,6 +888,28 @@ class DockerSandbox(BaseSandbox):
             self._jobs.mark_complete(session, exit_code=exit_code)
         return job
 
+    def kill_session(self, session: str) -> None:
+        """Send Ctrl+C, then kill the tmux session, then clear all caches.
+
+        Best-effort: errors are logged, not raised. The pipe-pane log file
+        is preserved at /workspace/.sessions/<session>.log for audit.
+        """
+        try:
+            mgr = self._get_manager(session)
+            try:
+                mgr._docker_tmux(["send-keys", "-t", session, "C-c"])
+            except RuntimeError as e:
+                log.debug("send-keys C-c failed for '%s': %s", session, e)
+            try:
+                mgr._docker_tmux(["kill-session", "-t", session])
+            except RuntimeError as e:
+                log.warning("kill-session failed for '%s': %s", session, e)
+        finally:
+            with self._managers_lock:
+                self._managers.pop(session, None)
+            with TmuxSessionManager._init_lock:
+                TmuxSessionManager._initialized.discard(session)
+
 
 # ─── Pre-flight check ────────────────────────────────────────────────────
 
