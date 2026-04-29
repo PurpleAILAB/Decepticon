@@ -258,6 +258,33 @@ Raw-socket probes (HTTP request smuggling, custom protocol fuzzers, bespoke TLS 
 3. Verify the output file exists and has bytes: `ls -la <output_file>`. Empty (0 bytes) = wedged in network I/O before any flush.
 4. Switch variant OR rewrite with both `sock.settimeout(5)` and `timeout 60` outer wall before retrying.
 
+### Tmux pipe degradation detector
+
+When a probe is launched in a tmux session and its stdout is redirected to a file (`python3 detector.py > /tmp/log 2>&1 &`, `tmux send-keys '... > /tmp/log' Enter`), the tmux pipe between the running process and the log file can degrade silently — the process keeps running, `ps` shows the PID alive, but every byte it writes is discarded by the broken pipe. From the operator side this looks IDENTICAL to "the script is still working".
+
+**Detection signature** (all three conditions hold at the same time):
+- The script's PID is alive (`ps -p <PID>` returns 0).
+- `cat /tmp/log` returns empty bytes across **2 consecutive `sleep 30` polls** (60s total of zero new output).
+- The script SHOULD have produced at least one line by now (it has progress logging, a banner, a heartbeat, etc.).
+
+If all three hold, the tmux pipe is broken. Do NOT keep waiting — keep waiting will continue to return empty forever.
+
+**Recovery, in order:**
+
+1. Open a NEW bash session (e.g. tag it `<challenge>_recovery` so the original tmux name does not collide).
+2. `pkill -9 -f <script>` AND `rm -f /tmp/log` AND `tmux kill-session -t main 2>/dev/null` (the `2>/dev/null` covers the no-such-session case so the recovery does not error out before the next step).
+3. Re-launch the same probe **inline** — `timeout 60 python3 -u -c '<inlined harness>' 2>&1 | tee log.txt` — bypassing tmux entirely. Inline `python3 -u -c` writes to the tool's stdout, which the harness sees directly.
+4. If the inline run produces no output within 60 s, the issue is NOT tmux degradation but a real wedge in the harness itself. Escalate via `update_objective(status="blocked", reason="sandbox tmux pipe degradation: inline retry also produced no output in 60s")`.
+
+### Diagnostic ladder
+
+| Symptom | Cause | Recovery |
+|---------|-------|----------|
+| `ps -p <PID>` alive, `/tmp/log` empty across 2× 30 s polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + tmux kill-session, switch to inline `timeout 60 python3 -u -c '...' \| tee log.txt`. |
+| `ps -p <PID>` dead, `/tmp/log` empty | Process crashed before first flush (likely import error or syntax error) | `python3 -c '<harness>'` directly to surface the traceback (no `&`, no log redirect). Fix syntax, retry. |
+| `ps -p <PID>` alive, `/tmp/log` has bytes but stops growing | Network wedge (no `sock.settimeout`, slow-loris peer, or sandbox throttling) | Apply Wedged-shell recovery above. Add `sock.settimeout(5)` before connect AND each recv. Outer `timeout 60`. |
+| 3+ consecutive empty-command polls (`""`, `echo`, `pwd`) on the SAME shell session | The previous tool call wedged the shell stdin/stdout pump | Open a fresh bash session immediately. Polling the wedged shell will not unwedge it. |
+
 ## Workflow Commands
 
 | User Says | Action |
