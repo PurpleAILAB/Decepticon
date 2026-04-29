@@ -23,10 +23,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import time
 
 from langchain_core.tools import tool
+
+log = logging.getLogger("decepticon.tools.bash.bash")
 
 from decepticon.backends.docker_sandbox import DockerSandbox, _interpret_exit_code
 
@@ -147,8 +150,8 @@ async def _prune_old_scratch() -> None:
             "-delete 2>/dev/null || true",
             timeout=5,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("scratch prune failed: %s", e)
 
 
 async def _offload_large_output(output: str, command: str, session: str) -> str:
