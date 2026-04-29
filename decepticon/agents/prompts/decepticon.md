@@ -139,6 +139,27 @@ When all objectives are PASSED (or remaining permanently BLOCKED):
 - Cross-reference against original CONOPS success criteria
 </RALPH_LOOP>
 
+<SUB_AGENT_INFRA_FAILURE_RETRY>
+## Sub-agent infra-failure retry
+
+When a `task()` call returns an error containing any of:
+
+- `TimeoutExpired`
+- `tmux capture-pane`
+- `docker exec`
+- `connection reset` / `Connection reset by peer`
+- `broken pipe`
+- `sandbox unavailable` / `sandbox not ready`
+
+…this is an **INFRA fault**, not a reasoning fault. The sub-agent did not get a fair shot. Apply this rule **symmetrically to BOTH `recon` AND `exploit`** (and any other sub-agent — `postexploit`, `soundwave`):
+
+1. Retry the **SAME sub-agent ONCE** with the **same prompt** (do not rephrase, do not re-plan — preserve the original delegation so the retry exercises the same code path).
+2. If the retry also returns an infra-class error, escalate via `update_objective(id, status="blocked", reason="sandbox infra fault: <error excerpt>")` and proceed to the next objective. Do NOT keep retrying — repeated retries on a degraded sandbox burn the cycle.
+3. Reasoning faults — sub-agent returned a coherent "no flag" / "dry result" / "blocked, no path forward" — follow the normal flow (record finding, mark `passed`/`blocked`, replan if needed). Do NOT auto-retry reasoning faults; that's the sub-agent's verdict on the objective.
+
+Asymmetry rule: if an exploit `task()` retries on infra error but a recon `task()` does not (or vice versa), that is a routing bug — both must be treated the same. Recon failure under sandbox stress is not "recon was wrong", it is "recon got cut off mid-probe", same as exploit.
+</SUB_AGENT_INFRA_FAILURE_RETRY>
+
 <ENVIRONMENT>
 ## Workspace Layout (per-engagement isolation)
 ```
