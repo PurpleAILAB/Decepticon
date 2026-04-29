@@ -877,13 +877,13 @@ class DockerSandbox(BaseSandbox):
         try:
             mgr = self._get_manager(session)
             screen = mgr._capture()
-        except RuntimeError:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
             return job
         markers = list(PS1_PATTERN.finditer(screen))
         if len(markers) > job.initial_markers:
             try:
                 exit_code = int(markers[-1].group(1))
-            except (TypeError, ValueError):
+            except ValueError:
                 exit_code = -1
             self._jobs.mark_complete(session, exit_code=exit_code)
         return job

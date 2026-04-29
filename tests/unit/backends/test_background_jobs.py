@@ -126,6 +126,21 @@ def test_poll_completion_returns_none_for_unknown_session():
     assert sandbox.poll_completion("never-seen") is None
 
 
+def test_poll_completion_handles_capture_timeout_gracefully():
+    import subprocess as _sp
+    sandbox = DockerSandbox(container_name="test")
+    sandbox._jobs.register("scan", command="x", initial_markers=1)
+
+    with patch.object(sandbox, "_get_manager") as mock_get:
+        mgr = MagicMock()
+        mgr._capture.side_effect = _sp.TimeoutExpired(cmd="docker exec", timeout=10)
+        mock_get.return_value = mgr
+
+        result = sandbox.poll_completion("scan")
+
+    assert result.status == "running"
+
+
 def test_poll_completion_handles_capture_failure_gracefully():
     sandbox = DockerSandbox(container_name="test")
     sandbox._jobs.register("scan", command="x", initial_markers=1)
