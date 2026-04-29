@@ -22,7 +22,7 @@ Sub-skills under this directory:
 | Auth mapping | `read_file("/skills/recon/web-recon/auth-mapping.md")` | login flow analysis |
 | Cookie audit | `read_file("/skills/recon/web-recon/cookie-audit.md")` | sink behind session, race-condition recon |
 
-For overall recon workflow, scope rules, and handoff format, see `read_file("/skills/recon/SKILL.md")` (root workflow).
+For overall recon workflow, scope rules, and handoff format, see `read_file("/skills/recon/workflow.md")` (root workflow).
 
 ## Output files
 
