@@ -213,6 +213,15 @@ A "sink" (eval, deserialize, exec, template render) may behave differently — o
 |------|----------|--------|------------------|--------------------|--------------------|-------|
 | `bookmark_data` (deser) | `/bookmarks/import` | POST | `session=...; auth_tier=user` | 302 → /login | 200 + processed | gated by auth_tier |
 
+4a. **Session mutation audit.** For every endpoint that READS session, trace which other endpoints WRITE to the SAME session key BEFORE the security verdict (login, password check, role lookup). This is the data race-condition exploit needs. Output a "Session-write timeline" table:
+
+| Endpoint | Reads session keys | Writes session keys (pre-verdict) | Slow ops (bcrypt/DB/network) | Race window (ms) |
+|----------|--------------------|-----------------------------------|------------------------------|------------------|
+| `POST /login` | — | `user`, `auth_tier` (set BEFORE bcrypt) | bcrypt ~200ms | ~200 |
+| `GET /admin_panel` | `user`, `auth_tier` | — | — | reads during the login bcrypt window |
+
+If the challenge tag includes `race_condition`, `toctou`, `concurrent`, or `smuggling_desync` and recon hands off WITHOUT this table, exploit MUST flag the handoff back as "recon incomplete: session-write timeline missing".
+
 5. In the handoff to exploit/postexploit, ALWAYS include a **Required session state** line:
 
 ```
@@ -222,6 +231,14 @@ Required session state: cookies=[session, auth_tier=user]; obtained via POST /lo
 If recon hands off without this line, exploit is required to re-run cookie enumeration before concluding any sink is unreachable.
 
 ## 10. Workflow: Web Recon Sequence
+
+> **Scope rules (recon stays a recon — no exploit harnesses).**
+> - At MOST 2 confirm probes per hypothesis. If 2 don't confirm, hand the hypothesis off, do not deepen.
+> - ZERO full exploit harnesses. NO race-condition scripts. NO multi-endpoint orchestrations. NO sqlmap dumps. NO ysoserial payloads. Those belong to exploit.
+> - Kill any probe that runs >10s wall-clock. Always set `timeout=5` on HTTP calls. Always bound loops.
+> - Prefer `python3 -c '...'` or `python3 - <<'PY' ... PY` with explicit timeouts over chained bash one-liners.
+> - NEVER use `&` to parallelize in bash. Parallelism that goes past sequential probing is exploit territory — hand off.
+> - Always emit a **"Tried, ruled out"** list in the handoff so exploit doesn't repeat work.
 
 1. **Technology Fingerprint** → httpx with tech-detect, check headers
 2. **Directory Discovery** → ffuf with common wordlist + extensions
@@ -245,3 +262,39 @@ If recon hands off without this line, exploit is required to re-run cookie enume
 ├── wpscan_<target>.json            # WordPress scan (if applicable)
 └── web_recon_<target>_summary.md   # Consolidated web findings
 ```
+
+## 12. Recon → Exploit Handoff Format
+
+Every web-recon run MUST produce a `SUMMARY.txt` with this fixed structure. Exploit reads this file first; missing sections are a recon-incomplete signal.
+
+```
+# SUMMARY.txt — web-recon handoff
+
+Target: <url>
+Tags: <comma-separated challenge tags, e.g. race_condition, deserialization>
+
+## Confirmed sinks
+- <endpoint> <method> — <sink type, e.g. blind deser, eval, render>
+- ...
+
+## Required session state
+cookies=[<name>=<value>, ...]; obtained via <auth flow, e.g. POST /login (creds: user@example.com / hunter2)>
+
+## Sink preconditions
+| Sink | Endpoint | Method | Required cookies | Behavior w/o cookie | Behavior w/ cookie | Notes |
+| ... |
+
+## Session-write timeline
+| Endpoint | Reads session keys | Writes session keys (pre-verdict) | Slow ops | Race window (ms) |
+| ... |
+
+## Tried, ruled out
+- <hypothesis> — <2-probe evidence why ruled out>
+- ...
+
+## Open hypotheses
+- <hypothesis> — <signal that pointed here, exploit should pursue>
+- ...
+```
+
+If `Tags` includes `race_condition`/`toctou`/`concurrent`/`smuggling_desync`, the **Session-write timeline** section MUST be populated. Empty timeline + race tag = exploit will flag handoff back.
