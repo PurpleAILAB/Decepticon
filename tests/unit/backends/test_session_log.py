@@ -282,7 +282,7 @@ def test_read_screen_handles_capture_timeout_gracefully():
     assert "[ERROR]" in result or "[TIMEOUT]" in result
 
 
-def test_execute_async_baseline_capture_timeout_does_not_escape(monkeypatch):
+def test_execute_async_baseline_capture_timeout_does_not_escape():
     """execute_async() initial baseline _capture timing out must not raise."""
     import asyncio
 
@@ -300,7 +300,7 @@ def test_execute_async_baseline_capture_timeout_does_not_escape(monkeypatch):
     assert "[ERROR]" in result
 
 
-def test_execute_async_poll_loop_capture_timeout_continues(monkeypatch):
+def test_execute_async_poll_loop_capture_timeout_continues():
     """A transient TimeoutExpired from capture-pane during polling must NOT
     escape; loop should continue (and eventually time out cleanly)."""
     import asyncio
