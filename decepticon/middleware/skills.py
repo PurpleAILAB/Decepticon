@@ -15,6 +15,12 @@ Subclasses the Deep Agents SkillsMiddleware to provide:
 4. **Compact display with trigger keywords** — Clean descriptions with separate
    ``when_to_use`` trigger keywords for objective matching, MITRE tags inline.
 
+5. **Root workflow auto-load** — Each configured ``source`` directory is
+   probed for a ``workflow.md`` file; if present, its full body is injected
+   into the system prompt before the catalog. This forces the agent to start
+   every session with the agent-level workflow (phases, scope rules, handoff
+   format) loaded — no relying on the model to issue ``read_file`` first.
+
 This middleware replaces BOTH the old `skills.md` shared prompt fragment AND
 the base middleware's generic `SKILLS_SYSTEM_PROMPT`. All skill instructions
 are consolidated here.
@@ -31,17 +37,21 @@ Usage:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from deepagents.middleware._utils import append_to_system_message
 from deepagents.middleware.skills import SkillsMiddleware
 
 if TYPE_CHECKING:
     from deepagents.middleware.skills import SkillMetadata
 
+
 # ── Decepticon skill system prompt template ──────────────────────────────────
 # Replaces both the shared `skills.md` fragment and the base middleware's
-# generic SKILLS_SYSTEM_PROMPT. Uses {skills_locations} and {skills_list}
-# placeholders that the base class populates.
+# generic SKILLS_SYSTEM_PROMPT. Placeholders:
+#   {skills_locations} — `**Decepticon Skills**: /skills/recon/` style headers
+#   {workflow}         — full body of <source>/workflow.md files (auto-loaded)
+#   {skills_list}      — catalog of sub-skills grouped by subdomain
 
 DECEPTICON_SKILLS_PROMPT = """
 <SKILLS>
@@ -53,13 +63,23 @@ of the kill chain.
 
 {skills_locations}
 
+{workflow}
+
+### Sub-Skills (Progressive Disclosure)
+
+The catalog below lists per-technique sub-skills. The workflow above is always
+loaded; sub-skills are loaded on demand via `read_file()` when their triggers
+match your current objective.
+
 ### How It Works
-1. **Catalog below** — Each skill shows: description, trigger keywords, MITRE ATT&CK
-   IDs, and a `read_file()` path. This tells you WHAT expertise is available and
-   WHEN each skill applies.
-2. **On-demand loading** — The catalog is NOT enough to execute. Before using any
-   technique, you MUST `read_file()` the full SKILL.md using the path shown.
-3. **Reference files** — Some skills have a `references/` subdirectory with
+1. **Workflow above** — Always loaded. Defines the agent's loop, scope rules,
+   discipline, and handoff format. Read it before any tool call this turn.
+2. **Catalog below** — Each sub-skill shows: description, trigger keywords,
+   MITRE ATT&CK IDs, and a `read_file()` path. This tells you WHAT expertise
+   is available and WHEN it applies.
+3. **On-demand sub-skill loading** — When your task matches a trigger,
+   `read_file()` the full SKILL.md before acting on the technique.
+4. **Reference files** — Some skills have a `references/` subdirectory with
    cheat sheets, templates, or quickstart guides. Access them via `read_file()`.
 
 ### Catalog Format
@@ -70,35 +90,37 @@ of the kill chain.
 ```
 
 ### Skill Selection
-To decide which skill to load, match your current objective against the **triggers**
-line. If the objective mentions any trigger keyword, load that skill before proceeding.
+Match the current objective against **triggers** — load the most specific match.
 
-- Objective says "nmap port scan" → triggers match **active-recon** → load it
-- Objective says "kerberoast" → triggers match **ad-exploitation** → load it
+- "nmap port scan" → triggers match **active-recon** → load it
+- "kerberoast" → triggers match **ad-exploitation** → load it
 - Multiple matches → load the most specific skill first
 
 ### Access Rules
 - `read_file("/skills/<category>/<skill-name>/SKILL.md")` — CORRECT
-- `bash(command="cat /skills/...")` — WILL FAIL (sandbox does not mount `/skills/`)
-- Skills are on the host filesystem, routed through a virtual backend.
+- `bash(command="cat /skills/...")` — WILL FAIL if /skills/ is not mounted
+  in the bash sandbox of the current agent
+- Skills are routed through the agent's filesystem backend.
 
 ### SKILL-FIRST RULE (CRITICAL)
-Memorize the skill catalog below. When a task matches an available skill, you MUST
-load and follow that skill BEFORE acting on your own knowledge. Skills contain
-domain-specific checklists, templates, and procedures that are more precise and
-current than general knowledge. Operating from memory when a specialized skill
-exists is a critical failure — load the skill, follow its procedure.
+The workflow above and the catalog below override your general knowledge.
+When a task matches a workflow phase or a sub-skill trigger, follow the
+workflow / load the skill BEFORE acting on memory. Operating from memory
+when a specialized skill exists is a critical failure.
 
-### When to Load
+### When to Load (Sub-Skills)
 - **Before each new technique**: Read the relevant skill FIRST, then execute.
-- **Before using unfamiliar tools**: Even if you know the tool generically, skills
-  contain environment-specific instructions (paths, configs, container setup).
-- **When an objective maps to triggers**: Match objective keywords → skill triggers.
+- **Before unfamiliar tools**: Skills contain environment-specific instructions
+  (paths, configs, container setup) that override generic tool knowledge.
+- **When an objective maps to triggers**: Match objective keywords → triggers.
 
-### Available Skills
+### Available Sub-Skills
 
 {skills_list}
 </SKILLS>"""
+
+
+_WORKFLOW_FILENAME = "workflow.md"
 
 
 class DecepticonSkillsMiddleware(SkillsMiddleware):
@@ -109,15 +131,115 @@ class DecepticonSkillsMiddleware(SkillsMiddleware):
     - Skills grouped by subdomain (kill chain phase)
     - MITRE ATT&CK technique IDs shown inline
     - Compact display format for context efficiency
+    - Auto-load of ``<source>/workflow.md`` (full body, prepended to catalog)
 
     Args:
         backend: Backend instance for file operations.
         sources: List of skill source paths (e.g., ``['/skills/recon/', '/skills/shared/']``).
     """
 
-    def __init__(self, *, backend, sources: list[str]) -> None:
+    def __init__(self, *, backend: Any, sources: list[str]) -> None:
         super().__init__(backend=backend, sources=sources)
         self.system_prompt_template = DECEPTICON_SKILLS_PROMPT
+
+    # ── workflow.md auto-load ────────────────────────────────────────────────
+
+    def _read_workflow_for_source(self, backend: Any, source: str) -> str | None:
+        """Load <source>/workflow.md from the backend. Returns content or None."""
+        path = source.rstrip("/") + "/" + _WORKFLOW_FILENAME
+        try:
+            res = backend.read(path)
+        except Exception:
+            return None
+        if getattr(res, "error", None):
+            return None
+        data = getattr(res, "file_data", None)
+        if not data:
+            return None
+        content = data.get("content", "")
+        if isinstance(content, list):  # legacy v1 (line-split) format
+            content = "\n".join(content)
+        return content if isinstance(content, str) and content.strip() else None
+
+    async def _aread_workflow_for_source(self, backend: Any, source: str) -> str | None:
+        """Async sibling of ``_read_workflow_for_source``."""
+        path = source.rstrip("/") + "/" + _WORKFLOW_FILENAME
+        try:
+            res = await backend.aread(path)
+        except Exception:
+            return None
+        if getattr(res, "error", None):
+            return None
+        data = getattr(res, "file_data", None)
+        if not data:
+            return None
+        content = data.get("content", "")
+        if isinstance(content, list):
+            content = "\n".join(content)
+        return content if isinstance(content, str) and content.strip() else None
+
+    def _format_workflow_section(self, parts: list[tuple[str, str]]) -> str:
+        """Wrap each loaded workflow.md body with a header naming its source."""
+        if not parts:
+            return ""
+        blocks: list[str] = ["### Always-Loaded Workflows", ""]
+        for source, body in parts:
+            label = source.rstrip("/").split("/")[-1].replace("-", " ").title()
+            path = source.rstrip("/") + "/" + _WORKFLOW_FILENAME
+            blocks.append(f"#### {label} Workflow — `{path}`")
+            blocks.append("")
+            blocks.append(body.strip())
+            blocks.append("")
+        return "\n".join(blocks).rstrip() + "\n"
+
+    # ── before_agent: parent loads catalog, we add workflow blob to state ───
+
+    def before_agent(self, state, runtime, config):  # type: ignore[no-untyped-def]
+        base_update = super().before_agent(state, runtime, config)
+        if "workflow_content" in state:
+            return base_update
+        backend = self._get_backend(state, runtime, config)
+        parts: list[tuple[str, str]] = []
+        for source in self.sources:
+            body = self._read_workflow_for_source(backend, source)
+            if body:
+                parts.append((source, body))
+        workflow_blob = self._format_workflow_section(parts)
+        merged = dict(base_update) if base_update else {}
+        merged["workflow_content"] = workflow_blob
+        return merged
+
+    async def abefore_agent(self, state, runtime, config):  # type: ignore[no-untyped-def]
+        base_update = await super().abefore_agent(state, runtime, config)
+        if "workflow_content" in state:
+            return base_update
+        backend = self._get_backend(state, runtime, config)
+        parts: list[tuple[str, str]] = []
+        for source in self.sources:
+            body = await self._aread_workflow_for_source(backend, source)
+            if body:
+                parts.append((source, body))
+        workflow_blob = self._format_workflow_section(parts)
+        merged = dict(base_update) if base_update else {}
+        merged["workflow_content"] = workflow_blob
+        return merged
+
+    # ── modify_request: include {workflow} placeholder ───────────────────────
+
+    def modify_request(self, request):  # type: ignore[no-untyped-def]
+        skills_metadata = request.state.get("skills_metadata", [])
+        workflow_blob = request.state.get("workflow_content", "")
+        skills_locations = self._format_skills_locations()
+        skills_list = self._format_skills_list(skills_metadata)
+        skills_section = self.system_prompt_template.format(
+            skills_locations=skills_locations,
+            workflow=workflow_blob,
+            skills_list=skills_list,
+        )
+        new_system_message = append_to_system_message(request.system_message, skills_section)
+        return request.override(system_message=new_system_message)
+
+    # ── catalog formatter (unchanged from previous version) ──────────────────
 
     def _format_skills_list(self, skills: list[SkillMetadata]) -> str:
         """Format skills grouped by subdomain with MITRE ATT&CK tags.
