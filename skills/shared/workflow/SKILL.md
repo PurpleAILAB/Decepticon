@@ -211,6 +211,33 @@ The `defense-evasion` skill applies to **exploitation and post-exploitation phas
 | C2 | Malleable profiles, encrypted channels, sleep obfuscation |
 | Lateral Movement | Living-off-the-land binaries, token manipulation |
 
+## Sandbox Bash Discipline
+
+The sandbox bash environment is intentionally restricted. The following patterns waste a probe (or hang the cycle) and MUST be avoided across every phase. Prefer the `python3` patterns below — they are deterministic, timeout-bounded, and produce machine-readable output.
+
+### Anti-patterns (do NOT)
+
+| Pattern | Why it's bad |
+|---------|--------------|
+| `bash <<'EOF' ... EOF` heredocs in tool calls | Often truncated mid-stream, brittle quoting, ambiguous timeout behavior. |
+| Trailing `&` to "parallelize" (`curl ... & curl ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
+| Unbounded `sleep`, `nc -l`, `tail -f`, `while true` | Hits the wall-clock and burns the entire cycle; never produces useful output. |
+| `timeout 5 bash -c ""` (empty command) | Zero-effect probe, recon-scope-creep tell. |
+| Long pipelines without `set -o pipefail` | Failures hide behind the last successful command. |
+| Implicit-shell loops over network targets without per-iteration timeout | One slow host blocks all the others. |
+
+### Preferred pattern — Python heredoc with explicit timeouts
+
+```bash
+python3 - <<'PY'
+import requests, sys
+r = requests.get("https://<TARGET>/path", timeout=5)
+print(r.status_code, len(r.content))
+PY
+```
+
+For parallel work, use `concurrent.futures.ThreadPoolExecutor` (bounded `max_workers`, every call carries `timeout=5`) instead of bash `&`. For repeated probes, write a tight `python3 -c` one-liner with an explicit total wall-clock cap. Every network call MUST set a timeout. Every loop MUST be bounded.
+
 ## Workflow Commands
 
 | User Says | Action |
