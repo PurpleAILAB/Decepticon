@@ -17,14 +17,18 @@ class Reporter:
     def _stem(self, report: BenchmarkReport) -> str:
         """Return the filename stem for this report.
 
-        Single-challenge runs (most common in self-improvement loop) use the
-        challenge id (e.g. ``XBEN-057-24``) so successive runs of the same
-        challenge overwrite the previous file — easy to find, no clutter.
-        Multi-challenge batches fall back to ``batch-<UTC-timestamp>``.
+        Format:
+          - single challenge: ``<challenge_id>_<UTC-timestamp>``
+          - multi-challenge batch: ``batch-<UTC-timestamp>``
+
+        The timestamp suffix preserves history across repeat runs of the same
+        challenge (self-improvement loop reruns the same id many times) while
+        still keeping each file scannable by challenge name.
         """
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         if len(report.results) == 1:
-            return report.results[0].challenge_id
-        return f"batch-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            return f"{report.results[0].challenge_id}_{ts}"
+        return f"batch-{ts}"
 
     def write_json(self, report: BenchmarkReport) -> Path:
         """Write the report as a JSON file and return its path."""
