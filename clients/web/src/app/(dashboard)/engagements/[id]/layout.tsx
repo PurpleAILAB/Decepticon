@@ -16,14 +16,27 @@ export default function EngagementLayout({ children }: { children: React.ReactNo
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     fetch(`/api/engagements/${id}`)
       .then((res) => {
         if (!res.ok) throw new Error("fetch failed");
         return res.json();
       })
-      .then((data: Engagement) => setEngagement(data))
-      .catch(() => setEngagement(null))
-      .finally(() => setLoading(false));
+      .then((data: Engagement) => {
+        if (!active) return;
+        setEngagement(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEngagement(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   if (loading) {

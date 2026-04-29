@@ -58,10 +58,18 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.OPENAI_API: "OPENAI_API_KEY",
     AuthMethod.GOOGLE_API: "GEMINI_API_KEY",
     AuthMethod.MINIMAX_API: "MINIMAX_API_KEY",
+    AuthMethod.DEEPSEEK_API: "DEEPSEEK_API_KEY",
+    AuthMethod.XAI_API: "XAI_API_KEY",
+    AuthMethod.MISTRAL_API: "MISTRAL_API_KEY",
 }
 
 _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.ANTHROPIC_OAUTH: "DECEPTICON_AUTH_CLAUDE_CODE",
+    AuthMethod.OPENAI_OAUTH: "DECEPTICON_AUTH_CHATGPT",
+    AuthMethod.GOOGLE_OAUTH: "DECEPTICON_AUTH_GEMINI",
+    AuthMethod.COPILOT_OAUTH: "DECEPTICON_AUTH_COPILOT",
+    AuthMethod.GROK_OAUTH: "DECEPTICON_AUTH_GROK",
+    AuthMethod.PERPLEXITY_OAUTH: "DECEPTICON_AUTH_PERPLEXITY",
 }
 
 
@@ -138,6 +146,39 @@ def _resolve_credentials() -> Credentials:
         return Credentials.all_api_methods()
 
     return Credentials(methods=methods)
+
+
+class _ProxiedChatOpenAI(ChatOpenAI):
+    """Converts opaque connection errors to RuntimeError so LangGraph's
+    serde returns a descriptive message instead of 'An internal error occurred'."""
+
+    def invoke(self, *args, **kwargs):
+        try:
+            return super().invoke(*args, **kwargs)
+        except Exception as exc:
+            _reraise_if_connection_error(exc)
+            raise
+
+    async def ainvoke(self, *args, **kwargs):
+        try:
+            return await super().ainvoke(*args, **kwargs)
+        except Exception as exc:
+            _reraise_if_connection_error(exc)
+            raise
+
+
+def _reraise_if_connection_error(exc: Exception) -> None:
+    err_type = type(exc).__name__
+    if any(
+        kw in err_type.lower() for kw in ("connect", "timeout", "refused", "unreachable")
+    ) or any(
+        kw in str(exc).lower()
+        for kw in ("connection refused", "connect error", "proxy", "unreachable")
+    ):
+        raise RuntimeError(
+            f"LLM proxy unreachable ({err_type}): {exc}. "
+            f"Check 'decepticon logs litellm' for details."
+        ) from exc
 
 
 class LLMFactory:
@@ -236,8 +277,7 @@ class LLMFactory:
         ]
 
     def _create_chat_model(self, model: str, temperature: float) -> BaseChatModel:
-        """Create a ChatOpenAI instance routed through LiteLLM proxy."""
-        return ChatOpenAI(
+        return _ProxiedChatOpenAI(
             model=model,
             base_url=self._proxy.url,
             api_key=self._proxy.api_key,

@@ -1,14 +1,23 @@
 """Standalone LiteLLM custom handler for Claude Code OAuth authentication.
 
+Supports all Anthropic subscription tiers:
+  - Claude Free      — rate-limited, Haiku only
+  - Claude Pro       — Opus/Sonnet/Haiku, standard rate limits
+  - Claude Max       — Opus/Sonnet/Haiku, 20x higher rate limits
+  - Claude Team/Enterprise — organization-managed OAuth tokens
+
+The handler reads OAuth tokens from Claude Code CLI credential stores,
+auto-refreshes expired tokens, and spoofs Claude Code request headers
+so requests are indistinguishable from the native CLI.
+
 This file is mounted into the LiteLLM container alongside litellm.yaml.
-It has NO dependency on the ``decepticon`` package — all auth logic is
-self-contained or uses only stdlib + xxhash + httpx.
+No dependency on the ``decepticon`` package.
 
 Registration in litellm.yaml:
   litellm_settings:
     custom_provider_map:
       - provider: "auth"
-        custom_handler: claude_code_handler.ClaudeCodeCustomHandler
+        custom_handler: claude_code_handler.claude_code_handler_instance
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 import litellm
@@ -38,6 +48,7 @@ LEGACY_CREDENTIALS_PATH = Path(os.path.expanduser("~/.config/anthropic/q/tokens.
 
 REFRESH_BUFFER_SECONDS = 5 * 60
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
+ANTHROPIC_API_BASE = "https://api.anthropic.com"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 OAUTH_TOKEN_PATTERN = "sk-ant-oat01-"
@@ -185,10 +196,27 @@ BASE_HEADERS = {
     "x-stainless-retry-count": "0",
     "x-app": "cli",
     "user-agent": "claude-cli/2.1.87 (external, cli)",
-    "host": "api.anthropic.com",
     "accept-language": "*",
     "sec-fetch-mode": "cors",
 }
+
+
+def _resolve_anthropic_api_base(api_base: str | None) -> str:
+    """Allow only Anthropic's API host for OAuth bearer-token requests."""
+    if not api_base:
+        return ANTHROPIC_API_BASE
+    parsed = urlparse(api_base)
+    if (
+        parsed.scheme == "https"
+        and parsed.netloc == "api.anthropic.com"
+        and parsed.path in {"", "/"}
+    ):
+        return ANTHROPIC_API_BASE
+    raise litellm.AuthenticationError(
+        message="auth provider api_base must be https://api.anthropic.com",
+        model="auth",
+        llm_provider="auth",
+    )
 
 
 def _build_headers(access_token: str) -> dict[str, str]:
@@ -435,8 +463,9 @@ class ClaudeCodeCustomHandler(CustomLLM):
         # Build headers — OAuth Bearer (NOT x-api-key)
         req_headers = _build_headers(access_token)
 
-        # Direct HTTP call to Anthropic Messages API
-        api_url = api_base or "https://api.anthropic.com"
+        # Direct HTTP call to Anthropic Messages API. Never honor arbitrary
+        # api_base values here: this request carries an OAuth bearer token.
+        api_url = _resolve_anthropic_api_base(api_base)
         resp = httpx.post(
             f"{api_url}/v1/messages?beta=true",
             content=body_str,

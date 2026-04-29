@@ -104,17 +104,108 @@ model_list:
     litellm_params:
       model: auth/claude-haiku-4-5
 
+  # ── DeepSeek ─────────────────────────────────────────────────────────
+  - model_name: deepseek/deepseek-chat
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  - model_name: deepseek/deepseek-reasoner
+    litellm_params:
+      model: deepseek/deepseek-reasoner
+      api_key: os.environ/DEEPSEEK_API_KEY
+
+  # ── xAI (Grok) ──────────────────────────────────────────────────────
+  - model_name: xai/grok-3
+    litellm_params:
+      model: xai/grok-3
+      api_key: os.environ/XAI_API_KEY
+
+  - model_name: xai/grok-3-mini
+    litellm_params:
+      model: xai/grok-3-mini
+      api_key: os.environ/XAI_API_KEY
+
+  # ── Mistral ──────────────────────────────────────────────────────────
+  - model_name: mistral/mistral-large-latest
+    litellm_params:
+      model: mistral/mistral-large-latest
+      api_key: os.environ/MISTRAL_API_KEY
+
+  - model_name: mistral/codestral-latest
+    litellm_params:
+      model: mistral/codestral-latest
+      api_key: os.environ/MISTRAL_API_KEY
+
+  # ── ChatGPT OAuth (subscription) ─────────────────────────────────────
+  - model_name: chatgpt/gpt-4o
+    litellm_params:
+      model: chatgpt/gpt-4o
+
+  - model_name: chatgpt/o1
+    litellm_params:
+      model: chatgpt/o1
+
+  - model_name: chatgpt/o3-mini
+    litellm_params:
+      model: chatgpt/o3-mini
+
+  # ── Gemini Advanced subscription ───────────────────────────────────
+  - model_name: gemini-sub/gemini-2.5-pro
+    litellm_params:
+      model: gemini-sub/gemini-2.5-pro
+
+  - model_name: gemini-sub/gemini-2.5-flash
+    litellm_params:
+      model: gemini-sub/gemini-2.5-flash
+
+  # ── Copilot Pro subscription ─────────────────────────────────────
+  - model_name: copilot/gpt-4o
+    litellm_params:
+      model: copilot/gpt-4o
+
+  - model_name: copilot/o1
+    litellm_params:
+      model: copilot/o1
+
+  # ── SuperGrok subscription ──────────────────────────────────────
+  - model_name: grok-sub/grok-3
+    litellm_params:
+      model: grok-sub/grok-3
+
+  - model_name: grok-sub/grok-3-mini
+    litellm_params:
+      model: grok-sub/grok-3-mini
+
+  # ── Perplexity Pro subscription ─────────────────────────────────
+  - model_name: pplx-sub/sonar-pro
+    litellm_params:
+      model: pplx-sub/sonar-pro
+
+  - model_name: pplx-sub/sonar
+    litellm_params:
+      model: pplx-sub/sonar
+
   # ── Local LLM (Ollama) ──────────────────────────────────────────────
   - model_name: ollama/llama3.2
     litellm_params:
       model: ollama/llama3.2
       api_base: os.environ/OLLAMA_API_BASE
 
-# --- LiteLLM Settings ---
 litellm_settings:
   custom_provider_map:
     - provider: "auth"
       custom_handler: claude_code_handler.claude_code_handler_instance
+    - provider: "chatgpt"
+      custom_handler: chatgpt_handler.chatgpt_handler_instance
+    - provider: "gemini-sub"
+      custom_handler: gemini_handler.gemini_sub_handler_instance
+    - provider: "copilot"
+      custom_handler: copilot_handler.copilot_handler_instance
+    - provider: "grok-sub"
+      custom_handler: grok_handler.grok_sub_handler_instance
+    - provider: "pplx-sub"
+      custom_handler: perplexity_handler.perplexity_sub_handler_instance
 
 # --- Router Settings ---
 router_settings:

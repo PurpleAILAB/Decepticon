@@ -80,6 +80,7 @@ packages = ["decepticon"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+extend-exclude = ["benchmark/xbow-validation-benchmarks"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

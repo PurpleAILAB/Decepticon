@@ -53,7 +53,7 @@ decepticon onboard   # Interactive setup wizard (provider, API key, model profil
 decepticon           # Start everything: terminal CLI + web dashboard at http://localhost:3000
 ```
 
-→ **[Full setup guide](docs/getting-started.md)**
+→ **[Quick start](docs/getting-started.md)** · **[Full agentic setup walkthrough](docs/setup-guide.md#agentic-setup--end-to-end-walkthrough)**
 
 ---
 
@@ -143,7 +143,7 @@ The vulnerability research pipeline (Scanner → Detector → Verifier → Explo
 
 ## Models
 
-Tier-based, credentials-aware fallback chain. You tell Decepticon which credentials you have — Anthropic API, Claude Code OAuth, OpenAI API, Google API, MiniMax API — in priority order; it builds the primary→fallback chain at every tier from there.
+Tier-based, credentials-aware fallback chain. You tell Decepticon which credentials you have — Anthropic API, Claude Code OAuth, ChatGPT subscription, OpenAI API, Google API, DeepSeek API, xAI API, Mistral API, MiniMax API, and more — in priority order; it builds the primary→fallback chain at every tier from there.
 
 The active **profile** decides each agent's tier:
 
@@ -153,19 +153,60 @@ The active **profile** decides each agent's tier:
 | **max** | every agent on HIGH | High-value targets |
 | **test** | every agent on LOW | Development / CI |
 
-**Tier × method matrix**:
+**Tier × method matrix** (partial — see [Models](docs/models.md) for full table):
 
 |                   | HIGH                    | MID                      | LOW                                |
 |-------------------|--------------------------|---------------------------|-------------------------------------|
 | `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
 | `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
 | `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5-nano                        |
+| `openai_oauth`    | chatgpt/gpt-4o           | chatgpt/o1                | chatgpt/o3-mini                    |
 | `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
-| `minimax_api`     | MiniMax-M2.5             | MiniMax-M2.5-lightning              | — *(falls through to next method)*  |
+| `deepseek_api`    | deepseek-reasoner        | deepseek-chat             | deepseek-chat                      |
 
 Configure with `decepticon onboard`; set the profile via `DECEPTICON_MODEL_PROFILE=eco` in `.env`. Provider outage or rate limit → seamless fallback to the next method in your priority list.
 
 → **[Full model reference](docs/models.md)**
+
+---
+
+## Supported Providers
+
+Decepticon connects to **18+ LLM providers** via API keys, plus **6 subscription-based OAuth handlers** that route through your existing subscriptions — no per-token billing.
+
+### API Key Providers
+
+| Provider | Provider | Provider |
+|----------|----------|----------|
+| Anthropic | OpenAI | DeepSeek |
+| Google Gemini | xAI (Grok) | Mistral |
+| Cohere | Groq | Together AI |
+| Fireworks AI | Perplexity | MiniMax |
+| OpenRouter | Azure OpenAI | AWS Bedrock |
+| Replicate | Ollama (local) | Custom OpenAI-compatible |
+
+### Subscription OAuth (No API Billing)
+
+Use your existing monthly subscription instead of pay-per-token API access:
+
+| Subscription | Price | Provider ID |
+|---|---|---|
+| **Claude Max / Pro / Team** | $20–$100/mo | `auth` |
+| **ChatGPT Pro / Plus / Team** | $20–$200/mo | `chatgpt` |
+| **Google Gemini Advanced** | $20/mo | `gemini-sub` |
+| **Microsoft Copilot Pro** | $20/mo | `copilot` |
+| **xAI SuperGrok** | X Premium+ | `grok-sub` |
+| **Perplexity Pro** | $20/mo | `pplx-sub` |
+
+```bash
+# Example: Use Claude Max subscription (no API cost)
+DECEPTICON_MODEL_PROVIDER=auth
+
+# Example: Use ChatGPT Pro subscription
+DECEPTICON_MODEL_PROVIDER=chatgpt
+```
+
+→ **[Full setup guide with OAuth instructions](docs/setup-guide.md)**
 
 ---
 
@@ -174,6 +215,7 @@ Configure with `decepticon onboard`; set the profile via `DECEPTICON_MODEL_PROFI
 | Topic | Doc |
 |-------|-----|
 | Installation and first engagement | [Getting Started](docs/getting-started.md) |
+| Complete setup, OAuth, providers, dashboard | [Setup Guide](docs/setup-guide.md) |
 | All CLI commands and keyboard shortcuts | [CLI Reference](docs/cli-reference.md) |
 | All `make` targets | [Makefile Reference](docs/makefile-reference.md) |
 | Agent roster and middleware | [Agents](docs/agents.md) |

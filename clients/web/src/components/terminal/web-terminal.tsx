@@ -44,7 +44,9 @@ export function WebTerminal({
     const container = containerRef.current;
     if (!container || connectedRef.current) return;
     connectedRef.current = true;
+    let initSuccess = false;
 
+    try {
     const [{ Terminal }, { FitAddon }] = await Promise.all([
       import("xterm"),
       import("@xterm/addon-fit"),
@@ -103,6 +105,7 @@ export function WebTerminal({
     const cleanup = () => {
       if (disposed) return;
       disposed = true;
+      clearTimeout(resizeTimer);
       resizeObserver.disconnect();
       ws.close();
       term.dispose();
@@ -111,6 +114,7 @@ export function WebTerminal({
     };
 
     cleanupRef.current = cleanup;
+    initSuccess = true;
 
     ws.onopen = () => {
       ws.send(JSON.stringify({
@@ -164,6 +168,10 @@ export function WebTerminal({
       }, 150);
     });
     resizeObserver.observe(container);
+  } catch (err) {
+    if (!initSuccess) connectedRef.current = false;
+    console.error("[WebTerminal] Init failed:", err);
+  }
   }, []);
 
   useEffect(() => {

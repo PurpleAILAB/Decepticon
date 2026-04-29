@@ -586,15 +586,25 @@ export default function PlanPage() {
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     fetch(`/api/engagements/${id}/plan-docs`)
       .then((r) => (r.ok ? r.json() : {}))
       .then((data: Record<string, any>) => {
+        if (!active) return;
         setDocs(data);
         const first = DOC_META.find((d) => data[d.key]);
         if (first) setSelected(first.key);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (active) console.error("Failed to load plan docs", err);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   if (loading) {

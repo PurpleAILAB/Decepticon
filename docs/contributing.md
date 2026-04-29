@@ -13,8 +13,8 @@ git clone https://github.com/PurpleAILAB/Decepticon.git
 cd Decepticon
 
 # Copy and configure environment
-cp .env.example .env
-# Edit .env — set at least ANTHROPIC_API_KEY
+cp clients/launcher/internal/config/env.example .env
+# Edit .env — set at least one provider key, or set DECEPTICON_MODEL=ollama/<model>
 
 # Start services with hot-reload
 make dev

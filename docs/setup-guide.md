@@ -1,0 +1,797 @@
+# Setup Guide
+
+Complete installation, authentication, and configuration reference.
+
+---
+
+## Table of Contents
+
+- [System Requirements](#system-requirements)
+- [Installation](#installation)
+- [Authentication Methods](#authentication-methods)
+  - [API Keys](#api-keys)
+  - [Claude Max/Pro Subscription (OAuth)](#claude-maxpro-subscription-oauth)
+  - [ChatGPT Pro/Plus Subscription (OAuth)](#chatgpt-proplus-subscription-oauth)
+- [Supported Providers](#supported-providers)
+- [Model Profiles](#model-profiles)
+- [Web Dashboard](#web-dashboard)
+- [CLI Reference](#cli-reference)
+- [Agentic Setup — End-to-End Walkthrough](#agentic-setup--end-to-end-walkthrough)
+- [Advanced Configuration](#advanced-configuration)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## System Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| OS | Linux (x86_64, arm64), macOS (arm64) | Ubuntu 22.04+ / macOS 14+ |
+| Docker | Docker Engine 24+ with Compose v2 | Docker Desktop or Colima |
+| RAM | 8 GB | 16 GB |
+| Disk | 10 GB free | 20 GB free |
+| Network | Outbound HTTPS | Low-latency connection |
+
+Docker is the only hard dependency. Everything else runs in containers.
+
+---
+
+## Installation
+
+### One-Line Install
+
+```bash
+curl -fsSL https://decepticon.red/install | bash
+```
+
+This downloads the `decepticon` CLI binary for your platform and places it in your PATH.
+
+### Manual Install (from source)
+
+```bash
+git clone https://github.com/PurpleAILAB/Decepticon.git
+cd Decepticon
+make install
+```
+
+### Verify Installation
+
+```bash
+decepticon version
+```
+
+---
+
+## Authentication Methods
+
+Decepticon supports three authentication modes. Choose one during `decepticon onboard`.
+
+### API Keys
+
+Standard pay-per-token access through provider APIs. Set the appropriate environment variable for your provider.
+
+```bash
+decepticon onboard
+# Select: API Key
+# Select: Your provider
+# Enter: Your API key
+```
+
+Or edit `~/.decepticon/.env` directly:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=api
+ANTHROPIC_API_KEY=sk-ant-api03-...
+OPENAI_API_KEY=sk-proj-...
+```
+
+**All supported API key providers:**
+
+| Provider | Env Var | Key Format | Sign Up |
+|----------|---------|------------|---------|
+| Anthropic | `ANTHROPIC_API_KEY` | `sk-ant-...` | [console.anthropic.com](https://console.anthropic.com) |
+| OpenAI | `OPENAI_API_KEY` | `sk-proj-...` | [platform.openai.com](https://platform.openai.com) |
+| DeepSeek | `DEEPSEEK_API_KEY` | `sk-...` | [platform.deepseek.com](https://platform.deepseek.com) |
+| Google | `GOOGLE_API_KEY` | `AIza...` | [aistudio.google.com](https://aistudio.google.com) |
+| xAI | `XAI_API_KEY` | `xai-...` | [console.x.ai](https://console.x.ai) |
+| Mistral | `MISTRAL_API_KEY` | `...` | [console.mistral.ai](https://console.mistral.ai) |
+| Cohere | `COHERE_API_KEY` | `...` | [dashboard.cohere.com](https://dashboard.cohere.com) |
+| Groq | `GROQ_API_KEY` | `gsk_...` | [console.groq.com](https://console.groq.com) |
+| Together | `TOGETHER_API_KEY` | `...` | [api.together.xyz](https://api.together.xyz) |
+| Fireworks | `FIREWORKS_API_KEY` | `fw_...` | [fireworks.ai](https://fireworks.ai) |
+| Perplexity | `PERPLEXITY_API_KEY` | `pplx-...` | [perplexity.ai](https://perplexity.ai) |
+| MiniMax | `MINIMAX_API_KEY` | `eyJ...` | [minimax.io](https://minimax.io) |
+| OpenRouter | `OPENROUTER_API_KEY` | `sk-or-...` | [openrouter.ai](https://openrouter.ai) |
+| Replicate | `REPLICATE_API_TOKEN` | `r8_...` | [replicate.com](https://replicate.com) |
+
+**Cloud platform providers:**
+
+| Provider | Required Env Vars |
+|----------|-------------------|
+| Azure OpenAI | `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION` |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME` |
+
+**Self-hosted / OpenAI-compatible:**
+
+| Provider | Required Env Vars |
+|----------|-------------------|
+| Ollama | `OLLAMA_API_BASE` (e.g., `http://host.docker.internal:11434`) |
+| Custom gateway | `CUSTOM_OPENAI_API_KEY`, `CUSTOM_OPENAI_API_BASE` |
+
+---
+
+### Claude Max/Pro Subscription (OAuth)
+
+Use your Claude Max, Pro, or Team subscription instead of API billing. Requests route through Claude Code's OAuth handler — no API cost.
+
+**Supported tiers:**
+
+| Tier | Models Available | Rate Limits |
+|------|-----------------|-------------|
+| Claude Free | Haiku only | Very limited |
+| Claude Pro ($20/mo) | Opus, Sonnet, Haiku | Standard |
+| Claude Max ($100/mo) | Opus, Sonnet, Haiku | 20x higher |
+| Claude Team | Opus, Sonnet, Haiku | Organization-managed |
+
+**Setup:**
+
+1. Install Claude Code CLI and authenticate:
+
+```bash
+# Install Claude Code (if not already installed)
+npm install -g @anthropic-ai/claude-code
+
+# Authenticate — opens browser for OAuth login
+claude login
+```
+
+2. Verify credentials exist:
+
+```bash
+cat ~/.claude/.credentials.json
+# Should contain claudeAiOauth.accessToken starting with sk-ant-oat01-
+```
+
+3. Configure Decepticon to use OAuth:
+
+```bash
+decepticon onboard
+# Select: Claude Sub
+# Select: Claude Code
+# Select: Profile (eco/max/test)
+```
+
+Or edit `~/.decepticon/.env`:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=auth
+DECEPTICON_MODEL_PROFILE=eco
+```
+
+4. Launch:
+
+```bash
+decepticon
+```
+
+**How it works:**
+
+- The `auth` provider remaps `anthropic/*` model names to `auth/*`
+- LiteLLM routes `auth/*` through `claude_code_handler.py`
+- The handler reads OAuth tokens from `~/.claude/.credentials.json`
+- Requests hit `api.anthropic.com` with Bearer auth + Claude Code headers
+- Tokens auto-refresh when expired using the stored refresh token
+- Fallback models stay on API-key provider for redundancy
+
+**Alternative token sources (in priority order):**
+
+1. `ANTHROPIC_OAUTH_TOKEN` env var — direct access token
+2. `~/.claude/.credentials.json` — Claude Code CLI (current format)
+3. `~/.config/anthropic/q/tokens.json` — Legacy format
+
+**Custom credentials path:**
+
+```bash
+CLAUDE_CODE_CREDENTIALS_PATH=/custom/path/credentials.json
+```
+
+---
+
+### ChatGPT Pro/Plus Subscription (OAuth)
+
+Use your ChatGPT Pro, Plus, or Team subscription instead of OpenAI API billing.
+
+**Supported tiers:**
+
+| Tier | Models Available |
+|------|-----------------|
+| ChatGPT Plus ($20/mo) | GPT-4o, o1, o3-mini |
+| ChatGPT Pro ($200/mo) | GPT-4o, o1, o3, GPT-4.5 |
+| ChatGPT Team | GPT-4o, o1, o3-mini + admin controls |
+
+**Setup:**
+
+1. Extract your session token from the browser:
+
+   - Log into [chatgpt.com](https://chatgpt.com)
+   - Open Developer Tools (F12) → Application → Cookies
+   - Find the cookie named `__Secure-next-auth.session-token`
+   - Copy its full value
+
+2. Configure Decepticon:
+
+```bash
+decepticon onboard
+# Select: ChatGPT Sub
+# Select: ChatGPT
+# Select: Profile (eco/max/test)
+```
+
+Or edit `~/.decepticon/.env`:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=chatgpt
+CHATGPT_SESSION_TOKEN=eyJ...your-session-token...
+```
+
+3. Launch:
+
+```bash
+decepticon
+```
+
+**How it works:**
+
+- The `chatgpt` provider remaps `openai/*` model names to `chatgpt/*`
+- LiteLLM routes `chatgpt/*` through `chatgpt_handler.py`
+- The handler exchanges the session token for an access token via `chatgpt.com/api/auth/session`
+- Requests hit `api.openai.com/v1/chat/completions` with the subscription Bearer token
+- Access tokens are cached and refreshed automatically
+
+**Alternative token sources (in priority order):**
+
+1. `CHATGPT_ACCESS_TOKEN` env var — pre-extracted Bearer token
+2. `CHATGPT_SESSION_TOKEN` env var — browser session cookie
+3. `~/.config/chatgpt/tokens.json` — persisted token file
+
+**Custom token path:**
+
+```bash
+CHATGPT_TOKENS_PATH=/custom/path/tokens.json
+```
+
+---
+
+### Google Gemini Advanced (OAuth)
+
+Use your Google One AI Premium subscription ($20/mo).
+
+**Setup:**
+
+1. Extract OAuth token from gemini.google.com browser session, or use Google Cloud OAuth2 credentials
+2. Configure:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=gemini-sub
+GEMINI_ACCESS_TOKEN=ya29.a0...your-google-oauth-token
+```
+
+Or use session cookies:
+```bash
+GEMINI_SESSION_COOKIES={"__Secure-1PSID":"value","__Secure-1PSIDTS":"value"}
+```
+
+Token file: `~/.config/gemini/tokens.json`
+
+---
+
+### Microsoft Copilot Pro (OAuth)
+
+Use your Copilot Pro subscription ($20/mo) for GPT-4o/o1 access.
+
+**Setup:**
+
+1. Extract tokens from copilot.microsoft.com browser session
+2. Configure:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=copilot
+COPILOT_ACCESS_TOKEN=eyJ...your-ms-token
+```
+
+Or with auto-refresh:
+```bash
+COPILOT_REFRESH_TOKEN=M.C507_BAY...
+COPILOT_CLIENT_ID=your-app-client-id
+```
+
+Token file: `~/.config/copilot/tokens.json`
+
+---
+
+### xAI SuperGrok (OAuth)
+
+Use your X Premium+ subscription for Grok-3 access.
+
+**Setup:**
+
+1. Extract `auth_token` cookie from grok.x.ai or x.com
+2. Configure:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=grok-sub
+GROK_SESSION_TOKEN=your-x-auth-token
+```
+
+Token file: `~/.config/grok/tokens.json`
+
+---
+
+### Perplexity Pro (OAuth)
+
+Use your Perplexity Pro subscription ($20/mo) for Sonar Pro access.
+
+**Setup:**
+
+1. Extract `next-auth.session-token` cookie from perplexity.ai
+2. Configure:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=pplx-sub
+PERPLEXITY_SESSION_TOKEN=your-session-token
+```
+
+Token file: `~/.config/perplexity/tokens.json`
+
+---
+
+## Supported Providers
+
+Complete list of all supported LLM providers and their pre-configured models:
+
+| Provider | Models | Auth Type | Cost |
+|----------|--------|-----------|------|
+| **Subscriptions (OAuth — no API billing)** | | | |
+| Claude Max/Pro/Team | Opus, Sonnet, Haiku | OAuth | $20–$100/mo |
+| ChatGPT Pro/Plus/Team | GPT-4o, o1, o3, GPT-4.5 | OAuth | $20–$200/mo |
+| Gemini Advanced | Gemini 2.5 Pro/Flash | OAuth | $20/mo |
+| Copilot Pro | GPT-4o, o1 | OAuth | $20/mo |
+| SuperGrok | Grok-3, Grok-3 Mini | OAuth | X Premium+ |
+| Perplexity Pro | Sonar Pro, Sonar | OAuth | $20/mo |
+| **API Key Providers (pay-per-token)** | | | |
+| Anthropic | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | API key | Per token |
+| OpenAI | GPT-5.4, GPT-4.1, GPT-4o, o1, o3-mini | API key | Per token |
+| DeepSeek | DeepSeek Chat, DeepSeek Reasoner | API key | Per token |
+| Google | Gemini 2.5 Flash, Gemini 2.5 Pro | API key | Per token |
+| xAI | Grok-3, Grok-3 Mini | API key | Per token |
+| Mistral | Mistral Large, Codestral | API key | Per token |
+| Cohere | Command R+, Command R | API key | Per token |
+| Groq | Llama 3.3 70B, Llama 3.1 8B | API key | Per token |
+| Together AI | Llama 3.3 70B Turbo + any | API key | Per token |
+| Fireworks AI | Llama 405B + any | API key | Per token |
+| Perplexity | Sonar Pro, Sonar | API key | Per token |
+| MiniMax | MiniMax M2.7, M2.7 Highspeed | API key | Per token |
+| OpenRouter | Any model via routing | API key | Per token |
+| Azure OpenAI | Any Azure-deployed model | API key + endpoint | Per token |
+| AWS Bedrock | Any Bedrock model | AWS credentials | Per token |
+| Replicate | Any Replicate-hosted model | API token | Per token |
+| **Self-Hosted** | | | |
+| Ollama | Any locally-served model | Local endpoint | Free |
+| Custom Gateway | Any OpenAI-compatible server | API key + base URL | Varies |
+
+**Adding models not in the static config:**
+
+Set `DECEPTICON_MODEL` or `DECEPTICON_LITELLM_MODELS` and Decepticon auto-generates the LiteLLM route at container startup:
+
+```bash
+DECEPTICON_MODEL_PROFILE=custom
+DECEPTICON_MODEL=openrouter/anthropic/claude-3.7-sonnet
+DECEPTICON_LITELLM_MODELS=groq/llama-3.3-70b-versatile,together/deepseek-ai/DeepSeek-R1
+```
+
+---
+
+## Model Profiles
+
+| Profile | Use Case | Cost |
+|---------|----------|------|
+| `eco` | Production engagements — balanced mix | $$ |
+| `max` | High-value targets — Opus everywhere | $$$$ |
+| `test` | Development and CI — Haiku only | $ |
+| `custom` | Bring your own model via `DECEPTICON_MODEL` | Varies |
+
+Set in `~/.decepticon/.env`:
+
+```bash
+DECEPTICON_MODEL_PROFILE=eco
+```
+
+Per-role overrides (any profile):
+
+```bash
+DECEPTICON_MODEL_RECON=ollama/qwen2.5-coder:32b
+DECEPTICON_MODEL_EXPLOIT=anthropic/claude-opus-4-6
+DECEPTICON_MODEL_EXPLOIT_TEMPERATURE=0.2
+```
+
+See [Models](models.md) for the full role-to-model mapping.
+
+---
+
+## Web Dashboard
+
+The web dashboard starts automatically with `decepticon` and is accessible at:
+
+```
+http://localhost:3000
+```
+
+**Features:**
+
+- Real-time engagement monitoring
+- Agent activity and conversation timeline
+- Attack chain visualization (Neo4j knowledge graph)
+- Model usage and cost tracking
+- Terminal access to the sandbox environment
+
+**Custom port:**
+
+```bash
+# In ~/.decepticon/.env
+WEB_PORT=8080
+```
+
+See [Web Dashboard](web-dashboard.md) for the full feature reference.
+
+---
+
+## CLI Reference
+
+### Core Commands
+
+```bash
+decepticon                  # Launch platform (all services + interactive CLI)
+decepticon onboard          # Setup wizard (auth, provider, profile)
+decepticon onboard --reset  # Re-run setup from scratch
+decepticon config           # Edit ~/.decepticon/.env in $EDITOR
+decepticon demo             # Run demo engagement (Metasploitable 2)
+decepticon stop             # Stop all services, keep data
+decepticon status           # Show running services
+decepticon logs [service]   # Follow service logs
+decepticon version          # Show version info
+```
+
+### Service Management
+
+```bash
+decepticon logs litellm     # LiteLLM proxy logs
+decepticon logs langgraph   # LangGraph agent logs
+decepticon logs neo4j       # Knowledge graph logs
+decepticon kg-health        # Neo4j connection diagnostics
+```
+
+See [CLI Reference](cli-reference.md) for the complete command list.
+
+---
+
+## Agentic Setup — End-to-End Walkthrough
+
+Complete walkthrough from zero to a running autonomous engagement, covering every component.
+
+### Step 1: Install the CLI
+
+```bash
+# One-line install (Linux/macOS)
+curl -fsSL https://decepticon.red/install | bash
+
+# Or from source
+git clone https://github.com/PurpleAILAB/Decepticon.git
+cd Decepticon
+make install
+```
+
+Verify:
+
+```bash
+decepticon version
+```
+
+### Step 2: Run the Setup Wizard
+
+```bash
+decepticon onboard
+```
+
+The wizard walks through 6 screens:
+
+| Step | Screen | What you configure |
+|------|--------|-------------------|
+| 1 | Authentication | API Key, Claude Sub, ChatGPT Sub, Gemini Sub, Copilot Pro, SuperGrok, or Perplexity Pro |
+| 2 | Provider | Which LLM provider powers the agents (18+ options) |
+| 3 | Credentials | API key, OAuth token, or endpoint URL |
+| 4 | Model | Primary model ID (auto-detected for Anthropic presets) |
+| 5 | Profile | `eco` (balanced), `max` (performance), `test` (dev), `custom` (any model) |
+| 6 | Observability | Optional LangSmith tracing |
+
+Configuration saves to `~/.decepticon/.env`. Re-run anytime with `decepticon onboard --reset`.
+
+### Step 3: Launch the Platform
+
+```bash
+decepticon
+```
+
+This single command:
+
+1. **Validates** your `.env` configuration
+2. **Pulls** Docker images (first run only, ~2 GB)
+3. **Starts** 7 services in dependency order:
+   - PostgreSQL → LiteLLM proxy → Neo4j → Sandbox → LangGraph → Web Dashboard → CLI
+4. **Waits** for all healthchecks to pass (~60-120s first run, ~10s subsequent)
+5. **Shows** the engagement picker
+6. **Launches** the interactive terminal CLI
+
+### Step 4: Service Architecture
+
+Once running, you have:
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| **LiteLLM** | 4000 | LLM API gateway — routes to providers, tracks usage, handles fallback |
+| **LangGraph** | 2024 | Agent runtime — hosts all 16 agents as a streaming API |
+| **Neo4j** | 7474/7687 | Knowledge graph — persistent attack chain memory |
+| **Sandbox** | (internal) | Isolated Kali Linux — runs all offensive tools |
+| **Web Dashboard** | 3000 | Browser UI — real-time monitoring, graph visualization |
+| **Terminal Server** | 3003 | WebSocket bridge — embeds CLI in the web dashboard |
+| **PostgreSQL** | 5432 | Persistence — LiteLLM usage logs, web dashboard data |
+
+### Step 5: Create Your First Engagement
+
+**Option A — Terminal CLI:**
+
+```bash
+# Decepticon shows the engagement picker after launch
+# Select "New engagement" → type a slug → Soundwave starts interviewing you
+```
+
+**Option B — Web Dashboard:**
+
+1. Open `http://localhost:3000`
+2. Click "New Engagement"
+3. Enter: name, target type (IP range, URL, Git repo, file, local path), target value
+4. Click "Create" → opens the live terminal with Soundwave
+
+### Step 6: The Soundwave Interview
+
+Soundwave conducts a structured interview to generate the engagement package:
+
+```
+Questions you'll answer:
+├── Target scope (IPs, URLs, domains)
+├── Threat actor profile (nation-state, criminal, insider)
+├── Authorized actions (scanning, exploitation, lateral movement)
+├── Exclusions (production DBs, critical infra)
+├── Testing window (hours, days, timezone)
+├── OPSEC requirements (noise level, detection avoidance)
+└── Acceptance criteria (what does "done" look like)
+```
+
+Soundwave generates 4 documents from your answers:
+
+| Document | Purpose |
+|----------|---------|
+| **RoE** | Legal authorization, scope, exclusions, escalation contacts |
+| **ConOps** | Threat actor profile, methodology, TTPs to emulate |
+| **Deconfliction Plan** | Source IPs, time windows, SOC coordination codes |
+| **OPPLAN** | Full mission plan — objectives, phases, MITRE ATT&CK mapping |
+
+### Step 7: Autonomous Execution
+
+After you approve the OPPLAN, Decepticon takes over:
+
+```
+Decepticon (Orchestrator)
+├── Reads OPPLAN objectives
+├── Dispatches to specialist agents:
+│   ├── Recon → port scan, service enum, OSINT
+│   ├── Scanner → vulnerability scanning, CVE mapping
+│   ├── Exploit → initial access, payload delivery
+│   ├── Post-Exploit → privesc, lateral movement, C2
+│   ├── AD Operator → Active Directory attack chains
+│   ├── Cloud Hunter → cloud infrastructure attacks
+│   └── Defender → Offensive Vaccine (attack→defend→verify)
+├── Tracks progress in Neo4j knowledge graph
+├── Adapts strategy based on findings
+└── Generates final report via Analyst agent
+```
+
+All commands execute inside the **sandboxed Kali container** — zero host exposure.
+
+### Step 8: Monitor in Real Time
+
+**Terminal CLI:**
+- Live streaming of agent activity, tool calls, sub-agent dispatch
+- `Ctrl+O` to toggle transcript mode (full event history)
+- `Ctrl+C` to pause (resume with `/resume`)
+
+**Web Dashboard (`http://localhost:3000`):**
+- Live attack graph visualization (Neo4j-backed)
+- Agent activity timeline
+- OPPLAN progress tracker
+- Findings table with severity ratings
+- Embedded terminal (same CLI, in-browser)
+
+### Step 9: Post-Engagement
+
+```bash
+# View findings
+ls ~/.decepticon/workspace/<engagement>/findings/
+
+# View generated documents
+ls ~/.decepticon/workspace/<engagement>/plan/
+
+# Export knowledge graph
+decepticon logs neo4j
+
+# Stop services (preserves data)
+decepticon stop
+
+# Full reset (removes all data)
+cd ~/.decepticon && docker compose down -v
+```
+
+### Quick Reference — Common Workflows
+
+**Resume a previous engagement:**
+
+```bash
+decepticon           # Shows engagement picker → select existing
+# Or from CLI: /resume → select from session list
+```
+
+**Switch model provider mid-session:**
+
+```bash
+decepticon stop
+# Edit ~/.decepticon/.env → change DECEPTICON_MODEL_PROVIDER or API keys
+decepticon
+```
+
+**Run the demo (no setup needed beyond API key):**
+
+```bash
+decepticon demo      # Launches Metasploitable 2 + full autonomous kill chain
+```
+
+**Check service health:**
+
+```bash
+decepticon status    # Container status
+decepticon health    # Deep health diagnostics (LangGraph, LiteLLM, Neo4j)
+```
+
+**View logs for specific service:**
+
+```bash
+decepticon logs              # LangGraph (default)
+decepticon logs litellm      # LLM proxy
+decepticon logs neo4j        # Knowledge graph
+decepticon logs web          # Web dashboard
+```
+
+---
+
+## Advanced Configuration
+
+### Multiple API Keys
+
+You can configure multiple providers simultaneously. The model profile controls which is used for each agent role, and fallbacks automatically use the next provider:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-proj-...
+DEEPSEEK_API_KEY=sk-...
+GOOGLE_API_KEY=AIza...
+```
+
+### Hybrid Auth (OAuth + API Keys)
+
+When using `DECEPTICON_MODEL_PROVIDER=auth`, Anthropic models route through OAuth while fallback models (GPT, Gemini) use their API keys. Both can be active simultaneously:
+
+```bash
+DECEPTICON_MODEL_PROVIDER=auth        # Primary: Claude via OAuth
+OPENAI_API_KEY=sk-proj-...            # Fallback: GPT via API key
+GOOGLE_API_KEY=AIza...                # Fallback: Gemini via API key
+```
+
+### LangSmith Tracing
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=decepticon
+```
+
+### Custom Ports
+
+```bash
+LANGGRAPH_PORT=2024   # Agent runtime
+LITELLM_PORT=4000     # LLM proxy
+POSTGRES_PORT=5432    # Database
+WEB_PORT=3000         # Dashboard
+```
+
+### Debug Mode
+
+```bash
+DECEPTICON_DEBUG=true
+```
+
+---
+
+## Troubleshooting
+
+### Authentication Issues
+
+**Claude OAuth: "No Claude Code OAuth tokens found"**
+
+```bash
+# Re-authenticate Claude Code CLI
+claude login
+
+# Verify token exists
+cat ~/.claude/.credentials.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('OK' if d.get('claudeAiOauth',{}).get('accessToken','').startswith('sk-ant-oat01-') else 'MISSING')"
+```
+
+**ChatGPT OAuth: "session token exchange failed"**
+
+The session token expires periodically. Re-extract from browser:
+
+1. Log into chatgpt.com
+2. DevTools → Application → Cookies → `__Secure-next-auth.session-token`
+3. Update `~/.decepticon/.env` with the new value
+
+**API Key: "401 Unauthorized"**
+
+```bash
+# Verify key format
+grep _API_KEY ~/.decepticon/.env | head -5
+
+# Test directly
+curl -s https://api.anthropic.com/v1/messages \
+  -H "x-api-key: $ANTHROPIC_API_KEY" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{"model":"claude-haiku-4-5-20251001","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}'
+```
+
+### Service Issues
+
+**Services won't start:**
+
+```bash
+decepticon status          # Which services are down?
+decepticon logs litellm    # Check LiteLLM for config errors
+docker compose ps          # Raw container status
+```
+
+**LiteLLM can't reach provider:**
+
+```bash
+# Check inside the container
+docker compose exec litellm curl -s https://api.anthropic.com/v1/messages -I
+```
+
+**Neo4j connection refused:**
+
+```bash
+decepticon kg-health
+```
+
+### Reset Everything
+
+```bash
+decepticon stop
+cd ~/.decepticon && docker compose down -v   # Remove all volumes
+decepticon onboard --reset                    # Re-run setup
+decepticon                                    # Fresh start
+```

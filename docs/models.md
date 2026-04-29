@@ -192,3 +192,31 @@ To wire in a new provider model:
 3. If introducing a new AuthMethod, also add it to `AuthMethod`, the factory's `_API_METHOD_ENV` map, and the onboard wizard's option list.
 
 Tests in `tests/unit/llm/test_models.py` will catch dropped tiers or missing matrix entries.
+
+---
+
+## Subscription OAuth Providers
+
+Use monthly subscriptions instead of per-token API billing. Each subscription has a custom LiteLLM handler that authenticates via OAuth/session tokens.
+
+| Subscription | AuthMethod | Models | Handler |
+|---|---|---|---|
+| Claude Max/Pro/Team | `anthropic_oauth` | auth/claude-opus, sonnet, haiku | `claude_code_handler.py` |
+| ChatGPT Pro/Plus/Team | `openai_oauth` | chatgpt/gpt-4o, o1, o3-mini | `chatgpt_handler.py` |
+| Gemini Advanced | `google_oauth` | gemini-sub/gemini-2.5-pro, flash | `gemini_handler.py` |
+| Copilot Pro | `copilot_oauth` | copilot/gpt-4o, o1, o3-mini | `copilot_handler.py` |
+| SuperGrok | `grok_oauth` | grok-sub/grok-3, grok-3-mini | `grok_handler.py` |
+| Perplexity Pro | `perplexity_oauth` | pplx-sub/sonar-pro, sonar | `perplexity_handler.py` |
+
+Enable in `.env`:
+
+```bash
+DECEPTICON_AUTH_CLAUDE_CODE=true     # Claude subscription
+DECEPTICON_AUTH_CHATGPT=true         # ChatGPT subscription
+DECEPTICON_AUTH_GEMINI=true          # Gemini Advanced
+DECEPTICON_AUTH_COPILOT=true         # Copilot Pro
+DECEPTICON_AUTH_GROK=true            # SuperGrok
+DECEPTICON_AUTH_PERPLEXITY=true      # Perplexity Pro
+```
+
+For full setup instructions including token extraction, see [Setup Guide](setup-guide.md).

@@ -97,6 +97,9 @@ export async function GET(
     }
   } catch (err: unknown) {
     console.error("Neo4j query error:", err instanceof Error ? err.message : err);
-    return NextResponse.json({ nodes: [], edges: [] });
+    return NextResponse.json(
+      { error: "Knowledge graph unavailable", nodes: [], edges: [] },
+      { status: 503 }
+    );
   }
 }

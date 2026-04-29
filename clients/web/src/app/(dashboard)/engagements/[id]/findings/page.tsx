@@ -57,20 +57,31 @@ export default function FindingsPage() {
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
 
   useEffect(() => {
+    let active = true;
     fetch(`/api/engagements/${engagementId}/findings`)
       .then((res) => {
         if (!res.ok) throw new Error("fetch failed");
         return res.json();
       })
       .then((data: Finding[]) => {
+        if (!active) return;
         const sorted = [...data].sort(
           (a, b) =>
             (severityOrder[a.severity] ?? 5) - (severityOrder[b.severity] ?? 5)
         );
         setFindings(sorted);
       })
-      .catch(() => setFindings([]))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (!active) return;
+        setFindings([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [engagementId]);
 
   const filtered =

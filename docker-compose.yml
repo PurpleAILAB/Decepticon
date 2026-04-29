@@ -9,7 +9,7 @@ services:
     container_name: decepticon-litellm
     volumes:
       - ./config/litellm.yaml:/app/config.yaml:ro
-      - ${HOME}/.claude/.credentials.json:/root/.claude/.credentials.json:ro
+      - ${CLAUDE_CREDENTIALS_VOLUME:-/dev/null}:/root/.claude/.credentials.json:ro
     entrypoint: ["python", "/app/litellm_startup.py"]
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     ports:
@@ -143,7 +143,7 @@ services:
       dockerfile: containers/langgraph.Dockerfile
     container_name: decepticon-langgraph
     ports:
-      - "${LANGGRAPH_PORT:-2024}:2024"
+      - "127.0.0.1:${LANGGRAPH_PORT:-2024}:2024"
     env_file: .env
     environment:
       - DECEPTICON_LLM__PROXY_URL=http://litellm:4000
@@ -188,12 +188,13 @@ services:
       dockerfile: containers/web.Dockerfile
     container_name: decepticon-web
     ports:
-      - "${WEB_PORT:-3000}:3000"
-      - "${TERMINAL_PORT:-3003}:3003"
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+      - "127.0.0.1:${TERMINAL_PORT:-3003}:3003"
     env_file: .env
     environment:
       - NEXT_PUBLIC_DECEPTICON_EDITION=oss
       - LANGGRAPH_API_URL=http://langgraph:2024
+      - NEXT_PUBLIC_LANGGRAPH_API_URL=http://localhost:${LANGGRAPH_PORT:-2024}
       - NEXT_PUBLIC_TERMINAL_WS_URL=ws://localhost:${TERMINAL_PORT:-3003}
       - DATABASE_URL=postgresql://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/decepticon_web
       - WORKSPACE_PATH=/workspace
