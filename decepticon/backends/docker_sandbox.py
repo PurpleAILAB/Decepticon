@@ -191,7 +191,7 @@ class TmuxSessionManager:
                 subprocess.run(
                     ["docker", "exec", self._container,
                      "mkdir", "-p", "/workspace/.sessions"],
-                    capture_output=True, timeout=5,
+                    capture_output=True, timeout=5, check=True,
                 )
                 self._docker_tmux(
                     [

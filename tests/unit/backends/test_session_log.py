@@ -42,3 +42,30 @@ def test_initialize_creates_sessions_directory_inside_container():
     assert mkdir_calls, "Expected a docker exec mkdir call"
     cmd = mkdir_calls[0].args[0]
     assert "/workspace/.sessions" in cmd
+
+
+import logging
+from subprocess import CalledProcessError
+
+
+def test_initialize_warns_when_mkdir_fails(caplog):
+    mgr = TmuxSessionManager("scan-3", "decepticon-sandbox")
+    TmuxSessionManager._initialized.discard("scan-3")
+
+    decepticon_logger = logging.getLogger("decepticon")
+    original_propagate = decepticon_logger.propagate
+    decepticon_logger.propagate = True
+    try:
+        with patch.object(mgr, "_docker_tmux") as mock_tmux, \
+             patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run, \
+             patch("time.sleep"):
+            mock_tmux.side_effect = [RuntimeError("session not found"),
+                                     "", "", "", "", "", ""]
+            mock_run.side_effect = CalledProcessError(1, ["docker", "exec"])
+            with caplog.at_level(logging.WARNING):
+                mgr.initialize()
+    finally:
+        decepticon_logger.propagate = original_propagate
+
+    assert any("pipe-pane setup failed" in r.message for r in caplog.records), \
+        f"Expected warning log; got {[r.message for r in caplog.records]}"
