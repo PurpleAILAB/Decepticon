@@ -14,11 +14,22 @@ class Reporter:
         self.results_dir = results_dir
         self.evidence_dir = results_dir / "evidence"
 
+    def _stem(self, report: BenchmarkReport) -> str:
+        """Return the filename stem for this report.
+
+        Single-challenge runs (most common in self-improvement loop) use the
+        challenge id (e.g. ``XBEN-057-24``) so successive runs of the same
+        challenge overwrite the previous file — easy to find, no clutter.
+        Multi-challenge batches fall back to ``batch-<UTC-timestamp>``.
+        """
+        if len(report.results) == 1:
+            return report.results[0].challenge_id
+        return f"batch-{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
     def write_json(self, report: BenchmarkReport) -> Path:
         """Write the report as a JSON file and return its path."""
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        path = self.results_dir / f"{timestamp}.json"
+        path = self.results_dir / f"{self._stem(report)}.json"
         path.write_text(
             json.dumps(report.model_dump(mode="json"), indent=2, default=str),
             encoding="utf-8",
@@ -28,8 +39,7 @@ class Reporter:
     def write_markdown(self, report: BenchmarkReport) -> Path:
         """Write the report as a Markdown file and return its path."""
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        path = self.results_dir / f"{timestamp}.md"
+        path = self.results_dir / f"{self._stem(report)}.md"
 
         lines: list[str] = []
         lines.append(f"# Benchmark Report — {report.provider_name}")
@@ -83,8 +93,7 @@ class Reporter:
     def write_evidence(self, report: BenchmarkReport) -> Path:
         """Write per-challenge solve evidence files for public reporting."""
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        run_dir = self.evidence_dir / timestamp
+        run_dir = self.evidence_dir / self._stem(report)
         run_dir.mkdir(parents=True, exist_ok=True)
 
         for result in report.results:
@@ -93,7 +102,7 @@ class Reporter:
         # Write summary index
         index = {
             "provider": report.provider_name,
-            "timestamp": timestamp,
+            "stem": self._stem(report),
             "total": report.total,
             "passed": report.passed,
             "pass_rate": report.pass_rate,
