@@ -42,6 +42,7 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "perplexity": "PERPLEXITY_API_KEY",
     "xai": "XAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
+    "nvidia": "NVIDIA_API_KEY",
     "replicate": "REPLICATE_API_TOKEN",
     "minimax": "MINIMAX_API_KEY",
 }

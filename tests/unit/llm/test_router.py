@@ -26,22 +26,28 @@ class TestModelRouter:
         assert self.router.resolve("decepticon") == "anthropic/claude-opus-4-7"
 
     def test_resolve_with_fallback_returns_chain(self):
-        # All four API methods configured → recon (LOW) skips MiniMax.
         chain = self.router.resolve_with_fallback("recon")
         assert chain == [
             "anthropic/claude-haiku-4-5",
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
+            "deepseek/deepseek-chat",
+            "openrouter/anthropic/claude-haiku-4-5",
+            "nvidia_nim/meta/llama-3.2-3b-instruct",
         ]
 
     def test_resolve_with_fallback_high_tier_full_chain(self):
-        # decepticon (HIGH) → every method contributes.
         chain = self.router.resolve_with_fallback("decepticon")
         assert chain == [
             "anthropic/claude-opus-4-7",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M2.5",
+            "deepseek/deepseek-reasoner",
+            "xai/grok-3",
+            "mistral/mistral-large-latest",
+            "openrouter/anthropic/claude-opus-4-7",
+            "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 
     def test_resolve_unknown_role_raises(self):

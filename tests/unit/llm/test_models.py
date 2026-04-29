@@ -143,6 +143,11 @@ class TestCredentials:
             AuthMethod.OPENAI_API,
             AuthMethod.GOOGLE_API,
             AuthMethod.MINIMAX_API,
+            AuthMethod.DEEPSEEK_API,
+            AuthMethod.XAI_API,
+            AuthMethod.MISTRAL_API,
+            AuthMethod.OPENROUTER_API,
+            AuthMethod.NVIDIA_API,
         ]
 
 
@@ -325,11 +330,15 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_profile(ModelProfile.ECO)
         a = m.get_assignment("decepticon")
         assert a.primary == "anthropic/claude-opus-4-7"
-        # All four API methods chain in default priority order.
         assert a.fallbacks == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M2.5",
+            "deepseek/deepseek-reasoner",
+            "xai/grok-3",
+            "mistral/mistral-large-latest",
+            "openrouter/anthropic/claude-opus-4-7",
+            "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 
     def test_from_profile_string_input(self):

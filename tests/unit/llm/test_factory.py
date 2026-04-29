@@ -49,23 +49,28 @@ class TestLLMFactory:
         assert self.factory.router is not None
 
     def test_get_fallback_models_full_chain(self):
-        # Default mapping has all four API methods → 3 fallbacks per role.
         models = self.factory.get_fallback_models("recon")
         names = [m.model_name for m in models]
         assert names == [
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
-            # MiniMax has no LOW tier → drops out of the chain.
+            "deepseek/deepseek-chat",
+            "openrouter/anthropic/claude-haiku-4-5",
+            "nvidia_nim/meta/llama-3.2-3b-instruct",
         ]
 
     def test_get_fallback_models_high_tier_includes_all_methods(self):
-        # decepticon is HIGH; every method has a HIGH model → 3 fallbacks.
         models = self.factory.get_fallback_models("decepticon")
         names = [m.model_name for m in models]
         assert names == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M2.5",
+            "deepseek/deepseek-reasoner",
+            "xai/grok-3",
+            "mistral/mistral-large-latest",
+            "openrouter/anthropic/claude-opus-4-7",
+            "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 
     def test_get_fallback_models_without_fallback(self):
@@ -138,7 +143,9 @@ class TestResolveCredentials:
         falls back to the all-API-methods inventory so module-level agent
         constructors stay importable in CI / dev shells without keys."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "your-anthropic-key-here")
-        for k in ("OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY"):
+        for k in ("OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY",
+                   "DEEPSEEK_API_KEY", "XAI_API_KEY", "MISTRAL_API_KEY",
+                   "OPENROUTER_API_KEY", "NVIDIA_API_KEY"):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
@@ -148,4 +155,9 @@ class TestResolveCredentials:
             AuthMethod.OPENAI_API,
             AuthMethod.GOOGLE_API,
             AuthMethod.MINIMAX_API,
+            AuthMethod.DEEPSEEK_API,
+            AuthMethod.XAI_API,
+            AuthMethod.MISTRAL_API,
+            AuthMethod.OPENROUTER_API,
+            AuthMethod.NVIDIA_API,
         ]

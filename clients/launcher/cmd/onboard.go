@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -30,6 +31,8 @@ const (
 	methodOpenAIAPI      = "openai_api"
 	methodGoogleAPI      = "google_api"
 	methodMiniMaxAPI     = "minimax_api"
+	methodOpenRouterAPI  = "openrouter_api"
+	methodNvidiaAPI      = "nvidia_api"
 )
 
 // methodOrder is the priority order surfaced in the wizard. The
@@ -43,6 +46,8 @@ var methodOrder = []string{
 	methodOpenAIAPI,
 	methodGoogleAPI,
 	methodMiniMaxAPI,
+	methodOpenRouterAPI,
+	methodNvidiaAPI,
 }
 
 func runOnboard(cmd *cobra.Command, args []string) error {
@@ -58,6 +63,8 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		openaiKey     string
 		geminiKey     string
 		minimaxKey    string
+		openrouterKey string
+		nvidiaKey     string
 		profile       string
 		useLangSmith  bool
 		langSmithKey  string
@@ -82,6 +89,8 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("OpenAI API Key    — sk-...", methodOpenAIAPI),
 					huh.NewOption("Google API Key    — AIza... (Gemini)", methodGoogleAPI),
 					huh.NewOption("MiniMax API Key   — eyJ...", methodMiniMaxAPI),
+					huh.NewOption("OpenRouter API Key — sk-or-...", methodOpenRouterAPI),
+					huh.NewOption("Nvidia NIM API Key — nvapi-...", methodNvidiaAPI),
 				).
 				Value(&methods).
 				Validate(func(s []string) error {
@@ -136,6 +145,28 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Validate(nonEmpty),
 		).Title("2 / 4  ·  MiniMax API").
 			WithHideFunc(func() bool { return !contains(methods, methodMiniMaxAPI) }),
+
+		// Step 2e: OpenRouter API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("OpenRouter API Key").
+				Placeholder("sk-or-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&openrouterKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  OpenRouter API").
+			WithHideFunc(func() bool { return !contains(methods, methodOpenRouterAPI) }),
+
+		// Step 2f: Nvidia NIM API key
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Nvidia NIM API Key").
+				Placeholder("nvapi-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&nvidiaKey).
+				Validate(nonEmpty),
+		).Title("2 / 4  ·  Nvidia NIM API").
+			WithHideFunc(func() bool { return !contains(methods, methodNvidiaAPI) }),
 
 		// Step 3: Model profile
 		huh.NewGroup(
@@ -204,6 +235,12 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if minimaxKey != "" {
 		values["MINIMAX_API_KEY"] = minimaxKey
 	}
+	if openrouterKey != "" {
+		values["OPENROUTER_API_KEY"] = openrouterKey
+	}
+	if nvidiaKey != "" {
+		values["NVIDIA_API_KEY"] = nvidiaKey
+	}
 
 	if useLangSmith && langSmithKey != "" {
 		values["LANGSMITH_TRACING"] = "true"
@@ -234,12 +271,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func nonEmpty(s string) error {

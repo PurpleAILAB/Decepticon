@@ -4,7 +4,8 @@ Three orthogonal axes control model selection:
 
   Tier        — model power level (HIGH / MID / LOW)
   AuthMethod  — specific way to authenticate (anthropic_api,
-                anthropic_oauth, openai_api, google_api, minimax_api)
+                anthropic_oauth, openai_api, google_api, minimax_api,
+                openrouter_api, nvidia_api)
   Profile     — eco (per-agent tier) / max (all HIGH) / test (all LOW)
 
 The profile decides each agent's *tier*. The user's *credentials inventory*
@@ -38,6 +39,8 @@ Tier × AuthMethod matrix
   openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
   minimax_api      MiniMax-M2.5                  MiniMax-M2.5-lightning         — (falls through)
+  openrouter_api   claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
+  nvidia_api       llama-3.3-70b-instruct        nemotron-70b-instruct          llama-3.2-3b-instruct
 
 Profiles
 --------
@@ -85,6 +88,8 @@ class AuthMethod(StrEnum):
     DEEPSEEK_API = "deepseek_api"
     XAI_API = "xai_api"
     MISTRAL_API = "mistral_api"
+    OPENROUTER_API = "openrouter_api"
+    NVIDIA_API = "nvidia_api"
     COPILOT_OAUTH = "copilot_oauth"  # Microsoft Copilot Pro subscription
     GROK_OAUTH = "grok_oauth"  # xAI SuperGrok (X Premium+)
     PERPLEXITY_OAUTH = "perplexity_oauth"  # Perplexity Pro subscription
@@ -141,6 +146,16 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.MISTRAL_API: {
         Tier.HIGH: "mistral/mistral-large-latest",
         Tier.MID: "mistral/codestral-latest",
+    },
+    AuthMethod.OPENROUTER_API: {
+        Tier.HIGH: "openrouter/anthropic/claude-opus-4-7",
+        Tier.MID: "openrouter/anthropic/claude-sonnet-4-6",
+        Tier.LOW: "openrouter/anthropic/claude-haiku-4-5",
+    },
+    AuthMethod.NVIDIA_API: {
+        Tier.HIGH: "nvidia_nim/meta/llama-3.3-70b-instruct",
+        Tier.MID: "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct",
+        Tier.LOW: "nvidia_nim/meta/llama-3.2-3b-instruct",
     },
     AuthMethod.COPILOT_OAUTH: {
         Tier.HIGH: "copilot/gpt-4o",
@@ -245,7 +260,7 @@ class Credentials(BaseModel):
 
     @classmethod
     def all_api_methods(cls) -> Credentials:
-        """All four API methods in default priority order. Used as a
+        """All API methods in default priority order. Used as a
         development convenience and for tests that want a fully-populated
         inventory without specifying it inline."""
         return cls(
@@ -254,6 +269,11 @@ class Credentials(BaseModel):
                 AuthMethod.OPENAI_API,
                 AuthMethod.GOOGLE_API,
                 AuthMethod.MINIMAX_API,
+                AuthMethod.DEEPSEEK_API,
+                AuthMethod.XAI_API,
+                AuthMethod.MISTRAL_API,
+                AuthMethod.OPENROUTER_API,
+                AuthMethod.NVIDIA_API,
             ]
         )
 
@@ -362,7 +382,7 @@ class LLMModelMapping(BaseModel):
 
     @classmethod
     def from_profile(cls, profile: ModelProfile | str) -> LLMModelMapping:
-        """Build with the default credentials (all four API methods, default
+        """Build with the default credentials (all API methods, default
         priority). Used by tests and dev convenience — production code
         should pass an explicit Credentials inventory."""
         return cls.from_credentials_and_profile(Credentials.all_api_methods(), profile)

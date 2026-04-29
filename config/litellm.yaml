@@ -137,6 +137,38 @@ model_list:
       model: mistral/codestral-latest
       api_key: os.environ/MISTRAL_API_KEY
 
+  # ── OpenRouter ─────────────────────────────────────────────────────
+  - model_name: openrouter/anthropic/claude-opus-4-7
+    litellm_params:
+      model: openrouter/anthropic/claude-opus-4-7
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: openrouter/anthropic/claude-sonnet-4-6
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  - model_name: openrouter/anthropic/claude-haiku-4-5
+    litellm_params:
+      model: openrouter/anthropic/claude-haiku-4-5
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # ── Nvidia NIM ─────────────────────────────────────────────────────
+  - model_name: nvidia_nim/meta/llama-3.3-70b-instruct
+    litellm_params:
+      model: nvidia_nim/meta/llama-3.3-70b-instruct
+      api_key: os.environ/NVIDIA_API_KEY
+
+  - model_name: nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct
+    litellm_params:
+      model: nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct
+      api_key: os.environ/NVIDIA_API_KEY
+
+  - model_name: nvidia_nim/meta/llama-3.2-3b-instruct
+    litellm_params:
+      model: nvidia_nim/meta/llama-3.2-3b-instruct
+      api_key: os.environ/NVIDIA_API_KEY
+
   # ── ChatGPT OAuth (subscription) ─────────────────────────────────────
   - model_name: chatgpt/gpt-4o
     litellm_params:

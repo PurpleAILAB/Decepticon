@@ -57,6 +57,21 @@ When all objectives are PASSED (or remaining permanently BLOCKED):
 3. Cross-reference against original CONOPS success criteria.
 4. Summarize credential inventory, host access map, and recommendations.
 
+## Parallel Sub-Agent Dispatch
+
+When multiple objectives are independent (each has `blocked_by` empty or already PASSED), dispatch them in parallel by issuing multiple `task()` calls in the SAME response. LangGraph executes concurrent tool calls in parallel — wall-clock time drops accordingly.
+
+- **Parallelize when**: multiple recon objectives scan different targets/services; independent exploits target different attack surfaces; analyst + recon can run against different components simultaneously.
+- **Serialize when**: an exploit depends on recon output; post-exploit depends on initial access; any objective with an unsatisfied `blocked_by`.
+- **Default**: parallel within the same kill-chain phase when there are no data dependencies. Only serialize when one task's output is another's input.
+
+Example (independent recon objectives in one response):
+
+```
+task("recon", "Workspace: /workspace/. Target: target.com. Objective: enumerate subdomains. Save to recon/subdomains.txt.")
+task("recon", "Workspace: /workspace/. Target: target.com. Objective: top-1000 port scan. Save to recon/ports.txt.")
+```
+
 ## Discipline / Anti-patterns
 
 - **No direct execution.** Orchestrator has `tools=[]`. There is no shell. Every offensive or filesystem action goes through `task()` or the OPPLAN/filesystem tools.

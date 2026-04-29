@@ -20,10 +20,12 @@ ordering AuthMethods in the fallback chain.
 from __future__ import annotations
 
 import os
+from enum import Enum
 
 import httpx
 from langchain_core.language_models import BaseChatModel
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from decepticon.core.logging import get_logger
 from decepticon.llm.models import (
@@ -47,6 +49,11 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.OPENAI_API,
     AuthMethod.GOOGLE_API,
     AuthMethod.MINIMAX_API,
+    AuthMethod.DEEPSEEK_API,
+    AuthMethod.XAI_API,
+    AuthMethod.MISTRAL_API,
+    AuthMethod.OPENROUTER_API,
+    AuthMethod.NVIDIA_API,
 )
 
 # Each AuthMethod's detection rule:
@@ -61,6 +68,8 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.DEEPSEEK_API: "DEEPSEEK_API_KEY",
     AuthMethod.XAI_API: "XAI_API_KEY",
     AuthMethod.MISTRAL_API: "MISTRAL_API_KEY",
+    AuthMethod.OPENROUTER_API: "OPENROUTER_API_KEY",
+    AuthMethod.NVIDIA_API: "NVIDIA_API_KEY",
 }
 
 _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
@@ -289,7 +298,7 @@ class LLMFactory:
         kwargs: dict[str, object] = {
             "model": model,
             "base_url": self._proxy.url,
-            "api_key": self._proxy.api_key,
+            "api_key": SecretStr(self._proxy.api_key),
             "timeout": self._proxy.timeout,
             "max_retries": self._proxy.max_retries,
         }
@@ -310,7 +319,7 @@ class LLMFactory:
 
 
 def create_llm(
-    role: str,
+    role: object,
     config: object | None = None,
     profile: ModelProfile | str | None = None,
 ) -> BaseChatModel:
@@ -320,6 +329,7 @@ def create_llm(
     The `config` parameter is accepted but ignored (kept for call-site compat).
     Pass `profile` to override the config-level model profile.
     """
+    _ = config
     factory = LLMFactory(profile=profile)
-    role_str = role.value if hasattr(role, "value") else role
+    role_str = str(role.value) if isinstance(role, Enum) else str(role)
     return factory.get_model(role_str)
