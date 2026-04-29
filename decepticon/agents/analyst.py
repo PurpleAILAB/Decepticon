@@ -28,9 +28,12 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
-from decepticon.middleware import FilesystemMiddlewareNoExecute
+from decepticon.middleware import (
+    FilesystemMiddlewareNoExecute,
+    SandboxNotificationMiddleware,
+)
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.bash import bash
+from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import REFERENCES_TOOLS
 from decepticon.tools.research.tools import RESEARCH_TOOLS
@@ -70,6 +73,7 @@ def create_analyst_agent():
             sources=["/skills/analyst/", "/skills/shared/"],
         ),
         FilesystemMiddlewareNoExecute(backend=backend),
+        SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
@@ -83,7 +87,7 @@ def create_analyst_agent():
 
     # Research tools first → model defaults to graph operations;
     # references tools offer payloads + external knowledge lookup.
-    tools = [*RESEARCH_TOOLS, *REFERENCES_TOOLS, bash]
+    tools = [*RESEARCH_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
 
     agent = create_agent(
         llm,

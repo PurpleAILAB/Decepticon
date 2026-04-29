@@ -18,9 +18,12 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
-from decepticon.middleware import FilesystemMiddlewareNoExecute
+from decepticon.middleware import (
+    FilesystemMiddlewareNoExecute,
+    SandboxNotificationMiddleware,
+)
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.bash import bash
+from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.contracts.tools import CONTRACT_TOOLS
 from decepticon.tools.research.tools import (
@@ -51,6 +54,7 @@ def create_contract_auditor_agent():
             backend=backend, sources=["/skills/contracts/", "/skills/shared/"]
         ),
         FilesystemMiddlewareNoExecute(backend=backend),
+        SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
@@ -75,7 +79,7 @@ def create_contract_auditor_agent():
         # CVE intelligence
         cve_lookup,
         # Execution
-        bash,
+        *BASH_TOOLS,
     ]
     agent = create_agent(
         llm,

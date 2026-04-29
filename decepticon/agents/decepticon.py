@@ -50,6 +50,7 @@ from decepticon.middleware import (
     EngagementContextMiddleware,
     FilesystemMiddlewareNoExecute,
     OPPLANMiddleware,
+    SandboxNotificationMiddleware,
 )
 from decepticon.tools.bash.bash import set_sandbox
 
@@ -204,6 +205,7 @@ def create_decepticon_agent():
         FilesystemMiddlewareNoExecute(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
+        SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

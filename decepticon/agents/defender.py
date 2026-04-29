@@ -26,9 +26,12 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerDefenseBackend, DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
-from decepticon.middleware import FilesystemMiddlewareNoExecute
+from decepticon.middleware import (
+    FilesystemMiddlewareNoExecute,
+    SandboxNotificationMiddleware,
+)
 from decepticon.middleware.skills import DecepticonSkillsMiddleware
-from decepticon.tools.bash import bash
+from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.defense import set_defense_backend
 from decepticon.tools.defense.tools import (
@@ -84,6 +87,7 @@ def create_defender_agent():
             sources=["/skills/defender/", "/skills/shared/"],
         ),
         FilesystemMiddlewareNoExecute(backend=backend),
+        SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
@@ -106,7 +110,7 @@ def create_defender_agent():
         kg_neighbors,
         kg_stats,
         # Execution
-        bash,
+        *BASH_TOOLS,
     ]
 
     agent = create_agent(
