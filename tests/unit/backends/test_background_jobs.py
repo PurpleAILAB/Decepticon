@@ -153,3 +153,41 @@ def test_poll_completion_handles_capture_failure_gracefully():
         result = sandbox.poll_completion("scan")
 
     assert result.status == "running"
+
+
+def test_auto_background_path_registers_job():
+    import asyncio
+    sandbox = DockerSandbox(container_name="test")
+
+    captures = [
+        "[DCPTN:0:/workspace] ",                           # baseline
+        "[DCPTN:0:/workspace] sleep 99999\nrunning\n",     # poll #1 — no new marker
+        "[DCPTN:0:/workspace] sleep 99999\nrunning\n",     # poll #2 — no new marker
+    ]
+
+    with patch.object(sandbox, "_get_manager") as mock_get, \
+         patch("decepticon.backends.docker_sandbox.AUTO_BACKGROUND_SECONDS", 0.0), \
+         patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01):
+        mgr = MagicMock()
+        mgr._capture.side_effect = (
+            captures + ["[DCPTN:0:/workspace] sleep 99999\nrunning\n"] * 5
+        )
+        mgr.initialize = MagicMock()
+        mgr._send = MagicMock()
+        mgr._docker_tmux = MagicMock()
+        mgr._clear_screen = MagicMock()
+        mock_get.return_value = mgr
+
+        # Bind the real TmuxSessionManager.execute_async to the mock manager
+        # so the auto-background path runs against mocked internals.
+        from decepticon.backends.docker_sandbox import TmuxSessionManager
+        mgr.execute_async = TmuxSessionManager.execute_async.__get__(mgr, TmuxSessionManager)
+
+        asyncio.run(
+            sandbox.execute_tmux_async(command="sleep 99999", session="long", timeout=2)
+        )
+
+    job = sandbox._jobs.get("long")
+    assert job is not None
+    assert job.command == "sleep 99999"
+    assert job.status == "running"

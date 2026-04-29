@@ -342,8 +342,8 @@ class TmuxSessionManager:
         return (
             f"[TIMEOUT] Command exceeded {timeout}s limit.\n"
             f"Session '{self.session}' is still running. "
-            f'To interact with it, use: bash(command="<input>", is_input=True, session="{self.session}")\n'
-            f'To read its current output: bash(command="", session="{self.session}")\n'
+            f'Send input with bash(command="<input>", is_input=True, session="{self.session}").\n'
+            f'Read partial output with bash_output(session="{self.session}").\n'
             f"--- screen preview ---\n{screen_preview}"
         )
 
@@ -352,6 +352,7 @@ class TmuxSessionManager:
         command: str,
         is_input: bool,
         timeout: int,
+        on_auto_background=None,
     ) -> str:
         """Async version of execute() — non-blocking subprocess + cancellable polling.
 
@@ -460,6 +461,11 @@ class TmuxSessionManager:
                     command[:50],
                     self.session,
                 )
+                if on_auto_background is not None:
+                    try:
+                        on_auto_background(command, baseline)
+                    except Exception as cb_err:
+                        log.warning("auto-background callback failed: %s", cb_err)
                 output = _extract_interactive_output(screen, baseline)
                 preview = _truncate(output).strip()
                 return (
@@ -467,8 +473,8 @@ class TmuxSessionManager:
                     f"in session '{self.session}'.\n"
                     f"--- partial output ---\n{preview[-1000:] if preview else '(no output yet)'}\n"
                     f"--- end ---\n"
-                    f"Do productive work NOW. Check later: "
-                    f'bash(command="", session="{self.session}")'
+                    f'You will be notified when it completes. Inspect early progress: '
+                    f'bash_output(session="{self.session}").'
                 )
 
             # Stall detection (see sync execute() for rationale)
@@ -499,8 +505,8 @@ class TmuxSessionManager:
         return (
             f"[TIMEOUT] Command exceeded {timeout}s limit.\n"
             f"Session '{self.session}' is still running. "
-            f'To interact with it, use: bash(command="<input>", is_input=True, session="{self.session}")\n'
-            f'To read its current output: bash(command="", session="{self.session}")\n'
+            f'Send input with bash(command="<input>", is_input=True, session="{self.session}").\n'
+            f'Read partial output with bash_output(session="{self.session}").\n'
             f"--- screen preview ---\n{screen_preview}"
         )
 
@@ -846,10 +852,18 @@ class DockerSandbox(BaseSandbox):
         if not command and not is_input:
             return await asyncio.to_thread(mgr.read_screen)
 
+        def _on_auto_background(cmd: str, baseline: str) -> None:
+            self._jobs.register(
+                session,
+                command=cmd,
+                initial_markers=len(PS1_PATTERN.findall(baseline)),
+            )
+
         return await mgr.execute_async(
             command,
             is_input=is_input,
             timeout=effective,
+            on_auto_background=_on_auto_background,
         )
 
     def start_background(self, command: str, session: str = "main") -> None:

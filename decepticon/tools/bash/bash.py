@@ -255,11 +255,9 @@ async def bash(
         await asyncio.to_thread(_sandbox.start_background, command=command, session=session)
         return (
             f"[BACKGROUND] Command started in session '{session}'.\n"
-            f"Do NOT check this session or sleep-wait. Instead, do productive work NOW:\n"
-            f"  - Run quick commands (curl, dig, whois) on 'main' session\n"
-            f"  - Enumerate services on already-discovered ports\n"
-            f"  - Read skill files or analyze existing findings\n"
-            f'Check later: bash(command="", session="{session}")'
+            f"Do NOT poll — you will be notified when it completes.\n"
+            f"Do productive work NOW (curl/dig/whois on 'main', enumerate other targets, etc).\n"
+            f'Inspect early progress with bash_output(session="{session}").'
         )
 
     result = await _sandbox.execute_tmux_async(
