@@ -909,6 +909,8 @@ class DockerSandbox(BaseSandbox):
                 self._managers.pop(session, None)
             with TmuxSessionManager._init_lock:
                 TmuxSessionManager._initialized.discard(session)
+            self.reset_session_log_offset(session)
+            self._jobs.remove(session)
 
 
 # ─── Pre-flight check ────────────────────────────────────────────────────

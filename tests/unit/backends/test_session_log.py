@@ -219,6 +219,8 @@ def test_read_session_log_diff_concurrent_does_not_double_count():
 
 def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
     sandbox = DockerSandbox(container_name="test")
+    sandbox._jobs.register("scan", command="x", initial_markers=1)
+    sandbox._log_offsets["scan"] = 42
     mgr = sandbox._get_manager("scan")  # populate the cache
     TmuxSessionManager._initialized.add("scan")
 
@@ -226,17 +228,32 @@ def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
         sandbox.kill_session("scan")
 
     sent_calls = [c.args[0] for c in mock_tmux.call_args_list]
-    assert any(c[0] == "send-keys" and c[-1] == "C-c" for c in sent_calls)
-    assert any(c[0] == "kill-session" for c in sent_calls)
+
+    # Ordering: send-keys C-c MUST come before kill-session
+    ctrl_c_idx = next(i for i, c in enumerate(sent_calls)
+                      if c[0] == "send-keys" and c[-1] == "C-c")
+    kill_idx = next(i for i, c in enumerate(sent_calls) if c[0] == "kill-session")
+    assert ctrl_c_idx < kill_idx, "send-keys C-c must be issued before kill-session"
+
+    # All caches cleared
     assert "scan" not in sandbox._managers
     assert "scan" not in TmuxSessionManager._initialized
+    assert "scan" not in sandbox._log_offsets
+    assert sandbox._jobs.get("scan") is None
 
 
 def test_kill_session_swallows_errors():
     sandbox = DockerSandbox(container_name="test")
+    sandbox._jobs.register("flaky", command="x", initial_markers=1)
+    sandbox._log_offsets["flaky"] = 7
     mgr = sandbox._get_manager("flaky")
+    TmuxSessionManager._initialized.add("flaky")
 
     with patch.object(mgr, "_docker_tmux", side_effect=RuntimeError("boom")):
         sandbox.kill_session("flaky")  # must not raise
 
+    # Caches still cleared even when tmux ops failed
     assert "flaky" not in sandbox._managers
+    assert "flaky" not in TmuxSessionManager._initialized
+    assert "flaky" not in sandbox._log_offsets
+    assert sandbox._jobs.get("flaky") is None
