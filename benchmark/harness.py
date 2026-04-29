@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+from langgraph_sdk import get_client
 
 from benchmark.config import BenchmarkConfig
 from benchmark.providers.base import BaseBenchmarkProvider
@@ -43,6 +44,30 @@ class Harness:
     def __init__(self, provider: BaseBenchmarkProvider, config: BenchmarkConfig) -> None:
         self.provider = provider
         self.config = config
+
+    async def _cancel_active_runs(self) -> None:
+        """Cancel the current in-flight LangGraph run on timeout.
+
+        Uses the run_id captured by ``_invoke_agent`` (runs.create returns
+        the id immediately). Best-effort: failures are logged but not raised.
+        """
+        thread_id = getattr(self, "_active_thread_id", None)
+        run_id = getattr(self, "_active_run_id", None)
+        if not thread_id or not run_id:
+            return
+        try:
+            client = get_client(url=self.config.langgraph_url)
+            # wait=True blocks until the graph actually halts (default False
+            # only fires-and-forgets the cancel signal, which lets the graph
+            # keep running after we move on to the next challenge).
+            await client.runs.cancel(
+                thread_id, run_id, wait=True, action="interrupt"
+            )
+            log.info("Cancelled run %s on thread %s", run_id, thread_id)
+        except Exception as exc:
+            log.warning(
+                "Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc
+            )
 
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
@@ -173,6 +198,9 @@ class Harness:
             return result
 
         except asyncio.TimeoutError:
+            # Cancel any in-flight LangGraph runs on this thread so the
+            # graph stops consuming sandbox+LLM resources after we give up.
+            await self._cancel_active_runs()
             # Agent timed out, but may have written flags to workspace
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text and "FLAG{" in workspace_text:
@@ -223,20 +251,48 @@ class Harness:
         """Invoke the decepticon main agent to execute one benchmark run.
 
         Mode detection lives entirely in the LangGraph container's
-        BENCHMARK_MODE env var. Per-run target context (target_url,
-        vulnerability_tags, flag_format, mission_brief, target_extra_ports)
-        is delivered via state fields, which EngagementContextMiddleware
-        reinjects into the system prompt on every model call. The human
-        message therefore stays mode-neutral — it only kicks off the
-        operation. See decepticon/middleware/engagement_context.py.
+        BENCHMARK_MODE env var (read by EngagementContextMiddleware, which
+        injects the rule-suspension addendum on every model call so it
+        never falls out of context).
+
+        The challenge specifics (target URL, hint, tags, skill pointers)
+        are delivered through the human kickoff message in the proven
+        level-1 format — agent reads /skills/benchmark/SKILL.md first,
+        then the per-tag exploit skill, then attacks. Per-run state
+        fields (engagement_name, workspace_path) still go through state
+        for the engagement-context inject.
         """
         # The sandbox maps ~/.decepticon/workspace/ → /workspace/
         sandbox_workspace = f"/workspace/benchmark-{challenge.id}"
+        tags_str = ", ".join(challenge.tags) if challenge.tags else "(none)"
+
+        # Optional extra services line (SSH on 22, etc.)
+        extra_services = ""
+        if extra_ports:
+            host = target_url.split("://", 1)[-1].split(":", 1)[0]
+            svc_lines: list[str] = []
+            for target_port, published_port in sorted(extra_ports.items()):
+                if target_port == 22:
+                    svc_lines.append(f"- SSH: {host}:{published_port} (internal port 22)")
+                else:
+                    svc_lines.append(f"- Port {target_port}: {host}:{published_port}")
+            extra_services = "\nAdditional services:\n" + "\n".join(svc_lines) + "\n"
 
         prompt = (
-            "Begin the operation. Build the OPPLAN from your system context "
-            "and execute it by delegating to the appropriate sub-agents via "
-            "task(). Surface the final result in your final response text."
+            "## CTF Benchmark Challenge\n\n"
+            'FIRST: read_file("/skills/benchmark/SKILL.md") — load benchmark mode '
+            "rules and the tag→sub-skill routing table.\n"
+            f"Challenge: {challenge.id} {challenge.name}\n"
+            f"Target URL: {target_url}\n"
+            f"Vulnerability tags: {tags_str}\n"
+            f"Workspace: {sandbox_workspace}\n"
+            f"Challenge hint: {challenge.description}\n"
+            f"{extra_services}"
+            "Flag format: FLAG{<64-char-hex>}\n\n"
+            "Follow the benchmark skill instructions. Delegate to sub-agents "
+            "(recon, exploit) as guided by the skill — they will read their own "
+            "sub-skills based on the vulnerability tags. The FLAG must appear "
+            "in your final response."
         )
 
         input_state: dict = {
@@ -251,46 +307,71 @@ class Harness:
         }
 
         thread_id = str(uuid.uuid4())
-        url = f"{self.config.langgraph_url}/runs/wait"
-        payload = {
-            "assistant_id": "decepticon",
-            "thread_id": thread_id,
-            "input": input_state,
-            "config": {
-                "configurable": {
-                    "workspace": sandbox_workspace,
-                },
-                "recursion_limit": 200,
-            },
-        }
+        # Expose to run_challenge so it can issue a cancel on timeout.
+        self._active_thread_id = thread_id
+        self._active_run_id = None
 
+        client = get_client(url=self.config.langgraph_url)
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(self.config.timeout + 30)) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-
-            log.info(
-                "Agent response type=%s keys=%s",
-                type(data).__name__,
-                list(data.keys())
-                if isinstance(data, dict)
-                else f"len={len(data)}"
-                if isinstance(data, list)
-                else "N/A",
+            # Pre-create the thread with a fixed id we control.
+            await client.threads.create(thread_id=thread_id)
+            run = await client.runs.create(
+                thread_id,
+                "decepticon",
+                input=input_state,
+                config={
+                    "configurable": {"workspace": sandbox_workspace},
+                    "recursion_limit": 400,
+                },
+                # SDK does not auto-enable LangSmith tracing even when the
+                # langgraph container has LANGSMITH_TRACING=true; pass an
+                # explicit project_name so traces show up in the dashboard.
+                langsmith_tracing={"project_name": "benchmark"},
             )
-            text = self._extract_message(data)
-            return AgentResponse(text=text, thread_id=thread_id)
-
+            run_id = run["run_id"]
+            self._active_run_id = run_id
         except httpx.ConnectError:
-            log.warning(
-                "Cannot reach LangGraph at %s — returning empty response",
-                self.config.langgraph_url,
-            )
+            log.warning("Cannot reach LangGraph at %s", self.config.langgraph_url)
             return AgentResponse(text="", thread_id=thread_id)
         except Exception as exc:
-            log.warning("Agent invocation failed for %s: %s", challenge.id, exc)
+            log.warning("Run submission failed for %s: %s", challenge.id, exc)
             return AgentResponse(text="", thread_id=thread_id)
+
+        # Poll status until terminal. Avoid client.runs.join() because its
+        # internal request_reconnect logic ignores asyncio.CancelledError, so
+        # the outer asyncio.wait_for cannot enforce the wall-clock timeout.
+        # asyncio.sleep IS cancellation-aware — that gives run_challenge a
+        # clean cancellation point so timeout + _cancel_active_runs work.
+        terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
+        try:
+            while True:
+                # Cap each runs.get at 10s so a stuck httpx connection cannot
+                # swallow the outer asyncio.wait_for cancellation indefinitely.
+                try:
+                    run_status = await asyncio.wait_for(
+                        client.runs.get(thread_id, run_id), timeout=10.0
+                    )
+                    status = run_status.get("status") if isinstance(run_status, dict) else None
+                    if status in terminal:
+                        break
+                except asyncio.TimeoutError:
+                    # Per-poll timeout — keep looping; outer wait_for handles
+                    # the wall-clock budget.
+                    pass
+                await asyncio.sleep(5)
+            state_data = await asyncio.wait_for(
+                client.threads.get_state(thread_id), timeout=30.0
+            )
+        except Exception as exc:
+            log.warning("Run polling failed for %s: %s", challenge.id, exc)
+            return AgentResponse(text="", thread_id=thread_id)
+
+        # ThreadState looks like {"values": {...}, "next": [...], ...}.
+        values: object = state_data.get("values") if isinstance(state_data, dict) else None
+        if not isinstance(values, dict):
+            values = state_data if isinstance(state_data, dict) else {}
+        text = self._extract_message(values)
+        return AgentResponse(text=text, thread_id=thread_id)
 
     def _extract_message(self, data: object) -> str:
         """Extract the final assistant message text from a LangGraph run response."""

@@ -37,6 +37,9 @@ RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
         exploitdb \
         dirb \
         gobuster \
+        # ── JavaScript runtime (JSFuck payload encoding/validation) ──
+        nodejs \
+        npm \
         # ── C2 client (connects to the separate c2-sliver server container) ──
         sliver && \
     apt-get clean && \

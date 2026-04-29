@@ -126,6 +126,7 @@ AGENT_TIERS: dict[str, Tier] = {
     # HIGH — deep reasoning, multi-step planning, source-level analysis,
     # long context accumulation. Failure cost is mission-critical.
     "decepticon": Tier.HIGH,
+    "exploit": Tier.HIGH,
     "exploiter": Tier.HIGH,
     "patcher": Tier.HIGH,
     "contract_auditor": Tier.HIGH,
@@ -133,7 +134,6 @@ AGENT_TIERS: dict[str, Tier] = {
     "vulnresearch": Tier.HIGH,
     # MID — precision execution, code generation, structured judgment.
     # Tool-heavy with moderate iteration.
-    "exploit": Tier.MID,
     "detector": Tier.MID,
     "verifier": Tier.MID,
     "postexploit": Tier.MID,

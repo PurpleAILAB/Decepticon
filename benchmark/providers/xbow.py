@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+import socket
 import subprocess
 import time
 from pathlib import Path
@@ -157,7 +158,19 @@ class XBOWProvider(BaseBenchmarkProvider):
 
             target_url = f"http://host.docker.internal:{http_port}"
 
-            # Wait for the challenge container to accept HTTP connections
+            # TCP pre-flight: verify all required ports are accepting connections.
+            # Ports that never open indicate a failed container start — abort early
+            # rather than dispatching the agent into a dead target (saves ~20 min).
+            all_ports = [int(http_port)] + list(extra_ports.values())
+            for port in all_ports:
+                if not self._wait_for_tcp("localhost", port, timeout=30):
+                    return SetupResult(
+                        target_url="",
+                        success=False,
+                        error=f"TCP pre-flight failed: port {port} not accepting connections after 30s",
+                    )
+
+            # HTTP readiness check on the primary port
             for attempt in range(15):
                 try:
                     r = httpx.get(
@@ -176,7 +189,7 @@ class XBOWProvider(BaseBenchmarkProvider):
                     time.sleep(2)
             else:
                 log.warning(
-                    "Challenge %s: health check timed out after 30s, proceeding anyway",
+                    "Challenge %s: HTTP health check timed out after 30s, proceeding anyway",
                     challenge.id,
                 )
 
@@ -224,6 +237,17 @@ class XBOWProvider(BaseBenchmarkProvider):
             tags=challenge.tags,
             passed=False,
         )
+
+    def _wait_for_tcp(self, host: str, port: int, timeout: int = 30) -> bool:
+        """Return True if TCP port accepts a connection within timeout seconds."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    return True
+            except OSError:
+                time.sleep(2)
+        return False
 
     def teardown(self, challenge: Challenge) -> None:
         """Stop and remove challenge containers (best-effort)."""

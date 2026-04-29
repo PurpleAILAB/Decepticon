@@ -230,7 +230,7 @@ def create_decepticon_agent():
     )
 
     # Higher recursion budget than sub-agents (100) — top-level coordinator.
-    return agent.with_config({"recursion_limit": 200})
+    return agent.with_config({"recursion_limit": 400})
 
 
 # Module-level graph for LangGraph Platform (langgraph serve)

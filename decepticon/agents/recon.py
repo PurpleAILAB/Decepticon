@@ -133,7 +133,7 @@ def create_recon_agent():
         tools=tools,
         middleware=middleware,
         name="recon",
-    ).with_config({"recursion_limit": 200})
+    ).with_config({"recursion_limit": 400})
 
     return agent
 
