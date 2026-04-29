@@ -680,11 +680,15 @@ class DockerSandbox(BaseSandbox):
         self._container_name = container_name
         self._default_timeout = default_timeout
         self._managers: dict[str, TmuxSessionManager] = {}
+        self._managers_lock = threading.RLock()
+        self._jobs = BackgroundJobTracker()
+        self._log_offsets: dict[str, int] = {}
 
     def _get_manager(self, session: str) -> TmuxSessionManager:
-        if session not in self._managers:
-            self._managers[session] = TmuxSessionManager(session, self._container_name)
-        return self._managers[session]
+        with self._managers_lock:
+            if session not in self._managers:
+                self._managers[session] = TmuxSessionManager(session, self._container_name)
+            return self._managers[session]
 
     # ── BaseSandbox abstract methods ──────────────────────────────────────
 

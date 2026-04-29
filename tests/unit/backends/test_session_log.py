@@ -69,3 +69,38 @@ def test_initialize_warns_when_mkdir_fails(caplog):
 
     assert any("pipe-pane setup failed" in r.message for r in caplog.records), \
         f"Expected warning log; got {[r.message for r in caplog.records]}"
+
+
+import threading
+from decepticon.backends.docker_sandbox import (
+    BackgroundJobTracker,
+    DockerSandbox,
+)
+
+
+def test_get_manager_concurrent_returns_same_instance():
+    sandbox = DockerSandbox(container_name="test")
+    seen: list[int] = []
+    seen_lock = threading.Lock()
+
+    def worker():
+        mgr = sandbox._get_manager("shared")
+        with seen_lock:
+            seen.append(id(mgr))
+
+    threads = [threading.Thread(target=worker) for _ in range(20)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert len(set(seen)) == 1, "All threads must see the same manager instance"
+
+
+def test_sandbox_has_jobs_tracker():
+    sandbox = DockerSandbox(container_name="test")
+    assert isinstance(sandbox._jobs, BackgroundJobTracker)
+
+
+def test_sandbox_has_log_offsets_dict():
+    sandbox = DockerSandbox(container_name="test")
+    assert isinstance(sandbox._log_offsets, dict)
+    assert sandbox._log_offsets == {}
