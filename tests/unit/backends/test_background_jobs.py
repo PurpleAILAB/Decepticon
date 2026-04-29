@@ -1,10 +1,7 @@
-"""Background job tracker + start/poll integration."""
-import asyncio
-from unittest.mock import MagicMock, patch
+"""Background job tracker — pure-Python unit tests."""
 from decepticon.backends.docker_sandbox import (
     BackgroundJob,
     BackgroundJobTracker,
-    DockerSandbox,
 )
 
 
