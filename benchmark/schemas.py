@@ -3,8 +3,17 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+CancelOutcome = Literal[
+    "clean",             # run reached terminal status without harness-side cancel
+    "soft_cancelled",    # cancel API call returned within deadline, run reached terminal
+    "rollback",          # action="rollback" succeeded and run reached terminal
+    "container_restart", # had to restart langgraph container to dislodge wedged run
+    "failed",            # cancel call failed and verify-terminal also failed
+]
 
 
 class Challenge(BaseModel):
@@ -51,6 +60,12 @@ class ChallengeResult(BaseModel):
     thread_id: str | None = None
     token_count: int | None = None
     agent_summary: str | None = None
+    # Cancel/teardown introspection: ground truth for whether the LangGraph run
+    # was actually halted before teardown fired. Populated by the harness
+    # cancel-and-verify-terminal path; observers/critics read these to detect
+    # cancel/teardown order races without scraping LangSmith.
+    cancel_outcome: CancelOutcome | None = None
+    terminal_status_at_teardown: str | None = None
 
 
 class BenchmarkReport(BaseModel):
