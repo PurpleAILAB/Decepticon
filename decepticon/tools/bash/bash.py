@@ -314,7 +314,7 @@ async def bash_output(session: str = "main") -> str:
 
     if job.status == "done":
         _sandbox._jobs.mark_consumed(session)
-        hint = _interpret_exit_code(job.exit_code or 0) if job.exit_code is not None else ""
+        hint = _interpret_exit_code(job.exit_code) if job.exit_code is not None else ""
         body = diff if diff else "(no new output)"
         return (
             f"[DONE exit={job.exit_code}{hint} elapsed={job.elapsed:.1f}s] "
@@ -358,17 +358,18 @@ async def bash_status() -> str:
     if _sandbox is None:
         raise RuntimeError("DockerSandbox not initialized.")
 
-    initial = _sandbox._jobs.all_jobs()
-    if not initial:
-        return "[EMPTY] No tracked background jobs."
-
-    for job in initial:
+    # Poll all known running jobs first, then take ONE snapshot for the table.
+    for job in _sandbox._jobs.all_jobs():
         if job.status == "running":
             await asyncio.to_thread(_sandbox.poll_completion, job.session)
 
+    jobs = _sandbox._jobs.all_jobs()
+    if not jobs:
+        return "[EMPTY] No tracked background jobs."
+
     rows = ["session | status | elapsed | command",
             "--------+--------+---------+--------"]
-    for j in _sandbox._jobs.all_jobs():
+    for j in jobs:
         if j.status == "running":
             status = "running"
         else:
