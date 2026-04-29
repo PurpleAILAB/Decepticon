@@ -76,7 +76,7 @@ def create_decepticon_agent():
     )
     set_sandbox(sandbox)
 
-    system_prompt = load_prompt("decepticon", shared=["bash"])
+    system_prompt = load_prompt("decepticon")
 
     # Single backend: DockerSandbox provides /workspace/ AND /skills/ (skills
     # are bind-mounted into the sandbox container at /skills/, see
