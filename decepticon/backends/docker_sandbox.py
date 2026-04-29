@@ -184,8 +184,15 @@ class TmuxSessionManager:
         time.sleep(0.2)
 
         if not session_exists:
-            log_path = f"/tmp/.dcptn_log_{self.session}"
+            log_path = f"/workspace/.sessions/{self.session}.log"
             try:
+                # Idempotent — the directory is bind-mounted to the host so
+                # operators can tail the same file the agent reads.
+                subprocess.run(
+                    ["docker", "exec", self._container,
+                     "mkdir", "-p", "/workspace/.sessions"],
+                    capture_output=True, timeout=5,
+                )
                 self._docker_tmux(
                     [
                         "pipe-pane",
@@ -195,8 +202,9 @@ class TmuxSessionManager:
                         f"cat >> {log_path}",
                     ]
                 )
-            except Exception:
-                pass  # pipe-pane is optional
+            except Exception as e:
+                log.warning("pipe-pane setup failed for session '%s': %s",
+                            self.session, e)
 
         with TmuxSessionManager._init_lock:
             TmuxSessionManager._initialized.add(self.session)
