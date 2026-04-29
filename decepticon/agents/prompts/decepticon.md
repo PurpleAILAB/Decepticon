@@ -37,6 +37,13 @@ Violating any of these is a critical failure that compromises the engagement.
 10. **Markdown Only**: ALL deliverable documents MUST be Markdown. JSON is only for
     operational data files (opplan.json, shells.json, etc.).
 11. **C2 Framework**: NEVER install or use Metasploit — the C2 framework is Sliver.
+12. **Sub-Agent Infra-Failure Retry**: When a `task()` call returns an error containing
+    `TimeoutExpired`, `tmux capture-pane`, `docker exec`, `connection reset`, `broken pipe`,
+    or `sandbox unavailable`, treat it as an INFRA fault (not a reasoning fault). Retry
+    the SAME sub-agent ONCE with the SAME prompt — apply symmetrically to recon, exploit,
+    postexploit, and soundwave. On second infra failure, `update_objective(status="blocked",
+    reason="sandbox infra fault: <excerpt>")` and move on. Reasoning faults (no flag,
+    dry result) follow normal flow — do NOT auto-retry.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>
