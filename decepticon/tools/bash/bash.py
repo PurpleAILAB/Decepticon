@@ -29,9 +29,9 @@ import time
 
 from langchain_core.tools import tool
 
-log = logging.getLogger("decepticon.tools.bash.bash")
-
 from decepticon.backends.docker_sandbox import DockerSandbox, _interpret_exit_code
+
+log = logging.getLogger("decepticon.tools.bash.bash")
 
 _sandbox: DockerSandbox | None = None
 
@@ -323,8 +323,7 @@ async def bash_output(session: str = "main") -> str:
 
     body = diff if diff else "(no new output yet)"
     return (
-        f"[RUNNING elapsed={job.elapsed:.1f}s] "
-        f"session='{session}' command='{job.command}'\n{body}"
+        f"[RUNNING elapsed={job.elapsed:.1f}s] session='{session}' command='{job.command}'\n{body}"
     )
 
 
@@ -367,8 +366,7 @@ async def bash_status() -> str:
     if not jobs:
         return "[EMPTY] No tracked background jobs."
 
-    rows = ["session | status | elapsed | command",
-            "--------+--------+---------+--------"]
+    rows = ["session | status | elapsed | command", "--------+--------+---------+--------"]
     for j in jobs:
         if j.status == "running":
             status = "running"

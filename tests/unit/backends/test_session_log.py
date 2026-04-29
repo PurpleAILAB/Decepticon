@@ -1,25 +1,41 @@
 """Pipe-pane log moved to /workspace/.sessions/, manager dict is lock-protected."""
+
+import logging
+import threading
+from subprocess import CalledProcessError
 from unittest.mock import patch
-from decepticon.backends.docker_sandbox import TmuxSessionManager
+
+from deepagents.backends.protocol import FileDownloadResponse
+
+from decepticon.backends.docker_sandbox import (
+    BackgroundJobTracker,
+    DockerSandbox,
+    TmuxSessionManager,
+)
 
 
 def test_initialize_pipes_pane_to_workspace_sessions_log():
     mgr = TmuxSessionManager("scan-1", "decepticon-sandbox")
     TmuxSessionManager._initialized.discard("scan-1")
 
-    with patch.object(mgr, "_docker_tmux") as mock_tmux, \
-         patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run, \
-         patch("time.sleep"):
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("time.sleep"),
+    ):
         mock_tmux.side_effect = [
             RuntimeError("session not found"),
-            "", "", "", "", "", "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
         ]
         mock_run.return_value.returncode = 0
         mgr.initialize()
 
-    pipe_pane_call = next(
-        c for c in mock_tmux.call_args_list if c.args[0][0] == "pipe-pane"
-    )
+    pipe_pane_call = next(c for c in mock_tmux.call_args_list if c.args[0][0] == "pipe-pane")
     args = pipe_pane_call.args[0]
     cmd_arg = args[args.index("-o") + 1]
     assert cmd_arg == "cat >> /workspace/.sessions/scan-1.log"
@@ -29,23 +45,19 @@ def test_initialize_creates_sessions_directory_inside_container():
     mgr = TmuxSessionManager("scan-2", "decepticon-sandbox")
     TmuxSessionManager._initialized.discard("scan-2")
 
-    with patch.object(mgr, "_docker_tmux") as mock_tmux, \
-         patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run, \
-         patch("time.sleep"):
-        mock_tmux.side_effect = [RuntimeError("session not found"),
-                                 "", "", "", "", "", ""]
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
         mock_run.return_value.returncode = 0
         mgr.initialize()
 
-    mkdir_calls = [c for c in mock_run.call_args_list
-                   if "mkdir" in (c.args[0] if c.args else [])]
+    mkdir_calls = [c for c in mock_run.call_args_list if "mkdir" in (c.args[0] if c.args else [])]
     assert mkdir_calls, "Expected a docker exec mkdir call"
     cmd = mkdir_calls[0].args[0]
     assert "/workspace/.sessions" in cmd
-
-
-import logging
-from subprocess import CalledProcessError
 
 
 def test_initialize_warns_when_mkdir_fails(caplog):
@@ -56,26 +68,21 @@ def test_initialize_warns_when_mkdir_fails(caplog):
     original_propagate = decepticon_logger.propagate
     decepticon_logger.propagate = True
     try:
-        with patch.object(mgr, "_docker_tmux") as mock_tmux, \
-             patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run, \
-             patch("time.sleep"):
-            mock_tmux.side_effect = [RuntimeError("session not found"),
-                                     "", "", "", "", "", ""]
+        with (
+            patch.object(mgr, "_docker_tmux") as mock_tmux,
+            patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+            patch("time.sleep"),
+        ):
+            mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
             mock_run.side_effect = CalledProcessError(1, ["docker", "exec"])
             with caplog.at_level(logging.WARNING):
                 mgr.initialize()
     finally:
         decepticon_logger.propagate = original_propagate
 
-    assert any("pipe-pane setup failed" in r.message for r in caplog.records), \
+    assert any("pipe-pane setup failed" in r.message for r in caplog.records), (
         f"Expected warning log; got {[r.message for r in caplog.records]}"
-
-
-import threading
-from decepticon.backends.docker_sandbox import (
-    BackgroundJobTracker,
-    DockerSandbox,
-)
+    )
 
 
 def test_get_manager_concurrent_returns_same_instance():
@@ -89,8 +96,10 @@ def test_get_manager_concurrent_returns_same_instance():
             seen.append(id(mgr))
 
     threads = [threading.Thread(target=worker) for _ in range(20)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert len(set(seen)) == 1, "All threads must see the same manager instance"
 
@@ -104,9 +113,6 @@ def test_sandbox_has_log_offsets_dict():
     sandbox = DockerSandbox(container_name="test")
     assert isinstance(sandbox._log_offsets, dict)
     assert sandbox._log_offsets == {}
-
-
-from deepagents.backends.protocol import FileDownloadResponse
 
 
 def _file_response(path: str, content: bytes) -> FileDownloadResponse:
@@ -205,8 +211,10 @@ def test_read_session_log_diff_concurrent_does_not_double_count():
                 results.append(r)
 
         threads = [threading.Thread(target=worker) for _ in range(20)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
     # Exactly one thread sees the full payload; the other 19 see ""
     full_reads = [r for r in results if r]
@@ -230,8 +238,7 @@ def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
     sent_calls = [c.args[0] for c in mock_tmux.call_args_list]
 
     # Ordering: send-keys C-c MUST come before kill-session
-    ctrl_c_idx = next(i for i, c in enumerate(sent_calls)
-                      if c[0] == "send-keys" and c[-1] == "C-c")
+    ctrl_c_idx = next(i for i, c in enumerate(sent_calls) if c[0] == "send-keys" and c[-1] == "C-c")
     kill_idx = next(i for i, c in enumerate(sent_calls) if c[0] == "kill-session")
     assert ctrl_c_idx < kill_idx, "send-keys C-c must be issued before kill-session"
 

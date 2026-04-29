@@ -1,6 +1,8 @@
 """bash_output / bash_kill / bash_status tool unit tests."""
+
 import asyncio
 from unittest.mock import MagicMock
+
 from decepticon.backends.docker_sandbox import BackgroundJobTracker
 from decepticon.tools.bash.bash import (
     bash_kill,

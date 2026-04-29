@@ -1,6 +1,11 @@
 """SandboxNotificationMiddleware injects <system-reminder> for completed jobs."""
+
+import asyncio
+import threading
 from unittest.mock import MagicMock
+
 from langchain_core.messages import AIMessage, HumanMessage
+
 from decepticon.backends.docker_sandbox import BackgroundJobTracker
 from decepticon.middleware.sandbox_notifications import (
     SandboxNotificationMiddleware,
@@ -33,8 +38,9 @@ def test_pending_completion_appends_human_system_reminder():
     sandbox._jobs.mark_complete("scan", exit_code=0)
     mw = SandboxNotificationMiddleware(sandbox=sandbox)
 
-    update = mw.before_model(_state(HumanMessage(content="hi"), AIMessage(content="ok")),
-                             runtime=None)
+    update = mw.before_model(
+        _state(HumanMessage(content="hi"), AIMessage(content="ok")), runtime=None
+    )
 
     assert update is not None
     new_messages = update["messages"]
@@ -87,9 +93,6 @@ def test_multiple_completions_aggregate_into_one_message():
     assert content.count("<system-reminder>") == 1
 
 
-import asyncio
-
-
 def test_abefore_model_emits_same_reminder_as_before_model():
     sandbox = _sandbox_with_tracker()
     sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
@@ -109,15 +112,14 @@ def test_concurrent_before_model_calls_each_session_notified_once():
     """Two threads both fire before_model on the same middleware after a job
     completed. Exactly one of them should emit; the other should see _notified
     already includes the session and return None."""
-    import threading as _t
     sandbox = _sandbox_with_tracker()
     sandbox._jobs.register("scan", command="nmap", initial_markers=1)
     sandbox._jobs.mark_complete("scan", exit_code=0)
     mw = SandboxNotificationMiddleware(sandbox=sandbox)
 
-    barrier = _t.Barrier(2)
+    barrier = threading.Barrier(2)
     results = []
-    results_lock = _t.Lock()
+    results_lock = threading.Lock()
 
     def worker():
         barrier.wait()
@@ -125,9 +127,11 @@ def test_concurrent_before_model_calls_each_session_notified_once():
         with results_lock:
             results.append(r)
 
-    threads = [_t.Thread(target=worker) for _ in range(2)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     emitted = [r for r in results if r is not None]
     assert len(emitted) == 1, f"Expected exactly one emission, got {len(emitted)}"

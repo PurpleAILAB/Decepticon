@@ -1,4 +1,5 @@
 """Scratch-prune failures must produce warning logs (not silent pass)."""
+
 import asyncio
 import importlib
 import logging
@@ -26,6 +27,6 @@ def test_prune_failure_logged_as_warning(caplog):
         parent.propagate = parent_was
         child.propagate = child_was
 
-    assert any(
-        "scratch prune failed" in rec.message.lower() for rec in caplog.records
-    ), f"Expected warning log; got {[r.message for r in caplog.records]}"
+    assert any("scratch prune failed" in rec.message.lower() for rec in caplog.records), (
+        f"Expected warning log; got {[r.message for r in caplog.records]}"
+    )
