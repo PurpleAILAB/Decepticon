@@ -13,12 +13,13 @@ Middleware stack (selected for orchestration):
   1. SafeCommandMiddleware — block session-destroying bash commands
   2. SkillsMiddleware — progressive disclosure of SKILL.md knowledge
   3. FilesystemMiddleware — file ops for reading/updating engagement docs
-  4. SubAgentMiddleware — task() tool for delegating to sub-agents
-  5. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
-  6. ModelFallbackMiddleware — opus 4.6 → gpt-5.4 fallback on primary failure
-  7. SummarizationMiddleware — auto-compact for long orchestration sessions
-  8. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
-  9. PatchToolCallsMiddleware — repair dangling tool calls
+  4. SandboxNotificationMiddleware — pushes background-job completion notices
+  5. SubAgentMiddleware — task() tool for delegating to sub-agents
+  6. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
+  7. ModelFallbackMiddleware — opus 4.6 → gpt-5.4 fallback on primary failure
+  8. SummarizationMiddleware — auto-compact for long orchestration sessions
+  9. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
+  10. PatchToolCallsMiddleware — repair dangling tool calls
 
 OPPLAN replaces TodoListMiddleware with domain-specific objective tracking:
   - 5 CRUD tools following Claude Code's V2 Task tool patterns
@@ -203,9 +204,9 @@ def create_decepticon_agent():
             backend=backend, sources=["/skills/decepticon/", "/skills/shared/"]
         ),
         FilesystemMiddlewareNoExecute(backend=backend),
+        SandboxNotificationMiddleware(sandbox=sandbox),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
-        SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
