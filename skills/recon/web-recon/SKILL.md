@@ -196,7 +196,32 @@ done
 - **API Key**: Check if `X-API-Key` or `Authorization: ApiKey` is accepted
 - **SAML/SSO**: Check for redirects to IdP (Okta, Azure AD, Auth0)
 
-## 9. Workflow: Web Recon Sequence
+## 9. Cookie-Conditional Sink Discovery
+
+A "sink" (eval, deserialize, exec, template render) may behave differently — or not fire at all — depending on which session cookies are present. Recon MUST enumerate every cookie the app sets and re-test each candidate sink with and without each cookie before declaring the sink unreachable. Skipping this step is the most common cause of exploit handing back a false "blind sink" verdict.
+
+### Procedure
+1. Walk the app unauthenticated; record every `Set-Cookie` (name, attributes, source endpoint).
+2. Authenticate (every auth tier: anon, low-priv user, high-priv user) and record the full cookie jar after each.
+3. For each candidate sink (parameter, route, header, body field):
+   - Probe with NO cookies.
+   - Probe with FULL authenticated jar.
+   - Bisect: drop one cookie at a time and re-probe. The cookie whose removal silences the sink is the gating cookie.
+4. Document a "Sink preconditions" table in `recon_notes.md` and `SUMMARY.txt`:
+
+| Sink | Endpoint | Method | Required cookies | Behavior w/o cookie | Behavior w/ cookie | Notes |
+|------|----------|--------|------------------|--------------------|--------------------|-------|
+| `bookmark_data` (deser) | `/bookmarks/import` | POST | `session=...; auth_tier=user` | 302 → /login | 200 + processed | gated by auth_tier |
+
+5. In the handoff to exploit/postexploit, ALWAYS include a **Required session state** line:
+
+```
+Required session state: cookies=[session, auth_tier=user]; obtained via POST /login (creds: user@example.com / hunter2)
+```
+
+If recon hands off without this line, exploit is required to re-run cookie enumeration before concluding any sink is unreachable.
+
+## 10. Workflow: Web Recon Sequence
 
 1. **Technology Fingerprint** → httpx with tech-detect, check headers
 2. **Directory Discovery** → ffuf with common wordlist + extensions
@@ -209,7 +234,7 @@ done
 9. **Auth Surface** → Map all authentication mechanisms
 10. **Parameter Discovery** → Fuzz GET/POST parameters on key endpoints
 
-## 10. Output Files
+## 11. Output Files
 ```
 ./
 ├── ffuf_<target>_dirs.json         # Directory fuzzing results
