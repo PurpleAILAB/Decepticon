@@ -555,6 +555,10 @@ class Harness:
             # run_challenge a clean cancellation point so timeout +
             # _cancel_active_runs work.
             terminal = {"success", "error", "interrupted", "cancelled", "timeout"}
+            poll_start = time.time()
+            last_heartbeat = poll_start
+            last_logged_status: str | None = None
+            pending_warning_emitted = False
             try:
                 while True:
                     # Cap each runs.get at 10s so a stuck httpx connection cannot
@@ -567,13 +571,46 @@ class Harness:
                             run_status.get("status")
                             if isinstance(run_status, dict) else None
                         )
+                        # Status transition: log once when status changes.
+                        if status != last_logged_status:
+                            log.info(
+                                "Run %s status transition: %s -> %s",
+                                run_id, last_logged_status or "<initial>", status,
+                            )
+                            last_logged_status = status
                         if status in terminal:
                             terminal_observed = True
                             break
+                        # Pending >5min: WARNING — early signal of a silent
+                        # stall before the outer 1800s timeout fires.
+                        elapsed = time.time() - poll_start
+                        if (
+                            status == "pending"
+                            and elapsed > 300
+                            and not pending_warning_emitted
+                        ):
+                            log.warning(
+                                "Run %s status=pending for %ds — possible silent "
+                                "stall (cycle-5/6 signature)",
+                                run_id, int(elapsed),
+                            )
+                            pending_warning_emitted = True
                     except asyncio.TimeoutError:
                         # Per-poll timeout — keep looping; outer wait_for handles
                         # the wall-clock budget.
                         pass
+                    # Heartbeat every 30s so harness logs show progress even
+                    # when status hasn't transitioned. Cycle-5/6 had ~16-17min
+                    # silent stalls invisible from the harness layer.
+                    now = time.time()
+                    if now - last_heartbeat >= 30:
+                        log.info(
+                            "Run %s status=%s elapsed=%ds",
+                            run_id,
+                            last_logged_status,
+                            int(now - poll_start),
+                        )
+                        last_heartbeat = now
                     await asyncio.sleep(5)
                 state_data = await asyncio.wait_for(
                     client.threads.get_state(thread_id), timeout=30.0
