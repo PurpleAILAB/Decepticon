@@ -853,14 +853,40 @@ class DockerSandbox(BaseSandbox):
         )
 
     def start_background(self, command: str, session: str = "main") -> None:
-        """Send a command to a tmux session without waiting for completion.
+        """Launch a command in a named tmux session without blocking.
 
-        The command runs in the named session and can be checked later via
-        execute_tmux(command="", session=...) or read_screen().
+        Registers a BackgroundJob keyed by the PS1-marker count at launch;
+        ``poll_completion`` later compares against this baseline.
         """
         mgr = self._get_manager(session)
         mgr.initialize()
+        baseline = mgr._capture()
+        initial_markers = len(PS1_PATTERN.findall(baseline))
+        self._jobs.register(session, command=command, initial_markers=initial_markers)
         mgr._send(command, enter=True)
+
+    def poll_completion(self, session: str) -> "BackgroundJob | None":
+        """Check whether a background job has produced a new PS1 marker.
+
+        Updates the tracker in place; returns the job (or None if not tracked).
+        Capture failures are swallowed — the job stays running, retried later.
+        """
+        job = self._jobs.get(session)
+        if job is None or job.status != "running":
+            return job
+        try:
+            mgr = self._get_manager(session)
+            screen = mgr._capture()
+        except RuntimeError:
+            return job
+        markers = list(PS1_PATTERN.finditer(screen))
+        if len(markers) > job.initial_markers:
+            try:
+                exit_code = int(markers[-1].group(1))
+            except (TypeError, ValueError):
+                exit_code = -1
+            self._jobs.mark_complete(session, exit_code=exit_code)
+        return job
 
 
 # ─── Pre-flight check ────────────────────────────────────────────────────
