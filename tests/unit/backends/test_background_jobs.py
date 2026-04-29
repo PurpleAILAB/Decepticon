@@ -169,6 +169,7 @@ def test_auto_background_path_registers_job():
          patch("decepticon.backends.docker_sandbox.AUTO_BACKGROUND_SECONDS", 0.0), \
          patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01):
         mgr = MagicMock()
+        mgr.session = "long"
         mgr._capture.side_effect = (
             captures + ["[DCPTN:0:/workspace] sleep 99999\nrunning\n"] * 5
         )

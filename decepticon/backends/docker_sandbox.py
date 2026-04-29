@@ -23,6 +23,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 
 from deepagents.backends.protocol import (
     ExecuteResponse,
@@ -352,13 +353,22 @@ class TmuxSessionManager:
         command: str,
         is_input: bool,
         timeout: int,
-        on_auto_background=None,
+        on_auto_background: Callable[[str, str], None] | None = None,
     ) -> str:
         """Async version of execute() — non-blocking subprocess + cancellable polling.
 
         All subprocess calls are offloaded via asyncio.to_thread() to avoid blocking
         the ASGI event loop. asyncio.sleep() between polls allows CancelledError
         delivery when LangGraph cancels a run (Ctrl+C → cancelMany).
+
+        Args:
+            command: shell command to send (or empty / control sequence with is_input).
+            is_input: True when ``command`` is keystrokes for an already-running process.
+            timeout: max seconds to wait for command completion.
+            on_auto_background: optional callback ``(command, baseline) -> None`` invoked
+                exactly once when the auto-background threshold is crossed. ``baseline``
+                is the screen capture taken before the command was sent — callers use it
+                to derive a stable PS1-marker baseline (e.g. via PS1_PATTERN.findall).
         """
         if not is_input:
             await asyncio.to_thread(self.initialize)
@@ -464,8 +474,8 @@ class TmuxSessionManager:
                 if on_auto_background is not None:
                     try:
                         on_auto_background(command, baseline)
-                    except Exception as cb_err:
-                        log.warning("auto-background callback failed: %s", cb_err)
+                    except Exception:
+                        log.exception("auto-background callback failed")
                 output = _extract_interactive_output(screen, baseline)
                 preview = _truncate(output).strip()
                 return (
