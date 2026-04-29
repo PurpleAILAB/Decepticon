@@ -238,6 +238,26 @@ PY
 
 For parallel work, use `concurrent.futures.ThreadPoolExecutor` (bounded `max_workers`, every call carries `timeout=5`) instead of bash `&`. For repeated probes, write a tight `python3 -c` one-liner with an explicit total wall-clock cap. Every network call MUST set a timeout. Every loop MUST be bounded.
 
+### Raw-socket / long-running probe discipline
+
+Raw-socket probes (HTTP request smuggling, custom protocol fuzzers, bespoke TLS handshakes) are the most common silent-stall surface in this sandbox — `socket.recv()` defaults to BLOCKING FOREVER. Treat every raw-socket script as untrusted until the rules below hold.
+
+| Rule | Why |
+|------|-----|
+| `sock.settimeout(5)` BEFORE `connect` AND BEFORE EACH `recv` | `socket.create_connection(timeout=...)` only covers connect; without `settimeout` after, recv blocks forever. |
+| Outer wall: `timeout 60 python3 -c '...'` even when inner timeouts are set | The inner timeout can lose to a kernel-level wedge, slow-loris peer, or buffered TLS state. Hard wall is mandatory. |
+| `python3 -u` (or `sys.stdout.flush()` after each write) | Without `-u`, a wedged process can leave stdout buffered — you see "no output" and assume hang when the script is actually finishing. |
+| Bounded iteration count — break on empty `recv`, or after N bytes / N rounds | `while True: data = s.recv(4096)` against a keep-alive socket never terminates. |
+| Prefer inline `python3 -c` over `cat > script.py && python3 script.py` | Inline keeps the harness in the tool transcript. The cat-then-run pattern hides what was executed and complicates re-runs. |
+| Bash-session wedge signature: 3+ consecutive empty-command polls | Means the previous tool call wedged the shell. Open a NEW bash session, `pkill -9 -f <script>`, do NOT keep polling the old one — polling a wedged shell will not unwedge it. |
+
+### Wedged-shell recovery, in order
+
+1. Open a fresh bash session (do not reuse the wedged one).
+2. `pkill -9 -f <script-name-or-pattern>` to free the wedged process.
+3. Verify the output file exists and has bytes: `ls -la <output_file>`. Empty (0 bytes) = wedged in network I/O before any flush.
+4. Switch variant OR rewrite with both `sock.settimeout(5)` and `timeout 60` outer wall before retrying.
+
 ## Workflow Commands
 
 | User Says | Action |
