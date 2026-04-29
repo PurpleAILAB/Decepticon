@@ -97,8 +97,9 @@ class Harness:
                looking for terminal status.
             3. If terminal reached → return ("rollback", <status>). Caller
                is now safe to teardown the target.
-            4. If NOT terminal within deadline → return ("failed", None).
-               Caller should escalate (container restart) before teardown.
+            4. If NOT terminal within deadline → escalate to
+               ``_force_restart_langgraph`` and return
+               ("container_restart", last_status).
         """
         thread_id = getattr(self, "_active_thread_id", None)
         run_id = getattr(self, "_active_run_id", None)
@@ -132,11 +133,77 @@ class Harness:
                 log.warning("Status poll failed during verify-terminal: %s", exc)
             await asyncio.sleep(2)
 
+        # Cancel did not dislodge the run within the deadline. Escalate to a
+        # langgraph container restart, which kills the threadpool holding the
+        # broken socket. Without this, subsequent challenges inherit the
+        # broken state — explains the cycle-5→cycle-6 cascade.
         log.warning(
-            "Run %s did NOT reach terminal status within %ds (last=%s)",
+            "harness.escalation: run %s did NOT reach terminal status within %ds "
+            "(last=%s) — escalating to langgraph container restart",
             run_id, deadline_seconds, last_status,
         )
-        return ("failed", last_status)
+        self._force_restart_langgraph()
+        return ("container_restart", last_status)
+
+    def _force_restart_langgraph(self) -> None:
+        """Restart the langgraph container to dislodge a wedged run.
+
+        When API-level cancel cannot reach the wedged graph node (cycle-6
+        case), only restarting the container kills the underlying threadpool
+        that was holding the broken socket. Also runs a defensive sandbox
+        cleanup — restarting just langgraph leaves the sandbox tmux state
+        poisoned for the next challenge if the wedge involved tmux.
+
+        Resets ``_active_thread_id`` and ``_active_run_id`` after restart so
+        the next challenge starts with a clean slate.
+        """
+        log.warning("harness.escalation: restarting langgraph container")
+        subprocess.run(
+            ["docker", "compose", "restart", "langgraph"],
+            capture_output=True, timeout=60, check=False,
+        )
+        # Reconnect networks (compose restart usually preserves them but be
+        # defensive — same pattern as _ensure_services_healthy).
+        for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
+            subprocess.run(
+                ["docker", "network", "connect", net, "decepticon-langgraph"],
+                capture_output=True, check=False,
+            )
+        # Wait up to 60s for /ok
+        for _ in range(30):
+            time.sleep(2)
+            try:
+                r = httpx.get(f"{self.config.langgraph_url}/ok", timeout=5)
+                if r.status_code == 200:
+                    log.info("harness.escalation: langgraph healthy after restart")
+                    break
+            except Exception:
+                pass
+        else:
+            log.warning(
+                "harness.escalation: langgraph did NOT become healthy within 60s"
+            )
+
+        # Defensive sandbox cleanup — kill orphan workers + tmux server. The
+        # next pre-cycle sandbox restart (commit 3f1bc67) will fully reset
+        # state, but this gets us through the rest of the current cycle.
+        log.warning("harness.escalation: defensive sandbox cleanup")
+        subprocess.run(
+            [
+                "docker", "exec", "decepticon-sandbox", "bash", "-c",
+                "pkill -9 -f python3 2>/dev/null || true; "
+                "pkill -9 -f curl 2>/dev/null || true; "
+                "tmux kill-server 2>/dev/null || true; "
+                "tmux new-session -d -s main 2>/dev/null || true",
+            ],
+            capture_output=True, timeout=30, check=False,
+        )
+
+        # Stale IDs are pinned to a langgraph instance that no longer
+        # contains them — clear so the next challenge can't accidentally
+        # cancel something it doesn't own.
+        self._active_thread_id = None
+        self._active_run_id = None
 
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
