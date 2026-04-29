@@ -1,6 +1,7 @@
 """Pipe-pane log moved to /workspace/.sessions/, manager dict is lock-protected."""
 
 import logging
+import subprocess as _sp
 import threading
 from subprocess import CalledProcessError
 from unittest.mock import patch
@@ -264,3 +265,66 @@ def test_kill_session_swallows_errors():
     assert "flaky" not in TmuxSessionManager._initialized
     assert "flaky" not in sandbox._log_offsets
     assert sandbox._jobs.get("flaky") is None
+
+
+def test_read_screen_handles_capture_timeout_gracefully():
+    """read_screen() must NOT crash on subprocess.TimeoutExpired from capture-pane."""
+    mgr = TmuxSessionManager("hung", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("hung")  # skip initialize path
+
+    with patch.object(
+        mgr, "_capture", side_effect=_sp.TimeoutExpired(cmd="docker exec", timeout=10)
+    ):
+        result = mgr.read_screen()
+
+    # Must return a string, not raise. Should signal trouble to the agent.
+    assert isinstance(result, str)
+    assert "[ERROR]" in result or "[TIMEOUT]" in result
+
+
+def test_execute_async_baseline_capture_timeout_does_not_escape(monkeypatch):
+    """execute_async() initial baseline _capture timing out must not raise."""
+    import asyncio
+
+    mgr = TmuxSessionManager("hung", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("hung")
+
+    with patch.object(
+        mgr, "_capture", side_effect=_sp.TimeoutExpired(cmd="docker exec", timeout=10)
+    ):
+        # Patch initialize so the recovery path doesn't try real tmux.
+        with patch.object(mgr, "initialize", return_value=None):
+            result = asyncio.run(mgr.execute_async(command="ls", is_input=False, timeout=2))
+
+    assert isinstance(result, str)
+    assert "[ERROR]" in result
+
+
+def test_execute_async_poll_loop_capture_timeout_continues(monkeypatch):
+    """A transient TimeoutExpired from capture-pane during polling must NOT
+    escape; loop should continue (and eventually time out cleanly)."""
+    import asyncio
+
+    mgr = TmuxSessionManager("flaky", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("flaky")
+
+    # Baseline succeeds; subsequent polls raise TimeoutExpired forever.
+    captures = ["[DCPTN:0:/tmp] "] + [_sp.TimeoutExpired(cmd="docker exec", timeout=10)] * 100
+
+    def fake_capture():
+        v = captures.pop(0)
+        if isinstance(v, BaseException):
+            raise v
+        return v
+
+    with (
+        patch.object(mgr, "_capture", side_effect=fake_capture),
+        patch.object(mgr, "_send", return_value=None),
+        patch.object(mgr, "initialize", return_value=None),
+        patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01),
+    ):
+        result = asyncio.run(mgr.execute_async(command="ls", is_input=False, timeout=1))
+
+    assert isinstance(result, str)
+    # Either [TIMEOUT] (loop ran out) or [ERROR] (poll path bailed out) is acceptable
+    assert "[TIMEOUT]" in result or "[ERROR]" in result

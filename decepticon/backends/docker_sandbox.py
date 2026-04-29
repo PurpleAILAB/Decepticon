@@ -191,9 +191,10 @@ class TmuxSessionManager:
                 # Idempotent — the directory is bind-mounted to the host so
                 # operators can tail the same file the agent reads.
                 subprocess.run(
-                    ["docker", "exec", self._container,
-                     "mkdir", "-p", "/workspace/.sessions"],
-                    capture_output=True, timeout=5, check=True,
+                    ["docker", "exec", self._container, "mkdir", "-p", "/workspace/.sessions"],
+                    capture_output=True,
+                    timeout=5,
+                    check=True,
                 )
                 self._docker_tmux(
                     [
@@ -205,8 +206,7 @@ class TmuxSessionManager:
                     ]
                 )
             except Exception as e:
-                log.warning("pipe-pane setup failed for session '%s': %s",
-                            self.session, e)
+                log.warning("pipe-pane setup failed for session '%s': %s", self.session, e)
 
         with TmuxSessionManager._init_lock:
             TmuxSessionManager._initialized.add(self.session)
@@ -230,23 +230,29 @@ class TmuxSessionManager:
 
         try:
             baseline = self._capture()
-        except RuntimeError as e:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
+            if isinstance(e, RuntimeError) and (
+                "no server running" in error_msg or "session not found" in error_msg
+            ):
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
                 try:
                     self.initialize()
                     baseline = self._capture()
-                except RuntimeError as retry_err:
+                except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
                     return (
                         f"[ERROR] Session recovery failed: {retry_err}\n"
-                        f"The tmux session was destroyed (likely by pkill/killall). "
+                        f"The tmux session was destroyed or docker is overloaded. "
                         f"Try using a different session name."
                     )
             else:
-                return f"[ERROR] Sandbox error: {e}"
+                return (
+                    f"[ERROR] Sandbox capture failed: {e}\n"
+                    f"docker exec timed out or the tmux session is hung. "
+                    f'Retry, or terminate with bash_kill(session="{self.session}").'
+                )
 
         initial_count = len(PS1_PATTERN.findall(baseline))
 
@@ -267,8 +273,8 @@ class TmuxSessionManager:
             time.sleep(POLL_INTERVAL)
             try:
                 screen = self._capture()
-            except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as poll_err:
+                if isinstance(poll_err, RuntimeError) and "no server running" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (
@@ -276,6 +282,8 @@ class TmuxSessionManager:
                         f"The command likely killed the shell process (e.g. pkill bash).\n"
                         f"Session will auto-recover on next bash() call."
                     )
+                # Transient capture failure (timeout / OS error) — keep polling.
+                log.debug("transient capture error in poll loop: %s", poll_err)
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))
@@ -335,7 +343,7 @@ class TmuxSessionManager:
         # Full timeout — include screen capture
         try:
             final_screen = self._capture()
-        except RuntimeError:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
             final_screen = ""
         screen_tail = final_screen.strip().split("\n")[-20:]
         screen_preview = "\n".join(screen_tail)
@@ -375,23 +383,29 @@ class TmuxSessionManager:
 
         try:
             baseline = await asyncio.to_thread(self._capture)
-        except RuntimeError as e:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
             error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
+            if isinstance(e, RuntimeError) and (
+                "no server running" in error_msg or "session not found" in error_msg
+            ):
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
                 try:
                     await asyncio.to_thread(self.initialize)
                     baseline = await asyncio.to_thread(self._capture)
-                except RuntimeError as retry_err:
+                except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
                     return (
                         f"[ERROR] Session recovery failed: {retry_err}\n"
-                        f"The tmux session was destroyed (likely by pkill/killall). "
+                        f"The tmux session was destroyed or docker is overloaded. "
                         f"Try using a different session name."
                     )
             else:
-                return f"[ERROR] Sandbox error: {e}"
+                return (
+                    f"[ERROR] Sandbox capture failed: {e}\n"
+                    f"docker exec timed out or the tmux session is hung. "
+                    f'Retry, or terminate with bash_kill(session="{self.session}").'
+                )
 
         initial_count = len(PS1_PATTERN.findall(baseline))
 
@@ -414,8 +428,8 @@ class TmuxSessionManager:
             await asyncio.sleep(POLL_INTERVAL)  # CancelledError delivered here
             try:
                 screen = await asyncio.to_thread(self._capture)
-            except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as poll_err:
+                if isinstance(poll_err, RuntimeError) and "no server running" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (
@@ -423,6 +437,8 @@ class TmuxSessionManager:
                         f"The command likely killed the shell process (e.g. pkill bash).\n"
                         f"Session will auto-recover on next bash() call."
                     )
+                # Transient capture failure (timeout / OS error) — keep polling.
+                log.debug("transient capture error in poll loop: %s", poll_err)
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))
@@ -483,7 +499,7 @@ class TmuxSessionManager:
                     f"in session '{self.session}'.\n"
                     f"--- partial output ---\n{preview[-1000:] if preview else '(no output yet)'}\n"
                     f"--- end ---\n"
-                    f'You will be notified when it completes. Inspect early progress: '
+                    f"You will be notified when it completes. Inspect early progress: "
                     f'bash_output(session="{self.session}").'
                 )
 
@@ -507,7 +523,7 @@ class TmuxSessionManager:
         # Full timeout — include screen capture
         try:
             final_screen = await asyncio.to_thread(self._capture)
-        except RuntimeError:
+        except (RuntimeError, OSError, subprocess.TimeoutExpired):
             final_screen = ""
         screen_tail = final_screen.strip().split("\n")[-20:]
         screen_preview = "\n".join(screen_tail)
@@ -522,8 +538,15 @@ class TmuxSessionManager:
 
     def read_screen(self) -> str:
         """Read current screen without sending any command."""
-        self.initialize()
-        screen = self._capture()
+        try:
+            self.initialize()
+            screen = self._capture()
+        except (RuntimeError, OSError, subprocess.TimeoutExpired) as e:
+            return (
+                f"[ERROR] Could not read screen for session '{self.session}': {e}\n"
+                f"The tmux session may be hung or docker is overloaded. "
+                f'Retry, or terminate the session with bash_kill(session="{self.session}").'
+            )
         matches = list(PS1_PATTERN.finditer(screen))
         if matches:
             last = matches[-1]
@@ -612,7 +635,7 @@ class BackgroundJob:
     command: str
     initial_markers: int
     started_at: float
-    status: str = "running"          # running | done
+    status: str = "running"  # running | done
     exit_code: int | None = None
     completed_at: float | None = None
     consumed: bool = False
@@ -662,8 +685,7 @@ class BackgroundJobTracker:
 
     def pending_completions(self) -> list[BackgroundJob]:
         with self._lock:
-            return [j for j in self._jobs.values()
-                    if j.status == "done" and not j.consumed]
+            return [j for j in self._jobs.values() if j.status == "done" and not j.consumed]
 
     def all_jobs(self) -> list[BackgroundJob]:
         with self._lock:
