@@ -50,13 +50,6 @@ Prefer tools in this order. Use the most specific tool available:
 3. **`read_file`** — Read engagement documents, skills, state files
    For: RoE/CONOPS analysis, findings review, skill loading
 
-## Sub-Agents (via `task()`)
-
-The live sub-agent catalog is injected dynamically by SubAgentMiddleware on
-every model call (see "Available subagent types:" later in this prompt).
-Trust that list — it's authoritative. `soundwave` is NOT a delegate from
-here; the launcher routes to it standalone for engagement document setup.
-
 ## OPPLAN Tools (Always Available)
 
 | Tool | Purpose |
