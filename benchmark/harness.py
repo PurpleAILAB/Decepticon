@@ -46,10 +46,17 @@ class Harness:
         self.config = config
 
     async def _cancel_active_runs(self) -> None:
-        """Cancel the current in-flight LangGraph run on timeout.
+        """Fire-and-forget cancel of the current in-flight LangGraph run.
 
-        Uses the run_id captured by ``_invoke_agent`` (runs.create returns
-        the id immediately). Best-effort: failures are logged but not raised.
+        Uses ``action="rollback"`` (stronger than ``"interrupt"``, doesn't
+        require the graph node to honor CancelledError — interrupts the run
+        at the orchestration layer). ``wait=False`` so this call doesn't
+        block on terminal status; terminal-status verification is the
+        caller's responsibility (see ``_cancel_and_verify_terminal``).
+
+        Wrapped in ``asyncio.wait_for(timeout=5.0)`` so a stuck cancel HTTP
+        call cannot hang indefinitely — if the API layer can't acknowledge
+        in 5s, treat as failed and let the caller escalate.
         """
         thread_id = getattr(self, "_active_thread_id", None)
         run_id = getattr(self, "_active_run_id", None)
@@ -57,13 +64,18 @@ class Harness:
             return
         try:
             client = get_client(url=self.config.langgraph_url)
-            # wait=True blocks until the graph actually halts (default False
-            # only fires-and-forgets the cancel signal, which lets the graph
-            # keep running after we move on to the next challenge).
-            await client.runs.cancel(
-                thread_id, run_id, wait=True, action="interrupt"
+            await asyncio.wait_for(
+                client.runs.cancel(
+                    thread_id, run_id, wait=False, action="rollback"
+                ),
+                timeout=5.0,
             )
             log.info("Cancelled run %s on thread %s", run_id, thread_id)
+        except asyncio.TimeoutError:
+            log.warning(
+                "Run cancellation timed out after 5s (thread %s run %s)",
+                thread_id, run_id,
+            )
         except Exception as exc:
             log.warning(
                 "Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc
