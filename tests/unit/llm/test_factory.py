@@ -143,9 +143,16 @@ class TestResolveCredentials:
         falls back to the all-API-methods inventory so module-level agent
         constructors stay importable in CI / dev shells without keys."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "your-anthropic-key-here")
-        for k in ("OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY",
-                   "DEEPSEEK_API_KEY", "XAI_API_KEY", "MISTRAL_API_KEY",
-                   "OPENROUTER_API_KEY", "NVIDIA_API_KEY"):
+        for k in (
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+        ):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
