@@ -51,22 +51,28 @@ export default function DocumentsPage() {
 
   // Resolve engagement ID to workspace name
   useEffect(() => {
+    let active = true;
     async function resolve() {
       try {
         const engRes = await fetch(`/api/engagements/${id}`);
+        if (!active) return;
         if (!engRes.ok) return;
         const eng = await engRes.json();
+        if (!active) return;
         if (eng.workspacePath) {
           const name = eng.workspacePath.split("/").pop();
           setWorkspaceName(name);
           return;
         }
         setWorkspaceName(eng.name);
-      } catch {
-        // ignore
+      } catch (err) {
+        if (active) console.error("Failed to resolve workspace", err);
       }
     }
     resolve();
+    return () => {
+      active = false;
+    };
   }, [id]);
 
   // Load files when workspace name is resolved
@@ -75,11 +81,14 @@ export default function DocumentsPage() {
       setLoading(false);
       return;
     }
+    let active = true;
     async function loadFiles() {
       try {
         const res = await fetch(`/api/workspace/${encodeURIComponent(workspaceName!)}/files`);
+        if (!active) return;
         if (res.ok) {
           const data = await res.json();
+          if (!active) return;
           const filtered = (data.folders ?? []).filter(
             (g: FolderGroup) => !EXCLUDED_FOLDERS.has(g.folder)
           );
@@ -89,13 +98,16 @@ export default function DocumentsPage() {
             setExpandedFolders(new Set([filtered[0].folder]));
           }
         }
-      } catch {
-        // ignore
+      } catch (err) {
+        if (active) console.error("Failed to load workspace files", err);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
     loadFiles();
+    return () => {
+      active = false;
+    };
   }, [workspaceName]);
 
   function toggleFolder(folder: string) {

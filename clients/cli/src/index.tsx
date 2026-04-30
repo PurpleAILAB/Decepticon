@@ -12,4 +12,10 @@ const instance = render(<App initialMessage={initialMessage} resumeThread={resum
   exitOnCtrlC: false,
 });
 
-await instance.waitUntilExit();
+try {
+  await instance.waitUntilExit();
+} catch (err) {
+  const msg = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`\nDecepticon CLI error: ${msg}\n`);
+  process.exit(1);
+}

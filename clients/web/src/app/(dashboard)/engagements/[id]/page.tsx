@@ -33,26 +33,34 @@ export default function EngagementOverviewPage() {
 
   // Check if engagement has documents — if not, redirect to Live for Soundwave interview
   useEffect(() => {
+    let active = true;
     async function checkDocs() {
       try {
         const res = await fetch(`/api/engagements/${id}/opplan`);
+        if (!active) return;
         if (!res.ok) {
           router.replace(`/engagements/${id}/live?new=true`);
           return;
         }
         const data = await res.json();
+        if (!active) return;
         // If opplan has no objectives, documents haven't been created yet
         if (!data.objectives || data.objectives.length === 0) {
           router.replace(`/engagements/${id}/live?new=true`);
           return;
         }
       } catch {
+        if (!active) return;
         router.replace(`/engagements/${id}/live?new=true`);
         return;
       }
+      if (!active) return;
       setLoading(false);
     }
     checkDocs();
+    return () => {
+      active = false;
+    };
   }, [id, router]);
 
   if (loading) {

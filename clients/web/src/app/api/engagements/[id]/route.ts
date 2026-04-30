@@ -23,7 +23,11 @@ export async function GET(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    throw e;
+    console.error("GET /api/engagements/[id] error:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -43,9 +47,18 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    const ALLOWED_FIELDS = ["name", "status", "targetType", "targetValue"] as const;
+    const data: Record<string, unknown> = {};
+    for (const field of ALLOWED_FIELDS) {
+      if (field in body) data[field] = body[field];
+    }
+    if (Object.keys(data).length === 0) {
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
+    }
+
     const engagement = await prisma.engagement.update({
       where: { id },
-      data: body,
+      data,
     });
 
     return NextResponse.json(engagement);
@@ -53,7 +66,11 @@ export async function PATCH(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    throw e;
+    console.error("PATCH /api/engagements/[id] error:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Internal server error" },
+      { status: 500 }
+    );
   }
 }
 
@@ -78,6 +95,10 @@ export async function DELETE(
     if (e instanceof AuthError) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    throw e;
+    console.error("DELETE /api/engagements/[id] error:", e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Internal server error" },
+      { status: 500 }
+    );
   }
 }

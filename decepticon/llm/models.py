@@ -76,11 +76,18 @@ class AuthMethod(StrEnum):
     """
 
     ANTHROPIC_API = "anthropic_api"
-    ANTHROPIC_OAUTH = "anthropic_oauth"  # Claude Code subscription
+    ANTHROPIC_OAUTH = "anthropic_oauth"  # Claude Code subscription (Max/Pro/Team)
     OPENAI_API = "openai_api"
-    # OPENAI_OAUTH = "openai_oauth"  # Codex subscription — coming soon
+    OPENAI_OAUTH = "openai_oauth"  # ChatGPT Pro/Plus/Team subscription
     GOOGLE_API = "google_api"
+    GOOGLE_OAUTH = "google_oauth"  # Gemini Advanced (Google One AI Premium)
     MINIMAX_API = "minimax_api"
+    DEEPSEEK_API = "deepseek_api"
+    XAI_API = "xai_api"
+    MISTRAL_API = "mistral_api"
+    COPILOT_OAUTH = "copilot_oauth"  # Microsoft Copilot Pro subscription
+    GROK_OAUTH = "grok_oauth"  # xAI SuperGrok (X Premium+)
+    PERPLEXITY_OAUTH = "perplexity_oauth"  # Perplexity Pro subscription
 
 
 # ── Tier × AuthMethod → model_id matrix ─────────────────────────────────
@@ -112,8 +119,41 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.MINIMAX_API: {
         Tier.HIGH: "minimax/MiniMax-M2.5",
         Tier.MID: "minimax/MiniMax-M2.5-lightning",
-        # MiniMax line has no LOW-tier light variant — falls through to
-        # the next configured method.
+    },
+    AuthMethod.OPENAI_OAUTH: {
+        Tier.HIGH: "chatgpt/gpt-4o",
+        Tier.MID: "chatgpt/o1",
+        Tier.LOW: "chatgpt/o3-mini",
+    },
+    AuthMethod.GOOGLE_OAUTH: {
+        Tier.HIGH: "gemini-sub/gemini-2.5-pro",
+        Tier.MID: "gemini-sub/gemini-2.5-flash",
+    },
+    AuthMethod.DEEPSEEK_API: {
+        Tier.HIGH: "deepseek/deepseek-reasoner",
+        Tier.MID: "deepseek/deepseek-chat",
+        Tier.LOW: "deepseek/deepseek-chat",
+    },
+    AuthMethod.XAI_API: {
+        Tier.HIGH: "xai/grok-3",
+        Tier.MID: "xai/grok-3-mini",
+    },
+    AuthMethod.MISTRAL_API: {
+        Tier.HIGH: "mistral/mistral-large-latest",
+        Tier.MID: "mistral/codestral-latest",
+    },
+    AuthMethod.COPILOT_OAUTH: {
+        Tier.HIGH: "copilot/gpt-4o",
+        Tier.MID: "copilot/o1",
+        Tier.LOW: "copilot/o3-mini",
+    },
+    AuthMethod.GROK_OAUTH: {
+        Tier.HIGH: "grok-sub/grok-3",
+        Tier.MID: "grok-sub/grok-3-mini",
+    },
+    AuthMethod.PERPLEXITY_OAUTH: {
+        Tier.HIGH: "pplx-sub/sonar-pro",
+        Tier.MID: "pplx-sub/sonar",
     },
 }
 

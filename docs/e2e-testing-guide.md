@@ -5,7 +5,7 @@ Manual testing procedures for verifying the LLM gateway features.
 ## Prerequisites
 
 - Docker and Docker Compose installed
-- At least one LLM provider API key or subscription
+- At least one LLM provider API key or an authorized local/OpenAI-compatible model endpoint
 - `make dev` successfully starts all services
 
 ## Scenario 1: API Key Provider Routing
@@ -37,68 +37,65 @@ Manual testing procedures for verifying the LLM gateway features.
 - 404: Verify model name matches `config/litellm.yaml` entries
 
 
-## Scenario 2: Claude Code OAuth Login + LLM Call
+## Scenario 2: Custom LiteLLM Model Routing
 
 ### Prerequisites
-- Active Claude Pro/Max/Team subscription
-- Browser access (or headless workaround)
+- A provider API key or a local/OpenAI-compatible gateway you are authorized to use
 
 ### Steps
-1. Ensure no `ANTHROPIC_API_KEY` is set (test auth-only path)
-2. Run the onboard wizard:
+1. Set a custom model and matching provider key in your environment file:
    ```bash
-   decepticon onboard
+   DECEPTICON_MODEL_PROFILE=custom
+   DECEPTICON_MODEL=openrouter/anthropic/claude-3.7-sonnet
+   OPENROUTER_API_KEY=sk-or-v1-...
    ```
-3. Select "Anthropic" provider, choose "Claude Code OAuth" auth method
-4. Browser opens for OAuth login — complete the login
-5. Verify tokens saved:
-   ```bash
-   ls -la ~/.config/anthropic/q/tokens.json
-   ```
-6. Start services: `make dev`
-7. Test auth-based model:
+2. Start services: `make dev`
+3. Verify LiteLLM health: `curl http://localhost:4000/health`
+4. Test the custom route:
    ```bash
    curl -X POST http://localhost:4000/chat/completions \
      -H "Authorization: Bearer sk-decepticon-master" \
      -H "Content-Type: application/json" \
-     -d '{"model": "auth/claude-sonnet-4-6", "messages": [{"role": "user", "content": "Say hello"}]}'
+     -d '{"model": "openrouter/anthropic/claude-3.7-sonnet", "messages": [{"role": "user", "content": "Say hello"}]}'
    ```
 
 ### Expected
-- OAuth login completes, tokens stored with 0600 permissions
-- LLM call returns valid response through OAuth authentication
-- No API key used — request uses OAuth bearer token
+- LiteLLM startup logs show dynamic model route registration
+- HTTP 200 with a model response
 
 ### Troubleshooting
-- "No OAuth tokens found": Run `decepticon onboard` or `claude` CLI login
-- Token refresh errors: Delete `~/.config/anthropic/q/tokens.json` and re-login
-- Browser didn't open: Copy the URL from terminal and open manually
+- 401: Check the provider-specific API key variable (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, etc.)
+- 404: Check `DECEPTICON_MODEL` uses LiteLLM `provider/model` format
 
 
-## Scenario 3: Codex OAuth Login + LLM Call
+## Scenario 3: OpenAI-Compatible Gateway or Local Model
 
 ### Prerequisites
-- OpenAI ChatGPT Plus/Pro subscription
-- Codex CLI installed (`npm i -g @openai/codex`)
+- A local or private gateway that exposes an OpenAI-compatible `/v1` API, or Ollama for `ollama/*` models
 
 ### Steps
-1. Run Codex login: `codex login`
-2. Verify tokens: `ls -la ~/.codex/auth.json`
-3. Or use API key: set `OPENAI_API_KEY` in `.env`
-4. Test via LiteLLM:
+1. Configure a custom gateway:
    ```bash
-   curl -X POST http://localhost:4000/chat/completions \
-     -H "Authorization: Bearer sk-decepticon-master" \
-     -H "Content-Type: application/json" \
-     -d '{"model": "openai/gpt-4.1", "messages": [{"role": "user", "content": "Say hello"}]}'
+   DECEPTICON_MODEL_PROFILE=custom
+   DECEPTICON_MODEL=custom/qwen3-coder
+   CUSTOM_OPENAI_API_BASE=https://gateway.example.test/v1
+   CUSTOM_OPENAI_API_KEY=...
    ```
+2. Or configure Ollama:
+   ```bash
+   DECEPTICON_MODEL_PROFILE=custom
+   DECEPTICON_MODEL=ollama/llama3.2
+   OLLAMA_API_BASE=http://host.docker.internal:11434
+   ```
+3. Start services and call the selected model through LiteLLM.
 
 ### Expected
-- Model responds successfully
-- Note: Codex OAuth tokens may have limited API scope — API key is recommended for direct use
+- The selected model responds through LiteLLM
+- No consumer subscription/OAuth token is required
 
 ### Troubleshooting
-- OAuth token scope issues: Use `OPENAI_API_KEY` as fallback
+- Connection refused: confirm the gateway is reachable from Docker (`host.docker.internal` is available in the compose file)
+- Authentication errors: use an official provider API key or an authorized gateway token
 
 
 ## Scenario 4: Ollama Local Provider
@@ -114,8 +111,9 @@ Manual testing procedures for verifying the LLM gateway features.
    ```
 2. Set in `.env`:
    ```
-   OLLAMA_API_BASE=http://localhost:11434
-   OLLAMA_MODEL=llama3.2
+   DECEPTICON_MODEL_PROFILE=custom
+   DECEPTICON_MODEL=ollama/llama3.2
+   OLLAMA_API_BASE=http://host.docker.internal:11434
    ```
 3. Start services: `make dev`
 4. Test Ollama routing:
@@ -140,12 +138,13 @@ Manual testing procedures for verifying the LLM gateway features.
 
 ### Steps
 1. Run: `decepticon onboard`
-2. Step through all 5 wizard steps:
-   - Select providers (e.g., Anthropic + Ollama)
-   - Choose auth method per provider
-   - Enter API keys or trigger OAuth
-   - Select model profile (eco/max/test/auth)
-   - Confirm .env generation
+2. Step through all wizard steps:
+   - Select a provider (e.g., Anthropic, OpenRouter, custom gateway, or Ollama)
+   - Choose API-key auth or the existing local Claude handler
+   - Enter API keys/base URLs as needed
+   - Enter a model ID for non-Anthropic providers
+   - Select model profile (`eco`/`max`/`test`/`custom`)
+   - Confirm `.env` generation
 3. Verify output:
    ```bash
    cat ~/.decepticon/.env
@@ -156,7 +155,7 @@ Manual testing procedures for verifying the LLM gateway features.
    ```
 
 ### Expected
-- Interactive wizard completes all 5 steps
+- Interactive wizard completes all setup steps
 - `.env` file written to `~/.decepticon/.env`
 - `decepticon config` shows deprecation notice
 
@@ -164,31 +163,28 @@ Manual testing procedures for verifying the LLM gateway features.
 ## Scenario 6: Fallback Chain Activation
 
 ### Steps
-1. Set `DECEPTICON_MODEL_PROFILE=auth` in `.env`
-2. Start services with intentionally invalid OAuth tokens
-3. Make a request to an auth-based model
-4. Verify fallback activates to API-key model
+1. Set a primary and fallback model in `.env`:
+   ```bash
+   DECEPTICON_MODEL_PROFILE=custom
+   DECEPTICON_MODEL=openrouter/provider-that-will-fail
+   DECEPTICON_MODEL_FALLBACK=openai/gpt-4.1
+   OPENAI_API_KEY=sk-...
+   ```
+2. Start services.
+3. Make a request through Decepticon that uses the configured role.
+4. Verify fallback activates to the API-key model.
 
 ### Expected
-- Primary (auth) fails, fallback (API key) succeeds
-- LiteLLM logs show retry with fallback model
+- Primary fails, fallback succeeds
+- Logs show retry/fallback behavior without printing API keys
 
 ### Troubleshooting
-- If fallback doesn't activate: Check `router_settings.num_retries` in litellm.yaml
+- If fallback doesn't activate: Check `router_settings.num_retries` in `config/litellm.yaml` and the model assignment in `DECEPTICON_MODEL*` variables
 
 
-## Scenario 7: Token Refresh
+## Scenario 7: Authorized OAuth / Subscription Use
 
-### Steps
-1. Complete Claude Code OAuth login
-2. Manually edit `~/.config/anthropic/q/tokens.json` — set `expiresAt` to a past timestamp
-3. Make an LLM call via auth model
-4. Check that `tokens.json` is updated with a new `expiresAt`
-
-### Expected
-- Token auto-refreshes before the API call
-- New token stored with future expiry
-- LLM call succeeds without re-login
+Decepticon does not require consumer subscription/OAuth tokens for custom model routing. For production, prefer official provider APIs, organization-approved OAuth integrations, or your own OpenAI-compatible gateway. Do not configure tokens in ways that bypass provider entitlements or terms.
 
 
 ## Security Verification

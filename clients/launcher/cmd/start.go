@@ -77,6 +77,16 @@ func runStart(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// 2.6. Set CLAUDE_CREDENTIALS_VOLUME for conditional mount in docker-compose.
+	// When the credentials file exists, mount it into litellm. Otherwise mount
+	// /dev/null so docker doesn't create it as a directory.
+	credsPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
+	if _, statErr := os.Stat(credsPath); statErr == nil {
+		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", credsPath)
+	} else {
+		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", "/dev/null")
+	}
+
 	// 2.5. Auto-update check
 	if updater.CheckAndUpdate(version, env) {
 		ui.Info("Restarting with updated binary...")
@@ -132,7 +142,9 @@ func runStart(cmd *cobra.Command, args []string) error {
 		"cli",
 		cliEnv,
 	); err != nil {
-		return fmt.Errorf("CLI exited: %w", err)
+		ui.Warning("CLI exited with error — if services just started, try 'decepticon' again.")
+		ui.DimText("Run 'decepticon logs litellm' or 'decepticon logs langgraph' to debug.")
+		return nil
 	}
 
 	ui.DimText("CLI exited. Services kept running — run 'decepticon stop' to shut down.")

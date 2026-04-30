@@ -24,14 +24,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PORT = parseInt(process.env.TERMINAL_PORT ?? "3003", 10);
+const WEB_PORT = process.env.WEB_PORT ?? "3000";
 const CLI_PATH = resolve(__dirname, "../../cli/src/index.tsx");
 const LANGGRAPH_API_URL = process.env.LANGGRAPH_API_URL ?? "http://localhost:2024";
+const ALLOWED_ORIGINS = new Set(
+  (process.env.TERMINAL_ALLOWED_ORIGINS ?? `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+);
 
 const wss = new WebSocketServer({ port: PORT });
 
 console.log(`[terminal-server] Listening on ws://localhost:${PORT}`);
 console.log(`[terminal-server] CLI path: ${CLI_PATH}`);
 console.log(`[terminal-server] LangGraph API: ${LANGGRAPH_API_URL}`);
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  try {
+    return ALLOWED_ORIGINS.has(new URL(origin).origin);
+  } catch {
+    return false;
+  }
+}
 
 /** Create a new LangGraph thread via the REST API. */
 async function createThread(engagementId: string, agentId: string): Promise<string> {
@@ -51,6 +67,11 @@ async function createThread(engagementId: string, agentId: string): Promise<stri
 }
 
 wss.on("connection", async (ws: WebSocket, req) => {
+  if (!isAllowedOrigin(req.headers.origin)) {
+    ws.close(1008, "Origin not allowed");
+    return;
+  }
+
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
   const engagementId = url.searchParams.get("engagementId") ?? "";
   // engagementSlug is the folder name under ~/.decepticon/workspace/.

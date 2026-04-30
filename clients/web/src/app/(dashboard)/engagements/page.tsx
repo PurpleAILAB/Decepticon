@@ -49,14 +49,27 @@ export default function EngagementsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     fetch("/api/engagements")
       .then((res) => {
         if (!res.ok) throw new Error("fetch failed");
         return res.json();
       })
-      .then((data: Engagement[]) => setEngagements(data))
-      .catch(() => setEngagements([]))
-      .finally(() => setLoading(false));
+      .then((data: Engagement[]) => {
+        if (!active) return;
+        setEngagements(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEngagements([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (

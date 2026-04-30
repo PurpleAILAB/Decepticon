@@ -24,45 +24,44 @@ export async function GET() {
     );
   }
 
-  const res = await fetch(
-    "https://api.github.com/user/repos?sort=updated&per_page=100&type=owner",
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/vnd.github+json",
-      },
-    }
-  );
+  try {
+    const res = await fetch(
+      "https://api.github.com/user/repos?sort=updated&per_page=100&type=owner",
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/vnd.github+json",
+        },
+        signal: AbortSignal.timeout(10000),
+      }
+    );
 
-  if (!res.ok) {
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: `GitHub API error: ${res.status}` },
+        { status: res.status }
+      );
+    }
+
+    const repos: Array<Record<string, unknown>> = await res.json();
+
+    const simplified = repos.map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      full_name: repo.full_name,
+      description: repo.description ?? null,
+      language: repo.language ?? null,
+      private: !!repo.private,
+      html_url: repo.html_url,
+      updated_at: repo.updated_at,
+    }));
+
+    return NextResponse.json(simplified);
+  } catch (err) {
+    console.error("GitHub repos fetch error:", err);
     return NextResponse.json(
-      { error: `GitHub API error: ${res.status}` },
-      { status: res.status }
+      { error: "Failed to fetch GitHub repos" },
+      { status: 502 }
     );
   }
-
-  const repos = await res.json();
-  interface GitHubRepo {
-    id: number;
-    name: string;
-    full_name: string;
-    description: string | null;
-    language: string | null;
-    private: boolean;
-    html_url: string;
-    updated_at: string;
-  }
-
-  const simplified = (repos as GitHubRepo[]).map((repo) => ({
-    id: repo.id,
-    name: repo.name,
-    full_name: repo.full_name,
-    description: repo.description,
-    language: repo.language,
-    private: repo.private,
-    html_url: repo.html_url,
-    updated_at: repo.updated_at,
-  }));
-
-  return NextResponse.json(simplified);
 }

@@ -3,7 +3,11 @@
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2
-- An API key for at least one LLM provider (Anthropic, OpenAI, Google, or MiniMax) — or an OAuth subscription (Claude Code, Codex)
+- An LLM provider credential — one of:
+  - API key (Anthropic, OpenAI, DeepSeek, Google, xAI, Mistral, Groq, Cohere, Together, Fireworks, Perplexity, MiniMax, OpenRouter, Azure, AWS Bedrock, Replicate)
+  - Claude Max/Pro/Team subscription (OAuth via Claude Code CLI)
+  - ChatGPT Pro/Plus/Team subscription (session token from browser)
+  - OpenAI-compatible gateway (LM Studio, vLLM, Ollama)
 
 That's it. Everything else runs inside containers.
 
@@ -27,11 +31,13 @@ decepticon onboard
 
 The interactive setup wizard guides you through:
 
-1. **Authentication** — API key or OAuth (Claude Code, Codex)
-2. **Provider** — Anthropic, OpenAI, Google, or MiniMax
-3. **API Key** — Enter your provider key (skipped for OAuth)
-4. **Model Profile** — `eco` (balanced), `max` (performance), or `test` (development)
+1. **Authentication** — API key, Claude subscription OAuth, or ChatGPT subscription OAuth
+2. **Provider** — Anthropic, OpenAI, DeepSeek, Google, xAI, Mistral, Cohere, Groq, Together, Fireworks, Perplexity, MiniMax, OpenRouter, Azure, Bedrock, Replicate, Custom, or Ollama
+3. **Credentials** — API key, OAuth token, or endpoint URL (depending on auth method)
+4. **Model Profile** — `eco` (balanced), `max` (performance), `test` (development), or `custom` (any LiteLLM model string via `DECEPTICON_MODEL`)
 5. **LangSmith** — Optional tracing for LLM observability
+
+For detailed provider setup including OAuth configuration, see [Setup Guide](setup-guide.md).
 
 Configuration is saved to `~/.decepticon/.env`. Run `decepticon onboard --reset` to reconfigure.
 
