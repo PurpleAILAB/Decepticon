@@ -104,6 +104,7 @@ services:
   # LangGraph reaches sandbox via docker exec (Docker socket), not the network.
   sandbox:
     image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
+    platform: linux/amd64
     build:
       context: .
       dockerfile: containers/sandbox.Dockerfile
@@ -250,6 +251,7 @@ services:
   # Agent connects via: sliver-client (pre-installed in sandbox)
   c2-sliver:
     image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-latest}
+    platform: linux/amd64
     build:
       context: .
       dockerfile: containers/c2-sliver.Dockerfile
@@ -273,6 +275,7 @@ services:
   # Default creds: admin / password
   dvwa:
     image: vulnerables/web-dvwa
+    platform: linux/amd64
     container_name: decepticon-dvwa
     networks:
       - sandbox-net
@@ -285,6 +288,7 @@ services:
   # Default creds: msfadmin / msfadmin
   metasploitable2:
     image: tleemcjr/metasploitable2
+    platform: linux/amd64
     container_name: decepticon-msf2
     networks:
       - sandbox-net

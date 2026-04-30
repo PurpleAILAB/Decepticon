@@ -764,7 +764,14 @@ curl -s https://api.anthropic.com/v1/messages \
   -d '{"model":"claude-haiku-4-5-20251001","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}'
 ```
 
-### Service Issues
+### Docker Issues
+
+**Apple Silicon (M1/M2/M3/M4): "no matching manifest for linux/arm64/v8"**
+
+This happens when Docker tries to pull an image that only exists for `linux/amd64` (like the Kali-based sandbox).
+
+**Solution:**
+The `docker-compose.yml` is pre-configured to force `platform: linux/amd64` for these services. Ensure you are using the latest version of the file. If you still encounter issues, enable "Use Rosetta for x86_64/amd64 emulation" in Docker Desktop settings.
 
 **Services won't start:**
 
