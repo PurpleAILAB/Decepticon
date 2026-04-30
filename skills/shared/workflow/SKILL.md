@@ -221,6 +221,7 @@ The sandbox bash environment is intentionally restricted. The following patterns
 |---------|--------------|
 | `bash <<'EOF' ... EOF` heredocs in tool calls | Often truncated mid-stream, brittle quoting, ambiguous timeout behavior. |
 | Trailing `&` to "parallelize" (`curl ... & curl ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
+| `nohup python3 script.py &` | Functionally identical to `&` backgrounding — process detaches, stdout is lost, cannot be timed out by outer wall-clock. Use `timeout N python3 -u -c '...' \| tee log.txt` instead. |
 | Unbounded `sleep`, `nc -l`, `tail -f`, `while true` | Hits the wall-clock and burns the entire cycle; never produces useful output. |
 | `timeout 5 bash -c ""` (empty command) | Zero-effect probe, recon-scope-creep tell. |
 | Long pipelines without `set -o pipefail` | Failures hide behind the last successful command. |

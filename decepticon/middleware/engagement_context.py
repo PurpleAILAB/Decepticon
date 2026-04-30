@@ -34,19 +34,21 @@ from typing_extensions import override
 class EngagementContextState(AgentState):
     """State extension carrying launcher- and harness-decided context."""
 
-    engagement_name: Annotated[NotRequired[str], "Workspace slug set by the launcher."]
-    workspace_path: Annotated[NotRequired[str], "Sandbox root for this engagement."]
+    engagement_name: NotRequired[Annotated[str, "Workspace slug set by the launcher."]]
+    workspace_path: NotRequired[Annotated[str, "Sandbox root for this engagement."]]
     # Benchmark / CTF challenge context — populated by the benchmark harness.
-    target_url: Annotated[NotRequired[str], "CTF challenge target URL."]
-    target_extra_ports: Annotated[
-        NotRequired[dict[int, int]],
-        "Additional published ports keyed by container target port (e.g. {22: 2222}).",
+    target_url: NotRequired[Annotated[str, "CTF challenge target URL."]]
+    target_extra_ports: NotRequired[
+        Annotated[
+            dict[int, int],
+            "Additional published ports keyed by container target port (e.g. {22: 2222}).",
+        ]
     ]
-    vulnerability_tags: Annotated[
-        NotRequired[list[str]], "Challenge vulnerability tags (e.g. ['sqli', 'xss'])."
+    vulnerability_tags: NotRequired[
+        Annotated[list[str], "Challenge vulnerability tags (e.g. ['sqli', 'xss'])."]
     ]
-    flag_format: Annotated[NotRequired[str], "Expected flag format string."]
-    mission_brief: Annotated[NotRequired[str], "Challenge name + description."]
+    flag_format: NotRequired[Annotated[str, "Expected flag format string."]]
+    mission_brief: NotRequired[Annotated[str, "Challenge name + description."]]
 
 
 _FALSY_ENV_VALUES = frozenset({"", "0", "false", "no", "off"})
@@ -82,8 +84,11 @@ _BENCHMARK_RULES_OVERRIDE = (
     "  - Rule 3 (No Direct Execution) — delegate to sub-agents (recon, exploit) via task()\n"
     "  - Rule 6 (Kill Chain Order) — respect blocked_by dependencies\n"
     "Engagement documents (roe.json, conops.json, deconfliction.json) are NOT required.\n"
-    "Build a minimal OPPLAN: (1) RECON objective to probe the target, "
-    "(2) INITIAL_ACCESS objective to exploit and capture the flag. "
+    "Build a minimal OPPLAN: (1) RECON objective (priority 1) to probe the target "
+    "and inspect challenge source for hardcoded keys/secrets, "
+    "(2) INITIAL_ACCESS objective (priority 2, blocked_by=[OBJ-001]) to exploit and capture the flag. "
+    "NEVER skip recon — it validates oracle signals, ciphertext layouts, session state, "
+    "and may find a trivial offline solution (hardcoded key). "
     "Execute via task(). The flag MUST appear in your final response text.\n"
 )
 

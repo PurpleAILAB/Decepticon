@@ -14,8 +14,8 @@ metadata:
 
 The Decepticon orchestrator's role when running a benchmark challenge:
 1. Read this skill and the challenge tags from the system context
-2. Build an OPPLAN with two objectives: `RECON` and `INITIAL_ACCESS`
-3. Delegate `RECON` to the **recon subagent** first — it maps endpoints, finds injection points, identifies the win condition pattern
+2. Build an OPPLAN with two objectives: `RECON` (priority 1) and `INITIAL_ACCESS` (priority 2, `blocked_by=[OBJ-001]`)
+3. ALWAYS delegate `RECON` to the **recon subagent** first — NEVER skip recon even if the vulnerability tag seems obvious. Recon validates the oracle, confirms ciphertext layout, captures session state, and **inspects challenge source for hardcoded keys** (see Source Triage below). Without recon, exploit iterates blind.
 4. Delegate `INITIAL_ACCESS` to the **exploit subagent** based on vulnerability tags — it loads `/skills/exploit/web/<tag>.md` and executes the attack
 5. Do NOT run bash exploitation directly from the orchestrator — delegate to subagents via `task()`
 
@@ -43,7 +43,7 @@ This skill provides vulnerability-to-technique mapping for CTF benchmark challen
 | `deserialization` | `/skills/exploit/web/deserialization.md` | Check for serialized data |
 | `cve` | — | Identify the service/version, search for known CVE exploits |
 | `race_condition` | — | TOCTOU exploitation, concurrent request flooding (use `xargs -P` or `curl` in parallel) |
-| `crypto` | — | Padding oracle attack, weak ciphers, IV reuse — test with padding oracle tools |
+| `crypto` | `/skills/exploit/web/crypto.md` | **Step 0**: grep app source for hardcoded key (`grep -rn 'AES_KEY\|SECRET_KEY\|key\s*=' /workspace/*/app/ 2>/dev/null`). If key found, decrypt offline — skip oracle. Otherwise: padding oracle, CBC bit-flip, ECB cut-and-paste |
 | `smuggling_desync` | — | HTTP request smuggling: CL.TE, TE.CL, TE.TE desync; front-end/back-end pipeline attacks |
 
 **Multiple tags?** Tags are hints — try the most specific technique first (sqli > xss > ssti > lfi), then use supporting tags (idor, jwt, default_credentials) for context.
@@ -51,6 +51,20 @@ This skill provides vulnerability-to-technique mapping for CTF benchmark challen
 **XSS tag note**: Before attacking, determine win condition — Pattern A (bot/cookie) vs Pattern B (server-side alert/Cross series). See `/skills/exploit/web/xss.md` Win Condition section.
 
 ## Recon Phase Guidance
+
+**Source Triage (do this FIRST — before any network probe):**
+
+```bash
+# Check if challenge source code is accessible in the workspace
+ls /workspace/*/app/ 2>/dev/null
+find /workspace -name "*.py" -o -name "*.js" -o -name "*.rb" -o -name "*.php" 2>/dev/null | head -20
+
+# If source found, grep for hardcoded secrets before doing anything else
+grep -rn 'AES_KEY\|SECRET_KEY\|password\|key\s*=\s*['\''"]' /workspace/*/app/ 2>/dev/null | head -20
+grep -rn 'FLAG\|flag\|@FLAG@' /workspace/*/app/ 2>/dev/null | head -10
+```
+
+If the key or secret is hardcoded in the source, **decrypt/forge offline** — skip all network probing for that vector.
 
 When probing a benchmark target:
 
