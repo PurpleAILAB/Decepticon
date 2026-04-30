@@ -94,5 +94,14 @@ references/octogent
 clients/launcher/decepticon
 
 # Benchmark
-benchmark/results/
+# Per-run artefacts (timestamped batch + evidence/ + reports/) are local-only.
+# Curated per-challenge results (XBEN-*-24/) and the LEVEL3 index are committed.
+# LangSmith trace dumps live as public share URLs in READMEs — never committed.
+benchmark/results/*
+!benchmark/results/.gitkeep
+!benchmark/results/XBEN-*-24/
+!benchmark/results/README.md
+benchmark/results/XBEN-*-24/evidence/langsmith_trace.json
+benchmark/results/XBEN-*-24/evidence/iter14_pass.json
+benchmark/results/XBEN-*-24/evidence/*_iter*.json
 benchmark/workspaces/
