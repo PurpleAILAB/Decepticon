@@ -90,6 +90,7 @@ class TestAgentTiers:
     def test_high_tier_agents(self):
         for role in (
             "decepticon",
+            "exploit",
             "exploiter",
             "patcher",
             "contract_auditor",
@@ -100,7 +101,6 @@ class TestAgentTiers:
 
     def test_mid_tier_agents(self):
         for role in (
-            "exploit",
             "detector",
             "verifier",
             "postexploit",
