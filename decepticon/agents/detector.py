@@ -44,7 +44,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_detector_agent():
     """Initialize the Detector Agent — sonnet-class, read-only, fresh ctx.
 

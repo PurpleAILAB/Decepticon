@@ -27,7 +27,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_cloud_hunter_agent():
     config = load_config()
     factory = LLMFactory()

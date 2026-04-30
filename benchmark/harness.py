@@ -65,21 +65,18 @@ class Harness:
         try:
             client = get_client(url=self.config.langgraph_url)
             await asyncio.wait_for(
-                client.runs.cancel(
-                    thread_id, run_id, wait=False, action="rollback"
-                ),
+                client.runs.cancel(thread_id, run_id, wait=False, action="rollback"),
                 timeout=5.0,
             )
             log.info("Cancelled run %s on thread %s", run_id, thread_id)
         except asyncio.TimeoutError:
             log.warning(
                 "Run cancellation timed out after 5s (thread %s run %s)",
-                thread_id, run_id,
+                thread_id,
+                run_id,
             )
         except Exception as exc:
-            log.warning(
-                "Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc
-            )
+            log.warning("Run cancellation failed (thread %s run %s): %s", thread_id, run_id, exc)
 
     async def _cancel_and_verify_terminal(
         self, *, deadline_seconds: int = 30
@@ -115,16 +112,13 @@ class Harness:
 
         while time.time() < deadline:
             try:
-                run_status = await asyncio.wait_for(
-                    client.runs.get(thread_id, run_id), timeout=5.0
-                )
-                last_status = (
-                    run_status.get("status") if isinstance(run_status, dict) else None
-                )
+                run_status = await asyncio.wait_for(client.runs.get(thread_id, run_id), timeout=5.0)
+                last_status = run_status.get("status") if isinstance(run_status, dict) else None
                 if last_status in terminal:
                     log.info(
                         "Run %s reached terminal status %s after cancel",
-                        run_id, last_status,
+                        run_id,
+                        last_status,
                     )
                     return ("rollback", last_status)
             except asyncio.TimeoutError:
@@ -140,7 +134,9 @@ class Harness:
         log.warning(
             "harness.escalation: run %s did NOT reach terminal status within %ds "
             "(last=%s) — escalating to langgraph container restart",
-            run_id, deadline_seconds, last_status,
+            run_id,
+            deadline_seconds,
+            last_status,
         )
         self._force_restart_langgraph()
         return ("container_restart", last_status)
@@ -160,14 +156,17 @@ class Harness:
         log.warning("harness.escalation: restarting langgraph container")
         subprocess.run(
             ["docker", "compose", "restart", "langgraph"],
-            capture_output=True, timeout=60, check=False,
+            capture_output=True,
+            timeout=60,
+            check=False,
         )
         # Reconnect networks (compose restart usually preserves them but be
         # defensive — same pattern as _ensure_services_healthy).
         for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
             subprocess.run(
                 ["docker", "network", "connect", net, "decepticon-langgraph"],
-                capture_output=True, check=False,
+                capture_output=True,
+                check=False,
             )
         # Wait up to 60s for /ok
         for _ in range(30):
@@ -180,9 +179,7 @@ class Harness:
             except Exception:
                 pass
         else:
-            log.warning(
-                "harness.escalation: langgraph did NOT become healthy within 60s"
-            )
+            log.warning("harness.escalation: langgraph did NOT become healthy within 60s")
 
         # Defensive sandbox cleanup — kill orphan workers + tmux server. The
         # next pre-cycle sandbox restart (commit 3f1bc67) will fully reset
@@ -190,13 +187,19 @@ class Harness:
         log.warning("harness.escalation: defensive sandbox cleanup")
         subprocess.run(
             [
-                "docker", "exec", "decepticon-sandbox", "bash", "-c",
+                "docker",
+                "exec",
+                "decepticon-sandbox",
+                "bash",
+                "-c",
                 "pkill -9 -f python3 2>/dev/null || true; "
                 "pkill -9 -f curl 2>/dev/null || true; "
                 "tmux kill-server 2>/dev/null || true; "
                 "tmux new-session -d -s main 2>/dev/null || true",
             ],
-            capture_output=True, timeout=30, check=False,
+            capture_output=True,
+            timeout=30,
+            check=False,
         )
 
         # Stale IDs are pinned to a langgraph instance that no longer
@@ -275,20 +278,24 @@ class Harness:
         log.info("harness.sandbox: restarting sandbox container for fresh state")
         subprocess.run(
             ["docker", "compose", "restart", "sandbox"],
-            capture_output=True, timeout=60, check=False,
+            capture_output=True,
+            timeout=60,
+            check=False,
         )
         # Reconnect to required networks (compose restart usually preserves them
         # but be defensive for benchmark / make dev variants)
         for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
             subprocess.run(
                 ["docker", "network", "connect", net, "decepticon-sandbox"],
-                capture_output=True, check=False,
+                capture_output=True,
+                check=False,
             )
         # Wait for `docker exec true` to succeed before returning
         for attempt in range(40):
             r = subprocess.run(
                 ["docker", "exec", "decepticon-sandbox", "true"],
-                capture_output=True, check=False,
+                capture_output=True,
+                check=False,
             )
             if r.returncode == 0:
                 log.info("harness.sandbox: ready after %.1fs", attempt * 0.5)
@@ -567,15 +574,14 @@ class Harness:
                         run_status = await asyncio.wait_for(
                             client.runs.get(thread_id, run_id), timeout=10.0
                         )
-                        status = (
-                            run_status.get("status")
-                            if isinstance(run_status, dict) else None
-                        )
+                        status = run_status.get("status") if isinstance(run_status, dict) else None
                         # Status transition: log once when status changes.
                         if status != last_logged_status:
                             log.info(
                                 "Run %s status transition: %s -> %s",
-                                run_id, last_logged_status or "<initial>", status,
+                                run_id,
+                                last_logged_status or "<initial>",
+                                status,
                             )
                             last_logged_status = status
                         if status in terminal:
@@ -584,15 +590,12 @@ class Harness:
                         # Pending >5min: WARNING — early signal of a silent
                         # stall before the outer 1800s timeout fires.
                         elapsed = time.time() - poll_start
-                        if (
-                            status == "pending"
-                            and elapsed > 300
-                            and not pending_warning_emitted
-                        ):
+                        if status == "pending" and elapsed > 300 and not pending_warning_emitted:
                             log.warning(
                                 "Run %s status=pending for %ds — possible silent "
                                 "stall (cycle-5/6 signature)",
-                                run_id, int(elapsed),
+                                run_id,
+                                int(elapsed),
                             )
                             pending_warning_emitted = True
                     except asyncio.TimeoutError:
@@ -620,9 +623,7 @@ class Harness:
                 return AgentResponse(text="", thread_id=thread_id)
 
             # ThreadState looks like {"values": {...}, "next": [...], ...}.
-            values: object = (
-                state_data.get("values") if isinstance(state_data, dict) else None
-            )
+            values: object = state_data.get("values") if isinstance(state_data, dict) else None
             if not isinstance(values, dict):
                 values = state_data if isinstance(state_data, dict) else {}
             text = self._extract_message(values)
@@ -636,9 +637,7 @@ class Harness:
                 try:
                     await self._cancel_and_verify_terminal()
                 except Exception as exc:
-                    log.warning(
-                        "harness.escalation: orphan-run cancel failed: %s", exc
-                    )
+                    log.warning("harness.escalation: orphan-run cancel failed: %s", exc)
 
     def _extract_message(self, data: object) -> str:
         """Extract the final assistant message text from a LangGraph run response."""

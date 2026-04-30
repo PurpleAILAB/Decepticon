@@ -34,7 +34,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_contract_auditor_agent():
     config = load_config()
     factory = LLMFactory()

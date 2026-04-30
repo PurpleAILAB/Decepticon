@@ -29,7 +29,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_ad_operator_agent():
     config = load_config()
     factory = LLMFactory()

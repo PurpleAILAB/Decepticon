@@ -33,7 +33,6 @@ from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
 from decepticon.tools.research.tools import kg_query, kg_stats
 
 
-
 def create_scanner_agent():
     """Initialize the Scanner Agent — cheap, sharded, candidate-only.
 

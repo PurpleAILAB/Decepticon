@@ -44,7 +44,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_verifier_agent():
     """Initialize the Verifier Agent — sonnet, PoC-driven, ZFP gate."""
     config = load_config()

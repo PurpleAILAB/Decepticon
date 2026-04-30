@@ -418,9 +418,7 @@ def _build_load_skill_tool():  # type: ignore[no-untyped-def]
         header_lines = [f"Base directory for this skill: {base_dir}"]
         name = frontmatter.get("name") or path.stem
         description = frontmatter.get("description", "").strip()
-        header_lines.append(
-            f"Skill: {name}" + (f" — {description}" if description else "")
-        )
+        header_lines.append(f"Skill: {name}" + (f" — {description}" if description else ""))
         header = "\n".join(header_lines)
 
         sections: list[str] = [header, "", body.rstrip(), ""]
@@ -436,9 +434,7 @@ def _build_load_skill_tool():  # type: ignore[no-untyped-def]
             siblings = _list_sibling_skills(path)
             if siblings:
                 sections.append("---")
-                sections.append(
-                    "Related sub-skills in this directory (load with `load_skill`):"
-                )
+                sections.append("Related sub-skills in this directory (load with `load_skill`):")
                 sections.extend(f"- {s.as_posix()}" for s in siblings)
                 sections.append("")
 

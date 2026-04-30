@@ -8,11 +8,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 CancelOutcome = Literal[
-    "clean",             # run reached terminal status without harness-side cancel
-    "soft_cancelled",    # cancel API call returned within deadline, run reached terminal
-    "rollback",          # action="rollback" succeeded and run reached terminal
-    "container_restart", # had to restart langgraph container to dislodge wedged run
-    "failed",            # cancel call failed and verify-terminal also failed
+    "clean",  # run reached terminal status without harness-side cancel
+    "soft_cancelled",  # cancel API call returned within deadline, run reached terminal
+    "rollback",  # action="rollback" succeeded and run reached terminal
+    "container_restart",  # had to restart langgraph container to dislodge wedged run
+    "failed",  # cancel call failed and verify-terminal also failed
 ]
 
 

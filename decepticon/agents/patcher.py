@@ -37,7 +37,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_patcher_agent():
     """Initialize the Patcher Agent — opus, iterative fix-verify loops."""
     config = load_config()

@@ -49,7 +49,6 @@ from decepticon.tools.research.tools import (
 )
 
 
-
 def create_recon_agent():
     """Initialize the Recon Agent using langchain create_agent() directly.
 

@@ -38,7 +38,6 @@ from decepticon.tools.research.tools import (
 from decepticon.tools.reversing.tools import REVERSING_TOOLS
 
 
-
 def create_reverser_agent():
     config = load_config()
     factory = LLMFactory()

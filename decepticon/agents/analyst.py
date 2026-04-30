@@ -36,7 +36,6 @@ from decepticon.tools.references.tools import REFERENCES_TOOLS
 from decepticon.tools.research.tools import RESEARCH_TOOLS
 
 
-
 def create_analyst_agent():
     """Initialize the Analyst Agent with full research tool access.
 

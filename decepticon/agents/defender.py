@@ -40,7 +40,6 @@ from decepticon.tools.defense.tools import (
 from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 
 
-
 def create_defender_agent():
     """Initialize the Defender Agent using langchain create_agent() directly.
 

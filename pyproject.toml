@@ -80,7 +80,10 @@ packages = ["decepticon"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-extend-exclude = ["benchmark/xbow-validation-benchmarks"]
+extend-exclude = [
+    "benchmark/xbow-validation-benchmarks",
+    "benchmark/results",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
@@ -130,6 +133,7 @@ exclude = [
     "reference",
     "decepticon/auth/providers",
     "benchmark/xbow-validation-benchmarks",
+    "benchmark/results",
 ]
 # Use pyright "standard" semantics rather than the basedpyright "all" default —
 # the existing codebase predates basedpyright's stricter rules. As code is
