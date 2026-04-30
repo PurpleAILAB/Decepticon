@@ -37,10 +37,12 @@ Usage:
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from deepagents.middleware._utils import append_to_system_message
 from deepagents.middleware.skills import SkillsMiddleware
+from langchain_core.tools import tool
 
 if TYPE_CHECKING:
     from deepagents.middleware.skills import SkillMetadata
@@ -86,7 +88,7 @@ match your current objective.
 ```
 - **skill-name**: What the skill covers. [MITRE IDs]
   triggers: keywords that indicate when to load this skill
-  `read_file("/skills/category/skill-name/SKILL.md")`
+  `load_skill("/skills/category/skill-name/SKILL.md")`
 ```
 
 ### Skill Selection
@@ -97,9 +99,13 @@ Match the current objective against **triggers** — load the most specific matc
 - Multiple matches → load the most specific skill first
 
 ### Access Rules
-- `read_file("/skills/<category>/<skill-name>/SKILL.md")` — CORRECT
+- `load_skill("/skills/<category>/<skill-name>/SKILL.md")` — **CORRECT** for
+  /skills/* paths. Returns the FULL body (no line limit) plus a base directory
+  header and an index of references/* and sibling sub-skills in the same dir.
+- `read_file("/skills/...")` — works but is line-limited (default 100 lines)
+  and may truncate. Prefer `load_skill` for skill files.
 - `bash(command="cat /skills/...")` — WILL FAIL if /skills/ is not mounted
-  in the bash sandbox of the current agent
+  in the bash sandbox of the current agent.
 - Skills are routed through the agent's filesystem backend.
 
 ### SKILL-FIRST RULE (CRITICAL)
@@ -141,6 +147,7 @@ class DecepticonSkillsMiddleware(SkillsMiddleware):
     def __init__(self, *, backend: Any, sources: list[str]) -> None:
         super().__init__(backend=backend, sources=sources)
         self.system_prompt_template = DECEPTICON_SKILLS_PROMPT
+        self.tools = [_build_load_skill_tool()]
 
     # ── workflow.md auto-load ────────────────────────────────────────────────
 
@@ -285,7 +292,7 @@ class DecepticonSkillsMiddleware(SkillsMiddleware):
                 if when_to_use:
                     lines.append(f"  triggers: {when_to_use}")
 
-                lines.append(f'  `read_file("{skill["path"]}")`')
+                lines.append(f'  `load_skill("{skill["path"]}")`')
 
             lines.append("")  # blank line between groups
 
@@ -299,6 +306,145 @@ def _parse_comma_field(value: str | list | None) -> list[str]:
     if isinstance(value, list):
         return [str(v).strip() for v in value if str(v).strip()]
     return [t.strip() for t in str(value).replace(",", " ").split() if t.strip()]
+
+
+# ── load_skill tool ──────────────────────────────────────────────────────────
+# A Decepticon-specific replacement for `read_file("/skills/...")` that
+# returns the full skill body without the deepagents 100-line limit, plus a
+# base-directory header and an index of references/* in the same directory.
+
+_SKILL_PATH_PREFIX = "/skills/"
+
+
+def _strip_frontmatter(text: str) -> tuple[str, dict[str, str]]:
+    """Strip a leading YAML frontmatter block (``---\\n...\\n---``) from text.
+
+    Returns ``(body, frontmatter_dict)``. Only flat ``key: value`` pairs are
+    parsed — nested YAML is ignored. If no frontmatter is present the original
+    text is returned with an empty dict.
+    """
+    if not text.startswith("---\n"):
+        return text, {}
+    end = text.find("\n---\n", 4)
+    if end == -1:
+        return text, {}
+    fm_text = text[4:end]
+    body = text[end + 5 :]
+    fm: dict[str, str] = {}
+    for line in fm_text.splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        fm[key.strip()] = value.strip().strip('"').strip("'")
+    return body, fm
+
+
+def _list_references(skill_dir: Path) -> list[Path]:
+    """Return sorted reference files under ``skill_dir/references/`` (one level)."""
+    refs_dir = skill_dir / "references"
+    if not refs_dir.is_dir():
+        return []
+    return sorted(p for p in refs_dir.iterdir() if p.is_file())
+
+
+def _list_sibling_skills(skill_path: Path) -> list[Path]:
+    """Return sibling ``.md`` files in the same directory (excluding self)."""
+    parent = skill_path.parent
+    if not parent.is_dir():
+        return []
+    return sorted(
+        p for p in parent.iterdir() if p.is_file() and p.suffix == ".md" and p != skill_path
+    )
+
+
+def _build_load_skill_tool():  # type: ignore[no-untyped-def]
+    """Construct the ``load_skill`` LangChain tool.
+
+    Returns a closure-bound ``@tool``-decorated function that reads a skill
+    markdown file and renders it with a base-directory header + reference
+    index. Path is restricted to ``/skills/*`` to keep this tool's intent
+    distinct from the general ``read_file``.
+    """
+
+    @tool
+    def load_skill(skill_path: str, include_siblings: bool = False) -> str:
+        """Load a Decepticon skill file (full body, no line-limit truncation).
+
+        Use this for ANY ``/skills/*.md`` file instead of ``read_file``. It
+        returns the entire skill body (frontmatter stripped) prepended with a
+        base directory header, followed by an index of any ``references/`` files
+        in the same directory so you know what additional templates / cheat
+        sheets exist for this skill.
+
+        Args:
+            skill_path: Absolute path under ``/skills/``, e.g.
+                ``/skills/exploit/web/crypto.md``.
+            include_siblings: If True, also list sibling ``.md`` files in the
+                same directory (useful when the skill is a category index).
+                Default False to avoid duplicating the catalog already in the
+                system prompt.
+
+        Returns:
+            The skill body with a header + references index. Errors are
+            returned as ``[load_skill error] ...`` strings (never raised).
+        """
+        if not isinstance(skill_path, str) or not skill_path:
+            return "[load_skill error] skill_path must be a non-empty string."
+        if not skill_path.startswith(_SKILL_PATH_PREFIX):
+            return (
+                "[load_skill error] Path must start with /skills/. "
+                "For non-skill files use read_file. "
+                f"Got: {skill_path!r}"
+            )
+        if not skill_path.endswith(".md"):
+            return f"[load_skill error] Skill files must be markdown (.md). Got: {skill_path!r}"
+        # Reject path traversal — disallow ".." segments
+        if ".." in skill_path.split("/"):
+            return f"[load_skill error] Path traversal not allowed: {skill_path!r}"
+
+        path = Path(skill_path)
+        try:
+            if not path.exists():
+                return f"[load_skill error] Skill not found: {skill_path}"
+            if not path.is_file():
+                return f"[load_skill error] Not a file: {skill_path}"
+            raw = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            return f"[load_skill error] Read failed for {skill_path}: {exc}"
+
+        body, frontmatter = _strip_frontmatter(raw)
+
+        base_dir = path.parent.as_posix()
+        header_lines = [f"Base directory for this skill: {base_dir}"]
+        name = frontmatter.get("name") or path.stem
+        description = frontmatter.get("description", "").strip()
+        header_lines.append(
+            f"Skill: {name}" + (f" — {description}" if description else "")
+        )
+        header = "\n".join(header_lines)
+
+        sections: list[str] = [header, "", body.rstrip(), ""]
+
+        refs = _list_references(path.parent)
+        if refs:
+            sections.append("---")
+            sections.append("References (load with `load_skill` or `read_file`):")
+            sections.extend(f"- {r.as_posix()}" for r in refs)
+            sections.append("")
+
+        if include_siblings:
+            siblings = _list_sibling_skills(path)
+            if siblings:
+                sections.append("---")
+                sections.append(
+                    "Related sub-skills in this directory (load with `load_skill`):"
+                )
+                sections.extend(f"- {s.as_posix()}" for s in siblings)
+                sections.append("")
+
+        return "\n".join(sections).rstrip() + "\n"
+
+    return load_skill
 
 
 __all__ = ["DecepticonSkillsMiddleware"]

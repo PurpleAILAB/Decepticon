@@ -21,9 +21,12 @@ export function formatNumber(n: number): string {
   return String(n);
 }
 
-/** Extract skill name from a /skills/... path. Returns null if not a skill path. */
+/** Extract skill name from a /skills/... path. Returns null if not a skill path.
+ *  Recognizes both `read_file({file_path})` and `load_skill({skill_path})`. */
 export function extractSkillName(args: Record<string, unknown>): string | null {
-  const filePath = args.file_path as string | undefined;
+  const filePath =
+    (args.skill_path as string | undefined) ??
+    (args.file_path as string | undefined);
   if (!filePath || !filePath.includes("/skills/")) return null;
   const parts = filePath.split("/");
   const skillsIdx = parts.indexOf("skills");

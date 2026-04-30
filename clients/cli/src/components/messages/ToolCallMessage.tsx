@@ -31,6 +31,7 @@ const TOOL_DISPLAY: Record<string, string> = {
   write_todos: "Todos",
   ask_user_question: "Ask",
   complete_engagement_planning: "Plan complete",
+  load_skill: "Skill",
 };
 
 // ── Tool call header ──────────────────────────────────────────────
@@ -76,6 +77,11 @@ function ToolCallHeader({
       if (offset > 0 || limit !== 100) {
         detailDim = ` lines ${offset + 1}-${offset + limit}`;
       }
+      break;
+    }
+    case "load_skill": {
+      detail = (args.skill_path as string) ?? "";
+      if (args.include_siblings === true) detailDim = " +siblings";
       break;
     }
     case "write_file":
