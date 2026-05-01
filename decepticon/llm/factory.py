@@ -98,9 +98,7 @@ def _ollama_local_configured() -> bool:
     "not set" so a stray ``OLLAMA_API_BASE=`` line in .env doesn't
     silently enable the method.
     """
-    return bool(
-        os.getenv("OLLAMA_API_BASE", "").strip() or os.getenv("OLLAMA_MODEL", "").strip()
-    )
+    return bool(os.getenv("OLLAMA_API_BASE", "").strip() or os.getenv("OLLAMA_MODEL", "").strip())
 
 
 def _is_real_key(value: str) -> bool:

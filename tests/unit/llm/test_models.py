@@ -253,9 +253,7 @@ class TestOllamaLocalChain:
         # chain leads with Ollama and falls back to the cloud API.
         monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
         monkeypatch.setenv("OLLAMA_MODEL", "qwen3-coder:30b")
-        creds = Credentials(
-            methods=[AuthMethod.OLLAMA_LOCAL, AuthMethod.OPENAI_API]
-        )
+        creds = Credentials(methods=[AuthMethod.OLLAMA_LOCAL, AuthMethod.OPENAI_API])
         chain = resolve_chain(Tier.HIGH, creds)
         assert chain == ["ollama_chat/qwen3-coder:30b", "openai/gpt-5.5"]
 

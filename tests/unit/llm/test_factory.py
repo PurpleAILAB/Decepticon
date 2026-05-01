@@ -284,18 +284,14 @@ class TestActionableErrorTranslation:
 
     def test_400_bad_request_branch(self):
         # openai.BadRequestError carries 'Error code: 400' in repr.
-        exc = Exception(
-            "Error code: 400 - {'error': {'message': 'temperature is deprecated'}}"
-        )
+        exc = Exception("Error code: 400 - {'error': {'message': 'temperature is deprecated'}}")
         type(exc).__name__  # noqa: B018 — sanity, ensures Exception default name
         with pytest.raises(RuntimeError) as info:
             self._translate(exc, "anthropic/claude-opus-4-7")
         assert "rejected the request (400)" in str(info.value)
 
     def test_401_authentication_branch(self):
-        exc = type("AuthenticationError", (Exception,), {})(
-            "Error code: 401 - invalid_api_key"
-        )
+        exc = type("AuthenticationError", (Exception,), {})("Error code: 401 - invalid_api_key")
         with pytest.raises(RuntimeError) as info:
             self._translate(exc, "openai/gpt-5.5")
         msg = str(info.value)
@@ -311,9 +307,7 @@ class TestActionableErrorTranslation:
         assert "DECEPTICON_AUTH_PRIORITY" in msg
 
     def test_404_notfound_with_ollama_hint(self):
-        exc = type("NotFoundError", (Exception,), {})(
-            "Error code: 404 - model not found"
-        )
+        exc = type("NotFoundError", (Exception,), {})("Error code: 404 - model not found")
         with pytest.raises(RuntimeError) as info:
             self._translate(exc, "ollama_chat/nonexistent")
         msg = str(info.value)
