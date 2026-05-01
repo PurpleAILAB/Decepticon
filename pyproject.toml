@@ -1,6 +1,6 @@
 [project]
 name = "decepticon"
-version = "1.0.6"
+version = "1.0.15"
 description = "AI-powered autonomous red team testing framework"
 readme = "README.md"
 license = { text = "Apache-2.0" }

@@ -1,6 +1,6 @@
 {
   "name": "@decepticon/cli",
-  "version": "1.0.5",
+  "version": "1.0.15",
   "description": "Decepticon Ink CLI — terminal interface for LangGraph Platform agents",
   "type": "module",
   "main": "src/index.tsx",
