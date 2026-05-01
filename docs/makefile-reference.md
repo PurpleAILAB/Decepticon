@@ -87,10 +87,8 @@ To regenerate just the Prisma client (without a full build): `cd clients/web && 
 
 ---
 
-## Demo Targets
+## Benchmark
 
 | Target | Description |
 |--------|-------------|
-| `make victims` | Start vulnerable test targets (DVWA, Metasploitable 2) for practice engagements |
-| `make demo` | Run the guided demo against Metasploitable 2 (forces a local CLI rebuild) |
 | `make benchmark [ARGS="--level 1"]` | Run the benchmark suite locally |

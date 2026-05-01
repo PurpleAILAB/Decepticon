@@ -276,34 +276,6 @@ services:
     profiles:
       - c2-sliver
 
-  # ── Victim Infrastructure (demo / testing only) ──────────────────────
-  # DVWA — Damn Vulnerable Web Application
-  # Web vulnerabilities: SQLi, XSS, Command Injection, File Inclusion, CSRF
-  # Default creds: admin / password
-  dvwa:
-    image: vulnerables/web-dvwa
-    platform: linux/amd64
-    container_name: decepticon-dvwa
-    networks:
-      - sandbox-net
-    restart: unless-stopped
-    profiles:
-      - victims
-
-  # Metasploitable 2 — intentionally vulnerable Linux host
-  # Vulnerable services: vsftpd, SSH, Samba, MySQL, distccd, UnrealIRCd, Tomcat
-  # Default creds: msfadmin / msfadmin
-  metasploitable2:
-    image: tleemcjr/metasploitable2
-    platform: linux/amd64
-    container_name: decepticon-msf2
-    networks:
-      - sandbox-net
-    tty: true
-    restart: unless-stopped
-    profiles:
-      - victims
-
 volumes:
   postgres_data:
   sliver_data:

@@ -5,9 +5,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^(assets/|demo/|reference/)
+        exclude: ^(assets/|reference/)
       - id: end-of-file-fixer
-        exclude: ^(assets/|demo/|reference/)
+        exclude: ^(assets/|reference/)
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict

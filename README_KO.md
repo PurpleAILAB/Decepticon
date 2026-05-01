@@ -60,16 +60,6 @@ decepticon           # 터미널 CLI 실행
 
 ---
 
-## 데모 실행
-
-```bash
-decepticon demo
-```
-
-Metasploitable 2를 타깃으로 자동 실행: 포트 스캔 → vsftpd 익스플로잇 → Sliver C2 임플란트 배포 → 자격증명 수집 → 내부 네트워크 정찰.
-
----
-
 ## 💖 Decepticon 후원
 
 [![Sponsor](https://img.shields.io/badge/후원하기-Decepticon-red?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)

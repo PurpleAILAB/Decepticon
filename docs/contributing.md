@@ -46,7 +46,6 @@ clients/
 
 config/              # LiteLLM proxy config (litellm.yaml)
 containers/          # Dockerfile per service
-demo/                # Demo engagement fixtures
 ```
 
 ---
@@ -132,7 +131,6 @@ When adding a new agent or tool, add corresponding tests in `decepticon/tests/`.
 |------|--------------|
 | **New skills** | More OSINT, cloud attack, and post-exploitation skill coverage |
 | **C2 profiles** | Havoc framework support (`c2-havoc` profile) |
-| **Victim targets** | Additional vulnerable targets beyond Metasploitable 2 |
 | **Web dashboard** | UX improvements, new views, mobile responsiveness |
 | **Documentation** | Tutorials, walkthroughs, translated READMEs |
 | **Bug reports** | Open an issue with reproduction steps |

@@ -20,11 +20,11 @@ func TestNew(t *testing.T) {
 
 func TestAllProfiles(t *testing.T) {
 	profiles := AllProfiles()
-	if len(profiles) != 6 {
-		t.Errorf("AllProfiles() len = %d, want 6 (3 pairs)", len(profiles))
+	if len(profiles) != 4 {
+		t.Errorf("AllProfiles() len = %d, want 4 (2 pairs)", len(profiles))
 	}
 	// Verify pairs
-	expected := []string{"--profile", "cli", "--profile", "victims", "--profile", "c2-sliver"}
+	expected := []string{"--profile", "cli", "--profile", "c2-sliver"}
 	for i, v := range expected {
 		if profiles[i] != v {
 			t.Errorf("profiles[%d] = %q, want %q", i, profiles[i], v)

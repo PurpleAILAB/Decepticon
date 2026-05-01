@@ -58,28 +58,6 @@ The web dashboard starts as part of the default stack — it's reachable at `htt
 
 ---
 
-## Try the Demo
-
-The demo runs a complete autonomous kill chain against a local Metasploitable 2 target — no setup needed beyond your API key.
-
-```bash
-decepticon demo
-```
-
-**What happens:**
-1. Metasploitable 2 is launched as a target VM
-2. A pre-built engagement (RoE + OPPLAN) is loaded
-3. The agent executes autonomously:
-   - Port scan and service enumeration
-   - vsftpd 2.3.4 backdoor exploitation
-   - Sliver C2 implant deployment
-   - Credential harvesting via C2 session
-   - Internal network reconnaissance
-
-The demo is read-only — it doesn't modify anything on your host.
-
----
-
 ## First Real Engagement
 
 1. Launch Decepticon (`decepticon`) and open <http://localhost:3000>

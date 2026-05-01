@@ -15,7 +15,7 @@
 
 COMPOSE       := docker compose
 COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.watch.yml
-PROFILES_ALL  := --profile cli --profile victims --profile c2-sliver
+PROFILES_ALL  := --profile cli --profile c2-sliver
 WEB_DIR       := clients/web
 
 # docker compose cannot expand ~ inside compose-file defaults, so resolve it
@@ -27,7 +27,7 @@ export DECEPTICON_HOME ?= $(HOME)/.decepticon
         test test-local lint lint-fix quality quality-cli \
         web-build web-lint web-migrate web-ee web-oss \
         node-install web-install web-db-ensure \
-        victims demo benchmark
+        benchmark
 
 # ── Help (default target) ────────────────────────────────────────
 
@@ -63,8 +63,6 @@ help:
 	@echo "  make web-ee / web-oss      Toggle EE/OSS mode"
 	@echo ""
 	@echo "Other:"
-	@echo "  make victims      Start vulnerable test targets (DVWA + MSF2)"
-	@echo "  make demo         Guided demo on Metasploitable 2"
 	@echo "  make benchmark [ARGS=\"--level 1\"]"
 
 # ── Development (local codebase + hot-reload) ─────────────────────
@@ -220,19 +218,7 @@ web-db-ensure:
 	done
 	@cd $(WEB_DIR) && npx prisma migrate deploy 2>&1 | tail -1
 
-# ── Demo / Targets / Benchmark ───────────────────────────────────
-
-## Start vulnerable test targets (DVWA + Metasploitable 2)
-victims:
-	$(COMPOSE) --profile victims up -d
-
-## Guided demo on Metasploitable 2 — forces local CLI build.
-demo: victims
-	@echo "Waiting for langgraph..."
-	@until curl -sf http://localhost:$${LANGGRAPH_PORT:-2024}/ok >/dev/null 2>&1; do sleep 2; done
-	$(COMPOSE) --profile cli run --rm --build \
-		-e DECEPTICON_INITIAL_MESSAGE="Resume the demo engagement and execute all objectives." \
-		cli
+# ── Benchmark ────────────────────────────────────────────────────
 
 ## Run benchmark suite (usage: make benchmark ARGS="--level 1")
 benchmark:

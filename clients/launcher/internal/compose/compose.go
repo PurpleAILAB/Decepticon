@@ -30,20 +30,17 @@ func New() *Compose {
 
 // Profiles defines available Docker Compose profiles.
 var Profiles = struct {
-	CLI     string
-	Victims string
-	C2      string
+	CLI string
+	C2  string
 }{
-	CLI:     "cli",
-	Victims: "victims",
-	C2:      "c2-sliver",
+	CLI: "cli",
+	C2:  "c2-sliver",
 }
 
 // AllProfiles returns all profile flags for complete teardown.
 func AllProfiles() []string {
 	return []string{
 		"--profile", Profiles.CLI,
-		"--profile", Profiles.Victims,
 		"--profile", Profiles.C2,
 	}
 }

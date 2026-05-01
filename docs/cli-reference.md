@@ -7,7 +7,6 @@
 | `decepticon` | Start all services, open the terminal UI, and print the web dashboard URL |
 | `decepticon onboard` | Interactive setup wizard (provider, API key, model profile, LangSmith) |
 | `decepticon onboard --reset` | Reconfigure even if `.env` already exists |
-| `decepticon demo` | Run guided demo (Metasploitable 2, full kill chain + Sliver C2) |
 | `decepticon stop` | Stop all services |
 | `decepticon status` | Show service status |
 | `decepticon logs [service]` | Follow service logs (default: `langgraph`) |

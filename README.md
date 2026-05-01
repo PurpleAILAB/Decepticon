@@ -57,16 +57,6 @@ decepticon           # Start everything: terminal CLI + web dashboard at http://
 
 ---
 
-## Try the Demo
-
-```bash
-decepticon demo
-```
-
-Launches Metasploitable 2, loads a pre-built engagement, and runs the full kill chain autonomously: port scan → vsftpd exploit → Sliver C2 implant → credential harvesting → internal recon.
-
----
-
 ## 💖 Support Decepticon
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-Decepticon-red?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)
