@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Sliver C2 Server — modular team server container.
 # Runs sliver-server in daemon mode (gRPC listener for operator clients).
 # Starts by default with: docker compose up -d
@@ -7,7 +8,14 @@ FROM kalilinux/kali-rolling@sha256:a3849f99f9f187122de4822341c49e55d250a771f2dbc
 
 # Fix SSL: the pinned image may have expired CA certs, so bootstrap
 # ca-certificates over HTTP first, then switch back to HTTPS.
-RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
+#
+# BuildKit cache mounts mirror the sandbox image — see that Dockerfile
+# for the rationale. Cache id is distinct so c2-sliver and sandbox
+# don't share an apt-lists race.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=c2-sliver-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=c2-sliver-apt-lists \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
     sed -i 's|https://|http://|g' /etc/apt/sources.list* 2>/dev/null; \
     find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|https://|http://|g' {} + 2>/dev/null; \
     apt-get update && \
@@ -16,9 +24,7 @@ RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
     sed -i 's|http://|https://|g' /etc/apt/sources.list* 2>/dev/null; \
     find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|http://|https://|g' {} + 2>/dev/null; \
     apt-get update && \
-    apt-get install -y --no-install-recommends sliver && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends sliver
 
 # Non-root operator user (UID 1000 — consistent with sandbox container)
 # Pre-create .sliver dir so Docker volume inherits correct ownership on first mount.

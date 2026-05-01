@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Pin digest for reproducible builds and stable GHA cache layers.
 # To update: docker pull kalilinux/kali-rolling:latest && docker inspect --format='{{index .RepoDigests 0}}' kalilinux/kali-rolling:latest
 FROM kalilinux/kali-rolling@sha256:a3849f99f9f187122de4822341c49e55d250a771f2dbc5cfd56a146017e0e6ae
@@ -5,7 +6,17 @@ FROM kalilinux/kali-rolling@sha256:a3849f99f9f187122de4822341c49e55d250a771f2dbc
 # Consolidated package install — one RUN layer to maximize cache hits
 # and minimize image size. Kali apt sandbox disabled so it doesn't fail
 # trying to drop privileges to the _apt user.
-RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
+#
+# BuildKit cache mounts on /var/cache/apt and /var/lib/apt/lists keep
+# .deb downloads + the apt index cached across builds (local rebuilds,
+# GHA cache-from=type=gha). The Debian-style /etc/apt/apt.conf.d/docker-clean
+# auto-purge is disabled inline so cached .debs survive between RUN steps,
+# and the trailing apt-get clean is gone — the cache mount paths aren't
+# part of the image layer, so leaving them populated costs zero image MB.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=sandbox-apt-lists \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
     sed -i 's|https://|http://|g' /etc/apt/sources.list* 2>/dev/null; \
     find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's|https://|http://|g' {} + 2>/dev/null; \
     apt-get update && \
@@ -41,9 +52,7 @@ RUN echo "APT::Sandbox::User \"root\";" > /etc/apt/apt.conf.d/10sandbox && \
         nodejs \
         npm \
         # ── C2 client (connects to the separate c2-sliver server container) ──
-        sliver && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+        sliver
 
 # Configure tmux: 50K line scrollback buffer to prevent output truncation
 RUN echo "set-option -g history-limit 50000" > /root/.tmux.conf
