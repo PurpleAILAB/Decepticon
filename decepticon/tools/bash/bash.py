@@ -196,55 +196,22 @@ async def bash(
     background: bool = False,
     description: str = "",
 ) -> str:
-    """Execute a bash command inside the isolated Docker sandbox (Kali Linux).
+    """Execute a bash command in a persistent tmux session inside the Docker sandbox.
 
-    WHAT: Runs shell commands in a persistent tmux session inside the Docker container.
-    Each session maintains state (cwd, env vars, background processes) across calls.
-    Long-running commands (>60s) are automatically converted to background mode —
-    the agent can continue working and check results later.
-
-    WHEN TO USE:
-    - Running recon tools: nmap, dig, whois, subfinder, curl, netcat
-    - File operations inside sandbox: cat, ls, grep on /workspace files
-    - Installing missing packages: apt-get install -y <pkg>
-    - Checking a parallel session: bash(command="", session="scan-1")
-
-    RETURNS:
-    - Command output (stdout). On failure, exit code + semantic hint appended
-      (e.g., "Exit code: 127 — command not found").
-    - For large outputs (>15K chars): auto-saved to /workspace/.scratch/ with
-      preview returned. Use read_file or grep to access full content.
-    - [BACKGROUND]: Command started in session. Do NOT check immediately — do other work first.
-    - [AUTO-BACKGROUND]: Command was running >60s and auto-converted to background.
-      Check later with bash(command="", session="<name>").
-    - [SIZE LIMIT]: Output exceeded 5M chars; command was interrupted.
-      Redirect output to a file: command > /workspace/output.txt
-    - [TIMEOUT]: Session is now OCCUPIED. Use a DIFFERENT session for new commands.
-    - [IDLE]: Session ready, no running process (when checking a session with empty command).
-    - [RUNNING]: Session has active output (when checking a session with empty command).
-
-    ERROR RECOVERY:
-    - [TIMEOUT] → Session occupied. Use a different session name for new commands.
-      Check the timed-out session later: bash(command="", session="<same>")
-    - Exit code 126 → Permission denied. Try with sudo or check file path
-    - Exit code 127 → Command not found. Install: apt-get install -y <pkg>
-    - Exit code 137 → Process killed (OOM or size limit). Redirect output to file
+    See the <BASH_TOOLS> system-prompt block for tool semantics, return-value
+    taxonomy, and exit-code hints — this docstring covers parameters only.
 
     Args:
-        command: Shell command to execute. Leave empty to read current screen output of the session.
-        is_input: ONLY set True when a PREVIOUS command in this session is waiting for input.
-            Use for: interactive responses ('y', 'n'), passwords, or control signals ('C-c', 'C-z', 'C-d').
-            NEVER set True when starting a new command.
-        session: Tmux session name for parallel execution. Example: session="scan-1" and session="scan-2"
-            run two scans concurrently. Default "main" for sequential work.
-        timeout: Max seconds to wait for command completion (default 120). Increase for long scans.
-            Note: commands running >60s may be auto-backgrounded regardless of this value.
-        background: Set True to start a long-running command without waiting for completion.
-            The command runs in the named session. Check results later with bash(session="<name>").
-            ALWAYS use a dedicated session name (not "main") with background=True.
-            Example: bash(command="nmap -sV target", session="nmap", background=True)
-        description: Short activity description for UI display (e.g., "Scanning target ports").
-            Optional — helps operators monitor agent activity in real-time.
+        command: Shell command. Leave empty to read current screen output of the session.
+        is_input: Set True ONLY when an existing command in this session is waiting
+            for input (interactive prompt, password, or control sequence like
+            'C-c' / 'C-z' / 'C-d'). Never True when starting a new command.
+        session: Tmux session name. Different names run in parallel; same name shares cwd.
+        timeout: Max seconds to wait for completion (default 120). Commands exceeding
+            60s are auto-backgrounded regardless.
+        background: Start a long-running command without waiting. Use a dedicated
+            session name (not "main"). Check results later with bash_output.
+        description: Short label for UI display.
     """
     if _sandbox is None:
         raise RuntimeError("DockerSandbox not initialized. Call set_sandbox() first.")

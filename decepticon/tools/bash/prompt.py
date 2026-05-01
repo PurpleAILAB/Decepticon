@@ -7,7 +7,7 @@ not here — keeping this file focused on tool semantics.
 
 from __future__ import annotations
 
-_CORE_PROMPT = """\
+BASH_PROMPT = """\
 <BASH_TOOLS>
 ## Sandbox Execution Tools
 
@@ -100,10 +100,3 @@ it echoes content back as tool output and wastes context.
 </BASH_TOOLS>"""
 
 
-def get_bash_prompt(role: str | None = None) -> str:
-    """Return the bash tool prompt.
-
-    The ``role`` parameter is accepted for backward compatibility but is
-    ignored — workflow guidance now lives in each agent's persona prompt.
-    """
-    return _CORE_PROMPT

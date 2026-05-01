@@ -117,9 +117,9 @@ def _get_tool_prompt(tool_name: str, role: str | None = None) -> str:
     variations.
     """
     if tool_name == "bash":
-        from decepticon.tools.bash.prompt import get_bash_prompt
+        from decepticon.tools.bash.prompt import BASH_PROMPT
 
-        return get_bash_prompt(role)
+        return BASH_PROMPT
 
     # Fallback: try reading from the prompts directory (backward compat)
     return _read_fragment(tool_name)
