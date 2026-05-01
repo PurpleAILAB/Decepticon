@@ -40,10 +40,10 @@ OSS install targets and what we test against:
 
 | Environment | Launcher binary | Notes |
 |---|---|---|
-| **macOS arm64** (Apple Silicon, M1–M4) | `darwin/arm64` | Sandbox image (Kali base) is amd64-only — Docker Desktop runs it under Rosetta. Enable "Use Rosetta for x86_64/amd64 emulation" in Docker Desktop → General. |
+| **macOS arm64** (Apple Silicon, M1–M4) | `darwin/arm64` | Native. Every container image is published multi-arch (linux/amd64 + linux/arm64), so Docker Desktop pulls the arm64 manifest and runs without Rosetta. |
 | **macOS amd64** (Intel) | `darwin/amd64` | Native. |
 | **Linux amd64** (Ubuntu, Debian, Fedora, Kali) | `linux/amd64` | Native. |
-| **Linux arm64** (Raspberry Pi 5, Ampere, AWS Graviton, Asahi) | `linux/arm64` | Sandbox image runs under QEMU emulation. |
+| **Linux arm64** (Raspberry Pi 5, Ampere, AWS Graviton, Asahi) | `linux/arm64` | Native — same multi-arch images as Apple Silicon. |
 | **WSL2** (Windows + Ubuntu/Kali on WSL2) | `linux/amd64` | Use Docker Desktop with the WSL2 backend, or install Docker natively inside the WSL distro. See [WSL2 notes](#wsl2-notes) below. |
 
 Native Windows (PowerShell / cmd) is **not supported** — install WSL2 first.
@@ -845,10 +845,15 @@ curl -s https://api.anthropic.com/v1/messages \
 
 **Apple Silicon (M1/M2/M3/M4): "no matching manifest for linux/arm64/v8"**
 
-This happens when Docker tries to pull an image that only exists for `linux/amd64` (like the Kali-based sandbox).
+Every container image is published multi-arch (linux/amd64 + linux/arm64), so this error should not reproduce on a fresh install. If you do hit it, you're almost certainly running an old `docker-compose.yml` from a previous install.
 
-**Solution:**
-The `docker-compose.yml` is pre-configured to force `platform: linux/amd64` for these services. Ensure you are using the latest version of the file. If you still encounter issues, enable "Use Rosetta for x86_64/amd64 emulation" in Docker Desktop settings.
+**Solution:** pull the latest config files:
+
+```bash
+decepticon update
+```
+
+If your host arch is *not* amd64 or arm64 (rare — armv7, ppc64le, ...), the manifest list won't match. Force the amd64 fallback by adding `platform: linux/amd64` under the `sandbox:` and `c2-sliver:` services in `~/.decepticon/docker-compose.yml` and enable "Use Rosetta for x86_64/amd64 emulation" in Docker Desktop settings (or QEMU on Linux).
 
 **Services won't start:**
 
