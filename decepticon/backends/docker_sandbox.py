@@ -293,7 +293,7 @@ class TmuxSessionManager:
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
-                output, exit_code, cwd = _extract_output(screen, command, initial_count)
+                output, exit_code, cwd = _extract_output(screen, command)
                 log.info("Command completed: exit=%s cwd=%s [%s]", exit_code, cwd, command[:50])
                 self._clear_screen()
                 result = _truncate(output).strip()
@@ -454,7 +454,7 @@ class TmuxSessionManager:
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
-                output, exit_code, cwd = _extract_output(screen, command, initial_count)
+                output, exit_code, cwd = _extract_output(screen, command)
                 log.info("Command completed: exit=%s cwd=%s [%s]", exit_code, cwd, command[:50])
                 await asyncio.to_thread(self._clear_screen)
                 result = _truncate(output).strip()
@@ -591,7 +591,7 @@ def _extract_interactive_output(screen: str, baseline: str) -> str:
     return "\n".join(new_lines) if new_lines else screen.strip()
 
 
-def _extract_output(screen: str, command: str, initial_count: int) -> tuple[str, int, str]:
+def _extract_output(screen: str, command: str) -> tuple[str, int, str]:
     matches = list(PS1_PATTERN.finditer(screen))
     if not matches:
         return screen, -1, ""

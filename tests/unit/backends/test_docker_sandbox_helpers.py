@@ -76,7 +76,7 @@ class TestPS1Pattern:
 class TestExtractOutput:
     def test_single_marker_returns_full_screen_minus_marker(self) -> None:
         screen = "command output line 1\nline 2\n[DCPTN:0:/workspace] "
-        out, exit_code, cwd = _extract_output(screen, command="ls", initial_count=0)
+        out, exit_code, cwd = _extract_output(screen, command="ls")
         assert exit_code == 0
         assert cwd == "/workspace"
         assert "line 1" in out
@@ -85,14 +85,14 @@ class TestExtractOutput:
 
     def test_two_markers_returns_slice_between(self) -> None:
         screen = "[DCPTN:0:/workspace] ls\nfile1.txt\nfile2.txt\n[DCPTN:0:/workspace] "
-        out, exit_code, cwd = _extract_output(screen, command="ls", initial_count=1)
+        out, exit_code, cwd = _extract_output(screen, command="ls")
         assert exit_code == 0
         assert cwd == "/workspace"
         assert "file1.txt" in out
         assert "file2.txt" in out
 
     def test_no_marker_returns_screen_with_neg_one(self) -> None:
-        out, exit_code, cwd = _extract_output("plain text", command="x", initial_count=0)
+        out, exit_code, cwd = _extract_output("plain text", command="x")
         assert exit_code == -1
         assert cwd == ""
         assert out == "plain text"
@@ -101,20 +101,20 @@ class TestExtractOutput:
         # Single echo of the command (typical tmux capture):
         # the helper strips exactly one leading line if it ends with the command.
         screen = "echo hi\nhi\n[DCPTN:0:/workspace] "
-        out, exit_code, _ = _extract_output(screen, command="echo hi", initial_count=0)
+        out, exit_code, _ = _extract_output(screen, command="echo hi")
         assert exit_code == 0
         lines = out.split("\n")
         assert lines == ["hi"]
 
     def test_does_not_strip_when_first_line_unrelated(self) -> None:
         screen = "unrelated banner\nhi\n[DCPTN:0:/workspace] "
-        out, _, _ = _extract_output(screen, command="echo hi", initial_count=0)
+        out, _, _ = _extract_output(screen, command="echo hi")
         # First line does not end with command — must be preserved
         assert out.split("\n")[0] == "unrelated banner"
 
     def test_nonzero_exit_code(self) -> None:
         screen = "error: file not found\n[DCPTN:1:/workspace] "
-        out, exit_code, cwd = _extract_output(screen, command="cat missing", initial_count=0)
+        out, exit_code, cwd = _extract_output(screen, command="cat missing")
         assert exit_code == 1
         assert "error" in out
 
