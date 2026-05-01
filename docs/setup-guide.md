@@ -115,8 +115,62 @@ OPENAI_API_KEY=sk-proj-...
 
 | Provider | Required Env Vars |
 |----------|-------------------|
-| Ollama | `OLLAMA_API_BASE` (e.g., `http://host.docker.internal:11434`) |
+| Ollama (local) | `OLLAMA_API_BASE` + `OLLAMA_MODEL` — see [Local LLM (Ollama)](#local-llm-ollama) below |
 | Custom gateway | `CUSTOM_OPENAI_API_KEY`, `CUSTOM_OPENAI_API_BASE` |
+
+---
+
+### Local LLM (Ollama)
+
+Run Decepticon offline against a local Ollama server — no cloud API
+billing, no key.
+
+**Setup:**
+
+1. Install Ollama on your host: <https://ollama.com/download>.
+2. Pull any model — for tool-heavy agents pick one with strong function
+   calling (Qwen3-Coder, Llama 3.3, DeepSeek-R1):
+   ```bash
+   ollama pull qwen3-coder:30b
+   ```
+3. Start the Ollama server (it usually launches automatically):
+   ```bash
+   ollama serve
+   ```
+4. Run `decepticon onboard` and pick **"Local LLM (Ollama)"**. The
+   wizard prompts for:
+   - `OLLAMA_API_BASE` — default `http://host.docker.internal:11434`
+     works on Mac, Windows, and Linux Docker (the litellm service has
+     `extra_hosts: host.docker.internal:host-gateway`)
+   - `OLLAMA_MODEL` — the tag you pulled (e.g. `qwen3-coder:30b`)
+5. Run `decepticon`. The launcher probes `<URL>/api/tags` and warns if
+   Ollama isn't reachable — startup proceeds either way so you can
+   launch Ollama afterwards.
+
+**How it works:**
+
+- LiteLLM dynamically registers `ollama_chat/<OLLAMA_MODEL>` at proxy
+  startup (`config/litellm_dynamic_config.py`). No yaml edit needed.
+- `ollama_chat/` (not `ollama/`) routes to Ollama's `/api/chat`
+  endpoint — the only one that supports tool/function calling, which
+  every Decepticon agent depends on.
+- The `ollama_local` AuthMethod collapses HIGH/MID/LOW tiers to the
+  same model — local hardware can't usually run three different models
+  in parallel. Mix with cloud providers if you want tier degradation:
+  set `DECEPTICON_AUTH_PRIORITY=ollama_local,anthropic_api` to lead
+  with local and fall back to Anthropic on local-side errors.
+
+**Per-role overrides:**
+
+If you do have the GPU headroom, override individual agents to
+different Ollama models without touching yaml:
+
+```bash
+DECEPTICON_MODEL_DECEPTICON=ollama_chat/qwen3-coder:30b   # HIGH agents
+DECEPTICON_MODEL_RECON=ollama_chat/llama3.2:3b             # LOW agents
+```
+
+The dynamic config registrar picks these up at startup.
 
 ---
 

@@ -1,6 +1,6 @@
 # Models
 
-Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, and MiniMax behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
+Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, **local Ollama**, plus six subscription OAuth handlers (Claude Code / ChatGPT / Gemini Advanced / Copilot Pro / SuperGrok / Perplexity Pro) behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
 
 You don't pick agent-by-agent models manually. You tell Decepticon which credentials you have, in what order of preference; it builds the chain.
 
@@ -13,22 +13,33 @@ Three orthogonal axes:
 | Axis        | Values                                                                                                | Decided by              |
 |-------------|--------------------------------------------------------------------------------------------------------|--------------------------|
 | **Tier**    | `HIGH` / `MID` / `LOW`                                                                                 | Agent (e.g. orchestrator → HIGH, recon → LOW), overridable by profile |
-| **AuthMethod** | `anthropic_oauth` / `anthropic_api` / `openai_api` / `google_api` / `minimax_api`                  | Your credentials inventory |
+| **AuthMethod** | API: `anthropic_api` / `openai_api` / `google_api` / `minimax_api` / `deepseek_api` / `xai_api` / `mistral_api` / `openrouter_api` / `nvidia_api`<br/>OAuth: `anthropic_oauth` / `openai_oauth` / `google_oauth` / `copilot_oauth` / `grok_oauth` / `perplexity_oauth`<br/>Local: `ollama_local` | Your credentials inventory |
 | **Profile** | `eco` / `max` / `test`                                                                                 | `DECEPTICON_MODEL_PROFILE` |
 
 For each agent, Decepticon resolves a tier (from the profile) and walks your AuthMethod priority list, emitting the model identifier that method provides at that tier. The first hit is the primary; **every remaining hit is queued as a fallback in priority order**. langchain's `ModelFallbackMiddleware` walks the queue on primary failure, trying each method in turn until one succeeds.
 
 ### Tier × AuthMethod matrix
 
-|                     | **HIGH**                       | **MID**                        | **LOW**                            |
-|---------------------|--------------------------------|--------------------------------|------------------------------------|
-| `anthropic_api`     | `anthropic/claude-opus-4-7`    | `anthropic/claude-sonnet-4-6`  | `anthropic/claude-haiku-4-5`       |
-| `anthropic_oauth`   | `auth/claude-opus-4-7`         | `auth/claude-sonnet-4-6`       | `auth/claude-haiku-4-5`            |
-| `openai_api`        | `openai/gpt-5.5`               | `openai/gpt-5.4`               | `openai/gpt-5-nano`              |
-| `google_api`        | `gemini/gemini-2.5-pro`        | `gemini/gemini-2.5-flash`      | `gemini/gemini-2.5-flash-lite`     |
-| `minimax_api`       | `minimax/MiniMax-M2.5`         | `minimax/MiniMax-M2.5-lightning`         | — *(falls through to next method)* |
+|                       | **HIGH**                                  | **MID**                                       | **LOW**                                       |
+|-----------------------|-------------------------------------------|-----------------------------------------------|-----------------------------------------------|
+| `anthropic_api`       | `anthropic/claude-opus-4-7`               | `anthropic/claude-sonnet-4-6`                 | `anthropic/claude-haiku-4-5`                  |
+| `anthropic_oauth`     | `auth/claude-opus-4-7`                    | `auth/claude-sonnet-4-6`                      | `auth/claude-haiku-4-5`                       |
+| `openai_api`          | `openai/gpt-5.5`                          | `openai/gpt-5.4`                              | `openai/gpt-5-nano`                           |
+| `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5-nano`                             |
+| `google_api`          | `gemini/gemini-2.5-pro`                   | `gemini/gemini-2.5-flash`                     | `gemini/gemini-2.5-flash-lite`                |
+| `google_oauth`        | `gemini-sub/gemini-2.5-pro`               | `gemini-sub/gemini-2.5-flash`                 | — *(falls through)*                           |
+| `minimax_api`         | `minimax/MiniMax-M2.5`                    | `minimax/MiniMax-M2.5-lightning`              | — *(falls through)*                           |
+| `deepseek_api`        | `deepseek/deepseek-reasoner`              | `deepseek/deepseek-chat`                      | `deepseek/deepseek-chat`                      |
+| `xai_api`             | `xai/grok-3`                              | `xai/grok-3-mini`                             | — *(falls through)*                           |
+| `grok_oauth`          | `grok-sub/grok-3`                         | `grok-sub/grok-3-mini`                        | — *(falls through)*                           |
+| `mistral_api`         | `mistral/mistral-large-latest`            | `mistral/codestral-latest`                    | — *(falls through)*                           |
+| `openrouter_api`      | `openrouter/anthropic/claude-opus-4-7`    | `openrouter/anthropic/claude-sonnet-4-6`      | `openrouter/anthropic/claude-haiku-4-5`       |
+| `nvidia_api`          | `nvidia_nim/meta/llama-3.3-70b-instruct`  | `nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct` | `nvidia_nim/meta/llama-3.2-3b-instruct` |
+| `copilot_oauth`       | `copilot/gpt-4o`                          | `copilot/o1`                                  | `copilot/o3-mini`                             |
+| `perplexity_oauth`    | `pplx-sub/sonar-pro`                      | `pplx-sub/sonar`                              | — *(falls through)*                           |
+| `ollama_local`        | `ollama_chat/<OLLAMA_MODEL>`              | `ollama_chat/<OLLAMA_MODEL>`                  | `ollama_chat/<OLLAMA_MODEL>`                  |
 
-When a method has no model at the requested tier (MiniMax LOW), the resolver skips it and continues with the next method in your priority list.
+`ollama_local` collapses across tiers — local GPUs typically run a single model — and the slug is whatever you pulled (e.g. `qwen3-coder:30b`). When a method has no model at the requested tier (MiniMax LOW, Mistral LOW, ...), the resolver skips it and continues with the next method in your priority list.
 
 ---
 
@@ -61,8 +72,10 @@ For development / CI. Forces every agent to the cheapest tier (Haiku-class).
 Your inventory is built at startup from environment variables, written by `decepticon onboard`.
 
 ```bash
-# Priority order (first = preferred). Defaults to:
-#   anthropic_oauth,anthropic_api,openai_api,google_api,minimax_api
+# Priority order (first = preferred). Empty value uses the default fallback
+# order: anthropic_oauth, anthropic_api, openai_oauth, openai_api,
+#        google_api, minimax_api, deepseek_api, xai_api, mistral_api,
+#        openrouter_api, nvidia_api, ollama_local
 DECEPTICON_AUTH_PRIORITY=anthropic_oauth,openai_api
 
 # Set true if you have an active Claude Code OAuth subscription
@@ -75,6 +88,15 @@ ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 GEMINI_API_KEY=AIza...
 MINIMAX_API_KEY=eyJ...
+DEEPSEEK_API_KEY=sk-...
+XAI_API_KEY=xai-...
+MISTRAL_API_KEY=...
+OPENROUTER_API_KEY=sk-or-...
+NVIDIA_API_KEY=nvapi-...
+
+# Local LLM (no API key — point at your Ollama server)
+OLLAMA_API_BASE=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3-coder:30b
 ```
 
 The factory walks the priority list, drops methods whose detection check fails (placeholder API key, or `DECEPTICON_AUTH_CLAUDE_CODE=false`), and uses what's left.
@@ -145,6 +167,46 @@ OPENAI_API_KEY=sk-...
 
 Cross-provider fallback — when Anthropic hits a rate limit or outage, OpenAI takes over seamlessly.
 
+### Local Ollama only (offline / cost-free)
+
+```
+DECEPTICON_AUTH_PRIORITY=ollama_local
+OLLAMA_API_BASE=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3-coder:30b
+```
+
+| Agent (tier)     | Primary                          | Fallback |
+|------------------|----------------------------------|----------|
+| decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | —        |
+| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | —        |
+| recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | —        |
+
+Same model across all tiers because local hardware typically can't run
+three different models simultaneously. The launcher probes Ollama's
+`/api/tags` at startup and warns if it's unreachable, but doesn't block
+— you can launch Ollama after Decepticon's stack comes up. The
+`ollama_chat/` provider routes to Ollama's `/api/chat` endpoint, the
+only one that supports tool/function calling.
+
+### Local Ollama + cloud fallback
+
+```
+DECEPTICON_AUTH_PRIORITY=ollama_local,anthropic_api
+OLLAMA_API_BASE=http://host.docker.internal:11434
+OLLAMA_MODEL=qwen3-coder:30b
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+| Agent (tier)     | Primary                          | Fallback                       |
+|------------------|----------------------------------|--------------------------------|
+| decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-opus-4-7`    |
+| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-sonnet-4-6`  |
+| recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-haiku-4-5`   |
+
+Local model handles routine work; when the local model fails (OOM,
+context overflow, hardware fault), Anthropic takes over for that
+request only.
+
 ### MiniMax-only (LOW gap)
 
 ```
@@ -192,6 +254,23 @@ To wire in a new provider model:
 3. If introducing a new AuthMethod, also add it to `AuthMethod`, the factory's `_API_METHOD_ENV` map, and the onboard wizard's option list.
 
 Tests in `tests/unit/llm/test_models.py` will catch dropped tiers or missing matrix entries.
+
+### Dynamic model registration (Ollama, custom gateways, ad-hoc overrides)
+
+You don't need to edit YAML to add an Ollama model. Set the env vars
+below and `litellm_dynamic_config.py` registers the route at proxy
+startup:
+
+| Env var | What it does |
+|---------|---|
+| `OLLAMA_MODEL=<tag>` + `OLLAMA_API_BASE=<url>` | Registers `ollama_chat/<tag>` automatically. Used by the `ollama_local` AuthMethod. |
+| `DECEPTICON_MODEL=<provider/model>` | Registers a global override (e.g. `groq/llama-3.3-70b-versatile`). |
+| `DECEPTICON_MODEL_<ROLE>=<provider/model>` | Per-role override (e.g. `DECEPTICON_MODEL_RECON=ollama_chat/llama3.2`). |
+| `DECEPTICON_LITELLM_MODELS=<a,b,c>` | Bulk register multiple ids without editing YAML. |
+| `CUSTOM_OPENAI_API_BASE` + `CUSTOM_OPENAI_API_KEY` | OpenAI-compatible gateway. Use `custom/<model>` in the override env. |
+
+The proxy logs `[decepticon] registered N dynamic model route(s)` at
+startup so you can confirm what got picked up.
 
 ---
 
