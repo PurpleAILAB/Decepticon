@@ -78,6 +78,7 @@ demo.tape
 
 # Decepticon runtime data
 .decepticon/
+.dogfood/
 workspace/
 .bg-shell/
 

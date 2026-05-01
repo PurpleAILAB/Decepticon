@@ -149,6 +149,11 @@ services:
     build:
       context: .
       dockerfile: containers/langgraph.Dockerfile
+      args:
+        # Stamps pyproject.toml's version field at build time. Independent
+        # of the image tag selector above — VERSION can be unset locally
+        # (defaults to 0.0.0 sentinel) while the tag is still ":dev".
+        VERSION: ${VERSION:-0.0.0}
     container_name: decepticon-langgraph
     ports:
       - "127.0.0.1:${LANGGRAPH_PORT:-2024}:2024"
@@ -201,6 +206,8 @@ services:
     build:
       context: .
       dockerfile: containers/web.Dockerfile
+      args:
+        VERSION: ${VERSION:-0.0.0}
     container_name: decepticon-web
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
@@ -242,6 +249,8 @@ services:
     build:
       context: .
       dockerfile: containers/cli.Dockerfile
+      args:
+        VERSION: ${VERSION:-0.0.0}
     container_name: decepticon-cli
     stdin_open: true
     tty: true

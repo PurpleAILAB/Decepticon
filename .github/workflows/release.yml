@@ -11,6 +11,9 @@ permissions:
   attestations: write
 
 jobs:
+  # Source-tree version fields (pyproject.toml, package.json) carry a "0.0.0"
+  # sentinel — the real release version is stamped into images at Docker
+  # build time via --build-arg VERSION=<tag>. No pre-tag sync step needed.
   launcher:
     name: Build Go launcher binaries
     runs-on: ubuntu-latest
@@ -87,6 +90,12 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          # Stamp the package version into images at build time. langgraph +
+          # cli Dockerfiles read this ARG to sed-patch pyproject.toml /
+          # package.json from the "0.0.0" sentinel; litellm ignores it
+          # (no ARG declared) which is harmless.
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           # Only publish the version tag here — `:latest` is promoted by the
           # publish-release job AFTER every image has been verified on GHCR,
           # so a half-finished release never updates the moving tag.
@@ -374,6 +383,10 @@ jobs:
           platforms: linux/${{ matrix.platform }}
           provenance: mode=max
           sbom: true
+          # Stamps web + cli package.json with the release version at build
+          # time (web image embeds clients/cli for the terminal-server PTY).
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           outputs: type=image,name=ghcr.io/purpleailab/decepticon-web,push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=web-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=web-${{ matrix.platform }}

@@ -20,6 +20,12 @@ COPY pyproject.toml langgraph.json README.md ./
 COPY decepticon/ decepticon/
 COPY skills/ skills/
 
+# Stamp the package version from the git tag at build time. Source-tree
+# pyproject.toml carries a "0.0.0" sentinel; release.yml passes the real
+# version via --build-arg so the installed package metadata matches the tag.
+ARG VERSION=0.0.0
+RUN sed -i 's/^version = "[^"]*"/version = "'"$VERSION"'"/' pyproject.toml
+
 # Install Python dependencies (editable — synced source changes via docker compose watch
 # are immediately reflected without reinstall)
 RUN uv pip install --system -e "." && \

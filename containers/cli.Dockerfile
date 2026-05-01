@@ -6,6 +6,13 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY clients/cli/package.json clients/cli/
 COPY clients/shared/streaming/package.json clients/shared/streaming/
+
+# Stamp the package version from the git tag at build time. Source-tree
+# package.json carries a "0.0.0" sentinel; release.yml passes the real
+# version via --build-arg so the shipped package metadata matches the tag.
+ARG VERSION=0.0.0
+RUN sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/cli/package.json
+
 RUN npm ci --workspace=@decepticon/cli
 
 # Copy CLI and shared source and build

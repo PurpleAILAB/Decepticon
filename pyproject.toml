@@ -1,6 +1,10 @@
 [project]
 name = "decepticon"
-version = "1.0.15"
+# Sentinel — replaced with the git tag at Docker build time via ARG VERSION
+# in containers/langgraph.Dockerfile. Source-tree value is intentionally
+# stable (not bumped per release) so contributors never need a manual
+# version commit before tagging.
+version = "0.0.0"
 description = "AI-powered autonomous red team testing framework"
 readme = "README.md"
 license = { text = "Apache-2.0" }

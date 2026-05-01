@@ -6,47 +6,43 @@ Run `make help` for a quick summary. Full reference below.
 
 ---
 
+## Pre-release Verification
+
+The primary purpose of this Makefile. Run these before tagging a release.
+
+| Target | Description |
+|--------|-------------|
+| `make dogfood` | Full OSS UX on local code: builds the Go launcher + every service image (`:dev` tag), wires up an isolated `$DECEPTICON_HOME` under `.dogfood/`, then runs the launcher. The onboard wizard, engagement picker, `compose up`, health checks, and CLI all execute exactly as a `curl \| bash` install. |
+| `make smoke` | Compose-only smoke (no launcher, no onboard wizard) — fastest possible release-shape check. Replicates only the launcher's `compose up` step: clean → build images locally → `up -d --no-build --wait` → health checks. Use when you only changed the compose stack. |
+| `make launcher` | Build the Go launcher binary at `clients/launcher/bin/decepticon`. Embedded version is `dev`, which gates auto-update + config-sync inside the launcher. Invoked automatically by `make dogfood`. |
+
+`make dogfood` runs against an isolated `.dogfood/` directory so the user's real `~/.decepticon` is never touched. `make clean` purges both the compose volumes and `.dogfood/` when you want a fresh onboard.
+
+---
+
 ## Development
 
 | Target | Description |
 |--------|-------------|
 | `make dev` | Build all Docker images and start with hot-reload (`docker compose watch`) — source changes sync into containers automatically |
-| `make cli` | Open the interactive terminal UI inside Docker (forces a local rebuild before run) |
 | `make cli-dev` | Open the interactive terminal UI locally with hot-reload (Node) — backend stays in Docker |
 | `make web-dev` | Run the Next.js dev server locally with infra services in Docker |
 
 Typical contributor workflow:
 
 ```bash
-# Terminal 1 — start services with hot-reload
+# Day-to-day iteration: hot-reload
 make dev
 
-# Terminal 2 — open the interactive CLI
-make cli
+# Before opening a PR
+make quality
+
+# Before tagging a release
+make smoke      # fast check
+make dogfood    # full OSS UX
 ```
 
 The Web dashboard is part of the default Compose stack; after `make dev` it's reachable at <http://localhost:3000>.
-
----
-
-## Pre-release Verification
-
-| Target | Description |
-|--------|-------------|
-| `make smoke` | Replicates the OSS user start path on local code: clean → build images from local → `compose up -d --no-build --wait` → health checks. Use this before tagging a release. |
-
-The `up` flags (`--no-build --wait --wait-timeout`) match the launcher's `compose.Up` exactly, so smoke validates the same path an installed `decepticon` user takes — but with whatever code you have checked out instead of GHCR-published images.
-
----
-
-## Operations
-
-| Target | Description |
-|--------|-------------|
-| `make status` | Show running service status (`docker compose ps`) |
-| `make logs [SVC=service]` | Follow logs (default: `langgraph`). Override: `make logs SVC=litellm` |
-| `make health` | KG backend + Neo4j + Web health checks (broader than `decepticon kg-health`, which only checks the KG) |
-| `make clean` | Stop services and remove all volumes (parity with `decepticon remove`) |
 
 ---
 
@@ -80,10 +76,21 @@ CLI tests are part of `make quality-cli`. To run them in isolation: `npm run tes
 | `make web-build` | Build the web dashboard (also generates the Prisma client) |
 | `make web-lint` | Lint the web dashboard (ESLint) |
 | `make web-migrate [NAME=name]` | Run a Prisma dev migration |
-| `make web-ee` | Link the Enterprise Edition package (`@decepticon/ee`) |
+| `make web-ee` | Link the Enterprise Edition package (`@decepticon/ee`) — dev-only, not part of the OSS flow |
 | `make web-oss` | Unlink the EE package — revert to OSS mode |
 
 To regenerate just the Prisma client (without a full build): `cd clients/web && npx prisma generate`.
+
+---
+
+## Operations
+
+| Target | Description |
+|--------|-------------|
+| `make status` | Show running service status (`docker compose ps`) |
+| `make logs [SVC=service]` | Follow logs (default: `langgraph`). Override: `make logs SVC=litellm` |
+| `make health` | KG backend + Neo4j + Web health checks (broader than `decepticon kg-health`, which only checks the KG) |
+| `make clean` | Full teardown: stop services, remove volumes, **and remove `.dogfood/`**. Use this when you want the next `make dogfood` to start from a fresh onboard wizard. |
 
 ---
 
@@ -92,3 +99,16 @@ To regenerate just the Prisma client (without a full build): `cd clients/web && 
 | Target | Description |
 |--------|-------------|
 | `make benchmark [ARGS="--level 1"]` | Run the benchmark suite locally |
+
+---
+
+## Versioning (no manual step)
+
+There is no `make sync-version` or pre-tag commit. Source-tree version fields carry a `"0.0.0"` sentinel in `pyproject.toml`, `clients/cli/package.json`, and `clients/web/package.json`. The release workflow stamps the real tag into the images at Docker build time via `--build-arg VERSION=<tag>`. The Go launcher is similarly stamped via GoReleaser ldflags.
+
+To cut a release:
+
+```bash
+make quality && make smoke && make dogfood
+git tag v1.0.16 && git push origin v1.0.16
+```

@@ -74,10 +74,17 @@ This downloads the `decepticon` CLI binary for your platform and places it in yo
 
 ### Manual Install (from source)
 
+`make dogfood` reproduces the OSS launcher flow against locally-built images
+— launcher onboard wizard, engagement picker, compose up, health checks,
+and the CLI all execute exactly as the `curl | bash` install path. The
+launcher and every service image come from the current checkout (tag
+`:dev`), with an isolated `$DECEPTICON_HOME` under `.dogfood/` so your
+real `~/.decepticon` is untouched.
+
 ```bash
 git clone https://github.com/PurpleAILAB/Decepticon.git
 cd Decepticon
-make install
+make dogfood
 ```
 
 ### Verify Installation

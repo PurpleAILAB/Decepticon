@@ -16,14 +16,14 @@ cd Decepticon
 cp .env.example .env
 # Edit .env — set at least one provider key, or set OLLAMA_API_BASE + OLLAMA_MODEL for local Ollama
 
-# Start services with hot-reload
+# Start services with hot-reload (daily dev loop)
 make dev
 
-# Open the interactive CLI (in a separate terminal)
-make cli
+# Or run the full OSS UX (launcher → onboard → CLI) on local code
+make dogfood
 ```
 
-`make dev` uses `docker compose watch` — source changes sync into containers automatically without rebuilding.
+`make dev` uses `docker compose watch` — source changes sync into containers automatically without rebuilding. `make dogfood` is the release-shape verification path; see [makefile-reference.md](makefile-reference.md) for the full target list.
 
 ---
 

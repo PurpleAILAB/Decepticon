@@ -42,6 +42,14 @@ COPY clients/web ./clients/web
 COPY clients/cli ./clients/cli
 COPY clients/shared ./clients/shared
 
+# Stamp the package version from the git tag at build time. Source-tree
+# package.json files carry a "0.0.0" sentinel; release.yml passes the real
+# version via --build-arg. Both web (this image's surface) and cli (spawned
+# by the terminal server via PTY) need the patched value.
+ARG VERSION=0.0.0
+RUN sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/web/package.json && \
+    sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/cli/package.json
+
 WORKDIR /app/clients/web
 
 RUN npx prisma generate
