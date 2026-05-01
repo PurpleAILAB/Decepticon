@@ -71,7 +71,7 @@ Decepticon은 통제된 Docker 환경에서 운영되므로 OPSEC 기반 인프�
 | **팀 서버** | C2 서버 운영 | **C2 컨테이너** (Sliver, Havoc 등) | docker compose profile로 교체 가능 |
 | **리다이렉터** | 트래픽 은닉 | **없음** | 통제 환경이므로 불필요 |
 | **비콘/Implant** | 타겟 내 원격 에이전트 | **Sliver beacon / Havoc demon** | PostExploit 단계에서 배포 |
-| **타겟 네트워크** | 공격 대상 | **Victim 컨테이너** (msf2, DVWA 등) | sandbox-net에서 접근 가능 |
+| **타겟 네트워크** | 공격 대상 | **Victim 컨테이너** (취약 타겟 호스트) | sandbox-net에서 접근 가능 |
 
 ### 2.2 설계 결정: C2 분리 + 리다이렉터 제외
 
@@ -126,16 +126,13 @@ graph TB
             end
 
             subgraph Targets["Victim Containers"]
-                MSF2["Metasploitable 2<br/>(beacon 실행)"]
-                DVWA["DVWA<br/>(beacon 실행)"]
-                CUSTOM["Custom Target<br/>(확장 가능)"]
+                TARGET["취약 타겟 호스트<br/>(beacon 실행)"]
             end
 
             SOCK -->|docker exec| Kali
             CLIENT -->|gRPC :31337| C2_ENGINE
             TOOLS -->|직접 실행| Targets
-            LISTENER <-->|beacon callback| MSF2
-            LISTENER <-->|beacon callback| DVWA
+            LISTENER <-->|beacon callback| TARGET
         end
 
         WS["Bind Mount<br/>./workspace ↔ /workspace"]
@@ -159,14 +156,12 @@ graph LR
     subgraph sandbox-net
         E[Kali Sandbox]
         F[C2 Server]
-        G[msf2]
-        H[DVWA]
+        T[취약 타겟 호스트]
     end
 
     C -.->|docker.sock<br/>docker exec| E
     E -->|sliver-client<br/>gRPC| F
-    F <-->|beacon| G
-    F <-->|beacon| H
+    F <-->|beacon| T
 
     style decepticon-net fill:#1a1a2e,stroke:#e94560,color:#fff
     style sandbox-net fill:#0f3460,stroke:#e94560,color:#fff
@@ -221,7 +216,7 @@ graph LR
 
 ```bash
 # Sliver로 engagement 시작
-docker compose --profile c2-sliver --profile victims up -d
+docker compose --profile c2-sliver up -d
 
 # C2 교체: Sliver → Havoc
 docker compose --profile c2-sliver stop c2-sliver
@@ -309,19 +304,19 @@ Recon 에이전트는 Kali sandbox에서 타겟을 향해 직접 도구를 실�
 sequenceDiagram
     participant LG as LangGraph
     participant K as Kali Sandbox
-    participant T as msf2 (Target)
+    participant T as Target
 
-    LG->>K: docker exec: bash("nmap -sV msf2")
+    LG->>K: docker exec: bash("nmap -sV target")
     K->>T: TCP SYN scan
     T-->>K: port 21,22,80,445 open
     K-->>LG: scan results
 
-    LG->>K: docker exec: bash("nikto -h http://msf2")
+    LG->>K: docker exec: bash("nikto -h http://target")
     K->>T: HTTP vulnerability scan
     T-->>K: findings
     K-->>LG: vulnerabilities found
 
-    Note over LG: 결과 → /workspace/recon/report_msf2.md
+    Note over LG: 결과 → /workspace/recon/report_target.md
 ```
 
 #### Phase 3: Exploitation (직접 실행 + 비콘 배포)
@@ -333,10 +328,10 @@ sequenceDiagram
     participant LG as LangGraph
     participant K as Kali Sandbox
     participant C2 as C2 Server (Sliver)
-    participant T as msf2 (Target)
+    participant T as Target
 
     Note over K: Phase 3a: 취약점 공격 (직접 실행)
-    LG->>K: docker exec: bash("sqlmap -u 'http://msf2/...'")
+    LG->>K: docker exec: bash("sqlmap -u 'http://target/...'")
     K->>T: SQL Injection
     T-->>K: shell 획득
 
@@ -360,7 +355,7 @@ sequenceDiagram
     participant LG as LangGraph
     participant K as Kali (sliver-client)
     participant C2 as C2 Server (Sliver)
-    participant B as Beacon (msf2)
+    participant B as Beacon (target)
 
     Note over K,B: C2 클라이언트 → 서버 → 비콘 경로
 

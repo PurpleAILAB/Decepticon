@@ -458,7 +458,6 @@ decepticon                  # Launch platform (all services + interactive CLI)
 decepticon onboard          # Setup wizard (auth, provider, profile)
 decepticon onboard --reset  # Re-run setup from scratch
 decepticon config           # Edit ~/.decepticon/.env in $EDITOR
-decepticon demo             # Run demo engagement (Metasploitable 2)
 decepticon stop             # Stop all services, keep data
 decepticon status           # Show running services
 decepticon logs [service]   # Follow service logs
@@ -659,12 +658,6 @@ decepticon           # Shows engagement picker → select existing
 decepticon stop
 # Edit ~/.decepticon/.env → change DECEPTICON_MODEL_PROVIDER or API keys
 decepticon
-```
-
-**Run the demo (no setup needed beyond API key):**
-
-```bash
-decepticon demo      # Launches Metasploitable 2 + full autonomous kill chain
 ```
 
 **Check service health:**

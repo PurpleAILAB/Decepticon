@@ -61,7 +61,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
   // Increment to force <Static> re-mount on session switch (resets its internal render history)
   const [sessionKey, setSessionKey] = useState(0);
 
-  // Auto-submit initial message (e.g. demo mode)
+  // Auto-submit initial message when DECEPTICON_INITIAL_MESSAGE env is set
   const autoStarted = useRef(false);
   useEffect(() => {
     if (!initialMessage || autoStarted.current) return;

@@ -46,7 +46,6 @@ clients/web/.env.*
 # ── Heavy directories not needed by any Dockerfile ──────────
 # (skills/ IS needed by langgraph.Dockerfile — do not exclude)
 reference
-demo
 assets
 tests
 workspace
