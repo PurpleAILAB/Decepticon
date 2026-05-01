@@ -45,7 +45,7 @@ The `up` flags (`--no-build --wait --wait-timeout`) match the launcher's `compos
 |--------|-------------|
 | `make status` | Show running service status (`docker compose ps`) |
 | `make logs [SVC=service]` | Follow logs (default: `langgraph`). Override: `make logs SVC=litellm` |
-| `make health` | KG backend + Neo4j + Web health checks (parity with `decepticon health`) |
+| `make health` | KG backend + Neo4j + Web health checks (broader than `decepticon kg-health`, which only checks the KG) |
 | `make clean` | Stop services and remove all volumes (parity with `decepticon remove`) |
 
 ---

@@ -1,6 +1,6 @@
 # Decepticon — XBOW Level-3 Benchmark Passes
 
-Decepticon's red-team agent system on the [XBOW validation benchmarks](https://github.com/xbow-engineering/validation-benchmarks) — Level 3 (highest difficulty) confirmed passes.
+Decepticon's red-team agent system on the [XBOW validation benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) — Level 3 (highest difficulty) confirmed passes.
 
 ## Results
 

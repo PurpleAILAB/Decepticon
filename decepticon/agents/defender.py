@@ -4,13 +4,12 @@ Uses create_agent() directly (not create_deep_agent()) to control the
 middleware stack precisely.
 
 Middleware stack (selected for defense):
-  1. SafeCommandMiddleware    — block offensive/destructive bash patterns
-  2. SkillsMiddleware         — progressive disclosure of defender SKILL.md knowledge
-  3. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools (no execute; use bash)
-  4. ModelFallbackMiddleware  — haiku 4.5 → gemini 2.5 flash fallback on primary failure
-  5. SummarizationMiddleware  — auto-compact when context budget exceeded
-  6. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
-  7. PatchToolCallsMiddleware  — repair dangling tool calls
+  1. DecepticonSkillsMiddleware — progressive disclosure of defender SKILL.md knowledge
+  2. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools (no execute; use bash)
+  3. ModelFallbackMiddleware  — primary → fallback on provider failure
+  4. SummarizationMiddleware  — auto-compact when context budget exceeded
+  5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
+  6. PatchToolCallsMiddleware  — repair dangling tool calls
 
 Backend: DockerSandbox (single backend; /skills/ is bind-mounted into the
 sandbox container — see docker-compose.yml).
@@ -43,7 +42,7 @@ from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 def create_defender_agent():
     """Initialize the Defender Agent using langchain create_agent() directly.
 
-    Context engineering decisions:      - SafeCommandMiddleware: blocks offensive/destructive patterns before execution
+    Context engineering decisions:
       - ModelFallbackMiddleware: primary → fallback on failure
       - No TodoListMiddleware: defense-brief.json handles task tracking
       - No SubAgentMiddleware: Decepticon orchestrator handles agent delegation

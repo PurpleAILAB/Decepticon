@@ -10,7 +10,7 @@ Decepticon 메인 에이전트의 전체 파이프라인(OPPLAN 생성 → sub-a
 - xbow 벤치마크 서브모듈 초기화:
 
 ```bash
-git submodule add https://github.com/xbow-engineering/validation-benchmarks benchmark/xbow-validation-benchmarks
+git submodule add https://github.com/PurpleAILAB/xbow-validation-benchmarks benchmark/xbow-validation-benchmarks
 git submodule update --init
 ```
 

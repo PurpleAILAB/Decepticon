@@ -53,7 +53,7 @@ decepticon onboard   # Interactive setup wizard (provider, API key, model profil
 decepticon           # Start everything: terminal CLI + web dashboard at http://localhost:3000
 ```
 
-→ **[Quick start](docs/getting-started.md)** · **[Full agentic setup walkthrough](docs/setup-guide.md#agentic-setup--end-to-end-walkthrough)**
+→ **[Quick start](docs/getting-started.md)** · **[Full setup walkthrough](docs/setup-guide.md)**
 
 ---
 
@@ -65,148 +65,76 @@ We're building Decepticon as an **Offensive Vaccine** for the AI-driven threat l
 
 ---
 
+## Benchmark Results
+
+| Benchmark | Difficulty | Pass Rate |
+|-----------|------------|-----------|
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Hard (Level 3) | **7 / 8** |
+
+→ **[Full benchmark index](benchmark/results/README.md)**
+
+---
+
 ## What is Decepticon?
 
 The "AI + hacking" space is full of demos that run nmap and print a report. That's not what this is.
 
 **Decepticon is a professional autonomous Red Team agent.** It executes realistic attack chains — reconnaissance, exploitation, privilege escalation, lateral movement, C2 — the way a real adversary would, not the way a scanner does.
 
-But more importantly: it operates under the discipline that separates red teamers from script kiddies.
+But more importantly: it operates under the discipline that separates red teamers from script kiddies. Before a single packet leaves the wire, Decepticon generates a complete engagement package — **RoE**, **ConOps**, **Deconfliction Plan**, and **OPPLAN** with MITRE ATT&CK mapping — and every action runs inside those defined rules.
 
-Before a single packet leaves the wire, Decepticon generates a complete engagement package:
-
-- **RoE** (Rules of Engagement) — Authorized scope, exclusions, testing window, escalation contacts
-- **ConOps** (Concept of Operations) — Threat actor profile, methodology, TTPs
-- **Deconfliction Plan** — Source IPs, time windows, shared codes for real-time SOC deconfliction
-- **OPPLAN** (Operations Plan) — Full mission plan with objectives, kill chain phases, and MITRE ATT&CK mapping
-
-Every action operates inside defined rules. The agent doesn't just hack — it runs a professional Red Team operation that happens to be autonomous.
+→ **[Engagement workflow deep dive](docs/engagement-workflow.md)**
 
 ---
 
 ## Why Decepticon?
 
-**Real kill chains, not checkbox scans.**
-Decepticon reads an OPPLAN and pursues objectives through whatever path opens up — pivoting, adapting, chaining techniques — the way a real attacker would.
+**Real kill chains, not checkbox scans.** Decepticon reads an OPPLAN and pursues objectives through whatever path opens up — pivoting, adapting, chaining techniques.
 
-**Interactive shells, actually.**
-Real offensive tools are interactive — `msfconsole`, `sliver-client`, `evil-winrm`. Most AI agents fire one-shot commands and give up. Decepticon runs every command inside persistent tmux sessions with automatic prompt detection. When a tool drops you into an interactive prompt, the agent sends follow-up commands. No workarounds.
+**Interactive shells, actually.** Real offensive tools are interactive (`msfconsole`, `sliver-client`, `evil-winrm`). Decepticon runs every command inside persistent tmux sessions with automatic prompt detection — so when a tool drops into an interactive prompt, the agent sends follow-up commands without workarounds.
 
-**Real infrastructure isolation.**
-All commands run inside a hardened Kali Linux sandbox on a dedicated operational network (`sandbox-net`), fully isolated from management (`decepticon-net`). LLM gateway, databases, and agent API live on one network; sandbox, C2 server, and targets live on another. Zero cross-network access. The agent controls the sandbox via Docker socket only.
+**Hardened sandbox isolation.** All commands run inside a Kali Linux sandbox on a dedicated operational network (`sandbox-net`), separate from the management plane (`decepticon-net`). LangGraph drives the sandbox via the Docker socket. → **[Architecture](docs/architecture.md)**
 
-**Offense serves defense.**
-The [Offensive Vaccine](docs/offensive-vaccine.md) loop turns every finding into a defense improvement — automatically. Attack → defend → verify, at machine speed. This is Step 1 toward infrastructure that hardens itself.
+**Offense serves defense.** The [Offensive Vaccine](docs/offensive-vaccine.md) loop turns every finding into a defense improvement — automatically. Attack → defend → verify, at machine speed.
 
 ---
 
 ## Architecture
 
-Two isolated networks. Management and operations share zero network access.
-
 <div align="center">
   <img src="assets/decepticon_infra.svg" alt="Decepticon Infrastructure" width="680">
 </div>
 
-→ **[Architecture deep dive](docs/architecture.md)**
+Two-network design — management services (LiteLLM, PostgreSQL, LangGraph, Web) on `decepticon-net`; sandbox, C2 server, and targets on `sandbox-net`. Neo4j is dual-homed so the agent (on management) can persist findings written from inside the sandbox.
+
+→ **[Architecture deep dive](docs/architecture.md)** · **[Knowledge graph](docs/knowledge-graph.md)**
 
 ---
 
 ## Agents
 
-16 specialist agents organized by kill chain phase. Each agent starts with a fresh context window per objective — no accumulated noise.
+17 specialist agents organized by kill chain phase, with a fresh context window per objective — no accumulated noise.
 
-| Phase | Agents |
-|-------|--------|
-| **Orchestration** | Decepticon (main), Soundwave (planning + docs) |
-| **Reconnaissance** | Recon, Scanner |
-| **Exploitation** | Exploit, Exploiter, Detector, Verifier, Patcher |
-| **Post-Exploitation** | Post-Exploit |
-| **Defense** | Defender (Offensive Vaccine loop) |
-| **Specialists** | AD Operator, Cloud Hunter, Contract Auditor, Reverser, Analyst |
+Orchestration · Reconnaissance · Exploitation · Post-Exploitation · Vulnerability Research · Defense · Domain Specialists (AD, Cloud, Smart Contracts, Reversing, Analyst).
 
-The vulnerability research pipeline (Scanner → Detector → Verifier → Exploiter → Patcher) handles the full lifecycle from discovery through proof-of-concept to patch proposal.
-
-→ **[Agent details and middleware stack](docs/agents.md)**
+→ **[Full agent roster and middleware stack](docs/agents.md)**
 
 ---
 
-## Models
+## Models & Providers
 
-Tier-based, credentials-aware fallback chain. You tell Decepticon which credentials you have — Anthropic API, Claude Code OAuth, ChatGPT subscription, OpenAI API, Google API, DeepSeek API, xAI API, Mistral API, MiniMax API, and more — in priority order; it builds the primary→fallback chain at every tier from there.
-
-The active **profile** decides each agent's tier:
+Tier-based, credentials-aware fallback chain. You declare which credentials you have in priority order; Decepticon builds the primary→fallback chain at every tier from there.
 
 | Profile | Tier per agent | Use case |
 |---------|----------------|----------|
-| **eco** (default) | per-agent (HIGH for orchestrator/exploiter/patcher/analyst, MID for execution, LOW for recon/scanner/soundwave) | Production |
-| **max** | every agent on HIGH | High-value targets |
-| **test** | every agent on LOW | Development / CI |
+| **eco** (default) | Per-agent (HIGH for orchestrator/exploiter/patcher/analyst, MID for execution, LOW for recon/soundwave) | Production |
+| **max** | Every agent on HIGH | High-value targets |
+| **test** | Every agent on LOW | Development / CI |
 
-**Tier × method matrix** (partial — see [Models](docs/models.md) for full table):
+**Tier-mapped providers**: Anthropic, OpenAI, Google Gemini, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, Ollama (local).
+**Subscription OAuth**: Claude Max/Pro/Team, ChatGPT Pro/Plus/Team, Gemini Advanced, Copilot Pro, SuperGrok, Perplexity Pro.
 
-|                   | HIGH                    | MID                      | LOW                                |
-|-------------------|--------------------------|---------------------------|-------------------------------------|
-| `anthropic_api`   | claude-opus-4-7          | claude-sonnet-4-6         | claude-haiku-4-5                    |
-| `anthropic_oauth` | auth/claude-opus-4-7     | auth/claude-sonnet-4-6    | auth/claude-haiku-4-5               |
-| `openai_api`      | gpt-5.5                  | gpt-5.4                   | gpt-5-nano                        |
-| `openai_oauth`    | auth/gpt-5.5             | auth/gpt-5.4              | auth/gpt-5-nano                    |
-| `google_api`      | gemini-2.5-pro           | gemini-2.5-flash          | gemini-2.5-flash-lite               |
-| `deepseek_api`    | deepseek-reasoner        | deepseek-chat             | deepseek-chat                      |
-
-Configure with `decepticon onboard`; set the profile via `DECEPTICON_MODEL_PROFILE=eco` in `.env`. Provider outage or rate limit → seamless fallback to the next method in your priority list.
-
-→ **[Full model reference](docs/models.md)**
-
----
-
-## Supported Providers
-
-Decepticon connects to **18+ LLM providers** via API keys, plus **6 subscription-based OAuth handlers** that route through your existing subscriptions — no per-token billing.
-
-### API Key Providers
-
-| Provider | Provider | Provider |
-|----------|----------|----------|
-| Anthropic | OpenAI | DeepSeek |
-| Google Gemini | xAI (Grok) | Mistral |
-| Cohere | Groq | Together AI |
-| Fireworks AI | Perplexity | MiniMax |
-| OpenRouter | Azure OpenAI | AWS Bedrock |
-| Replicate | Ollama (local) | Custom OpenAI-compatible |
-
-### Subscription OAuth (No API Billing)
-
-Use your existing monthly subscription instead of pay-per-token API access:
-
-| Subscription | Price | Provider ID |
-|---|---|---|
-| **Claude Max / Pro / Team** | $20–$100/mo | `auth` |
-| **ChatGPT Pro / Plus / Team** | $20–$200/mo | `auth` |
-| **Google Gemini Advanced** | $20/mo | `gemini-sub` |
-| **Microsoft Copilot Pro** | $20/mo | `copilot` |
-| **xAI SuperGrok** | X Premium+ | `grok-sub` |
-| **Perplexity Pro** | $20/mo | `pplx-sub` |
-
-```bash
-# Example: Use Claude Max subscription (no API cost)
-DECEPTICON_AUTH_CLAUDE_CODE=true
-
-# Example: Use ChatGPT Pro subscription
-DECEPTICON_AUTH_CHATGPT=true
-```
-
-→ **[Full setup guide with OAuth instructions](docs/setup-guide.md)**
-
----
-
-## Benchmark Results
-
-| Benchmark | Difficulty | Pass Rate |
-|-----------|------------|-----------|
-| [XBOW validation-benchmarks](https://github.com/xbow-engineering/validation-benchmarks) | Hard (Level 3) | **7 / 8** |
-
-→ **[Full benchmark index](benchmark/results/README.md)**
+Configure via `decepticon onboard`. → **[Full model reference & fallback examples](docs/models.md)**
 
 ---
 
@@ -245,7 +173,7 @@ make cli     # Open the interactive CLI (separate terminal)
 
 ## Community
 
-Join the [Discord](https://discord.gg/TZUYsZgrRG) — ask questions, share engagement logs, discuss techniques, or just connect with others building at the intersection of offense and defense.
+Join the [Discord](https://discord.gg/TZUYsZgrRG) — ask questions, share engagement logs, discuss techniques.
 
 ---
 

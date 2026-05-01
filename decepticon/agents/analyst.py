@@ -11,9 +11,9 @@ Tool surface (in addition to bash):
     kg_ingest_sarif, cve_lookup, cve_by_package, plan_attack_chains,
     fuzz_classify, fuzz_harness, fuzz_record_crash, validate_finding
 
-Middleware stack — mirrors exploit.py but adds nothing bash-destructive
-beyond SafeCommandMiddleware (the analyst runs fewer shell commands in
-favour of first-class research tools).
+Middleware stack — mirrors exploit.py. The analyst runs fewer shell
+commands in favour of first-class research tools (semgrep, bandit,
+gitleaks, KG operations).
 """
 
 from __future__ import annotations
@@ -45,8 +45,6 @@ def create_analyst_agent():
         source-review workloads.
       - Research tools come *before* bash in the tool list so the LLM
         defaults to graph-updating operations over raw shell commands.
-      - SafeCommandMiddleware still applies — analyst sometimes runs
-        semgrep/bandit/gitleaks via bash which is fine.
       - Skills routed through /skills/analyst/ + /skills/shared/.
     """
     config = load_config()

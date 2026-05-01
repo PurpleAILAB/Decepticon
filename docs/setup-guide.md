@@ -80,7 +80,7 @@ decepticon onboard
 Or edit `~/.decepticon/.env` directly:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=api
+DECEPTICON_AUTH_PRIORITY=anthropic_api,openai_api
 ANTHROPIC_API_KEY=sk-ant-api03-...
 OPENAI_API_KEY=sk-proj-...
 ```
@@ -92,7 +92,7 @@ OPENAI_API_KEY=sk-proj-...
 | Anthropic | `ANTHROPIC_API_KEY` | `sk-ant-...` | [console.anthropic.com](https://console.anthropic.com) |
 | OpenAI | `OPENAI_API_KEY` | `sk-proj-...` | [platform.openai.com](https://platform.openai.com) |
 | DeepSeek | `DEEPSEEK_API_KEY` | `sk-...` | [platform.deepseek.com](https://platform.deepseek.com) |
-| Google | `GOOGLE_API_KEY` | `AIza...` | [aistudio.google.com](https://aistudio.google.com) |
+| Google | `GEMINI_API_KEY` | `AIza...` | [aistudio.google.com](https://aistudio.google.com) |
 | xAI | `XAI_API_KEY` | `xai-...` | [console.x.ai](https://console.x.ai) |
 | Mistral | `MISTRAL_API_KEY` | `...` | [console.mistral.ai](https://console.mistral.ai) |
 | Cohere | `COHERE_API_KEY` | `...` | [dashboard.cohere.com](https://dashboard.cohere.com) |
@@ -218,7 +218,8 @@ decepticon onboard
 Or edit `~/.decepticon/.env`:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=auth
+DECEPTICON_AUTH_PRIORITY=anthropic_oauth,anthropic_api
+DECEPTICON_AUTH_CLAUDE_CODE=true
 DECEPTICON_MODEL_PROFILE=eco
 ```
 
@@ -257,11 +258,11 @@ Use your ChatGPT Pro, Plus, or Team subscription instead of OpenAI API billing.
 
 **Supported tiers:**
 
-| Tier | Models Available |
-|------|-----------------|
-| ChatGPT Plus ($20/mo) | GPT-4o, o1, o3-mini |
-| ChatGPT Pro ($200/mo) | GPT-4o, o1, o3, GPT-4.5 |
-| ChatGPT Team | GPT-4o, o1, o3-mini + admin controls |
+| Tier | Models Available (via `auth/gpt-5.x` route) |
+|------|--------------------------------------------|
+| ChatGPT Plus ($20/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5-nano` |
+| ChatGPT Pro ($200/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5-nano` |
+| ChatGPT Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5-nano` + admin controls |
 
 **Setup:**
 
@@ -330,7 +331,7 @@ Use your Google One AI Premium subscription ($20/mo).
 2. Configure:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=gemini-sub
+DECEPTICON_AUTH_GEMINI=true
 GEMINI_ACCESS_TOKEN=ya29.a0...your-google-oauth-token
 ```
 
@@ -353,7 +354,7 @@ Use your Copilot Pro subscription ($20/mo) for GPT-4o/o1 access.
 2. Configure:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=copilot
+DECEPTICON_AUTH_COPILOT=true
 COPILOT_ACCESS_TOKEN=eyJ...your-ms-token
 ```
 
@@ -377,7 +378,7 @@ Use your X Premium+ subscription for Grok-3 access.
 2. Configure:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=grok-sub
+DECEPTICON_AUTH_GROK=true
 GROK_SESSION_TOKEN=your-x-auth-token
 ```
 
@@ -395,7 +396,7 @@ Use your Perplexity Pro subscription ($20/mo) for Sonar Pro access.
 2. Configure:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=pplx-sub
+DECEPTICON_AUTH_PERPLEXITY=true
 PERPLEXITY_SESSION_TOKEN=your-session-token
 ```
 
@@ -411,14 +412,14 @@ Complete list of all supported LLM providers and their pre-configured models:
 |----------|--------|-----------|------|
 | **Subscriptions (OAuth — no API billing)** | | | |
 | Claude Max/Pro/Team | Opus, Sonnet, Haiku | OAuth | $20–$100/mo |
-| ChatGPT Pro/Plus/Team | GPT-4o, o1, o3, GPT-4.5 | OAuth | $20–$200/mo |
+| ChatGPT Pro/Plus/Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5-nano` | OAuth | $20–$200/mo |
 | Gemini Advanced | Gemini 2.5 Pro/Flash | OAuth | $20/mo |
-| Copilot Pro | GPT-4o, o1 | OAuth | $20/mo |
+| Copilot Pro | `copilot/gpt-4o`, `copilot/o1`, `copilot/o3-mini` | OAuth | $20/mo |
 | SuperGrok | Grok-3, Grok-3 Mini | OAuth | X Premium+ |
 | Perplexity Pro | Sonar Pro, Sonar | OAuth | $20/mo |
 | **API Key Providers (pay-per-token)** | | | |
-| Anthropic | Claude Opus 4.6, Sonnet 4.6, Haiku 4.5 | API key | Per token |
-| OpenAI | GPT-5.4, GPT-4.1, GPT-4o, o1, o3-mini | API key | Per token |
+| Anthropic | Claude Opus 4.7, Sonnet 4.6, Haiku 4.5 | API key | Per token |
+| OpenAI | GPT-5.5, GPT-5.4, GPT-5-nano | API key | Per token |
 | DeepSeek | DeepSeek Chat, DeepSeek Reasoner | API key | Per token |
 | Google | Gemini 2.5 Flash, Gemini 2.5 Pro | API key | Per token |
 | xAI | Grok-3, Grok-3 Mini | API key | Per token |
@@ -428,7 +429,7 @@ Complete list of all supported LLM providers and their pre-configured models:
 | Together AI | Llama 3.3 70B Turbo + any | API key | Per token |
 | Fireworks AI | Llama 405B + any | API key | Per token |
 | Perplexity | Sonar Pro, Sonar | API key | Per token |
-| MiniMax | MiniMax M2.7, M2.7 Highspeed | API key | Per token |
+| MiniMax | MiniMax-M2.5, MiniMax-M2.5-lightning | API key | Per token |
 | OpenRouter | Any model via routing | API key | Per token |
 | Azure OpenAI | Any Azure-deployed model | API key + endpoint | Per token |
 | AWS Bedrock | Any Bedrock model | AWS credentials | Per token |
@@ -467,8 +468,8 @@ DECEPTICON_MODEL_PROFILE=eco
 Per-role overrides (any profile):
 
 ```bash
-DECEPTICON_MODEL_RECON=ollama/qwen2.5-coder:32b
-DECEPTICON_MODEL_EXPLOIT=anthropic/claude-opus-4-6
+DECEPTICON_MODEL_RECON=ollama_chat/qwen3-coder:30b
+DECEPTICON_MODEL_EXPLOIT=anthropic/claude-opus-4-7
 DECEPTICON_MODEL_EXPLOIT_TEMPERATURE=0.2
 ```
 
@@ -511,11 +512,12 @@ See [Web Dashboard](web-dashboard.md) for the full feature reference.
 decepticon                  # Launch platform (all services + interactive CLI)
 decepticon onboard          # Setup wizard (auth, provider, profile)
 decepticon onboard --reset  # Re-run setup from scratch
-decepticon config           # Edit ~/.decepticon/.env in $EDITOR
 decepticon stop             # Stop all services, keep data
 decepticon status           # Show running services
 decepticon logs [service]   # Follow service logs
-decepticon version          # Show version info
+decepticon update           # Check for and apply updates
+decepticon remove           # Uninstall Decepticon completely
+decepticon --version        # Show installed version
 ```
 
 ### Service Management
@@ -595,7 +597,7 @@ Once running, you have:
 | Service | Port | Purpose |
 |---------|------|---------|
 | **LiteLLM** | 4000 | LLM API gateway — routes to providers, tracks usage, handles fallback |
-| **LangGraph** | 2024 | Agent runtime — hosts all 16 agents as a streaming API |
+| **LangGraph** | 2024 | Agent runtime — hosts all 17 agents as a streaming API |
 | **Neo4j** | 7474/7687 | Knowledge graph — persistent attack chain memory |
 | **Sandbox** | (internal) | Isolated Kali Linux — runs all offensive tools |
 | **Web Dashboard** | 3000 | Browser UI — real-time monitoring, graph visualization |
@@ -710,15 +712,15 @@ decepticon           # Shows engagement picker → select existing
 
 ```bash
 decepticon stop
-# Edit ~/.decepticon/.env → change DECEPTICON_MODEL_PROVIDER or API keys
+# Edit ~/.decepticon/.env → change DECEPTICON_AUTH_PRIORITY, DECEPTICON_AUTH_* toggles, or API keys
 decepticon
 ```
 
 **Check service health:**
 
 ```bash
-decepticon status    # Container status
-decepticon health    # Deep health diagnostics (LangGraph, LiteLLM, Neo4j)
+decepticon status       # Container status (docker compose ps)
+decepticon kg-health    # Knowledge graph diagnostics (LangGraph + Neo4j connection)
 ```
 
 **View logs for specific service:**
@@ -742,17 +744,19 @@ You can configure multiple providers simultaneously. The model profile controls 
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-proj-...
 DEEPSEEK_API_KEY=sk-...
-GOOGLE_API_KEY=AIza...
+GEMINI_API_KEY=AIza...
 ```
 
 ### Hybrid Auth (OAuth + API Keys)
 
-When using `DECEPTICON_MODEL_PROVIDER=auth`, Anthropic models route through OAuth while fallback models (GPT, Gemini) use their API keys. Both can be active simultaneously:
+Set `DECEPTICON_AUTH_CLAUDE_CODE=true` to route Anthropic models through Claude Code OAuth while keeping API-key fallbacks active. The `DECEPTICON_AUTH_PRIORITY` list controls order:
 
 ```bash
-DECEPTICON_MODEL_PROVIDER=auth        # Primary: Claude via OAuth
+DECEPTICON_AUTH_PRIORITY=anthropic_oauth,anthropic_api,openai_api,google_api
+DECEPTICON_AUTH_CLAUDE_CODE=true      # Primary: Claude via OAuth (auth/* in LiteLLM)
+ANTHROPIC_API_KEY=sk-ant-...          # Fallback: Anthropic API
 OPENAI_API_KEY=sk-proj-...            # Fallback: GPT via API key
-GOOGLE_API_KEY=AIza...                # Fallback: Gemini via API key
+GEMINI_API_KEY=AIza...                # Fallback: Gemini via API key
 ```
 
 ### LangSmith Tracing

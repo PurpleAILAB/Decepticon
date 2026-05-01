@@ -10,14 +10,14 @@ Uses create_agent() directly (not create_deep_agent()) to control the
 middleware stack precisely.
 
 Middleware stack (selected for orchestration):
-  1. SafeCommandMiddleware — block session-destroying bash commands
-  2. SkillsMiddleware — progressive disclosure of SKILL.md knowledge
-  3. FilesystemMiddleware — file ops for reading/updating engagement docs
+  1. EngagementContextMiddleware — inject engagement metadata (slug, target, RoE)
+  2. DecepticonSkillsMiddleware — progressive disclosure of SKILL.md knowledge
+  3. FilesystemMiddlewareNoExecute — file ops for reading/updating engagement docs
   4. SubAgentMiddleware — task() tool for delegating to sub-agents
   5. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
-  6. ModelFallbackMiddleware — opus 4.6 → gpt-5.4 fallback on primary failure
+  6. ModelFallbackMiddleware — primary → fallback on provider failure (chain from Credentials inventory)
   7. SummarizationMiddleware — auto-compact for long orchestration sessions
-  8. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
+  8. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
   9. PatchToolCallsMiddleware — repair dangling tool calls
 
 OPPLAN replaces TodoListMiddleware with domain-specific objective tracking:
@@ -61,7 +61,7 @@ def create_decepticon_agent():
       - Explicit middleware stack instead of create_deep_agent() defaults
       - SubAgentMiddleware: task() tool for delegating to specialist sub-agents
       - OPPLANMiddleware: 5 CRUD tools for objective tracking (Claude Code V2 Task pattern)
-      - ModelFallbackMiddleware: opus 4.6 primary → gpt-5.4 fallback on failure
+      - ModelFallbackMiddleware: primary → fallback chain built from the user's Credentials inventory
     Returns a compiled LangGraph agent ready for invocation.
     """
     config = load_config()

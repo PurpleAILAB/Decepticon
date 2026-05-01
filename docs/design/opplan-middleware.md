@@ -566,19 +566,18 @@ def after_model(self, state, runtime):
 ```python
 # Before
 middleware = [
-    SafeCommandMiddleware(),
-    SkillsMiddleware(...),
-    FilesystemMiddleware(...),
+    DecepticonSkillsMiddleware(...),
+    FilesystemMiddlewareNoExecute(...),
     SubAgentMiddleware(..., subagents=[planner, recon, exploit, postexploit]),
     TodoListMiddleware(),  # ← 제거
 ]
 
 # After
 middleware = [
-    SafeCommandMiddleware(),
-    SkillsMiddleware(...),
-    FilesystemMiddleware(...),
-    SubAgentMiddleware(..., subagents=[soundwave, recon, exploit, postexploit]),
+    EngagementContextMiddleware(),
+    DecepticonSkillsMiddleware(...),
+    FilesystemMiddlewareNoExecute(...),
+    SubAgentMiddleware(..., subagents=[recon, exploit, postexploit, analyst, reverser, contract_auditor, cloud_hunter, ad_operator]),
     OPPLANMiddleware(),  # ← 교체 (5-tool CRUD)
 ]
 ```
