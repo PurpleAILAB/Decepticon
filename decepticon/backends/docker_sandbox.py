@@ -263,11 +263,11 @@ class TmuxSessionManager:
             else:
                 self._send(command, enter=True)
 
-        start = time.time()
+        start = time.monotonic()
         prev_screen = baseline
         last_change_time = start
 
-        while time.time() - start < timeout:
+        while time.monotonic() - start < timeout:
             time.sleep(POLL_INTERVAL)
             try:
                 screen = self._capture()
@@ -282,12 +282,12 @@ class TmuxSessionManager:
                     )
                 # Other RuntimeError — keep polling, reset stall timer
                 log.debug("transient RuntimeError in poll loop: %s", poll_err)
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 continue
             except (OSError, subprocess.TimeoutExpired) as poll_err:
                 # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))
@@ -329,12 +329,12 @@ class TmuxSessionManager:
             # output) but hasn't changed for STALL_SECONDS, the program is likely
             # waiting for input (interactive prompt like msf6>, sliver>).
             if screen != prev_screen:
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline and time.time() - last_change_time >= STALL_SECONDS:
+            elif screen != baseline and time.monotonic() - last_change_time >= STALL_SECONDS:
                 log.info(
                     "Stall detected after %.1fs — interactive program [%s]",
-                    time.time() - start,
+                    time.monotonic() - start,
                     command[:50],
                 )
                 output = _extract_interactive_output(screen, baseline)
@@ -424,11 +424,11 @@ class TmuxSessionManager:
             else:
                 await asyncio.to_thread(self._send, command, True)
 
-        start = time.time()
+        start = time.monotonic()
         prev_screen = baseline
         last_change_time = start
 
-        while time.time() - start < timeout:
+        while time.monotonic() - start < timeout:
             await asyncio.sleep(POLL_INTERVAL)  # CancelledError delivered here
             try:
                 screen = await asyncio.to_thread(self._capture)
@@ -443,12 +443,12 @@ class TmuxSessionManager:
                     )
                 # Other RuntimeError — keep polling, reset stall timer
                 log.debug("transient RuntimeError in poll loop: %s", poll_err)
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 continue
             except (OSError, subprocess.TimeoutExpired) as poll_err:
                 # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 continue
 
             current_count = len(PS1_PATTERN.findall(screen))
@@ -489,7 +489,7 @@ class TmuxSessionManager:
                 )
 
             # Auto-background: convert blocking commands after threshold
-            elapsed = time.time() - start
+            elapsed = time.monotonic() - start
             if elapsed >= AUTO_BACKGROUND_SECONDS and command:
                 log.info(
                     "Auto-backgrounding after %.0fs [%s] in session '%s'",
@@ -515,12 +515,12 @@ class TmuxSessionManager:
 
             # Stall detection (see sync execute() for rationale)
             if screen != prev_screen:
-                last_change_time = time.time()
+                last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline and time.time() - last_change_time >= STALL_SECONDS:
+            elif screen != baseline and time.monotonic() - last_change_time >= STALL_SECONDS:
                 log.info(
                     "Stall detected after %.1fs — interactive program [%s]",
-                    time.time() - start,
+                    time.monotonic() - start,
                     command[:50],
                 )
                 output = _extract_interactive_output(screen, baseline)
