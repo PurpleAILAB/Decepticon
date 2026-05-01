@@ -138,11 +138,19 @@ func writeEnvFromString(tmpl string, outputPath string, values map[string]string
 }
 
 // APIKeyNames lists the API key environment variable names to check.
+// Order matters: a valid key in this list satisfies the "at least one
+// credential" startup gate. Keep in sync with keyFormatRules below and
+// with decepticon/llm/factory.py::_API_METHOD_ENV.
 var APIKeyNames = []string{
 	"ANTHROPIC_API_KEY",
 	"OPENAI_API_KEY",
 	"GEMINI_API_KEY",
 	"MINIMAX_API_KEY",
+	"OPENROUTER_API_KEY",
+	"NVIDIA_API_KEY",
+	"DEEPSEEK_API_KEY",
+	"XAI_API_KEY",
+	"MISTRAL_API_KEY",
 }
 
 // IsPlaceholder checks if a value looks like a placeholder.
@@ -154,13 +162,24 @@ func IsPlaceholder(val string) bool {
 // Format checks are intentionally lenient — providers occasionally evolve key shapes
 // (OpenAI shipped sk-proj-* in 2024, Anthropic sk-ant-api03-* etc.). The check only
 // rejects values that are obviously malformed (typos, missing prefix).
+//
+// An empty Prefix means "no fixed shape, skip the prefix check" (only the
+// length floor still applies). MiniMax/Mistral keys ship without a
+// universal prefix and would otherwise be rejected when the user pastes
+// the right key.
 var keyFormatRules = map[string]struct {
 	Prefix string
 	Hint   string
 }{
-	"ANTHROPIC_API_KEY": {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
-	"OPENAI_API_KEY":    {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
-	"GEMINI_API_KEY":    {Prefix: "AIza", Hint: "Gemini keys start with 'AIza'"},
+	"ANTHROPIC_API_KEY":  {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
+	"OPENAI_API_KEY":     {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
+	"GEMINI_API_KEY":     {Prefix: "AIza", Hint: "Gemini keys start with 'AIza'"},
+	"OPENROUTER_API_KEY": {Prefix: "sk-or-", Hint: "OpenRouter keys start with 'sk-or-'"},
+	"NVIDIA_API_KEY":     {Prefix: "nvapi-", Hint: "NVIDIA keys start with 'nvapi-'"},
+	"DEEPSEEK_API_KEY":   {Prefix: "sk-", Hint: "DeepSeek keys start with 'sk-'"},
+	"XAI_API_KEY":        {Prefix: "xai-", Hint: "xAI keys start with 'xai-'"},
+	"MINIMAX_API_KEY":    {Prefix: "", Hint: ""},
+	"MISTRAL_API_KEY":    {Prefix: "", Hint: ""},
 }
 
 // validateKeyFormat returns an empty string if the key looks valid, or a reason if not.
@@ -169,7 +188,9 @@ func validateKeyFormat(name, val string) string {
 		return "value is too short to be a valid API key"
 	}
 	if rule, ok := keyFormatRules[name]; ok {
-		if !strings.HasPrefix(val, rule.Prefix) {
+		// Empty Prefix → provider has no fixed prefix, length floor is the
+		// only signal. Skip the prefix check rather than rejecting valid keys.
+		if rule.Prefix != "" && !strings.HasPrefix(val, rule.Prefix) {
 			return rule.Hint
 		}
 	}
@@ -210,26 +231,83 @@ func ValidateAPIKeys(env map[string]string) error {
 	return fmt.Errorf("%s", msg.String())
 }
 
+// subscriptionMethod groups the env signal + credential layout for one
+// OAuth subscription handler so we don't repeat the validation logic.
+// Resolution order matches each handler in config/*_handler.py exactly:
+//
+//	1. <PROVIDER>_ACCESS_TOKEN   — pre-extracted Bearer
+//	2. <PROVIDER>_SESSION_TOKEN  — browser session cookie value
+//	3. ~/.config/<dir>/tokens.json on disk
+//
+// Two providers diverge slightly:
+//   - Gemini Advanced ships a multi-cookie value (GEMINI_SESSION_COOKIES)
+//     instead of a single session token. accept either env name.
+//   - Copilot Pro uses a refresh-token rotation (COPILOT_REFRESH_TOKEN)
+//     instead of a session cookie. Same fall-through, different env name.
+type subscriptionMethod struct {
+	Toggle    string   // DECEPTICON_AUTH_<X> boolean enabling this path
+	TokenEnvs []string // env vars that satisfy the path on their own
+	ConfigDir string   // ~/.config/<dir>/tokens.json fallback
+	Label     string   // human name for error messages
+}
+
+var oauthSubscriptions = map[string]subscriptionMethod{
+	"chatgpt": {
+		Toggle:    "DECEPTICON_AUTH_CHATGPT",
+		TokenEnvs: []string{"CHATGPT_ACCESS_TOKEN", "CHATGPT_SESSION_TOKEN"},
+		ConfigDir: "chatgpt",
+		Label:     "ChatGPT",
+	},
+	"gemini": {
+		Toggle:    "DECEPTICON_AUTH_GEMINI",
+		TokenEnvs: []string{"GEMINI_ACCESS_TOKEN", "GEMINI_SESSION_COOKIES"},
+		ConfigDir: "gemini",
+		Label:     "Gemini Advanced",
+	},
+	"copilot": {
+		Toggle:    "DECEPTICON_AUTH_COPILOT",
+		TokenEnvs: []string{"COPILOT_ACCESS_TOKEN", "COPILOT_REFRESH_TOKEN"},
+		ConfigDir: "copilot",
+		Label:     "Copilot Pro",
+	},
+	"grok": {
+		Toggle:    "DECEPTICON_AUTH_GROK",
+		TokenEnvs: []string{"GROK_ACCESS_TOKEN", "GROK_SESSION_TOKEN"},
+		ConfigDir: "grok",
+		Label:     "SuperGrok",
+	},
+	"perplexity": {
+		Toggle:    "DECEPTICON_AUTH_PERPLEXITY",
+		TokenEnvs: []string{"PERPLEXITY_ACCESS_TOKEN", "PERPLEXITY_SESSION_TOKEN"},
+		ConfigDir: "perplexity",
+		Label:     "Perplexity Pro",
+	},
+}
+
 // ValidateAuth ensures at least one valid AuthMethod is configured.
 //
 // OAuth paths:
 //   - DECEPTICON_AUTH_CLAUDE_CODE=true requires a parseable
-//     ~/.claude/.credentials.json with an access token. LiteLLM mounts
-//     the file read-only at runtime.
-//   - DECEPTICON_AUTH_CHATGPT=true requires CHATGPT_SESSION_TOKEN or
-//     CHATGPT_ACCESS_TOKEN in env, or ~/.config/chatgpt/tokens.json on
-//     disk. The codex_handler reads from these in priority order.
+//     ~/.claude/.credentials.json. LiteLLM mounts that file read-only.
+//   - DECEPTICON_AUTH_<X>=true (CHATGPT, GEMINI, COPILOT, GROK,
+//     PERPLEXITY) is satisfied by a token env var or a tokens.json
+//     file under ~/.config/<x>/. See subscriptionMethod above.
 //
-// API path: at least one ANTHROPIC / OPENAI / GEMINI / MINIMAX_API_KEY
-// must be set to a non-placeholder, well-formed value.
+// Local LLM path: ollama_local in DECEPTICON_AUTH_PRIORITY (or any
+// OLLAMA_API_BASE configured) is treated as a valid credential. Ollama
+// reachability is probed separately at startup (start.go).
+//
+// API path: at least one configured provider key (ANTHROPIC / OPENAI /
+// GEMINI / MINIMAX / OPENROUTER / NVIDIA / DEEPSEEK / XAI / MISTRAL)
+// must be non-placeholder and well-formed.
 //
 // At least one path must succeed. When OAuth is requested and its
-// credentials are broken, the API path is checked as a fallback; if all
-// fail, the OAuth error is surfaced first because that was the user's
-// explicit choice.
+// credentials are broken, the other paths are checked as fallbacks;
+// if all fail, the OAuth error is surfaced first because that was the
+// user's explicit choice.
 func ValidateAuth(env map[string]string) error {
 	claudeOAuth := isTruthy(Get(env, "DECEPTICON_AUTH_CLAUDE_CODE", ""))
-	chatgptOAuth := isTruthy(Get(env, "DECEPTICON_AUTH_CHATGPT", ""))
+	ollamaErr := validateOllamaCredentials(env)
 	apiErr := ValidateAPIKeys(env)
 
 	if claudeOAuth {
@@ -237,23 +315,72 @@ func ValidateAuth(env map[string]string) error {
 			return nil
 		}
 	}
-	if chatgptOAuth {
-		if err := validateChatGPTCredentials(env); err == nil {
+	for _, sub := range oauthSubscriptions {
+		if !isTruthy(Get(env, sub.Toggle, "")) {
+			continue
+		}
+		if err := validateSubscriptionCredentials(env, sub); err == nil {
 			return nil
 		}
+	}
+	if ollamaErr == nil {
+		return nil
 	}
 	if apiErr == nil {
 		return nil
 	}
 
-	// All paths failed — surface OAuth errors first (explicit user choice).
+	// All paths failed — surface the user's explicit choice first.
 	if claudeOAuth {
 		return validateClaudeCredentials()
 	}
-	if chatgptOAuth {
-		return validateChatGPTCredentials(env)
+	for _, key := range []string{"chatgpt", "gemini", "copilot", "grok", "perplexity"} {
+		sub := oauthSubscriptions[key]
+		if isTruthy(Get(env, sub.Toggle, "")) {
+			return validateSubscriptionCredentials(env, sub)
+		}
+	}
+	if hasOllamaSelected(env) {
+		return ollamaErr
 	}
 	return apiErr
+}
+
+// hasOllamaSelected returns true when the user has explicitly opted into
+// the local-Ollama auth method (via the priority list or by setting
+// OLLAMA_API_BASE without any other API key).
+func hasOllamaSelected(env map[string]string) bool {
+	priority := strings.ToLower(strings.TrimSpace(env["DECEPTICON_AUTH_PRIORITY"]))
+	for _, m := range strings.Split(priority, ",") {
+		if strings.TrimSpace(m) == "ollama_local" {
+			return true
+		}
+	}
+	return env["OLLAMA_API_BASE"] != ""
+}
+
+// validateOllamaCredentials accepts the Ollama path when the user has
+// either listed ``ollama_local`` in DECEPTICON_AUTH_PRIORITY or set
+// ``OLLAMA_API_BASE`` directly. Ollama itself has no API key — the
+// only required signal is the base URL pointing at a running instance.
+//
+// We don't probe the URL here; the launcher runs on the host while the
+// LiteLLM container talks to the URL from inside Docker, so a host-side
+// reachability check would lie when the user (correctly) wired up
+// host.docker.internal-style addressing.
+func validateOllamaCredentials(env map[string]string) error {
+	if !hasOllamaSelected(env) {
+		return fmt.Errorf("ollama not configured")
+	}
+	base := strings.TrimSpace(env["OLLAMA_API_BASE"])
+	if base == "" {
+		return fmt.Errorf(
+			"ollama_local selected but OLLAMA_API_BASE is empty.\n" +
+				"Set OLLAMA_API_BASE=http://host.docker.internal:11434 (or your Ollama URL) " +
+				"in ~/.decepticon/.env, or run 'decepticon onboard --reset' to reconfigure.",
+		)
+	}
+	return nil
 }
 
 func isTruthy(s string) bool {
@@ -300,41 +427,39 @@ func validateClaudeCredentials() error {
 	return nil
 }
 
-// validateChatGPTCredentials verifies the user has at least one ChatGPT subscription
-// token reachable to the LiteLLM container. Resolution order matches
-// config/codex_handler.py exactly:
+// validateSubscriptionCredentials verifies the user has at least one credential
+// path wired up for an OAuth subscription handler. The handlers themselves
+// (config/<provider>_handler.py) walk the same resolution order at runtime:
 //
-//  1. CHATGPT_ACCESS_TOKEN env var (pre-extracted Bearer)
-//  2. CHATGPT_SESSION_TOKEN env var (browser ``__Secure-next-auth.session-token`` cookie)
-//  3. ~/.config/chatgpt/tokens.json on disk
+//  1. <PROVIDER>_ACCESS_TOKEN env (pre-extracted Bearer)
+//  2. <PROVIDER>_SESSION_TOKEN / _SESSION_COOKIES / _REFRESH_TOKEN env
+//  3. ~/.config/<dir>/tokens.json on disk
 //
-// We don't validate the token shape itself — ChatGPT session tokens and access
-// tokens have varied formats over time. We only verify *something* is wired up,
-// catching the "selected ChatGPT OAuth in onboard but never pasted a token" case
-// before the first agent prompt fails opaquely.
-func validateChatGPTCredentials(env map[string]string) error {
-	if env["CHATGPT_ACCESS_TOKEN"] != "" {
-		return nil
-	}
-	if env["CHATGPT_SESSION_TOKEN"] != "" {
-		return nil
+// We don't validate token shape — providers ship them in many formats and shapes
+// drift across versions. We only catch the "toggled on in onboard but never
+// pasted a token" case before the first agent prompt fails opaquely.
+func validateSubscriptionCredentials(env map[string]string, sub subscriptionMethod) error {
+	for _, name := range sub.TokenEnvs {
+		if strings.TrimSpace(env[name]) != "" {
+			return nil
+		}
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("locate home directory: %w", err)
 	}
-	path := filepath.Join(home, ".config", "chatgpt", "tokens.json")
+	path := filepath.Join(home, ".config", sub.ConfigDir, "tokens.json")
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
+	hints := strings.Join(sub.TokenEnvs, " or ")
 	return fmt.Errorf(
-		"ChatGPT subscription token not configured.\n"+
+		"%s subscription token not configured.\n"+
 			"Provide one of:\n"+
-			"  - CHATGPT_SESSION_TOKEN env (paste browser '__Secure-next-auth.session-token' cookie)\n"+
-			"  - CHATGPT_ACCESS_TOKEN env (pre-extracted Bearer token)\n"+
+			"  - %s env var\n"+
 			"  - %s on disk\n"+
 			"Run 'decepticon onboard --reset' to (re)configure interactively.",
-		path,
+		sub.Label, hints, path,
 	)
 }
 

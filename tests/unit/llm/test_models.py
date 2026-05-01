@@ -207,6 +207,59 @@ class TestResolveChain:
         ]
 
 
+# ── OLLAMA_LOCAL dynamic resolution (issue #106) ────────────────────────
+
+
+class TestOllamaLocalChain:
+    """OLLAMA_LOCAL is special — its model id comes from OLLAMA_MODEL env
+    and collapses to the same model across all tiers (local GPU usually
+    runs one model). The chain must pull the live env value, not a static
+    placeholder."""
+
+    def test_ollama_resolves_user_chosen_model_at_high(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
+        monkeypatch.setenv("OLLAMA_MODEL", "qwen3-coder:30b")
+        creds = Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["ollama_chat/qwen3-coder:30b"]
+
+    def test_ollama_collapses_across_tiers(self, monkeypatch):
+        monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
+        monkeypatch.setenv("OLLAMA_MODEL", "llama3.2")
+        creds = Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
+        for tier in (Tier.HIGH, Tier.MID, Tier.LOW):
+            assert resolve_chain(tier, creds) == ["ollama_chat/llama3.2"]
+
+    def test_ollama_skipped_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("OLLAMA_API_BASE", raising=False)
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        # OLLAMA_LOCAL listed but not configured — chain should drop it
+        # rather than emit ``ollama_chat/__OLLAMA_MODEL__`` placeholder.
+        creds = Credentials(methods=[AuthMethod.OLLAMA_LOCAL, AuthMethod.OPENAI_API])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["openai/gpt-5.5"]
+
+    def test_ollama_default_when_only_base_set(self, monkeypatch):
+        # User wired up the URL but didn't pick a model — fall back to
+        # llama3.2 rather than failing, since they explicitly opted in.
+        monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        creds = Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["ollama_chat/llama3.2"]
+
+    def test_ollama_mixed_with_api_chain_priority_wins(self, monkeypatch):
+        # User has OpenAI + local Ollama and prefers local primary →
+        # chain leads with Ollama and falls back to the cloud API.
+        monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
+        monkeypatch.setenv("OLLAMA_MODEL", "qwen3-coder:30b")
+        creds = Credentials(
+            methods=[AuthMethod.OLLAMA_LOCAL, AuthMethod.OPENAI_API]
+        )
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["ollama_chat/qwen3-coder:30b", "openai/gpt-5.5"]
+
+
 # ── ModelAssignment ─────────────────────────────────────────────────────
 
 

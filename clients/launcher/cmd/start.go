@@ -2,9 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/compose"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
@@ -50,6 +55,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err := config.ValidateAuth(env); err != nil {
 		return err
 	}
+
+	// Warn — don't block — if Ollama is selected but the URL doesn't
+	// reach a running server. We translate ``host.docker.internal`` to
+	// ``localhost`` for the host-side probe; from inside the litellm
+	// container the original URL is what gets used at runtime.
+	probeOllamaIfSelected(env)
 
 	// 2.3. Ensure config files exist (docker-compose.yml, litellm.yaml, workspace)
 	home := config.DecepticonHome()
@@ -149,6 +160,71 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	ui.DimText("CLI exited. Services kept running — run 'decepticon stop' to shut down.")
 	return nil
+}
+
+// probeOllamaIfSelected does a best-effort GET on /api/tags to verify the
+// user's Ollama server is reachable when ``ollama_local`` is configured.
+// Failures don't block startup — the user might be about to launch
+// Ollama, or running on an unusual setup we can't introspect. We just
+// surface a hint so they aren't surprised by a 'model not found' on the
+// first agent prompt.
+func probeOllamaIfSelected(env map[string]string) {
+	priority := strings.ToLower(env["DECEPTICON_AUTH_PRIORITY"])
+	hasOllama := strings.Contains(","+priority+",", ",ollama_local,")
+	base := strings.TrimSpace(env["OLLAMA_API_BASE"])
+	if !hasOllama && base == "" {
+		return
+	}
+	if base == "" {
+		ui.Warning("ollama_local selected but OLLAMA_API_BASE is empty — skipping reachability probe.")
+		return
+	}
+
+	probeURL := translateForHostProbe(base) + "/api/tags"
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(probeURL)
+	if err != nil {
+		ui.Warning(fmt.Sprintf(
+			"Ollama not reachable at %s (host-side probe). "+
+				"Start it with 'ollama serve' or check OLLAMA_API_BASE.",
+			base,
+		))
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		ui.Warning(fmt.Sprintf(
+			"Ollama responded with %d at %s — verify the URL is correct.",
+			resp.StatusCode, base,
+		))
+		return
+	}
+	ui.DimText(fmt.Sprintf("Ollama reachable at %s.", base))
+}
+
+// translateForHostProbe rewrites the Ollama URL so the launcher (running
+// on the host) can probe it. ``host.docker.internal`` only resolves
+// inside Docker; on the host the same instance is reached via
+// ``localhost``. Any other host (real IP, DNS name) is left unchanged.
+func translateForHostProbe(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+		port = ""
+	}
+	if host == "host.docker.internal" {
+		host = "127.0.0.1"
+	}
+	if port == "" {
+		u.Host = host
+	} else {
+		u.Host = net.JoinHostPort(host, port)
+	}
+	return u.String()
 }
 
 // restartSelf re-execs the current binary after a self-update.

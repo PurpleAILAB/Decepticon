@@ -21,10 +21,18 @@
 
 model_list:
   # ── Anthropic ────────────────────────────────────────────────────────
+  # ``additional_drop_params: ["temperature"]`` on opus is required: Anthropic
+  # deprecated the temperature param for Claude Opus 4.7 (extended-thinking
+  # defaults). Sending it raises a 400 invalid_request_error from the upstream
+  # API, which then prevents the proxy-level fallback from firing because
+  # it's a *request validation* error, not a model-failure signal. Dropping
+  # the param at the proxy keeps the request well-formed regardless of which
+  # client hit us.
   - model_name: anthropic/claude-opus-4-7
     litellm_params:
       model: anthropic/claude-opus-4-7
       api_key: os.environ/ANTHROPIC_API_KEY
+      additional_drop_params: ["temperature"]
 
   - model_name: anthropic/claude-sonnet-4-6
     litellm_params:
@@ -92,9 +100,12 @@ model_list:
       api_key: os.environ/MINIMAX_API_KEY
 
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
+  # ``additional_drop_params: ["temperature"]`` matches the api-key opus entry —
+  # Opus 4.7 rejects the param on every route, OAuth path included.
   - model_name: auth/claude-opus-4-7
     litellm_params:
       model: auth/claude-opus-4-7
+      additional_drop_params: ["temperature"]
 
   - model_name: auth/claude-sonnet-4-6
     litellm_params:
@@ -138,10 +149,13 @@ model_list:
       api_key: os.environ/MISTRAL_API_KEY
 
   # ── OpenRouter ─────────────────────────────────────────────────────
+  # OpenRouter forwards opus-4-7 calls to Anthropic, so the same temperature
+  # deprecation applies — drop it here too.
   - model_name: openrouter/anthropic/claude-opus-4-7
     litellm_params:
       model: openrouter/anthropic/claude-opus-4-7
       api_key: os.environ/OPENROUTER_API_KEY
+      additional_drop_params: ["temperature"]
 
   - model_name: openrouter/anthropic/claude-sonnet-4-6
     litellm_params:
@@ -225,10 +239,18 @@ model_list:
       model: pplx-sub/sonar
 
   # ── Local LLM (Ollama) ──────────────────────────────────────────────
-  - model_name: ollama/llama3.2
-    litellm_params:
-      model: ollama/llama3.2
-      api_base: os.environ/OLLAMA_API_BASE
+  # Ollama routes are registered dynamically at proxy startup by
+  # ``litellm_startup.py`` → ``litellm_dynamic_config.py``. The user
+  # picks any model they pulled (qwen3-coder:30b, llama3.2, deepseek-r1,
+  # mistral-small3, ...) by setting OLLAMA_MODEL; the dynamic config
+  # generator turns that into an ``ollama_chat/<model>`` entry pointing at
+  # OLLAMA_API_BASE. ``ollama_chat/`` (not ``ollama/``) is mandatory —
+  # it routes to Ollama's /api/chat endpoint which is the one that
+  # supports tool/function calling.
+  #
+  # No static entry is needed here. Hard-coding ``ollama/llama3.2`` only
+  # served users who happened to pull exactly that model and confused
+  # everyone else.
 
 litellm_settings:
   # NOTE: custom_provider_map is registered programmatically in
@@ -244,9 +266,57 @@ litellm_settings:
   #   - copilot      → copilot_handler.copilot_handler_instance
   #   - grok-sub     → grok_handler.grok_sub_handler_instance
   #   - pplx-sub     → perplexity_handler.perplexity_sub_handler_instance
+  # ── Within-provider tier degradation ───────────────────────────────
+  # Each chain mirrors HIGH → MID → LOW for the same auth path. When a
+  # primary model fails (rate limit, transient 5xx, request-validation
+  # rejection that survives ``additional_drop_params``), LiteLLM picks
+  # the next entry in the same chain rather than dragging in an
+  # unrelated provider — the cross-provider fallback is the agent's
+  # ``ModelFallbackMiddleware`` job and is built dynamically from the
+  # user's Credentials inventory.
+  #
+  # Issue #107 root cause: the previous fallbacks block only covered
+  # ``auth/...`` (OAuth subscription path) so a user running on
+  # ``anthropic/claude-opus-4-7`` (paid API path) hit the
+  # 'No fallback model group found for original model_group=
+  # anthropic/claude-opus-4-7' error.
   fallbacks:
+    # Anthropic API path
+    - {"anthropic/claude-opus-4-7": ["anthropic/claude-sonnet-4-6"]}
+    - {"anthropic/claude-sonnet-4-6": ["anthropic/claude-haiku-4-5"]}
+    # Anthropic OAuth (Claude Code subscription) path
     - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
     - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
+    # OpenRouter mirrors of the Anthropic models
+    - {"openrouter/anthropic/claude-opus-4-7": ["openrouter/anthropic/claude-sonnet-4-6"]}
+    - {"openrouter/anthropic/claude-sonnet-4-6": ["openrouter/anthropic/claude-haiku-4-5"]}
+    # OpenAI direct API
+    - {"openai/gpt-5.5": ["openai/gpt-5.4"]}
+    - {"openai/gpt-5.4": ["openai/gpt-5-nano"]}
+    # OpenAI / ChatGPT subscription path
+    - {"auth/gpt-5.5": ["auth/gpt-5.4"]}
+    - {"auth/gpt-5.4": ["auth/gpt-5-nano"]}
+    # Google Gemini API path
+    - {"gemini/gemini-2.5-pro": ["gemini/gemini-2.5-flash"]}
+    - {"gemini/gemini-2.5-flash": ["gemini/gemini-2.5-flash-lite"]}
+    # Gemini Advanced subscription path (no LOW tier)
+    - {"gemini-sub/gemini-2.5-pro": ["gemini-sub/gemini-2.5-flash"]}
+    # MiniMax (no LOW tier)
+    - {"minimax/MiniMax-M2.5": ["minimax/MiniMax-M2.5-lightning"]}
+    # DeepSeek
+    - {"deepseek/deepseek-reasoner": ["deepseek/deepseek-chat"]}
+    # xAI direct + SuperGrok subscription (no LOW tier on either)
+    - {"xai/grok-3": ["xai/grok-3-mini"]}
+    - {"grok-sub/grok-3": ["grok-sub/grok-3-mini"]}
+    # Mistral (no LOW tier)
+    - {"mistral/mistral-large-latest": ["mistral/codestral-latest"]}
+    # Nvidia NIM
+    - {"nvidia_nim/meta/llama-3.3-70b-instruct": ["nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct"]}
+    - {"nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct": ["nvidia_nim/meta/llama-3.2-3b-instruct"]}
+    # Copilot subscription
+    - {"copilot/gpt-4o": ["copilot/o1"]}
+    # Perplexity Pro subscription (no LOW tier)
+    - {"pplx-sub/sonar-pro": ["pplx-sub/sonar"]}
   num_retries: 3
   retry_after: 30
 

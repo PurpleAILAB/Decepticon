@@ -53,6 +53,7 @@ Model identifiers verified against provider docs as of 2026-04-28.
 
 from __future__ import annotations
 
+import os
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
@@ -90,6 +91,7 @@ class AuthMethod(StrEnum):
     MISTRAL_API = "mistral_api"
     OPENROUTER_API = "openrouter_api"
     NVIDIA_API = "nvidia_api"
+    OLLAMA_LOCAL = "ollama_local"  # Local LLM via Ollama (no API key, OLLAMA_API_BASE)
     COPILOT_OAUTH = "copilot_oauth"  # Microsoft Copilot Pro subscription
     GROK_OAUTH = "grok_oauth"  # xAI SuperGrok (X Premium+)
     PERPLEXITY_OAUTH = "perplexity_oauth"  # Perplexity Pro subscription
@@ -156,6 +158,20 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "nvidia_nim/meta/llama-3.3-70b-instruct",
         Tier.MID: "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct",
         Tier.LOW: "nvidia_nim/meta/llama-3.2-3b-instruct",
+    },
+    AuthMethod.OLLAMA_LOCAL: {
+        # Ollama collapses to a single user-chosen model across tiers. The
+        # actual identifier is resolved at chain-build time from
+        # ``OLLAMA_MODEL`` so an OSS user can pick anything they pulled
+        # locally (qwen3-coder:30b, llama3.2, deepseek-r1, ...). The
+        # ``ollama_chat/`` provider prefix routes to /api/chat — the
+        # endpoint that supports tool/function calling, which Decepticon
+        # agents depend on. The values below are placeholders kept so
+        # METHOD_MODELS stays exhaustive; resolve_chain branches before
+        # reading them when method == OLLAMA_LOCAL.
+        Tier.HIGH: "ollama_chat/__OLLAMA_MODEL__",
+        Tier.MID: "ollama_chat/__OLLAMA_MODEL__",
+        Tier.LOW: "ollama_chat/__OLLAMA_MODEL__",
     },
     AuthMethod.COPILOT_OAUTH: {
         Tier.HIGH: "copilot/gpt-4o",
@@ -278,6 +294,33 @@ class Credentials(BaseModel):
         )
 
 
+_OLLAMA_DEFAULT_MODEL = "llama3.2"
+
+
+def _resolve_ollama_model() -> str | None:
+    """Return the LiteLLM model id for the user's local Ollama, or None.
+
+    The user picks the model via ``OLLAMA_MODEL`` (free-form, e.g.
+    ``qwen3-coder:30b``). We normalize to the ``ollama_chat/`` provider
+    prefix so requests hit Ollama's ``/api/chat`` endpoint — the only
+    one that exposes tool/function calling, which every Decepticon agent
+    relies on.
+
+    Returns None when the user hasn't opted in (OLLAMA_API_BASE empty
+    *and* OLLAMA_MODEL empty); resolve_chain then skips OLLAMA_LOCAL,
+    keeping the chain honest. When OLLAMA_API_BASE is set but
+    OLLAMA_MODEL is not, we fall back to a sensible default rather than
+    failing — the user explicitly enabled Ollama, just didn't pick a tag.
+    """
+    base = os.getenv("OLLAMA_API_BASE", "").strip()
+    model = os.getenv("OLLAMA_MODEL", "").strip()
+    if not base and not model:
+        return None
+    if not model:
+        model = _OLLAMA_DEFAULT_MODEL
+    return f"ollama_chat/{model}"
+
+
 def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
     """Build the model chain (primary first, then fallbacks) for a tier.
 
@@ -285,9 +328,21 @@ def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
     method at the given tier from ``METHOD_MODELS``. When a method has
     no entry at that tier (minimax_api LOW), it's skipped and the chain
     continues with the next method.
+
+    ``OLLAMA_LOCAL`` is special-cased: a local LLM has no concept of
+    HIGH/MID/LOW tiers (typically a single model the user pulled), so
+    every tier resolves to the same id derived from ``OLLAMA_MODEL``.
+    When the env isn't wired up, the entry is skipped — preventing a
+    placeholder ``ollama_chat/__OLLAMA_MODEL__`` from leaking into the
+    chain.
     """
     chain: list[str] = []
     for method in credentials.methods:
+        if method == AuthMethod.OLLAMA_LOCAL:
+            ollama_model = _resolve_ollama_model()
+            if ollama_model is not None:
+                chain.append(ollama_model)
+            continue
         model = METHOD_MODELS[method].get(tier)
         if model is not None:
             chain.append(model)
