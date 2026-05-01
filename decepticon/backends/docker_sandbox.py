@@ -17,6 +17,7 @@ import dataclasses
 import functools
 import io
 import logging
+import os
 import re
 import subprocess
 import tarfile
@@ -43,13 +44,10 @@ def _docker_cfg():
     return load_config().docker
 
 
-# ─── Constants ───────────────────────────────────────────────────────────
+# ─── Tunable timing constants (patched in tests) ────────────────────────
 
 PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):(.+?)\]")
 
-# Backwards-compatible module-level defaults. Code that reads these at
-# import time gets the hardcoded values; runtime code should prefer
-# _docker_cfg().<field> to pick up env-var overrides.
 POLL_INTERVAL: float = 0.5
 STALL_SECONDS: float = 3.0
 MAX_OUTPUT_CHARS: int = 30_000
@@ -641,6 +639,8 @@ class BackgroundJob:
     """Metadata for one background command in a tmux session.
 
     A session holds at most one BackgroundJob — sequential reuse replaces.
+    Timestamps use ``time.monotonic()`` so elapsed values stay correct
+    across wall-clock adjustments (NTP step, manual ``date -s``).
     """
 
     session: str
@@ -654,7 +654,7 @@ class BackgroundJob:
 
     @property
     def elapsed(self) -> float:
-        end = self.completed_at if self.completed_at is not None else time.time()
+        end = self.completed_at if self.completed_at is not None else time.monotonic()
         return end - self.started_at
 
 
@@ -671,7 +671,7 @@ class BackgroundJobTracker:
                 session=session,
                 command=command,
                 initial_markers=initial_markers,
-                started_at=time.time(),
+                started_at=time.monotonic(),
             )
             self._jobs[session] = job
             return job
@@ -687,7 +687,7 @@ class BackgroundJobTracker:
                 return
             job.status = "done"
             job.exit_code = exit_code
-            job.completed_at = time.time()
+            job.completed_at = time.monotonic()
 
     def mark_consumed(self, session: str) -> None:
         with self._lock:
@@ -790,8 +790,6 @@ class DockerSandbox(BaseSandbox):
                 )
                 error = None if result.returncode == 0 else "file_not_found"
             finally:
-                import os
-
                 os.unlink(tmp_path)
             responses.append(FileUploadResponse(path=path, error=error))
         return responses
