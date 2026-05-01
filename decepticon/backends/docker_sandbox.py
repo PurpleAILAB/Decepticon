@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from typing import ClassVar
 
 from deepagents.backends.protocol import (
     ExecuteResponse,
@@ -720,7 +721,18 @@ class DockerSandbox(BaseSandbox):
 
     The bash tool uses execute_tmux() for persistent tmux sessions that
     support interactive input.
+
+    ``_jobs`` and ``_log_offsets`` are class-level so every agent factory
+    in a process talks to the same background-job tracker — the bash tool
+    (which reads a module-global ``_sandbox`` set by whichever factory ran
+    last) and the SandboxNotificationMiddleware (bound to a different
+    instance per agent) would otherwise see disjoint trackers and
+    completion notifications would never fire.
     """
+
+    _jobs: ClassVar[BackgroundJobTracker] = BackgroundJobTracker()
+    _log_offsets: ClassVar[dict[str, int]] = {}
+    _log_offsets_lock: ClassVar[threading.RLock] = threading.RLock()
 
     def __init__(
         self,
@@ -731,9 +743,6 @@ class DockerSandbox(BaseSandbox):
         self._default_timeout = default_timeout
         self._managers: dict[str, TmuxSessionManager] = {}
         self._managers_lock = threading.RLock()
-        self._jobs = BackgroundJobTracker()
-        self._log_offsets: dict[str, int] = {}
-        self._log_offsets_lock = threading.RLock()
 
     def _get_manager(self, session: str) -> TmuxSessionManager:
         with self._managers_lock:
