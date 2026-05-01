@@ -46,6 +46,8 @@
 ## Install
 
 **Prerequisites**: [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2.
+Supported on macOS (Apple Silicon + Intel), Linux (amd64 + arm64), and Windows via WSL2 (Ubuntu or Kali).
+Native Windows is not supported — install WSL2 first, then run the commands below from inside the WSL shell.
 
 ```bash
 curl -fsSL https://decepticon.red/install | bash

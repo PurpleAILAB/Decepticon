@@ -26,13 +26,39 @@ Complete installation, authentication, and configuration reference.
 
 | Requirement | Minimum | Recommended |
 |-------------|---------|-------------|
-| OS | Linux (x86_64, arm64), macOS (arm64) | Ubuntu 22.04+ / macOS 14+ |
+| OS | Linux (x86_64, arm64), macOS (arm64, x86_64), WSL2 on Windows | Ubuntu 22.04+ / Kali 2024+ / macOS 14+ / WSL2 with Ubuntu or Kali |
 | Docker | Docker Engine 24+ with Compose v2 | Docker Desktop or Colima |
 | RAM | 8 GB | 16 GB |
 | Disk | 10 GB free | 20 GB free |
 | Network | Outbound HTTPS | Low-latency connection |
 
 Docker is the only hard dependency. Everything else runs in containers.
+
+### Supported environments
+
+OSS install targets and what we test against:
+
+| Environment | Launcher binary | Notes |
+|---|---|---|
+| **macOS arm64** (Apple Silicon, M1–M4) | `darwin/arm64` | Sandbox image (Kali base) is amd64-only — Docker Desktop runs it under Rosetta. Enable "Use Rosetta for x86_64/amd64 emulation" in Docker Desktop → General. |
+| **macOS amd64** (Intel) | `darwin/amd64` | Native. |
+| **Linux amd64** (Ubuntu, Debian, Fedora, Kali) | `linux/amd64` | Native. |
+| **Linux arm64** (Raspberry Pi 5, Ampere, AWS Graviton, Asahi) | `linux/arm64` | Sandbox image runs under QEMU emulation. |
+| **WSL2** (Windows + Ubuntu/Kali on WSL2) | `linux/amd64` | Use Docker Desktop with the WSL2 backend, or install Docker natively inside the WSL distro. See [WSL2 notes](#wsl2-notes) below. |
+
+Native Windows (PowerShell / cmd) is **not supported** — install WSL2 first.
+
+### WSL2 notes
+
+Decepticon runs end-to-end on WSL2 with two valid Docker setups:
+
+1. **Docker Desktop with WSL2 backend** (the common path) — Docker Desktop registers `host.docker.internal` automatically, so the default `OLLAMA_API_BASE=http://host.docker.internal:11434` reaches an Ollama server running on the **Windows host**. The launcher's host-side reachability probe also handles this case.
+
+2. **Native Docker inside the WSL distro** (no Docker Desktop) — `host.docker.internal` is *not* set up automatically. The launcher resolves it to the WSL2 default nameserver (Windows host) for its probe. If Ollama is running **inside the WSL distro itself**, set `OLLAMA_API_BASE=http://localhost:11434` instead.
+
+Other WSL caveats:
+- Install Decepticon under your WSL home (`~/.decepticon`), not on a Windows-mounted drive (`/mnt/c/...`) — bind-mounted I/O across the boundary is much slower.
+- WSL2 mirrored networking (Windows 11 22H2+) collapses the host/distro split; both `host.docker.internal` and `localhost` typically work for Windows-host services.
 
 ---
 
