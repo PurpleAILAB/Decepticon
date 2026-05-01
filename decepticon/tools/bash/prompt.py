@@ -98,5 +98,3 @@ sessions and `background=True` instead.
 ALWAYS use `write_file` for file creation. NEVER `cat > file << EOF` —
 it echoes content back as tool output and wastes context.
 </BASH_TOOLS>"""
-
-
