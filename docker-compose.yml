@@ -104,7 +104,10 @@ services:
   # LangGraph reaches sandbox via docker exec (Docker socket), not the network.
   sandbox:
     image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
-    platform: linux/amd64
+    # Multi-arch image — linux/amd64 + linux/arm64. Apple Silicon and
+    # Linux arm64 hosts pull the native manifest; no Rosetta needed.
+    # On an unusual arch the manifest list won't match — force a
+    # fallback by adding `platform: linux/amd64` to this service.
     build:
       context: .
       dockerfile: containers/sandbox.Dockerfile
@@ -162,7 +165,11 @@ services:
       # re-declare it here. Set BENCHMARK_MODE=1 in .env to engage CTF/XBOW
       # benchmark mode (rule overrides + challenge context inject).
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # The host source path is overridable for non-default Docker runtimes
+      # (colima → ~/.colima/default/docker.sock, Podman → /run/user/$UID/podman/podman.sock,
+      # rootless Docker → ~/.docker/run/docker.sock). The container always
+      # sees /var/run/docker.sock so the agent code stays runtime-agnostic.
+      - ${DECEPTICON_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
     # Wait for litellm to be healthy: langgraph has retry logic but the launcher
     # uses `compose up --wait` and needs healthy as the single readiness signal.
     depends_on:
@@ -258,7 +265,7 @@ services:
   # Agent connects via: sliver-client (pre-installed in sandbox)
   c2-sliver:
     image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-latest}
-    platform: linux/amd64
+    # Multi-arch image — see decepticon-sandbox above for the same notes.
     build:
       context: .
       dockerfile: containers/c2-sliver.Dockerfile

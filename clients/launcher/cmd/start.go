@@ -15,9 +15,17 @@ import (
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/engagement"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/health"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
 	"github.com/spf13/cobra"
+)
+
+// Indirected so tests can swap WSL detection without touching the
+// real /proc/version or /etc/resolv.conf on the host they run on.
+var (
+	isWSLFn     = platform.IsWSL
+	wslHostIPFn = platform.WSLHostIP
 )
 
 var startCmd = &cobra.Command{
@@ -168,6 +176,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 // Ollama, or running on an unusual setup we can't introspect. We just
 // surface a hint so they aren't surprised by a 'model not found' on the
 // first agent prompt.
+//
+// On WSL2 the probe walks several candidate hosts because there's no
+// single "the host" address: Docker Desktop installs may have
+// host.docker.internal in /etc/hosts; native-WSL Docker installs need
+// the Windows host IP from /etc/resolv.conf; an Ollama running inside
+// the WSL distro itself sits on 127.0.0.1. Whichever returns 2xx wins.
 func probeOllamaIfSelected(env map[string]string) {
 	priority := strings.ToLower(env["DECEPTICON_AUTH_PRIORITY"])
 	hasOllama := strings.Contains(","+priority+",", ",ollama_local,")
@@ -180,51 +194,95 @@ func probeOllamaIfSelected(env map[string]string) {
 		return
 	}
 
-	probeURL := translateForHostProbe(base) + "/api/tags"
+	candidates := candidateProbeURLs(base)
 	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(probeURL)
-	if err != nil {
-		ui.Warning(fmt.Sprintf(
-			"Ollama not reachable at %s (host-side probe). "+
-				"Start it with 'ollama serve' or check OLLAMA_API_BASE.",
-			base,
-		))
-		return
+	var lastStatus int
+	for _, candidate := range candidates {
+		resp, err := client.Get(candidate + "/api/tags")
+		if err != nil {
+			continue
+		}
+		status := resp.StatusCode
+		resp.Body.Close()
+		if status < 400 {
+			ui.DimText(fmt.Sprintf("Ollama reachable at %s.", base))
+			return
+		}
+		lastStatus = status
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+
+	if lastStatus != 0 {
 		ui.Warning(fmt.Sprintf(
 			"Ollama responded with %d at %s — verify the URL is correct.",
-			resp.StatusCode, base,
+			lastStatus, base,
 		))
 		return
 	}
-	ui.DimText(fmt.Sprintf("Ollama reachable at %s.", base))
+	ui.Warning(fmt.Sprintf(
+		"Ollama not reachable at %s (host-side probe). "+
+			"Start it with 'ollama serve' or check OLLAMA_API_BASE.",
+		base,
+	))
 }
 
-// translateForHostProbe rewrites the Ollama URL so the launcher (running
-// on the host) can probe it. ``host.docker.internal`` only resolves
-// inside Docker; on the host the same instance is reached via
-// ``localhost``. Any other host (real IP, DNS name) is left unchanged.
-func translateForHostProbe(raw string) string {
+// candidateProbeURLs returns the URLs the launcher should probe to
+// verify host-side Ollama reachability. The returned list is ordered
+// best-first so the loop short-circuits on the most likely candidate.
+//
+// For URLs that don't reference ``host.docker.internal`` the list is
+// just the URL itself — the user wired up an explicit address (real
+// IP, DNS name) and we trust it.
+//
+// For ``host.docker.internal`` the resolution depends on platform:
+//
+//   - Always try the URL verbatim first. Docker Desktop on macOS,
+//     Windows, and WSL2 typically populates /etc/hosts with this name.
+//   - On WSL, also try the Windows host IP found in /etc/resolv.conf.
+//     Native-WSL Docker installs (no Docker Desktop) don't get the
+//     hosts entry, but the Windows host is always the WSL2 default
+//     nameserver, so this catches the "Ollama on Windows" case.
+//   - Always fall back to 127.0.0.1. Native Linux Docker reaches the
+//     host loopback via the ``extra_hosts: host-gateway`` mapping,
+//     which on the host is just localhost. On WSL this also catches
+//     the "Ollama running inside the WSL distro" case.
+func candidateProbeURLs(raw string) []string {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return raw
+		return []string{raw}
 	}
-	host, port, err := net.SplitHostPort(u.Host)
-	if err != nil {
+	host, port, splitErr := net.SplitHostPort(u.Host)
+	if splitErr != nil {
 		host = u.Host
 		port = ""
 	}
-	if host == "host.docker.internal" {
-		host = "127.0.0.1"
+	if host != "host.docker.internal" {
+		return []string{raw}
 	}
-	if port == "" {
-		u.Host = host
-	} else {
-		u.Host = net.JoinHostPort(host, port)
+
+	candidates := []string{raw}
+	seen := map[string]struct{}{raw: {}}
+	add := func(replacement string) {
+		v := *u
+		if port == "" {
+			v.Host = replacement
+		} else {
+			v.Host = net.JoinHostPort(replacement, port)
+		}
+		s := v.String()
+		if _, dup := seen[s]; dup {
+			return
+		}
+		seen[s] = struct{}{}
+		candidates = append(candidates, s)
 	}
-	return u.String()
+
+	if isWSLFn() {
+		if hostIP := wslHostIPFn(); hostIP != "" {
+			add(hostIP)
+		}
+	}
+	add("127.0.0.1")
+	return candidates
 }
 
 // restartSelf re-execs the current binary after a self-update.

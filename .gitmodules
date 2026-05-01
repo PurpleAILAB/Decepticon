@@ -1,3 +1,3 @@
 [submodule "benchmark/xbow-validation-benchmarks"]
 	path = benchmark/xbow-validation-benchmarks
-	url = https://github.com/xbow-engineering/validation-benchmarks
+	url = https://github.com/PurpleAILAB/xbow-validation-benchmarks

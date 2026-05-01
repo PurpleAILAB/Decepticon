@@ -45,11 +45,13 @@ const (
 )
 
 // Default Ollama wiring shown to OSS users. host.docker.internal works
-// on Mac/Windows out of the box and on Linux thanks to the
-// ``extra_hosts: [host.docker.internal:host-gateway]`` entry on the
-// litellm service in docker-compose.yml. The default model is the
-// smallest/fastest one most laptops can actually run; users with a GPU
-// will pick something like qwen3-coder:30b.
+// out of the box on macOS, Docker Desktop on Windows/WSL2, and on
+// Linux thanks to the ``extra_hosts: [host.docker.internal:host-gateway]``
+// entry on the litellm service in docker-compose.yml. WSL2 users who
+// installed Ollama *inside* the WSL distro itself (rather than on the
+// Windows host) need to override this with http://localhost:11434.
+// The default model is the smallest/fastest one most laptops can
+// actually run; users with a GPU will pick something like qwen3-coder:30b.
 const (
 	defaultOllamaAPIBase = "http://host.docker.internal:11434"
 	defaultOllamaModel   = "llama3.2"
@@ -340,7 +342,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Local Ollama").
-				Description("Ollama must already be running on your host\n(`ollama serve`) with the model pulled\n(`ollama pull <name>`).\n\nLeave the URL as-is on Mac/Windows/Linux Docker —\n`host.docker.internal:host-gateway` is wired up.\nIf you run Ollama in a custom location, override\nthe URL below."),
+				Description("Ollama must already be running on your host\n(`ollama serve`) with the model pulled\n(`ollama pull <name>`).\n\nLeave the URL as-is on macOS / Linux Docker /\nDocker Desktop on Windows or WSL2 with Ollama\nrunning on the Windows host.\n\nIf Ollama runs INSIDE your WSL distro instead,\nchange it to http://localhost:11434.\n\nFor remote / custom setups use the full URL."),
 			huh.NewInput().
 				Title("OLLAMA_API_BASE").
 				Placeholder(defaultOllamaAPIBase).

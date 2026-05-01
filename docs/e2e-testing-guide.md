@@ -149,15 +149,10 @@ Manual testing procedures for verifying the LLM gateway features.
    ```bash
    cat ~/.decepticon/.env
    ```
-4. Verify deprecated alias still works:
-   ```bash
-   decepticon config  # Should show deprecation notice then run onboard
-   ```
 
 ### Expected
 - Interactive wizard completes all setup steps
 - `.env` file written to `~/.decepticon/.env`
-- `decepticon config` shows deprecation notice
 
 
 ## Scenario 6: Fallback Chain Activation

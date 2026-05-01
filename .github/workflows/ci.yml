@@ -214,10 +214,21 @@ jobs:
   # builds the binaries on tag push, so a broken `go test ./...` is caught
   # at PR time instead of blocking the release pipeline.
   launcher:
-    name: Launcher (Go vet + test)
+    # Matrix exercises both Linux and macOS so OS-specific code paths
+    # (the WSL2 detection in internal/platform, file path handling,
+    # /proc/version reads) don't silently regress on one OS while passing
+    # on the other. WSL itself isn't a separate runner — IsWSL() returns
+    # false on macOS and on the Linux runner, and unit tests stub the
+    # /proc/version + /etc/resolv.conf inputs to cover the WSL branches
+    # deterministically on every platform.
+    name: Launcher (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.launcher == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

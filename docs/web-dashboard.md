@@ -65,7 +65,7 @@ Interactive visualization of the Neo4j knowledge graph:
 - Color-coded by node type (Host, Service, Vulnerability, Credential)
 - Live — updates as the agent adds nodes and edges
 
-Powered by [React Flow](https://reactflow.dev/) with Three.js for 3D rendering.
+Powered by [React Flow](https://reactflow.dev/) with `d3-force` for graph layout. Selected agent visualizations also use `@react-three/fiber` for 3D effects.
 
 ### OPPLAN Tracker
 

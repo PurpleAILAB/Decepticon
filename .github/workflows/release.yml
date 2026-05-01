@@ -36,8 +36,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Multi-arch images that build well under QEMU (Python wheels, simple
-  # binaries). Web is split out below because Next.js compile under arm64
-  # emulation made it the long pole (~21 min vs <5 min for the rest).
+  # binaries). Web is split out below — its arm64 emulation cost dominated
+  # the release (~21 min for web alone). Sandbox + c2-sliver are also split
+  # out (docker-heavy) for the same reason: their Kali base + ~25-package
+  # apt layers turned out to be even worse under QEMU.
   docker:
     name: Build & push ${{ matrix.image }}
     runs-on: ubuntu-latest
@@ -51,15 +53,9 @@ jobs:
           - image: decepticon-langgraph
             dockerfile: containers/langgraph.Dockerfile
             platforms: linux/amd64,linux/arm64
-          - image: decepticon-sandbox
-            dockerfile: containers/sandbox.Dockerfile
-            platforms: linux/amd64
           - image: decepticon-cli
             dockerfile: containers/cli.Dockerfile
             platforms: linux/amd64,linux/arm64
-          - image: decepticon-c2-sliver
-            dockerfile: containers/c2-sliver.Dockerfile
-            platforms: linux/amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -134,6 +130,178 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
           DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -uo pipefail
+          target="ghcr.io/purpleailab/${{ matrix.image }}@${DIGEST}"
+          predicate="sbom-${{ matrix.image }}.cdx.json"
+          extra=()
+          if [ "${{ matrix.image }}" = "decepticon-sandbox" ]; then
+            extra+=(--tlog-upload=false)
+            echo "decepticon-sandbox: SBOM exceeds Rekor entry size cap; attaching attestation to OCI only (--tlog-upload=false)."
+          fi
+          for attempt in 1 2 3 4 5; do
+            echo "Attestation attempt ${attempt}/5 for ${target}"
+            if cosign attest --yes "${extra[@]}" \
+                --predicate "${predicate}" \
+                --type cyclonedx \
+                "${target}"; then
+              echo "Attestation succeeded on attempt ${attempt}."
+              exit 0
+            fi
+            if [ "${attempt}" -lt 5 ]; then
+              delay=$((30 * attempt))
+              echo "Attestation attempt ${attempt} failed; sleeping ${delay}s..."
+              sleep "${delay}"
+            fi
+          done
+          echo "::warning title=SBOM attestation skipped::cosign attest failed after 5 retries (Sigstore Rekor unavailable). Image is signed and SBOM artifact uploaded; transparency-log entry for the SBOM is missing and can be re-attested manually."
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.image }}
+          path: sbom-${{ matrix.image }}.cdx.json
+
+  # Sandbox + c2-sliver: split per platform onto native runners. Same
+  # rationale as docker-web below — these images sit on Kali rolling
+  # with heavy apt layers (Python, Node, sliver, ~25 dpkg postinst
+  # scripts), which under QEMU emulation pushed sandbox's arm64 build
+  # over 25 minutes. Native runners drop it to ~5 min. Per-image,
+  # per-platform digests are stitched into a manifest by
+  # docker-heavy-merge.
+  docker-heavy:
+    name: Build & push ${{ matrix.image }} (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: decepticon-sandbox
+            dockerfile: containers/sandbox.Dockerfile
+            platform: amd64
+            runs-on: ubuntu-latest
+          - image: decepticon-sandbox
+            dockerfile: containers/sandbox.Dockerfile
+            platform: arm64
+            runs-on: ubuntu-24.04-arm
+          - image: decepticon-c2-sliver
+            dockerfile: containers/c2-sliver.Dockerfile
+            platform: amd64
+            runs-on: ubuntu-latest
+          - image: decepticon-c2-sliver
+            dockerfile: containers/c2-sliver.Dockerfile
+            platform: arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.platform }}
+          provenance: mode=max
+          sbom: true
+          outputs: type=image,name=ghcr.io/purpleailab/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p ${{ runner.temp }}/digests
+          digest='${{ steps.build.outputs.digest }}'
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.image }}-digest-${{ matrix.platform }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Per-image manifest assembly. Same retry+warning policy on the SBOM
+  # attestation as docker / docker-web-merge — see those for context.
+  # The sandbox-specific --tlog-upload=false fall-through (Rekor entry
+  # size cap on the Kali SBOM) is preserved here too.
+  docker-heavy-merge:
+    name: Merge ${{ matrix.image }} manifest + sign + SBOM
+    needs: docker-heavy
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [decepticon-sandbox, decepticon-c2-sliver]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: ${{ matrix.image }}-digest-*
+          merge-multiple: true
+
+      - name: Create multi-arch manifest
+        id: manifest
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create \
+            --tag ghcr.io/purpleailab/${{ matrix.image }}:${{ steps.version.outputs.version }} \
+            $(printf 'ghcr.io/purpleailab/${{ matrix.image }}@sha256:%s ' *)
+          digest=$(docker buildx imagetools inspect \
+            ghcr.io/purpleailab/${{ matrix.image }}:${{ steps.version.outputs.version }} \
+            --format '{{json .Manifest}}' | jq -r '.digest')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Cosign sign manifest (keyless)
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "ghcr.io/purpleailab/${{ matrix.image }}@${DIGEST}"
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/purpleailab/${{ matrix.image }}:${{ steps.version.outputs.version }}
+          format: cyclonedx-json
+          output-file: sbom-${{ matrix.image }}.cdx.json
+
+      - name: Attest SBOM with cosign
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          DIGEST: ${{ steps.manifest.outputs.digest }}
         run: |
           set -uo pipefail
           target="ghcr.io/purpleailab/${{ matrix.image }}@${DIGEST}"
@@ -325,7 +493,7 @@ jobs:
   #     fallbacks keep resolving to the previous (working) release.
   publish-release:
     name: Verify images & publish release
-    needs: [launcher, docker, docker-web-merge]
+    needs: [launcher, docker, docker-heavy-merge, docker-web-merge]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

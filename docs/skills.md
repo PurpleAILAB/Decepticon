@@ -35,7 +35,7 @@ Skills live in `skills/` organized by agent role:
 | Directory | Agent(s) | Coverage |
 |-----------|---------|----------|
 | `skills/soundwave/` | Soundwave | RoE templates, ConOps, OPPLAN generation, threat profiles |
-| `skills/shared/` | Recon, Exploit, Post-Exploit | OPSEC, defense evasion, workflow protocols, finding format, deconfliction |
+| `skills/shared/` | Every non-planning agent | OPSEC, defense evasion, workflow protocols, finding format, deconfliction |
 | `skills/recon/` | Recon | Passive recon, active recon, web recon, cloud recon, OSINT, reporting |
 | `skills/exploit/` | Exploit | Web exploitation, Active Directory attacks |
 | `skills/scanner/` | Scanner | Vulnerability scanning, automated tool integration |
@@ -49,8 +49,9 @@ Skills live in `skills/` organized by agent role:
 | `skills/detector/` | Detector | Detection rule generation, IOC extraction |
 | `skills/patcher/` | Patcher | Remediation code, configuration hardening |
 | `skills/analyst/` | Analyst | Research, graph querying, executive summaries |
-| `skills/vulnresearch/` | Scanner, Detector | Vulnerability research pipeline |
-| `skills/decepticon/` | Decepticon | Core orchestration procedures |
+| `skills/vulnresearch/` | Vulnresearch (orchestrator), Scanner, Detector | Five-stage vulnerability research pipeline coordination |
+| `skills/decepticon/` | Decepticon | Core orchestration procedures (engagement lifecycle, kill-chain analysis, final report) |
+| `skills/benchmark/` | CTF / XBOW benchmark mode | Activated when `BENCHMARK_MODE=1` — flag-capture rules and challenge context handling |
 
 ---
 
@@ -180,7 +181,8 @@ The skill is automatically available to agents whose source paths include your s
 
 | Agent | Skill sources |
 |-------|--------------|
-| Decepticon | `skills/decepticon/` |
+| Decepticon | `skills/decepticon/`, `skills/shared/` |
+| Vulnresearch | `skills/vulnresearch/`, `skills/shared/` |
 | Soundwave | `skills/soundwave/` |
 | Recon | `skills/recon/`, `skills/shared/` |
 | Scanner | `skills/scanner/`, `skills/vulnresearch/`, `skills/shared/` |
@@ -196,4 +198,4 @@ The skill is automatically available to agents whose source paths include your s
 | Reverser | `skills/reverser/`, `skills/shared/` |
 | Analyst | `skills/analyst/`, `skills/shared/` |
 
-`skills/shared/` (OPSEC, defense evasion, workflow) is injected into every non-planning agent.
+`skills/shared/` (OPSEC, defense evasion, workflow) is injected into every non-planning agent. Soundwave is the only agent that does not load `skills/shared/` — it is a document-generation planner, not an operational agent.

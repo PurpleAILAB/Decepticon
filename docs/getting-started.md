@@ -4,10 +4,10 @@
 
 - [Docker](https://docs.docker.com/get-docker/) and Docker Compose v2
 - An LLM provider credential — one of:
-  - API key (Anthropic, OpenAI, DeepSeek, Google, xAI, Mistral, Groq, Cohere, Together, Fireworks, Perplexity, MiniMax, OpenRouter, Azure, AWS Bedrock, Replicate)
-  - Claude Max/Pro/Team subscription (OAuth via Claude Code CLI)
-  - ChatGPT Pro/Plus/Team subscription (session token from browser)
-  - OpenAI-compatible gateway (LM Studio, vLLM, Ollama)
+  - **Tier-mapped API keys** (works out of the box): Anthropic, OpenAI, Google Gemini, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM
+  - **Local LLM**: Ollama (`OLLAMA_API_BASE` + `OLLAMA_MODEL`)
+  - **Subscription OAuth** (no per-token billing): Claude Max/Pro/Team, ChatGPT Pro/Plus/Team, Gemini Advanced, Microsoft Copilot Pro, xAI SuperGrok, Perplexity Pro
+  - **Other providers** (Groq, Cohere, Together, Fireworks, Perplexity API, Azure, AWS Bedrock, Replicate, custom OpenAI-compatible gateway): supported via `DECEPTICON_MODEL` / `DECEPTICON_LITELLM_MODELS` ad-hoc registration
 
 That's it. Everything else runs inside containers.
 
@@ -31,10 +31,10 @@ decepticon onboard
 
 The interactive setup wizard guides you through:
 
-1. **Authentication** — API key, Claude subscription OAuth, or ChatGPT subscription OAuth
-2. **Provider** — Anthropic, OpenAI, DeepSeek, Google, xAI, Mistral, Cohere, Groq, Together, Fireworks, Perplexity, MiniMax, OpenRouter, Azure, Bedrock, Replicate, Custom, or Ollama
+1. **Authentication** — API key, subscription OAuth (Claude / ChatGPT / Gemini / Copilot / SuperGrok / Perplexity), or local Ollama
+2. **Provider** — choose one of the tier-mapped providers, configure OAuth, or point at a local Ollama
 3. **Credentials** — API key, OAuth token, or endpoint URL (depending on auth method)
-4. **Model Profile** — `eco` (balanced), `max` (performance), `test` (development), or `custom` (any LiteLLM model string via `DECEPTICON_MODEL`)
+4. **Model Profile** — `eco` (balanced), `max` (performance), `test` (development)
 5. **LangSmith** — Optional tracing for LLM observability
 
 For detailed provider setup including OAuth configuration, see [Setup Guide](setup-guide.md).
@@ -50,7 +50,7 @@ Configuration is saved to `~/.decepticon/.env`. Run `decepticon onboard --reset`
 decepticon
 ```
 
-Starts all services (LiteLLM, LangGraph, Neo4j, sandbox) and opens the interactive terminal UI.
+Starts all services (PostgreSQL, LiteLLM, LangGraph, Neo4j, sandbox, C2 server, web dashboard) and opens the interactive terminal UI.
 
 **Web Dashboard** (browser):
 
