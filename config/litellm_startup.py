@@ -165,7 +165,10 @@ def _patch_chatgpt_responses_text_aggregation() -> None:
     """
     chatgpt_enabled = os.environ.get("DECEPTICON_AUTH_CHATGPT", "false").strip().lower()
     if chatgpt_enabled not in ("true", "1", "yes"):
-        print("[decepticon] chatgpt responses patch skipped (DECEPTICON_AUTH_CHATGPT != true)", flush=True)
+        print(
+            "[decepticon] chatgpt responses patch skipped (DECEPTICON_AUTH_CHATGPT != true)",
+            flush=True,
+        )
         return
 
     try:

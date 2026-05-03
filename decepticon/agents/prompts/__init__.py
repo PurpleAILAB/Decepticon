@@ -283,12 +283,63 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
     if pinned_lang and pinned_lang.lower() != "en":
         _LANG_NAMES = {
-            "ko": "Korean", "ja": "Japanese", "zh": "Chinese",
-            "no": "Norwegian", "nb": "Norwegian Bokmål", "nn": "Norwegian Nynorsk",
-            "sv": "Swedish", "da": "Danish", "fi": "Finnish",
-            "de": "German", "fr": "French", "es": "Spanish",
-            "pt": "Portuguese", "it": "Italian", "nl": "Dutch",
-            "ar": "Arabic", "hi": "Hindi", "ru": "Russian",
+            # East Asian
+            "ko": "Korean",
+            "ja": "Japanese",
+            "zh": "Chinese",
+            "zh-cn": "Simplified Chinese",
+            "zh-tw": "Traditional Chinese",
+            # Nordic / Scandinavian
+            "no": "Norwegian",
+            "nb": "Norwegian Bokmål",
+            "nn": "Norwegian Nynorsk",
+            "sv": "Swedish",
+            "da": "Danish",
+            "fi": "Finnish",
+            "is": "Icelandic",
+            # Western European
+            "de": "German",
+            "fr": "French",
+            "es": "Spanish",
+            "pt": "Portuguese",
+            "pt-br": "Brazilian Portuguese",
+            "it": "Italian",
+            "nl": "Dutch",
+            "ca": "Catalan",
+            # Eastern European / Slavic
+            "ru": "Russian",
+            "pl": "Polish",
+            "cs": "Czech",
+            "sk": "Slovak",
+            "uk": "Ukrainian",
+            "bg": "Bulgarian",
+            "hr": "Croatian",
+            "sr": "Serbian",
+            "sl": "Slovenian",
+            "ro": "Romanian",
+            # South / Southeast Asian
+            "hi": "Hindi",
+            "bn": "Bengali",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "th": "Thai",
+            "vi": "Vietnamese",
+            "id": "Indonesian",
+            "ms": "Malay",
+            "tl": "Filipino",
+            # Middle Eastern
+            "ar": "Arabic",
+            "fa": "Persian",
+            "he": "Hebrew",
+            "tr": "Turkish",
+            # Other
+            "el": "Greek",
+            "hu": "Hungarian",
+            "et": "Estonian",
+            "lv": "Latvian",
+            "lt": "Lithuanian",
+            "sw": "Swahili",
+            "af": "Afrikaans",
         }
         lang_name = _LANG_NAMES.get(pinned_lang.lower(), pinned_lang)
         override = (
@@ -305,6 +356,7 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
         )
         # Replace the existing policy block
         import re
+
         prompt = re.sub(
             r"<LANGUAGE_POLICY>.*?</LANGUAGE_POLICY>",
             override,
