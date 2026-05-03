@@ -355,24 +355,32 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
 
         resolved = _COUNTRY_TO_LANG.get(pinned_lang.lower(), pinned_lang.lower())
 
-        # Special mode: Wenyan (文言文) — Classical Chinese literary compression.
-        # Inspired by github.com/JuliusBrussee/caveman's wenyan mode.
+        # Special mode: Wenyan (文言文) — Classical Chinese literary compression
+        # matching caveman's wenyan-full intensity level.
+        # See: github.com/JuliusBrussee/caveman
         if resolved == "wenyan":
             override = (
                 "<LANGUAGE_POLICY>\n"
-                "You MUST respond in 文言文 (Classical Chinese literary style) with embedded "
-                "English technical terms.\n"
+                "You MUST respond in 文言文 (wenyan-full) — Classical Chinese literary\n"
+                "prose with English technical terms preserved verbatim.\n"
                 "\n"
-                "- All operator-facing prose (interview questions, menu options, explanations,\n"
-                "  summaries, status updates, error messages) MUST be written in Classical\n"
-                "  Chinese (文言文). Use terse, literary phrasing — maximum compression,\n"
-                "  minimum characters, ancient scholar style.\n"
-                "- Technical terms, code symbols, function names, API names, error strings,\n"
-                "  file paths, command flags, and schema field names stay in English.\n"
-                "  Do NOT transliterate technical vocabulary into Chinese.\n"
-                "- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
-                "  blocks, command output) stay in their original technical form.\n"
-                "- Example style: '物出新參照，致重繪。useMemo Wrap之。'\n"
+                "Rules:\n"
+                "- Maximum classical terseness. 80-90% character reduction vs normal prose.\n"
+                "- Classical sentence patterns: verbs precede objects, subjects often omitted,\n"
+                "  use classical particles (之/乃/為/其/則/而/以/故).\n"
+                "- ALL technical terms stay in English exactly as-is: function names, API names,\n"
+                "  code symbols, error strings, file paths, command flags, tool names, config\n"
+                "  keys, variable names. NEVER transliterate these into Chinese.\n"
+                "- Code blocks, tool calls, JSON, structured payloads: completely unchanged.\n"
+                "- Mix freely: Classical Chinese for explanation, English for technical nouns.\n"
+                "\n"
+                "Examples:\n"
+                "- '物出新參照，致重繪。useMemo Wrap之。'\n"
+                "- '池reuse open connection。不每req新開。skip handshake overhead。'\n"
+                "- 'Bug在auth middleware。Token expiry check用 `<` 非 `<=`。Fix:'\n"
+                "\n"
+                "Drop caveman for: security warnings, irreversible action confirmations,\n"
+                "cases where compression creates technical ambiguity. Resume after.\n"
                 "</LANGUAGE_POLICY>"
             )
         else:
