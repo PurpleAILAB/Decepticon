@@ -3,8 +3,12 @@
 The checked-in ``config/litellm.yaml`` contains the default Decepticon routes.
 Operators can additionally set ``DECEPTICON_MODEL`` / per-role overrides to any
 LiteLLM model string (for example ``openrouter/anthropic/claude-3.7-sonnet`` or
-``ollama/qwen2.5-coder:32b``).  This module appends only those requested routes
+``ollama_chat/qwen3-coder:30b``).  This module appends only those requested routes
 at container startup so the proxy accepts the same model names the agents use.
+
+For Ollama only the ``ollama_chat/`` provider is accepted — the legacy
+``ollama/`` (``/api/generate``) lacks tool calling per LiteLLM's own
+``supports_function_calling`` check, and Decepticon agents always emit tool calls.
 
 No secret values are read or logged here; generated routes reference environment
 variables using LiteLLM's ``os.environ/NAME`` syntax.
@@ -50,15 +54,14 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
 ALLOWED_DYNAMIC_PROVIDERS = frozenset(
     {
         *PROVIDER_API_KEY_ENV,
-        "ollama",
-        # ``ollama_chat`` is the recommended provider for tool/function
-        # calling — it routes to Ollama's /api/chat endpoint. Decepticon
-        # agents always need tools, so the launcher onboard wires the
-        # local-LLM auth method through this prefix.
+        # ``ollama_chat`` (LiteLLM /api/chat) is the only Ollama provider
+        # accepted — the legacy ``ollama`` (/api/generate) lacks tool
+        # calling and is rejected by validate_model_name() with a
+        # remediation hint, before reaching this set.
         "ollama_chat",
-        # ``auth/`` (subscription OAuth) is listed but rejected by validate()
-        # — kept here so the unrecognized-provider error doesn't fire first
-        # and confuse the user with a misleading "use custom/<model>" hint.
+        # ``auth/`` is listed but rejected by validate() — kept here so
+        # the unrecognized-provider error doesn't fire first and
+        # confuse the user with a misleading "use custom/<model>" hint.
         "auth",
         "gemini_sub",
         "copilot",
@@ -113,19 +116,16 @@ def _extra_models_from_env(value: str | None) -> set[str]:
 
 
 def _ollama_model_from_env(source: Mapping[str, str]) -> str | None:
-    """Derive a LiteLLM model id from OLLAMA_* env vars.
+    """Derive ``ollama_chat/<model>`` from OLLAMA_API_BASE / OLLAMA_MODEL.
 
-    The OSS local-LLM path uses two env vars:
-      OLLAMA_API_BASE — endpoint (e.g. http://host.docker.internal:11434)
-      OLLAMA_MODEL    — pulled model tag (e.g. qwen3-coder:30b)
+    Uses ``ollama_chat`` (not legacy ``ollama``) so /api/chat with
+    tool calling is hit. Defaults to ``llama3.2`` when only the base
+    URL is set, matching the agent factory.
 
-    When either is set, the proxy needs an ``ollama_chat/<model>`` route
-    registered so agents can call it. ``ollama_chat`` (not ``ollama``) is
-    deliberate — only that provider exposes Ollama's tool-calling path,
-    and every Decepticon agent uses tools. We default to a small llama3
-    when the user wired up the base URL but didn't pick a model — the
-    agent factory uses the same default in that scenario, so the proxy
-    and the client agree on the model id.
+    A user value is treated as already-qualified only when it starts
+    with an Ollama provider prefix; a bare slash is not enough,
+    because Ollama tags can contain slashes (HF-hosted GGUFs like
+    ``hf.co/<author>/<model>:<quant>``).
     """
     base = _clean_model(source.get("OLLAMA_API_BASE"))
     model = _clean_model(source.get("OLLAMA_MODEL"))
@@ -133,9 +133,12 @@ def _ollama_model_from_env(source: Mapping[str, str]) -> str | None:
         return None
     if model is None:
         model = "llama3.2"
-    if "/" in model:
-        # User passed a fully-qualified id (``ollama_chat/qwen3-coder:30b``)
-        # — accept verbatim so the agent and proxy stay aligned.
+    lower = model.lower()
+    if lower.startswith("ollama_chat/") or lower.startswith("ollama/"):
+        # Pass legacy ``ollama/`` through verbatim — validate_model_name()
+        # rejects it with a remediation hint pointing at ``ollama_chat/``.
+        # Auto-rewriting would hide the user's mistake and leave a stale
+        # ``OLLAMA_MODEL`` line in their .env disagreeing with the proxy.
         return model
     return f"ollama_chat/{model}"
 
@@ -177,6 +180,16 @@ def validate_model_name(model_name: str) -> None:
     provider = _provider_prefix(model_name)
     if provider == "auth":
         raise ValueError("auth/* routes are not allowed as dynamic API-key model routes")
+    if provider == "ollama":
+        # Legacy ``ollama/`` (/api/generate) lacks tool calling — fail
+        # closed since Decepticon agents always emit tool calls.
+        slug = model_name.split("/", 1)[1]
+        raise ValueError(
+            f"model {model_name!r} uses the legacy ollama/ provider, which "
+            "routes to /api/generate and does not support tool/function "
+            "calling. Decepticon agents always emit tool calls — use "
+            f"ollama_chat/{slug} (routes to /api/chat) instead."
+        )
     if provider not in ALLOWED_DYNAMIC_PROVIDERS:
         raise ValueError(
             f"unsupported model provider {provider!r} for {model_name!r}; "
@@ -188,7 +201,7 @@ def _derived_api_key_env(provider: str) -> str:
     return f"{provider.upper()}_API_KEY"
 
 
-def build_model_entry(model_name: str, env: Mapping[str, str] | None = None) -> dict[str, Any]:
+def build_model_entry(model_name: str) -> dict[str, Any]:
     """Build a LiteLLM ``model_list`` entry for a requested model ID.
 
     The generated route keeps ``model_name`` identical to the string used by the
@@ -210,10 +223,11 @@ def build_model_entry(model_name: str, env: Mapping[str, str] | None = None) -> 
         }
     else:
         params = {"model": model_name}
-        if provider in {"ollama", "ollama_chat"}:
-            # Ollama runs locally and has no API key; both the legacy
-            # /api/generate (ollama/) and the modern /api/chat
-            # (ollama_chat/) routes share the same base URL env var.
+        if provider == "ollama_chat":
+            # Ollama runs locally and has no API key. The legacy ``ollama``
+            # provider is rejected upstream by validate_model_name so only
+            # ``ollama_chat/`` (which routes to /api/chat with tool support)
+            # reaches this branch.
             params["api_base"] = "os.environ/OLLAMA_API_BASE"
         else:
             api_key_env = PROVIDER_API_KEY_ENV.get(provider, _derived_api_key_env(provider))
@@ -234,7 +248,7 @@ def merge_dynamic_models(
         validate_model_name(model_name)
         if model_name in existing:
             continue
-        model_list.append(build_model_entry(model_name, env))
+        model_list.append(build_model_entry(model_name))
         existing.add(model_name)
 
     merged["model_list"] = model_list
