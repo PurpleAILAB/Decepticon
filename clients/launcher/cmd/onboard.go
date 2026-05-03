@@ -4,12 +4,19 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+// onboardOllamaProbeBudget bounds the wait for the background Ollama
+// discovery probe at form-construction time. Per-request timeout
+// (ollama_models.go) is much shorter; this is the worst-case across
+// all candidate URLs.
+const onboardOllamaProbeBudget = 3 * time.Second
 
 var resetFlag bool
 
@@ -44,12 +51,18 @@ const (
 	methodOllamaLocal      = "ollama_local"
 )
 
-// Default Ollama wiring shown to OSS users. host.docker.internal works
-// out of the box on macOS, Docker Desktop on Windows/WSL2, and on
-// Linux thanks to the ``extra_hosts: [host.docker.internal:host-gateway]``
-// entry on the litellm service in docker-compose.yml. WSL2 users who
-// installed Ollama *inside* the WSL distro itself (rather than on the
-// Windows host) need to override this with http://localhost:11434.
+// Default Ollama wiring shown to OSS users. ``host.docker.internal``
+// is the universal answer regardless of where Ollama runs (macOS host,
+// WSL2 distro, native Linux): from inside Decepticon's containers it
+// resolves to the host network namespace via the
+// ``extra_hosts: [host.docker.internal:host-gateway]`` entry on the
+// litellm service in docker-compose.yml. ``localhost`` is never the
+// right answer here — that's the container itself.
+//
+// The host's Ollama must additionally be bound to 0.0.0.0 (the default
+// 127.0.0.1 binding only accepts host-side connections); the wizard
+// surfaces this requirement to the user.
+//
 // The default model is the smallest/fastest one most laptops can
 // actually run; users with a GPU will pick something like qwen3-coder:30b.
 const (
@@ -91,6 +104,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Kick off Ollama discovery in the background so the network
+	// round-trip overlaps with huh's startup work; the OLLAMA_MODEL
+	// field type depends on the result (Select vs remediation Note).
+	probeCh := make(chan ollamaProbeResult, 1)
+	go func() {
+		probeCh <- probeOllamaForOnboard(defaultOllamaAPIBase)
+	}()
+
 	var (
 		methods                []string
 		anthropicKey           string
@@ -113,6 +134,19 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		useLangSmith           bool
 		langSmithKey           string
 	)
+
+	// Block on the probe (zero-value result on timeout means
+	// "unreachable" — drops through to the remediation Note).
+	// time.NewTimer + Stop avoids the time.After timer leak when the
+	// probe finishes first.
+	probeTimer := time.NewTimer(onboardOllamaProbeBudget)
+	var ollamaProbe ollamaProbeResult
+	select {
+	case ollamaProbe = <-probeCh:
+		probeTimer.Stop()
+	case <-probeTimer.C:
+	}
+	ollamaModelField := buildOllamaModelField(ollamaProbe, &ollamaModel)
 
 	form := huh.NewForm(
 		// Intro
@@ -331,29 +365,20 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("2 / 4  ·  Perplexity Pro").
 			WithHideFunc(func() bool { return !contains(methods, methodPerplexityOAuth) }),
 
-		// Step 2g: Local Ollama
-		// No API key — the user provides only the endpoint and the model
-		// tag they pulled (``ollama pull qwen3-coder:30b``). The proxy
-		// dynamically registers ``ollama_chat/<model>`` at startup via
-		// litellm_dynamic_config.py — no yaml editing needed. The
-		// ``ollama_chat/`` provider routes to /api/chat which is the
-		// only Ollama endpoint that supports tool/function calling, and
-		// every Decepticon agent uses tools.
+		// Step 2g: Local Ollama. The OLLAMA_MODEL field is built from
+		// the host probe (buildOllamaModelField): a strict Select when
+		// tool-capable models are pulled, a remediation Note otherwise.
+		// The post-form gate refuses to write .env in the Note cases.
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Local Ollama").
-				Description("Ollama must already be running on your host\n(`ollama serve`) with the model pulled\n(`ollama pull <name>`).\n\nLeave the URL as-is on macOS / Linux Docker /\nDocker Desktop on Windows or WSL2 with Ollama\nrunning on the Windows host.\n\nIf Ollama runs INSIDE your WSL distro instead,\nchange it to http://localhost:11434.\n\nFor remote / custom setups use the full URL."),
+				Description("Ollama must already be running on your host with\nat least one tool-capable model pulled. Launch it\nbound to all interfaces so the Decepticon container\ncan reach it:\n\n  OLLAMA_HOST=0.0.0.0:11434 ollama serve\n\nThe default 127.0.0.1 binding only accepts host-side\nconnections — containers won't see it.\n\nThe default URL `host.docker.internal:11434` works\non macOS, Linux, and WSL2 (with or without Docker\nDesktop). Only change it for remote / custom setups.\nNote: the model list is probed against the default URL\nat wizard start; if you customize OLLAMA_API_BASE,\nfinish the wizard then re-run 'decepticon onboard\n--reset' so the probe targets the new endpoint."),
 			huh.NewInput().
 				Title("OLLAMA_API_BASE").
 				Placeholder(defaultOllamaAPIBase).
 				Value(&ollamaAPIBase).
 				Validate(nonEmpty),
-			huh.NewInput().
-				Title("OLLAMA_MODEL").
-				Description("Any tag you pulled. Examples: qwen3-coder:30b,\nllama3.2, deepseek-r1:14b, mistral-small3.").
-				Placeholder(defaultOllamaModel).
-				Value(&ollamaModel).
-				Validate(nonEmpty),
+			ollamaModelField,
 		).Title("2 / 4  ·  Local LLM (Ollama)").
 			WithHideFunc(func() bool { return !contains(methods, methodOllamaLocal) }),
 
@@ -394,6 +419,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("setup cancelled: %w", err)
+	}
+
+	// Strict-mode gate: refuse to write .env when the user picked
+	// Ollama but the host probe found no tool-capable model. The
+	// in-form Note shows the same remediation; this is the boundary
+	// guarantee that a broken setup never ships.
+	if contains(methods, methodOllamaLocal) && len(ollamaProbe.ToolCapableModels) == 0 {
+		return ollamaUnusableError(ollamaProbe, ollamaAPIBase)
 	}
 
 	// huh.MultiSelect returns selected values in option order, not the
@@ -508,4 +541,60 @@ func boolStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+// buildOllamaModelField returns the OLLAMA_MODEL form field that
+// matches the host probe outcome: strict Select when tool-capable
+// models are pulled, otherwise a remediation Note (different message
+// for the reachable-but-no-tools case vs unreachable Ollama).
+func buildOllamaModelField(probe ollamaProbeResult, selected *string) huh.Field {
+	if len(probe.ToolCapableModels) > 0 {
+		options := make([]huh.Option[string], 0, len(probe.ToolCapableModels))
+		for _, m := range probe.ToolCapableModels {
+			options = append(options, huh.NewOption(m, m))
+		}
+		if !slices.Contains(probe.ToolCapableModels, *selected) {
+			*selected = probe.ToolCapableModels[0]
+		}
+		return huh.NewSelect[string]().
+			Title("OLLAMA_MODEL").
+			Description("Tool-capable models found on your host. Decepticon\nagents always emit tool calls — these are the only\nmodels the wizard will accept.").
+			Options(options...).
+			Value(selected)
+	}
+
+	if probe.Reachable {
+		return huh.NewNote().
+			Title("OLLAMA_MODEL — no tool-capable models found").
+			Description("Ollama is reachable but none of your pulled models\nadvertise the 'tools' capability. Decepticon agents\nalways emit tool calls, so a model without tool\nsupport cannot power them.\n\n  ollama pull qwen3-coder:30b\n  ollama show qwen3-coder:30b   # capabilities should list 'tools'\n\nThen press Esc and re-run 'decepticon onboard'.")
+	}
+
+	return huh.NewNote().
+		Title("OLLAMA_MODEL — Ollama not reachable").
+		Description("Could not reach Ollama at " + defaultOllamaAPIBase + ".\n\nMost likely Ollama isn't running or is bound to\n127.0.0.1 only (which the Decepticon container can't\nsee). Launch it on all interfaces, pull a tool-capable\nmodel, then re-run the wizard:\n\n  OLLAMA_HOST=0.0.0.0:11434 ollama serve\n  ollama pull qwen3-coder:30b\n  ollama show qwen3-coder:30b   # capabilities should list 'tools'\n\nThen press Esc and re-run 'decepticon onboard'.")
+}
+
+// ollamaUnusableError surfaces the post-form remediation when the user
+// picked Ollama but the probe found nothing usable. Two flavors so the
+// hint matches whichever in-form Note was shown.
+func ollamaUnusableError(probe ollamaProbeResult, baseURL string) error {
+	if probe.Reachable {
+		return fmt.Errorf(
+			"Ollama selected but no tool-capable models found on the host.\n" +
+				"Decepticon agents always emit tool calls — pull a tool-capable\n" +
+				"model and verify it advertises tools, then re-run:\n\n" +
+				"  ollama pull qwen3-coder:30b\n" +
+				"  ollama show qwen3-coder:30b   # capabilities should list 'tools'\n" +
+				"  decepticon onboard --reset")
+	}
+	return fmt.Errorf(
+		"Ollama selected but the host probe could not reach %s.\n"+
+			"Make sure Ollama is running and bound to all interfaces (the\n"+
+			"default 127.0.0.1 binding is invisible to containers), then\n"+
+			"pull a tool-capable model and re-run:\n\n"+
+			"  OLLAMA_HOST=0.0.0.0:11434 ollama serve\n"+
+			"  ollama pull qwen3-coder:30b\n"+
+			"  ollama show qwen3-coder:30b   # capabilities should list 'tools'\n"+
+			"  decepticon onboard --reset",
+		baseURL)
 }
