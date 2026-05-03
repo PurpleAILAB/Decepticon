@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import os
 from enum import Enum
+from typing import Any
 
 import httpx
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
@@ -257,6 +259,153 @@ def _model_uses_chatgpt_responses_api(model: str) -> bool:
     return lowered.startswith("auth/gpt-") or lowered.startswith("chatgpt/gpt-")
 
 
+def _model_is_deepseek_thinking(model: str) -> bool:
+    """Return True for DeepSeek V4 Pro and legacy deepseek-reasoner.
+
+    These models use thinking mode by default and return ``reasoning_content``
+    in assistant messages. When tool calls are involved, the API **requires**
+    ``reasoning_content`` to be passed back in subsequent turns — omitting it
+    causes a 400 error. See: https://api-docs.deepseek.com/guides/thinking_mode
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    return slug in ("deepseek-v4-pro", "deepseek-reasoner")
+
+
+class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
+    """ChatOpenAI subclass that preserves DeepSeek ``reasoning_content``.
+
+    DeepSeek V4 Pro's thinking mode returns ``reasoning_content`` alongside
+    ``content`` in assistant messages. When tool calls are present, this field
+    **must** be passed back in all subsequent API requests. LangChain's default
+    message converters silently drop it in both directions:
+
+    1. Response → AIMessage: ``reasoning_content`` is not extracted
+    2. AIMessage → request dict: ``reasoning_content`` is not serialized
+
+    This class patches both directions by:
+    - Storing ``reasoning_content`` in ``AIMessage.additional_kwargs``
+    - Injecting it back into request dicts for assistant messages
+    - Passing ``extra_body={"thinking": {"type": "enabled"}}`` and
+      ``reasoning_effort="high"`` on every request
+    """
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        """Inject reasoning_content into outbound assistant messages."""
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+
+        # Inject DeepSeek thinking mode params
+        extra_body = payload.get("extra_body") or {}
+        extra_body["thinking"] = {"type": "enabled"}
+        payload["extra_body"] = extra_body
+        payload["reasoning_effort"] = "high"
+
+        # Walk the messages array and inject reasoning_content from
+        # additional_kwargs back into assistant message dicts so the
+        # DeepSeek API sees them.
+        for msg in payload.get("messages", []):
+            if msg.get("role") != "assistant":
+                continue
+            # The source AIMessage stashes reasoning_content in
+            # additional_kwargs; _convert_message_to_dict does not
+            # serialize it. Find the original AIMessage and inject.
+            # We also check if the dict already has it (future-proofing
+            # in case LangChain adds native support).
+            if "reasoning_content" not in msg:
+                # Try to find matching AIMessage from the input
+                if isinstance(input_, list):
+                    for lc_msg in input_:
+                        if isinstance(lc_msg, AIMessage) and lc_msg.additional_kwargs.get(
+                            "reasoning_content"
+                        ):
+                            # Match by content — the dict's content came from this message
+                            msg_content = msg.get("content") or ""
+                            lc_content = lc_msg.content or ""
+                            if str(msg_content) == str(lc_content) or (
+                                msg.get("tool_calls") and lc_msg.tool_calls
+                            ):
+                                msg["reasoning_content"] = lc_msg.additional_kwargs[
+                                    "reasoning_content"
+                                ]
+                                break
+
+        return payload
+
+    def _create_message_dicts(
+        self,
+        messages: list[BaseMessage],
+        stop: list[str] | None = None,
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Override to inject reasoning_content into serialized message dicts."""
+        message_dicts, params = super()._create_message_dicts(messages, stop=stop)
+
+        # Pair up LangChain messages with their serialized dicts and inject
+        # reasoning_content where present. This is more reliable than the
+        # payload-level injection since we have direct access to the source
+        # AIMessage objects.
+        for lc_msg, msg_dict in zip(messages, message_dicts):
+            if (
+                isinstance(lc_msg, AIMessage)
+                and "reasoning_content" not in msg_dict
+                and lc_msg.additional_kwargs.get("reasoning_content")
+            ):
+                msg_dict["reasoning_content"] = lc_msg.additional_kwargs["reasoning_content"]
+
+        # Ensure thinking mode params are in the request
+        params.setdefault("extra_body", {})
+        params["extra_body"]["thinking"] = {"type": "enabled"}
+        params["reasoning_effort"] = "high"
+
+        return message_dicts, params
+
+    def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        """Wrap _generate to preserve reasoning_content in the response."""
+        result = super()._generate(messages, *args, **kwargs)
+        self._extract_reasoning_content(result)
+        return result
+
+    async def _agenerate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        """Wrap _agenerate to preserve reasoning_content in the response."""
+        result = await super()._agenerate(messages, *args, **kwargs)
+        self._extract_reasoning_content(result)
+        return result
+
+    @staticmethod
+    def _extract_reasoning_content(result: Any) -> None:
+        """Extract reasoning_content from raw response into AIMessage.additional_kwargs.
+
+        The OpenAI SDK parses reasoning_content from the response but LangChain's
+        _convert_dict_to_message ignores it. We recover it from the raw response
+        object stored in generation_info or the response_metadata.
+        """
+        for generation in getattr(result, "generations", []):
+            msg = getattr(generation, "message", None)
+            if not isinstance(msg, AIMessage):
+                continue
+            # Already set (future-proofing)
+            if msg.additional_kwargs.get("reasoning_content"):
+                continue
+            # Try generation_info → message → reasoning_content
+            gen_info = getattr(generation, "generation_info", {}) or {}
+            rc = gen_info.get("reasoning_content")
+            if not rc:
+                # Try response_metadata
+                rm = getattr(msg, "response_metadata", {}) or {}
+                rc = rm.get("reasoning_content")
+            if not rc:
+                # Try the raw OpenAI Choice object if available
+                raw = gen_info.get("message", {})
+                if isinstance(raw, dict):
+                    rc = raw.get("reasoning_content")
+            if rc:
+                msg.additional_kwargs["reasoning_content"] = rc
+
+
 def _reraise_if_connection_error(exc: Exception) -> None:
     err_type = type(exc).__name__
     if any(
@@ -462,11 +611,16 @@ class LLMFactory:
         }
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}
+        elif _model_is_deepseek_thinking(model):
+            # DeepSeek V4 Pro thinking mode rejects temperature.
+            kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
         if _model_uses_chatgpt_responses_api(model):
             kwargs["use_responses_api"] = True
             kwargs["output_version"] = "responses/v1"
+        if _model_is_deepseek_thinking(model):
+            return _DeepSeekThinkingChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)
 
     async def health_check(self) -> bool:
