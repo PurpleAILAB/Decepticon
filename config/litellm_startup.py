@@ -158,7 +158,15 @@ def _patch_chatgpt_responses_text_aggregation() -> None:
     Aggregate text deltas and synthesize a standard Responses message when the
     upstream completed payload is empty. Keep the original transformer for all
     normal/error cases.
+
+    Skipped entirely when DECEPTICON_AUTH_CHATGPT=false (or unset) to avoid
+    importing the chatgpt provider module, which triggers a device-code
+    OAuth prompt at startup even when ChatGPT is not configured.
     """
+    chatgpt_enabled = os.environ.get("DECEPTICON_AUTH_CHATGPT", "false").strip().lower()
+    if chatgpt_enabled not in ("true", "1", "yes"):
+        print("[decepticon] chatgpt responses patch skipped (DECEPTICON_AUTH_CHATGPT != true)", flush=True)
+        return
 
     try:
         import json
