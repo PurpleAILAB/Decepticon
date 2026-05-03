@@ -131,10 +131,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		ollamaAPIBase          = defaultOllamaAPIBase
 		ollamaModel            = defaultOllamaModel
 		profile                string
+		language               = "en"
 		useLangSmith           bool
 		langSmithKey           string
 	)
-
 	// Block on the probe (zero-value result on timeout means
 	// "unreachable" — drops through to the remediation Note).
 	// time.NewTimer + Stop avoids the time.After timer leak when the
@@ -186,7 +186,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					}
 					return nil
 				}),
-		).Title("1 / 4  ·  Credentials").
+		).Title("1 / 5  ·  Credentials").
 			Description("Select all that apply"),
 
 		// Step 2a: Anthropic API key
@@ -197,7 +197,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&anthropicKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  Anthropic API").
+		).Title("2 / 5  ·  Anthropic API").
 			WithHideFunc(func() bool { return !contains(methods, methodAnthropicAPI) }),
 
 		// Step 2b: ChatGPT subscription session token
@@ -216,7 +216,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Placeholder("eyJhbGciOiJ...   (leave blank to skip)").
 				EchoMode(huh.EchoModePassword).
 				Value(&chatgptSessionToken),
-		).Title("2 / 4  ·  ChatGPT OAuth").
+		).Title("2 / 5  ·  ChatGPT OAuth").
 			WithHideFunc(func() bool { return !contains(methods, methodOpenAIOAuth) }),
 
 		// Step 2c: OpenAI API key
@@ -227,7 +227,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&openaiKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  OpenAI API").
+		).Title("2 / 5  ·  OpenAI API").
 			WithHideFunc(func() bool { return !contains(methods, methodOpenAIAPI) }),
 
 		// Step 2c: Google API key
@@ -238,7 +238,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&geminiKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  Google API").
+		).Title("2 / 5  ·  Google API").
 			WithHideFunc(func() bool { return !contains(methods, methodGoogleAPI) }),
 
 		// Step 2d: MiniMax API key
@@ -249,7 +249,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&minimaxKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  MiniMax API").
+		).Title("2 / 5  ·  MiniMax API").
 			WithHideFunc(func() bool { return !contains(methods, methodMiniMaxAPI) }),
 
 		// Step 2d-i: DeepSeek API key
@@ -260,7 +260,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&deepseekKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  DeepSeek API").
+		).Title("2 / 5  ·  DeepSeek API").
 			WithHideFunc(func() bool { return !contains(methods, methodDeepSeekAPI) }),
 
 		// Step 2d-ii: xAI API key
@@ -271,7 +271,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&xaiKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  xAI API (Grok)").
+		).Title("2 / 5  ·  xAI API (Grok)").
 			WithHideFunc(func() bool { return !contains(methods, methodXAIAPI) }),
 
 		// Step 2d-iii: Mistral API key
@@ -282,7 +282,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&mistralKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  Mistral API").
+		).Title("2 / 5  ·  Mistral API").
 			WithHideFunc(func() bool { return !contains(methods, methodMistralAPI) }),
 
 		// Step 2e: OpenRouter API key
@@ -293,7 +293,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&openrouterKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  OpenRouter API").
+		).Title("2 / 5  ·  OpenRouter API").
 			WithHideFunc(func() bool { return !contains(methods, methodOpenRouterAPI) }),
 
 		// Step 2f: Nvidia NIM API key
@@ -304,7 +304,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&nvidiaKey).
 				Validate(nonEmpty),
-		).Title("2 / 4  ·  Nvidia NIM API").
+		).Title("2 / 5  ·  Nvidia NIM API").
 			WithHideFunc(func() bool { return !contains(methods, methodNvidiaAPI) }),
 
 		// Step 2-oauth-i: Gemini Advanced subscription
@@ -320,7 +320,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Placeholder("NID=...; __Secure-1PSID=...   (leave blank to skip)").
 				EchoMode(huh.EchoModePassword).
 				Value(&geminiSessionCookies),
-		).Title("2 / 4  ·  Gemini Advanced").
+		).Title("2 / 5  ·  Gemini Advanced").
 			WithHideFunc(func() bool { return !contains(methods, methodGoogleOAuth) }),
 
 		// Step 2-oauth-ii: SuperGrok subscription
@@ -333,7 +333,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Placeholder("paste auth_token cookie value (leave blank to skip)").
 				EchoMode(huh.EchoModePassword).
 				Value(&grokSessionToken),
-		).Title("2 / 4  ·  SuperGrok").
+		).Title("2 / 5  ·  SuperGrok").
 			WithHideFunc(func() bool { return !contains(methods, methodGrokOAuth) }),
 
 		// Step 2-oauth-iii: GitHub Copilot Pro subscription
@@ -349,7 +349,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Placeholder("ghu_... or ghr_... (leave blank to skip)").
 				EchoMode(huh.EchoModePassword).
 				Value(&copilotRefreshToken),
-		).Title("2 / 4  ·  Copilot Pro").
+		).Title("2 / 5  ·  Copilot Pro").
 			WithHideFunc(func() bool { return !contains(methods, methodCopilotOAuth) }),
 
 		// Step 2-oauth-iv: Perplexity Pro subscription
@@ -362,7 +362,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Placeholder("paste next-auth.session-token (leave blank to skip)").
 				EchoMode(huh.EchoModePassword).
 				Value(&perplexitySessionToken),
-		).Title("2 / 4  ·  Perplexity Pro").
+		).Title("2 / 5  ·  Perplexity Pro").
 			WithHideFunc(func() bool { return !contains(methods, methodPerplexityOAuth) }),
 
 		// Step 2g: Local Ollama. The OLLAMA_MODEL field is built from
@@ -379,7 +379,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Value(&ollamaAPIBase).
 				Validate(nonEmpty),
 			ollamaModelField,
-		).Title("2 / 4  ·  Local LLM (Ollama)").
+		).Title("2 / 5  ·  Local LLM (Ollama)").
 			WithHideFunc(func() bool { return !contains(methods, methodOllamaLocal) }),
 
 		// Step 3: Model profile
@@ -393,9 +393,35 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("test — every agent on LOW (development)", "test"),
 				).
 				Value(&profile),
-		).Title("3 / 4  ·  Profile"),
+		).Title("3 / 5  ·  Profile"),
 
-		// Step 4a: LangSmith toggle
+		// Step 4: Language
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Agent Language").
+				Description("Language for all agent prose output (menus, questions,\nsummaries, errors). Technical output stays in English.\nCountry codes (dk, se, jp, cn) are auto-resolved.").
+				Options(
+					huh.NewOption("en     — English (default)", "en"),
+					huh.NewOption("no     — Norwegian", "no"),
+					huh.NewOption("da     — Danish", "da"),
+					huh.NewOption("sv     — Swedish", "sv"),
+					huh.NewOption("ko     — Korean", "ko"),
+					huh.NewOption("ja     — Japanese", "ja"),
+					huh.NewOption("zh     — Chinese", "zh"),
+					huh.NewOption("es     — Spanish", "es"),
+					huh.NewOption("de     — German", "de"),
+					huh.NewOption("fr     — French", "fr"),
+					huh.NewOption("nl     — Dutch", "nl"),
+					huh.NewOption("pl     — Polish", "pl"),
+					huh.NewOption("ru     — Russian", "ru"),
+					huh.NewOption("ar     — Arabic", "ar"),
+					huh.NewOption("pt-br  — Brazilian Portuguese", "pt-br"),
+					huh.NewOption("wenyan — 文言文 (Classical Chinese)", "wenyan"),
+				).
+				Value(&language),
+		).Title("4 / 5  ·  Language"),
+
+		// Step 5a: LangSmith toggle
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title("Enable LangSmith?").
@@ -403,9 +429,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Affirmative("Yes").
 				Negative("No").
 				Value(&useLangSmith),
-		).Title("4 / 4  ·  Observability"),
+		).Title("5 / 5  ·  Observability"),
 
-		// Step 4b: LangSmith key
+		// Step 5b: LangSmith key
 		huh.NewGroup(
 			huh.NewInput().
 				Title("LangSmith API Key").
@@ -413,7 +439,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&langSmithKey).
 				Validate(nonEmpty),
-		).Title("4 / 4  ·  LangSmith").
+		).Title("5 / 5  ·  LangSmith").
 			WithHideFunc(func() bool { return !useLangSmith }),
 	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
@@ -441,6 +467,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	values := map[string]string{
 		"DECEPTICON_MODEL_PROFILE":    profile,
+		"DECEPTICON_LANGUAGE":         language,
 		"DECEPTICON_AUTH_PRIORITY":    strings.Join(priority, ","),
 		"DECEPTICON_AUTH_CLAUDE_CODE": boolStr(contains(methods, methodAnthropicOAuth)),
 		"DECEPTICON_AUTH_CHATGPT":     boolStr(contains(methods, methodOpenAIOAuth)),
@@ -514,6 +541,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  ┌──────────────────────────────────┐"))
 	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Methods   ") + ui.Dim.Render(strings.Join(priority, ", ")))
 	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Profile   ") + ui.Dim.Render(profile))
+	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Language  ") + ui.Dim.Render(language))
 	if useLangSmith {
 		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  LangSmith ") + ui.Green.Render("enabled"))
 	}

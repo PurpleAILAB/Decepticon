@@ -282,6 +282,17 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     # replies in the configured locale regardless of input language.
     pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
     if pinned_lang and pinned_lang.lower() != "en":
+        # Country-code aliases → ISO 639-1 language codes. Users naturally
+        # type "dk" (Denmark), "se" (Sweden), "jp" (Japan), "cn" (China)
+        # instead of the ISO 639-1 "da", "sv", "ja", "zh".
+        _COUNTRY_TO_LANG = {
+            "dk": "da",
+            "se": "sv",
+            "jp": "ja",
+            "cn": "zh",
+            "br": "pt-br",
+            "tw": "zh-tw",
+        }
         _LANG_NAMES = {
             # East Asian
             "ko": "Korean",
@@ -341,19 +352,44 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
             "sw": "Swahili",
             "af": "Afrikaans",
         }
-        lang_name = _LANG_NAMES.get(pinned_lang.lower(), pinned_lang)
-        override = (
-            "<LANGUAGE_POLICY>\n"
-            f"You MUST respond in {lang_name} for all operator-facing prose.\n"
-            f"\n"
-            f"- All operator-facing prose (interview questions, menu options, explanations,\n"
-            f"  summaries, status updates, error messages) MUST be in {lang_name}.\n"
-            f"- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
-            f"  blocks, file paths, command output) stay in their original technical\n"
-            f"  form — do not translate identifiers, file names, command flags, or\n"
-            f"  schema field names.\n"
-            f"</LANGUAGE_POLICY>"
-        )
+
+        resolved = _COUNTRY_TO_LANG.get(pinned_lang.lower(), pinned_lang.lower())
+
+        # Special mode: Wenyan (文言文) — Classical Chinese literary compression.
+        # Inspired by github.com/JuliusBrussee/caveman's wenyan mode.
+        if resolved == "wenyan":
+            override = (
+                "<LANGUAGE_POLICY>\n"
+                "You MUST respond in 文言文 (Classical Chinese literary style) with embedded "
+                "English technical terms.\n"
+                "\n"
+                "- All operator-facing prose (interview questions, menu options, explanations,\n"
+                "  summaries, status updates, error messages) MUST be written in Classical\n"
+                "  Chinese (文言文). Use terse, literary phrasing — maximum compression,\n"
+                "  minimum characters, ancient scholar style.\n"
+                "- Technical terms, code symbols, function names, API names, error strings,\n"
+                "  file paths, command flags, and schema field names stay in English.\n"
+                "  Do NOT transliterate technical vocabulary into Chinese.\n"
+                "- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
+                "  blocks, command output) stay in their original technical form.\n"
+                "- Example style: '物出新參照，致重繪。useMemo Wrap之。'\n"
+                "</LANGUAGE_POLICY>"
+            )
+        else:
+            lang_name = _LANG_NAMES.get(resolved, pinned_lang)
+            override = (
+                "<LANGUAGE_POLICY>\n"
+                f"You MUST respond in {lang_name} for all operator-facing prose.\n"
+                f"\n"
+                f"- All operator-facing prose (interview questions, menu options, explanations,\n"
+                f"  summaries, status updates, error messages) MUST be in {lang_name}.\n"
+                f"- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
+                f"  blocks, file paths, command output) stay in their original technical\n"
+                f"  form — do not translate identifiers, file names, command flags, or\n"
+                f"  schema field names.\n"
+                f"</LANGUAGE_POLICY>"
+            )
+
         # Replace the existing policy block
         import re
 
