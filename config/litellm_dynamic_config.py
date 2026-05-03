@@ -236,11 +236,107 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
     return {"model_name": model_name, "litellm_params": params}
 
 
+# ── Subscription OAuth routes ───────────────────────────────────────────
+# These were previously static in litellm.yaml. LiteLLM's native providers
+# (chatgpt, gemini-sub, copilot, grok-sub, pplx-sub) attempt OAuth
+# handshakes at startup when they see their routes. If the user hasn't
+# enabled the auth method, the handshake blocks → times out → container
+# becomes unhealthy. Gating on DECEPTICON_AUTH_* prevents that.
+
+_SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
+    # env flag → model_list entries
+    "DECEPTICON_AUTH_CHATGPT": [
+        {"model_name": "auth/gpt-5.5", "litellm_params": {"model": "chatgpt/gpt-5.5"}},
+        {"model_name": "auth/gpt-5.4", "litellm_params": {"model": "chatgpt/gpt-5.4"}},
+        {"model_name": "auth/gpt-5-nano", "litellm_params": {"model": "chatgpt/gpt-5-nano"}},
+    ],
+    "DECEPTICON_AUTH_GEMINI": [
+        {
+            "model_name": "gemini-sub/gemini-2.5-pro",
+            "litellm_params": {"model": "gemini-sub/gemini-2.5-pro"},
+        },
+        {
+            "model_name": "gemini-sub/gemini-2.5-flash",
+            "litellm_params": {"model": "gemini-sub/gemini-2.5-flash"},
+        },
+    ],
+    "DECEPTICON_AUTH_COPILOT": [
+        {"model_name": "copilot/gpt-4o", "litellm_params": {"model": "copilot/gpt-4o"}},
+        {"model_name": "copilot/o1", "litellm_params": {"model": "copilot/o1"}},
+    ],
+    "DECEPTICON_AUTH_GROK": [
+        {"model_name": "grok-sub/grok-3", "litellm_params": {"model": "grok-sub/grok-3"}},
+        {"model_name": "grok-sub/grok-3-mini", "litellm_params": {"model": "grok-sub/grok-3-mini"}},
+    ],
+    "DECEPTICON_AUTH_PERPLEXITY": [
+        {"model_name": "pplx-sub/sonar-pro", "litellm_params": {"model": "pplx-sub/sonar-pro"}},
+        {"model_name": "pplx-sub/sonar", "litellm_params": {"model": "pplx-sub/sonar"}},
+    ],
+}
+
+# Fallback entries for subscription routes — appended to litellm_settings.fallbacks
+_SUBSCRIPTION_FALLBACKS: dict[str, list[dict[str, list[str]]]] = {
+    "DECEPTICON_AUTH_CHATGPT": [
+        {"auth/gpt-5.5": ["auth/gpt-5.4"]},
+    ],
+    "DECEPTICON_AUTH_GEMINI": [
+        {"gemini-sub/gemini-2.5-pro": ["gemini-sub/gemini-2.5-flash"]},
+    ],
+    "DECEPTICON_AUTH_COPILOT": [
+        {"copilot/gpt-4o": ["copilot/o1"]},
+    ],
+    "DECEPTICON_AUTH_GROK": [
+        {"grok-sub/grok-3": ["grok-sub/grok-3-mini"]},
+    ],
+    "DECEPTICON_AUTH_PERPLEXITY": [
+        {"pplx-sub/sonar-pro": ["pplx-sub/sonar"]},
+    ],
+}
+
+
+def _is_truthy(value: str) -> bool:
+    return value.strip().lower() in ("true", "1", "yes", "on")
+
+
+def _inject_subscription_routes(
+    config: MutableMapping[str, Any], env: Mapping[str, str] | None = None
+) -> None:
+    """Conditionally add subscription OAuth model routes and fallbacks.
+
+    Only registers routes for providers whose ``DECEPTICON_AUTH_*`` flag is
+    truthy.  This prevents LiteLLM's native OAuth providers from attempting
+    device-code or session-token handshakes at startup when the user hasn't
+    enabled the auth method.
+    """
+    source = env if env is not None else os.environ
+    model_list = config.setdefault("model_list", [])
+    existing = {e.get("model_name") for e in model_list if isinstance(e, dict)}
+
+    settings = config.setdefault("litellm_settings", {})
+    fallbacks = settings.setdefault("fallbacks", [])
+
+    for flag, routes in _SUBSCRIPTION_ROUTES.items():
+        if not _is_truthy(source.get(flag, "")):
+            continue
+        for route in routes:
+            if route["model_name"] not in existing:
+                model_list.append(route)
+                existing.add(route["model_name"])
+        # Add corresponding fallbacks
+        for fb in _SUBSCRIPTION_FALLBACKS.get(flag, []):
+            if fb not in fallbacks:
+                fallbacks.append(fb)
+
+
 def merge_dynamic_models(
     config: MutableMapping[str, Any], env: Mapping[str, str] | None = None
 ) -> dict[str, Any]:
     """Append requested models not already present in a LiteLLM config."""
     merged = copy.deepcopy(dict(config))
+
+    # Conditionally inject subscription OAuth routes
+    _inject_subscription_routes(merged, env)
+
     model_list = list(merged.get("model_list") or [])
     existing = {entry.get("model_name") for entry in model_list if isinstance(entry, dict)}
 

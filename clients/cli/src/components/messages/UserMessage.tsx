@@ -2,8 +2,8 @@ import React from "react";
 import { Box, Text } from "ink";
 import { CtrlOToExpand } from "../shell/CtrlOToExpand.js";
 
-const TRUNCATE_HEAD_CHARS = 2500;
-const TRUNCATE_TAIL_CHARS = 2500;
+const TRUNCATE_HEAD_CHARS = 8000;
+const TRUNCATE_TAIL_CHARS = 2000;
 
 interface Props {
   content: string;

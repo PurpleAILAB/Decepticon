@@ -8,11 +8,12 @@
 import type { Command } from "./types.js";
 import help from "./help.js";
 import clear from "./clear.js";
+import file from "./file.js";
 import quit from "./quit.js";
 import resume from "./resume.js";
 
 /** All registered commands. Add new commands here. */
-const COMMANDS: Command[] = [help, clear, quit, resume];
+const COMMANDS: Command[] = [help, clear, file, quit, resume];
 
 /** Get all registered commands. */
 export function getCommands(): Command[] {

@@ -377,3 +377,421 @@ class TestActionableErrorTranslation:
         exc = ValueError("something completely unrelated")
         # Should not raise from the helper.
         self._translate(exc, "anthropic/claude-opus-4-7")
+
+
+# ── DeepSeek V4 Pro reasoning_content passthrough ────────────────────────
+
+
+class TestDeepSeekReasoningContent:
+    """Verify reasoning_content survives both the non-streaming and streaming
+    paths so it can be sent back on subsequent API turns."""
+
+    def test_create_chat_result_extracts_reasoning_content(self):
+        """Non-streaming: _create_chat_result captures reasoning_content
+        from the response dict's choice message."""
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        # Simulate the OpenAI response dict with reasoning_content
+        response_dict = {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Four",
+                        "reasoning_content": "I think therefore I am",
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {},
+        }
+
+        # Mock the parent's _create_chat_result to return a ChatResult without reasoning_content
+        msg = AIMessage(content="Four", additional_kwargs={})
+        parent_result = ChatResult(generations=[ChatGeneration(message=msg)])
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_create_chat_result",
+            return_value=parent_result,
+        ):
+            instance = object.__new__(_DeepSeekThinkingChatOpenAI)
+            result = instance._create_chat_result(response_dict)
+
+        assert (
+            result.generations[0].message.additional_kwargs["reasoning_content"]
+            == "I think therefore I am"
+        )
+
+    def test_create_chat_result_skips_when_absent(self):
+        """Non-streaming: no crash when reasoning_content is missing."""
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage
+        from langchain_core.outputs import ChatGeneration, ChatResult
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        response_dict = {
+            "choices": [
+                {"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}
+            ],
+            "usage": {},
+        }
+
+        msg = AIMessage(content="hi", additional_kwargs={})
+        parent_result = ChatResult(generations=[ChatGeneration(message=msg)])
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_create_chat_result",
+            return_value=parent_result,
+        ):
+            instance = object.__new__(_DeepSeekThinkingChatOpenAI)
+            result = instance._create_chat_result(response_dict)
+
+        assert "reasoning_content" not in result.generations[0].message.additional_kwargs
+
+    def test_convert_chunk_injects_reasoning_content(self):
+        """Streaming: _convert_chunk_to_generation_chunk captures
+        reasoning_content from the raw delta and injects it into
+        AIMessageChunk.additional_kwargs."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        # Build a fake raw SSE chunk dict with reasoning_content in the delta
+        raw_chunk = {
+            "choices": [
+                {
+                    "delta": {
+                        "role": "assistant",
+                        "content": "",
+                        "reasoning_content": "Let me think...",
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        }
+
+        # The parent's _convert_chunk_to_generation_chunk builds the
+        # ChatGenerationChunk but ignores reasoning_content. We mock it
+        # to return a chunk without reasoning_content, then verify our
+        # override injects it.
+        base_msg = AIMessageChunk(content="", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        # Bind the real method to our mock instance
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert result is not None
+        assert result.message.additional_kwargs["reasoning_content"] == "Let me think..."
+
+    def test_convert_chunk_no_reasoning_leaves_kwargs_clean(self):
+        """Streaming: when delta has no reasoning_content, additional_kwargs
+        is not polluted."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        raw_chunk = {
+            "choices": [
+                {
+                    "delta": {"role": "assistant", "content": "hi"},
+                    "finish_reason": None,
+                }
+            ],
+        }
+
+        base_msg = AIMessageChunk(content="hi", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert result is not None
+        assert "reasoning_content" not in result.message.additional_kwargs
+
+    def test_reasoning_content_accumulates_across_chunks(self):
+        """Streaming: reasoning_content from multiple chunks concatenates
+        via AIMessageChunk.__add__ (merge_dicts)."""
+        from langchain_core.messages import AIMessageChunk
+
+        c1 = AIMessageChunk(content="", additional_kwargs={"reasoning_content": "Let me "})
+        c2 = AIMessageChunk(content="", additional_kwargs={"reasoning_content": "think..."})
+        c3 = AIMessageChunk(content="Hello!", additional_kwargs={})
+
+        merged = c1 + c2 + c3
+        assert merged.additional_kwargs["reasoning_content"] == "Let me think..."
+        assert merged.content == "Hello!"
+
+    def test_get_request_payload_injects_reasoning_content(self):
+        """Outbound: _get_request_payload injects reasoning_content from
+        AIMessage.additional_kwargs into serialized assistant message dicts."""
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        messages = [
+            HumanMessage(content="hi"),
+            AIMessage(
+                content="hello",
+                additional_kwargs={"reasoning_content": "thinking..."},
+            ),
+        ]
+
+        # Mock super()._get_request_payload to return a payload without reasoning_content
+        mock_payload = {
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "model": "deepseek/deepseek-v4-pro",
+        }
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_get_request_payload",
+            return_value=mock_payload,
+        ):
+            instance = object.__new__(_DeepSeekThinkingChatOpenAI)
+            payload = instance._get_request_payload(messages)
+
+        assert payload["messages"][1]["reasoning_content"] == "thinking..."
+        assert "reasoning_content" not in payload["messages"][0]
+        assert payload["extra_body"]["thinking"] == {"type": "enabled"}
+        assert payload["reasoning_effort"] == "high"
+
+    def test_convert_chunk_empty_reasoning_content_ignored(self):
+        """Streaming: empty string reasoning_content in delta is ignored."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        raw_chunk = {
+            "choices": [
+                {
+                    "delta": {
+                        "role": "assistant",
+                        "content": "hi",
+                        "reasoning_content": "",
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        }
+
+        base_msg = AIMessageChunk(content="hi", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        # Empty string is falsy — should not pollute additional_kwargs
+        assert "reasoning_content" not in result.message.additional_kwargs
+
+    def test_convert_chunk_none_delta_no_crash(self):
+        """Streaming: None delta in choices does not crash."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        raw_chunk = {
+            "choices": [
+                {
+                    "delta": None,
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+        base_msg = AIMessageChunk(content="", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert result is not None
+        assert "reasoning_content" not in result.message.additional_kwargs
+
+    def test_convert_chunk_empty_choices_no_crash(self):
+        """Streaming: empty choices array does not crash."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        raw_chunk = {"choices": []}
+
+        base_msg = AIMessageChunk(content="", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert result is not None
+        assert "reasoning_content" not in result.message.additional_kwargs
+
+    def test_convert_chunk_parent_returns_none(self):
+        """Streaming: when parent returns None, we return None too."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        raw_chunk = {"type": "content.delta"}  # parent returns None for these
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=None,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert result is None
+
+    def test_convert_chunk_beta_stream_format(self):
+        """Streaming: handles beta.chat.completions.stream nested chunk format."""
+        from unittest.mock import MagicMock, patch
+
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        # Some LangChain versions nest under "chunk" key
+        raw_chunk = {
+            "chunk": {
+                "choices": [
+                    {
+                        "delta": {
+                            "role": "assistant",
+                            "content": "",
+                            "reasoning_content": "Thinking via beta format...",
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+            },
+        }
+
+        base_msg = AIMessageChunk(content="", additional_kwargs={})
+        base_chunk = ChatGenerationChunk(message=base_msg)
+        instance = MagicMock(spec=_DeepSeekThinkingChatOpenAI)
+        method = _DeepSeekThinkingChatOpenAI._convert_chunk_to_generation_chunk
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_convert_chunk_to_generation_chunk",
+            return_value=base_chunk,
+        ):
+            result = method(instance, raw_chunk, AIMessageChunk, None)
+
+        assert (
+            result.message.additional_kwargs["reasoning_content"] == "Thinking via beta format..."
+        )
+
+    def test_get_request_payload_multiple_assistant_messages(self):
+        """Outbound: each assistant message gets its own reasoning_content."""
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from decepticon.llm.factory import _DeepSeekThinkingChatOpenAI
+
+        messages = [
+            HumanMessage(content="q1"),
+            AIMessage(content="a1", additional_kwargs={"reasoning_content": "thought1"}),
+            HumanMessage(content="q2"),
+            AIMessage(content="a2", additional_kwargs={"reasoning_content": "thought2"}),
+        ]
+
+        mock_payload = {
+            "messages": [
+                {"role": "user", "content": "q1"},
+                {"role": "assistant", "content": "a1"},
+                {"role": "user", "content": "q2"},
+                {"role": "assistant", "content": "a2"},
+            ],
+            "model": "deepseek/deepseek-v4-pro",
+        }
+
+        with patch.object(
+            _DeepSeekThinkingChatOpenAI.__bases__[0],
+            "_get_request_payload",
+            return_value=mock_payload,
+        ):
+            instance = object.__new__(_DeepSeekThinkingChatOpenAI)
+            payload = instance._get_request_payload(messages)
+
+        assert payload["messages"][1]["reasoning_content"] == "thought1"
+        assert payload["messages"][3]["reasoning_content"] == "thought2"
+        assert "reasoning_content" not in payload["messages"][0]
+        assert "reasoning_content" not in payload["messages"][2]
+
+    def test_model_detection(self):
+        """Factory routes deepseek-v4-pro through the thinking subclass."""
+        from decepticon.llm.factory import _model_is_deepseek_thinking
+
+        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-pro") is True
+        assert _model_is_deepseek_thinking("deepseek/deepseek-reasoner") is True
+        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is False
+        assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
+        assert _model_is_deepseek_thinking("openai/gpt-5.5") is False

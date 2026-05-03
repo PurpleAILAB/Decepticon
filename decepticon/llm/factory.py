@@ -336,74 +336,92 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
 
         return payload
 
-    def _create_message_dicts(
-        self,
-        messages: list[BaseMessage],
-        stop: list[str] | None = None,
-    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        """Override to inject reasoning_content into serialized message dicts."""
-        message_dicts, params = super()._create_message_dicts(messages, stop=stop)
-
-        # Pair up LangChain messages with their serialized dicts and inject
-        # reasoning_content where present. This is more reliable than the
-        # payload-level injection since we have direct access to the source
-        # AIMessage objects.
-        for lc_msg, msg_dict in zip(messages, message_dicts):
-            if (
-                isinstance(lc_msg, AIMessage)
-                and "reasoning_content" not in msg_dict
-                and lc_msg.additional_kwargs.get("reasoning_content")
-            ):
-                msg_dict["reasoning_content"] = lc_msg.additional_kwargs["reasoning_content"]
-
-        # Ensure thinking mode params are in the request
-        params.setdefault("extra_body", {})
-        params["extra_body"]["thinking"] = {"type": "enabled"}
-        params["reasoning_effort"] = "high"
-
-        return message_dicts, params
-
     def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
         """Wrap _generate to preserve reasoning_content in the response."""
         result = super()._generate(messages, *args, **kwargs)
-        self._extract_reasoning_content(result)
+        # _create_chat_result already handled extraction; this is a no-op safety net.
         return result
 
     async def _agenerate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
         """Wrap _agenerate to preserve reasoning_content in the response."""
         result = await super()._agenerate(messages, *args, **kwargs)
-        self._extract_reasoning_content(result)
         return result
 
-    @staticmethod
-    def _extract_reasoning_content(result: Any) -> None:
-        """Extract reasoning_content from raw response into AIMessage.additional_kwargs.
+    def _convert_chunk_to_generation_chunk(
+        self,
+        chunk: dict,
+        default_chunk_class: type,
+        base_generation_info: dict | None,
+    ) -> Any:
+        """Intercept streaming chunks to capture ``reasoning_content``.
 
-        The OpenAI SDK parses reasoning_content from the response but LangChain's
-        _convert_dict_to_message ignores it. We recover it from the raw response
-        object stored in generation_info or the response_metadata.
+        DeepSeek sends ``reasoning_content`` inside ``choices[0].delta``
+        during streaming.  LangChain's ``_convert_delta_to_message_chunk``
+        ignores it, so it never reaches ``AIMessageChunk.additional_kwargs``.
+
+        We call the parent to build the ``ChatGenerationChunk`` normally,
+        then fish ``reasoning_content`` out of the raw delta dict and inject
+        it into the chunk message's ``additional_kwargs``.  When LangChain
+        aggregates chunks via ``AIMessageChunk.__add__``, ``merge_dicts``
+        concatenates the string fragments into the full reasoning trace,
+        which ``_get_request_payload`` then injects back into the API
+        request on subsequent turns.
         """
-        for generation in getattr(result, "generations", []):
+        gen_chunk = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if gen_chunk is None:
+            return None
+
+        # Extract reasoning_content from the raw delta
+        choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices", [])
+        if choices:
+            delta = choices[0].get("delta") or {}
+            rc = delta.get("reasoning_content")
+            if rc and isinstance(gen_chunk.message, AIMessage):
+                gen_chunk.message.additional_kwargs.setdefault("reasoning_content", "")
+                gen_chunk.message.additional_kwargs["reasoning_content"] += rc
+
+        return gen_chunk
+
+    def _create_chat_result(self, response: Any, generation_info: dict | None = None) -> Any:
+        """Override to capture ``reasoning_content`` from the response dict.
+
+        ``_create_chat_result`` receives either the raw OpenAI ``ChatCompletion``
+        object or its ``.model_dump()`` dict.  Either way, each choice's
+        ``message`` dict contains ``reasoning_content`` (the OpenAI SDK v1.x
+        preserves it via ``model_extra``).  LangChain's ``_convert_dict_to_message``
+        ignores it, so we fish it out of the response dict and inject it into
+        the resulting ``AIMessage.additional_kwargs`` after the parent builds
+        the ``ChatResult``.
+        """
+        # Get the response as a dict so we can access reasoning_content
+        import openai as _openai
+
+        if isinstance(response, _openai.BaseModel):
+            response_dict = response.model_dump(
+                exclude={"choices": {"__all__": {"message": {"parsed"}}}}
+            )
+        elif isinstance(response, dict):
+            response_dict = response
+        else:
+            response_dict = {}
+
+        result = super()._create_chat_result(response, generation_info)
+
+        # Pair up choices with generations and inject reasoning_content
+        choices = response_dict.get("choices") or []
+        for choice, generation in zip(choices, result.generations):
             msg = getattr(generation, "message", None)
             if not isinstance(msg, AIMessage):
                 continue
-            # Already set (future-proofing)
             if msg.additional_kwargs.get("reasoning_content"):
                 continue
-            # Try generation_info → message → reasoning_content
-            gen_info = getattr(generation, "generation_info", {}) or {}
-            rc = gen_info.get("reasoning_content")
-            if not rc:
-                # Try response_metadata
-                rm = getattr(msg, "response_metadata", {}) or {}
-                rc = rm.get("reasoning_content")
-            if not rc:
-                # Try the raw OpenAI Choice object if available
-                raw = gen_info.get("message", {})
-                if isinstance(raw, dict):
-                    rc = raw.get("reasoning_content")
+            rc = (choice.get("message") or {}).get("reasoning_content")
             if rc:
                 msg.additional_kwargs["reasoning_content"] = rc
+
+        return result
 
 
 def _reraise_if_connection_error(exc: Exception) -> None:
