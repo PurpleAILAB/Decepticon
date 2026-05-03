@@ -52,13 +52,20 @@ Native Windows (PowerShell / cmd) is **not supported** — install WSL2 first.
 
 Decepticon runs end-to-end on WSL2 with two valid Docker setups:
 
-1. **Docker Desktop with WSL2 backend** (the common path) — Docker Desktop registers `host.docker.internal` automatically, so the default `OLLAMA_API_BASE=http://host.docker.internal:11434` reaches an Ollama server running on the **Windows host**. The launcher's host-side reachability probe also handles this case.
+1. **Docker Desktop with WSL2 backend** (the common path) — Docker Desktop registers `host.docker.internal` automatically.
+2. **Native Docker inside the WSL distro** (no Docker Desktop) — Decepticon's `docker-compose.yml` adds the `host.docker.internal:host-gateway` mapping itself, so containers reach the host either way.
 
-2. **Native Docker inside the WSL distro** (no Docker Desktop) — `host.docker.internal` is *not* set up automatically. The launcher resolves it to the WSL2 default nameserver (Windows host) for its probe. If Ollama is running **inside the WSL distro itself**, set `OLLAMA_API_BASE=http://localhost:11434` instead.
+The default `OLLAMA_API_BASE=http://host.docker.internal:11434` is the right value in **all** environments — including the case where Ollama runs *inside* the same WSL distro as Decepticon. From inside a container, `localhost` is the container itself, so it can never reach Ollama on the host. Use `host.docker.internal`.
+
+Ollama must additionally listen on all interfaces — the default `127.0.0.1` binding is invisible to containers. Launch it with:
+
+```bash
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+```
 
 Other WSL caveats:
 - Install Decepticon under your WSL home (`~/.decepticon`), not on a Windows-mounted drive (`/mnt/c/...`) — bind-mounted I/O across the boundary is much slower.
-- WSL2 mirrored networking (Windows 11 22H2+) collapses the host/distro split; both `host.docker.internal` and `localhost` typically work for Windows-host services.
+- WSL2 mirrored networking (Windows 11 22H2+) collapses the *Windows host ↔ WSL distro* split, but Docker bridge networks remain isolated. The `host.docker.internal` requirement still applies.
 
 ---
 
@@ -161,24 +168,44 @@ billing, no key.
 **Setup:**
 
 1. Install Ollama on your host: <https://ollama.com/download>.
-2. Pull any model — for tool-heavy agents pick one with strong function
-   calling (Qwen3-Coder, Llama 3.3, DeepSeek-R1):
+2. Pull a tool-capable model — Decepticon agents always call tools, so
+   the chosen model **must** advertise the `tools` capability. Known
+   working families: Qwen3-Coder, Llama 3.3, DeepSeek-R1, Mistral
+   Small 3, Hermes-3:
    ```bash
    ollama pull qwen3-coder:30b
+   ollama show qwen3-coder:30b   # capabilities should include "tools"
    ```
-3. Start the Ollama server (it usually launches automatically):
+3. Start the Ollama server bound to all interfaces so the Decepticon
+   container can reach it (the default `127.0.0.1` binding only accepts
+   host-side connections):
    ```bash
-   ollama serve
+   OLLAMA_HOST=0.0.0.0:11434 ollama serve
    ```
+   On systems where Ollama runs as a service (e.g. systemd), set
+   `Environment=OLLAMA_HOST=0.0.0.0:11434` in the unit and restart it.
 4. Run `decepticon onboard` and pick **"Local LLM (Ollama)"**. The
    wizard prompts for:
-   - `OLLAMA_API_BASE` — default `http://host.docker.internal:11434`
-     works on Mac, Windows, and Linux Docker (the litellm service has
-     `extra_hosts: host.docker.internal:host-gateway`)
-   - `OLLAMA_MODEL` — the tag you pulled (e.g. `qwen3-coder:30b`)
-5. Run `decepticon`. The launcher probes `<URL>/api/tags` and warns if
-   Ollama isn't reachable — startup proceeds either way so you can
-   launch Ollama afterwards.
+   - `OLLAMA_API_BASE` — leave the default `http://host.docker.internal:11434`.
+     This works on macOS, Linux, and WSL2 (with or without Docker
+     Desktop) because `docker-compose.yml` adds the
+     `host.docker.internal:host-gateway` mapping. **`localhost` is
+     never the right answer** — from inside a container that's the
+     container itself, not the host.
+   - `OLLAMA_MODEL` — the wizard probes your running Ollama at the
+     default URL, lists every pulled model whose `/api/show`
+     capabilities include `tools`, and presents that filtered list as
+     the only valid choice. You cannot type a tag manually: Decepticon
+     agents always emit tool calls, so a non-tool-capable model would
+     break on the first request. If the wizard finds nothing
+     tool-capable (or cannot reach Ollama), it refuses to write `.env`
+     and prints the exact remediation steps.
+5. Run `decepticon`. A second probe inside the litellm container
+   re-verifies reachability and tool-capability after the stack starts
+   — the in-wizard host probe can't tell whether Ollama is bound to
+   `0.0.0.0` (visible to the container) versus `127.0.0.1` only
+   (invisible). Either probe failing prints a clear diagnostic in
+   `decepticon logs litellm`.
 
 **How it works:**
 

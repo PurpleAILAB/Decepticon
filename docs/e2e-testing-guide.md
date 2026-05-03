@@ -71,7 +71,7 @@ Manual testing procedures for verifying the LLM gateway features.
 ## Scenario 3: OpenAI-Compatible Gateway or Local Model
 
 ### Prerequisites
-- A local or private gateway that exposes an OpenAI-compatible `/v1` API, or Ollama for `ollama/*` models
+- A local or private gateway that exposes an OpenAI-compatible `/v1` API, or Ollama for `ollama_chat/*` models
 
 ### Steps
 1. Configure a custom gateway:
@@ -81,10 +81,12 @@ Manual testing procedures for verifying the LLM gateway features.
    CUSTOM_OPENAI_API_BASE=https://gateway.example.test/v1
    CUSTOM_OPENAI_API_KEY=...
    ```
-2. Or configure Ollama:
+2. Or configure Ollama (always `ollama_chat/`, never `ollama/` —
+   the legacy `ollama/` provider hits `/api/generate` and does not
+   support tool calling, which every Decepticon agent depends on):
    ```bash
    DECEPTICON_MODEL_PROFILE=custom
-   DECEPTICON_MODEL=ollama/llama3.2
+   DECEPTICON_MODEL=ollama_chat/llama3.2
    OLLAMA_API_BASE=http://host.docker.internal:11434
    ```
 3. Start services and call the selected model through LiteLLM.
@@ -101,18 +103,22 @@ Manual testing procedures for verifying the LLM gateway features.
 ## Scenario 4: Ollama Local Provider
 
 ### Prerequisites
-- Ollama installed and running (`ollama serve`)
-- At least one model pulled (`ollama pull llama3.2`)
+- Ollama installed and bound to all interfaces so the litellm
+  container can reach it: `OLLAMA_HOST=0.0.0.0:11434 ollama serve`
+- A tool-capable model pulled (`ollama pull qwen3-coder:30b` or
+  similar) — verify with `ollama show <model>` that the listed
+  capabilities include `tools`. Decepticon agents always emit tool
+  calls, so a tool-incapable model fails on the first request.
 
 ### Steps
-1. Verify Ollama is running:
+1. Verify Ollama is running and listening on all interfaces:
    ```bash
    curl http://localhost:11434/api/tags
    ```
-2. Set in `.env`:
+2. Set in `.env` (always `ollama_chat/`, never `ollama/`):
    ```
    DECEPTICON_MODEL_PROFILE=custom
-   DECEPTICON_MODEL=ollama/llama3.2
+   DECEPTICON_MODEL=ollama_chat/llama3.2
    OLLAMA_API_BASE=http://host.docker.internal:11434
    ```
 3. Start services: `make dev`
@@ -121,17 +127,29 @@ Manual testing procedures for verifying the LLM gateway features.
    curl -X POST http://localhost:4000/chat/completions \
      -H "Authorization: Bearer sk-decepticon-master" \
      -H "Content-Type: application/json" \
-     -d '{"model": "ollama/llama3.2", "messages": [{"role": "user", "content": "Say hello"}]}'
+     -d '{"model": "ollama_chat/llama3.2", "messages": [{"role": "user", "content": "Say hello"}]}'
    ```
 
 ### Expected
 - Response from local Ollama model
 - No external API calls made
+- LiteLLM startup log shows the container-side reachability +
+  tool-capability probe verdict for `OLLAMA_API_BASE`
 
 ### Troubleshooting
-- Connection refused: Ensure Ollama is running on the configured port
-- In Docker: Verify `extra_hosts: ["host.docker.internal:host-gateway"]` in docker-compose.yml
-- Set `OLLAMA_API_BASE=http://host.docker.internal:11434` for Docker access
+- Connection refused (from inside container): Ollama is likely bound
+  to `127.0.0.1` only — relaunch with `OLLAMA_HOST=0.0.0.0:11434
+  ollama serve`. The default binding accepts host-side connections
+  only, never container-side.
+- Name resolution failure: Verify
+  `extra_hosts: ["host.docker.internal:host-gateway"]` is present on
+  the litellm service in `docker-compose.yml`.
+- `localhost:11434` from a container is **always wrong** — that's the
+  container's own loopback, not the host. Use `host.docker.internal`.
+- Tool/function call errors: confirm `ollama show <model>` lists
+  `tools` in capabilities, and that the LiteLLM model id starts with
+  `ollama_chat/` (the legacy `ollama/` provider hits `/api/generate`
+  and does not support tool calling).
 
 
 ## Scenario 5: Onboard Wizard Complete Flow

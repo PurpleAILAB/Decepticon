@@ -181,12 +181,28 @@ OLLAMA_MODEL=qwen3-coder:30b
 | exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | —        |
 | recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | —        |
 
-Same model across all tiers because local hardware typically can't run
-three different models simultaneously. The launcher probes Ollama's
-`/api/tags` at startup and warns if it's unreachable, but doesn't block
-— you can launch Ollama after Decepticon's stack comes up. The
-`ollama_chat/` provider routes to Ollama's `/api/chat` endpoint, the
-only one that supports tool/function calling.
+Same model across all tiers because local hardware typically can't
+run three different models simultaneously. The `ollama_chat/` provider
+routes to Ollama's `/api/chat` endpoint, the only one that supports
+tool/function calling — the legacy `ollama/` provider hits
+`/api/generate` and is rejected at LiteLLM-config-merge time because
+Decepticon agents always emit tool calls.
+
+Two probes guard the wiring end-to-end:
+
+1. **`decepticon onboard`** — the wizard hits `/api/tags` and
+   `/api/show` on the host, filters to models that report `tools` in
+   their capabilities, and presents only that list as the
+   `OLLAMA_MODEL` choice. If Ollama is unreachable or has no
+   tool-capable models pulled, the wizard refuses to write `.env`
+   and prints the exact remediation steps.
+
+2. **litellm container startup** — re-runs the same checks from
+   inside the container, the only place that can detect
+   `OLLAMA_HOST=127.0.0.1`-only bindings (which look fine to the
+   wizard's host probe but are invisible from the container). Every
+   diagnostic appears in `decepticon logs litellm` prefixed with
+   `[decepticon ollama]`.
 
 ### Local Ollama + cloud fallback
 
