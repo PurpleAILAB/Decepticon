@@ -30,6 +30,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -266,10 +267,50 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     # Cross-cutting language policy — applies to every agent. Prepended once
     # so every prompt picks up the same operator-language directive without
     # per-agent edits.
+    #
+    # DECEPTICON_LANGUAGE env var pins the output language (e.g. "en", "ko",
+    # "no"). When set, auto-detect is disabled and the agent always responds
+    # in the pinned language. When unset, the language.md fragment's
+    # auto-detect logic applies.
     if "language" not in fragments:
         fragments = ["language", *fragments]
 
     prompt = PromptBuilder(name).with_tool_prompts(tool_prompts).with_shared(fragments).build()
+
+    # Runtime language pin: when DECEPTICON_LANGUAGE is set, replace the
+    # default English policy with a pinned-language directive so every agent
+    # replies in the configured locale regardless of input language.
+    pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
+    if pinned_lang and pinned_lang.lower() != "en":
+        _LANG_NAMES = {
+            "ko": "Korean", "ja": "Japanese", "zh": "Chinese",
+            "no": "Norwegian", "nb": "Norwegian Bokmål", "nn": "Norwegian Nynorsk",
+            "sv": "Swedish", "da": "Danish", "fi": "Finnish",
+            "de": "German", "fr": "French", "es": "Spanish",
+            "pt": "Portuguese", "it": "Italian", "nl": "Dutch",
+            "ar": "Arabic", "hi": "Hindi", "ru": "Russian",
+        }
+        lang_name = _LANG_NAMES.get(pinned_lang.lower(), pinned_lang)
+        override = (
+            "<LANGUAGE_POLICY>\n"
+            f"You MUST respond in {lang_name} for all operator-facing prose.\n"
+            f"\n"
+            f"- All operator-facing prose (interview questions, menu options, explanations,\n"
+            f"  summaries, status updates, error messages) MUST be in {lang_name}.\n"
+            f"- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
+            f"  blocks, file paths, command output) stay in their original technical\n"
+            f"  form — do not translate identifiers, file names, command flags, or\n"
+            f"  schema field names.\n"
+            f"</LANGUAGE_POLICY>"
+        )
+        # Replace the existing policy block
+        import re
+        prompt = re.sub(
+            r"<LANGUAGE_POLICY>.*?</LANGUAGE_POLICY>",
+            override,
+            prompt,
+            flags=re.DOTALL,
+        )
 
     # Apply Claude 4.x compatibility shim (no-op for other model families).
     # See decepticon/agents/prompts/claude4_compat.py and docs/model-compatibility.md.
