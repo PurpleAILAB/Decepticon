@@ -98,18 +98,56 @@ class TestResolveCredentials:
     def test_real_keys_only(self, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
         monkeypatch.setenv("OPENAI_API_KEY", "your-openai-key-here")  # placeholder
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        for k in (
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+        ):
+            monkeypatch.delenv(k, raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
+        for flag in (
+            "DECEPTICON_AUTH_CHATGPT",
+            "DECEPTICON_AUTH_COPILOT",
+            "DECEPTICON_AUTH_GEMINI",
+            "DECEPTICON_AUTH_GROK",
+            "DECEPTICON_AUTH_PERPLEXITY",
+        ):
+            monkeypatch.delenv(flag, raising=False)
         creds = _resolve_credentials()
         assert creds.methods == [AuthMethod.ANTHROPIC_API]
 
     def test_oauth_only(self, monkeypatch):
-        for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "MINIMAX_API_KEY"):
+        for k in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+        ):
             monkeypatch.delenv(k, raising=False)
         monkeypatch.setenv("DECEPTICON_AUTH_CLAUDE_CODE", "true")
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
+        for flag in (
+            "DECEPTICON_AUTH_CHATGPT",
+            "DECEPTICON_AUTH_COPILOT",
+            "DECEPTICON_AUTH_GEMINI",
+            "DECEPTICON_AUTH_GROK",
+            "DECEPTICON_AUTH_PERPLEXITY",
+        ):
+            monkeypatch.delenv(flag, raising=False)
         creds = _resolve_credentials()
         assert creds.methods == [AuthMethod.ANTHROPIC_OAUTH]
 
@@ -118,9 +156,27 @@ class TestResolveCredentials:
         monkeypatch.setenv("DECEPTICON_AUTH_CLAUDE_CODE", "true")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-12345")
-        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-        monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+        for k in (
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+        ):
+            monkeypatch.delenv(k, raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
+        for flag in (
+            "DECEPTICON_AUTH_CHATGPT",
+            "DECEPTICON_AUTH_COPILOT",
+            "DECEPTICON_AUTH_GEMINI",
+            "DECEPTICON_AUTH_GROK",
+            "DECEPTICON_AUTH_PERPLEXITY",
+        ):
+            monkeypatch.delenv(flag, raising=False)
         creds = _resolve_credentials()
         assert creds.methods == [
             AuthMethod.ANTHROPIC_OAUTH,
