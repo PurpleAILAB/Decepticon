@@ -10,12 +10,14 @@ Usage in docker-compose.yml:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 # Register custom OAuth handler before LiteLLM processes the config
 sys.path.insert(0, "/app")
 from litellm_dynamic_config import collect_requested_models, write_dynamic_config  # noqa: E402
+from ollama_probe import extract_ollama_models, has_ollama_route, probe  # noqa: E402
 
 
 def _replace_config_arg() -> None:
@@ -56,6 +58,25 @@ def _replace_config_arg() -> None:
 
 
 _replace_config_arg()
+
+
+def _probe_ollama_if_configured() -> None:
+    """Best-effort Ollama reachability + tool-capability probe; never
+    blocks proxy boot."""
+    try:
+        requested = collect_requested_models()
+        if not has_ollama_route(requested):
+            return
+        models = extract_ollama_models(requested)
+        base = os.environ.get("OLLAMA_API_BASE", "").strip()
+        for line in probe(base, models):
+            print(f"[decepticon ollama] {line}", flush=True)
+    except Exception as exc:  # noqa: BLE001
+        # Observability-only — never let a probe bug crash proxy boot.
+        print(f"[decepticon ollama] probe failed unexpectedly: {exc}", flush=True)
+
+
+_probe_ollama_if_configured()
 
 from collections.abc import AsyncIterator, Iterator  # noqa: E402
 from typing import Any  # noqa: E402
