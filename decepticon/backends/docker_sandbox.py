@@ -56,6 +56,16 @@ AUTO_BACKGROUND_SECONDS: float = 60.0
 SIZE_WATCHDOG_CHARS: int = 5_000_000
 SIZE_WATCHDOG_INTERVAL: float = 5.0
 
+
+class TmuxCommandError(RuntimeError):
+    """Raised when a tmux command fails inside the sandbox container."""
+
+    def __init__(self, args: list[str], returncode: int, output: str) -> None:
+        self.args_list = args
+        self.returncode = returncode
+        self.output = output
+        super().__init__(output)
+
 # ─── Semantic exit code interpretation (Claude Code best practice) ────────
 _EXIT_CODE_MESSAGES: dict[int, str] = {
     1: "general error",
@@ -102,6 +112,7 @@ class TmuxSessionManager:
     def __init__(self, session: str, container_name: str) -> None:
         self.session = session
         self._container = container_name
+        self._pane_id: str | None = None
 
     # ── docker / tmux helpers ──
 
@@ -117,24 +128,53 @@ class TmuxSessionManager:
         )
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout
-            # Detect tmux server death and invalidate session cache
-            if "no server running" in error_msg or "server exited" in error_msg:
-                log.warning("tmux server died — invalidating all session caches")
-                with TmuxSessionManager._init_lock:
-                    TmuxSessionManager._initialized.clear()
-            raise RuntimeError(error_msg)
+            raise TmuxCommandError(args, result.returncode, error_msg)
         return result.stdout
+
+    def _target(self) -> str:
+        """Return the stable tmux target for command dispatch."""
+        return self._pane_id or self.session
+
+    def _forget_cached_state(self) -> None:
+        self._pane_id = None
+        with TmuxSessionManager._init_lock:
+            TmuxSessionManager._initialized.discard(self.session)
+
+    def _resolve_pane_id(self) -> str:
+        return self._docker_tmux(
+            ["display-message", "-p", "-t", self.session, "#{pane_id}"],
+            timeout=5,
+        ).strip()
+
+    def _cached_pane_is_alive(self) -> bool:
+        if self.session not in TmuxSessionManager._initialized:
+            return False
+        if self._pane_id is None:
+            try:
+                self._pane_id = self._resolve_pane_id()
+            except RuntimeError:
+                return False
+        try:
+            self._docker_tmux(
+                ["display-message", "-p", "-t", self._pane_id, "#{pane_id}"],
+                timeout=5,
+            )
+            return True
+        except RuntimeError:
+            return False
 
     def _send(self, text: str, enter: bool = True) -> None:
         """Send keystrokes using -l (literal) to prevent tmux escaping bugs."""
-        self._docker_tmux(["send-keys", "-t", self.session, "-l", text])
+        target = self._target()
+        self._docker_tmux(["send-keys", "-t", target, "-l", text])
         if enter:
-            self._docker_tmux(["send-keys", "-t", self.session, "Enter"])
+            self._docker_tmux(["send-keys", "-t", target, "Enter"])
 
     def _clear_screen(self) -> None:
-        self._docker_tmux(["send-keys", "-t", self.session, "C-l"])
+        target = self._target()
+        self._docker_tmux(["send-keys", "-t", target, "C-l"])
         time.sleep(0.1)
-        self._docker_tmux(["clear-history", "-t", self.session])
+        self._docker_tmux(["clear-history", "-t", target])
 
     def _capture(self) -> str:
         return self._docker_tmux(
@@ -147,7 +187,7 @@ class TmuxSessionManager:
                 "-E",
                 "-",
                 "-t",
-                self.session,
+                self._target(),
             ]
         )
 
@@ -156,8 +196,10 @@ class TmuxSessionManager:
     def initialize(self) -> None:
         """Create session if needed and inject PS1 marker (once per session)."""
         with TmuxSessionManager._init_lock:
-            if self.session in TmuxSessionManager._initialized:
+            if self._cached_pane_is_alive():
                 return
+            TmuxSessionManager._initialized.discard(self.session)
+            self._pane_id = None
 
         session_exists = False
         try:
@@ -169,13 +211,29 @@ class TmuxSessionManager:
         if not session_exists:
             log.info("Creating tmux session: %s", self.session)
             try:
-                self._docker_tmux(["new-session", "-d", "-s", self.session])
-            except RuntimeError as e:
-                # "duplicate session" — has-session check was stale; session exists
-                if "duplicate session" not in str(e):
+                pane_id = self._docker_tmux(
+                    [
+                        "new-session",
+                        "-d",
+                        "-s",
+                        self.session,
+                        "-P",
+                        "-F",
+                        "#{pane_id}",
+                    ]
+                ).strip()
+                self._pane_id = pane_id or self.session
+            except RuntimeError:
+                try:
+                    self._docker_tmux(["has-session", "-t", self.session], timeout=5)
+                    self._pane_id = self._resolve_pane_id()
+                    session_exists = True
+                    log.debug("Session %s already exists (race), reusing", self.session)
+                except RuntimeError:
                     raise
-                log.debug("Session %s already exists (race), reusing", self.session)
             time.sleep(0.3)
+        else:
+            self._pane_id = self._resolve_pane_id()
 
         # Inject PS1 marker + disable PS2 + clear screen
         ps1_cmd = "export PROMPT_COMMAND='export PS1=\"[DCPTN:$?:$PWD] \"'; export PS2=''; clear"
@@ -230,22 +288,17 @@ class TmuxSessionManager:
         try:
             baseline = self._capture()
         except RuntimeError as e:
-            error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
-                log.warning("Session '%s' is dead — attempting recovery", self.session)
-                with TmuxSessionManager._init_lock:
-                    TmuxSessionManager._initialized.discard(self.session)
-                try:
-                    self.initialize()
-                    baseline = self._capture()
-                except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
-                    return (
-                        f"[ERROR] Session recovery failed: {retry_err}\n"
-                        f"The tmux session was destroyed or docker is overloaded. "
-                        f"Try using a different session name."
-                    )
-            else:
-                return f"[ERROR] Sandbox error: {e}"
+            log.warning("Session '%s' is not ready — attempting recovery: %s", self.session, e)
+            self._forget_cached_state()
+            try:
+                self.initialize()
+                baseline = self._capture()
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
+                return (
+                    f"[ERROR] Session recovery failed: {retry_err}\n"
+                    f"The tmux session was destroyed or docker is overloaded. "
+                    f"Try using a different session name."
+                )
         except (OSError, subprocess.TimeoutExpired) as e:
             return (
                 f"[ERROR] Sandbox capture failed: {e}\n"
@@ -256,13 +309,16 @@ class TmuxSessionManager:
         initial_count = len(PS1_PATTERN.findall(baseline))
 
         if command:
-            if is_input:
-                if command in ("C-c", "C-z", "C-d"):
-                    self._docker_tmux(["send-keys", "-t", self.session, command])
+            try:
+                if is_input:
+                    if command in ("C-c", "C-z", "C-d"):
+                        self._docker_tmux(["send-keys", "-t", self._target(), command])
+                    else:
+                        self._send(command, enter=True)
                 else:
                     self._send(command, enter=True)
-            else:
-                self._send(command, enter=True)
+            except RuntimeError as e:
+                return f"[ERROR] Could not send command to session '{self.session}': {e}"
 
         start = time.monotonic()
         prev_screen = baseline
@@ -273,18 +329,12 @@ class TmuxSessionManager:
             try:
                 screen = self._capture()
             except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
-                    with TmuxSessionManager._init_lock:
-                        TmuxSessionManager._initialized.discard(self.session)
-                    return (
-                        f"[ERROR] tmux session '{self.session}' was destroyed mid-command.\n"
-                        f"The command likely killed the shell process (e.g. pkill bash).\n"
-                        f"Session will auto-recover on next bash() call."
-                    )
-                # Other RuntimeError — keep polling, reset stall timer
-                log.debug("transient RuntimeError in poll loop: %s", poll_err)
-                last_change_time = time.monotonic()
-                continue
+                self._forget_cached_state()
+                return (
+                    f"[ERROR] tmux session '{self.session}' was destroyed mid-command: {poll_err}\n"
+                    f"The command likely killed the shell process (e.g. pkill bash).\n"
+                    f"Session will auto-recover on next bash() call."
+                )
             except (OSError, subprocess.TimeoutExpired) as poll_err:
                 # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
@@ -315,7 +365,7 @@ class TmuxSessionManager:
                     command[:50],
                 )
                 try:
-                    self._docker_tmux(["send-keys", "-t", self.session, "C-c"])
+                    self._docker_tmux(["send-keys", "-t", self._target(), "C-c"])
                 except RuntimeError:
                     pass
                 output = _extract_interactive_output(screen, baseline)
@@ -389,22 +439,17 @@ class TmuxSessionManager:
         try:
             baseline = await asyncio.to_thread(self._capture)
         except RuntimeError as e:
-            error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
-                log.warning("Session '%s' is dead — attempting recovery", self.session)
-                with TmuxSessionManager._init_lock:
-                    TmuxSessionManager._initialized.discard(self.session)
-                try:
-                    await asyncio.to_thread(self.initialize)
-                    baseline = await asyncio.to_thread(self._capture)
-                except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
-                    return (
-                        f"[ERROR] Session recovery failed: {retry_err}\n"
-                        f"The tmux session was destroyed or docker is overloaded. "
-                        f"Try using a different session name."
-                    )
-            else:
-                return f"[ERROR] Sandbox error: {e}"
+            log.warning("Session '%s' is not ready — attempting recovery: %s", self.session, e)
+            self._forget_cached_state()
+            try:
+                await asyncio.to_thread(self.initialize)
+                baseline = await asyncio.to_thread(self._capture)
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as retry_err:
+                return (
+                    f"[ERROR] Session recovery failed: {retry_err}\n"
+                    f"The tmux session was destroyed or docker is overloaded. "
+                    f"Try using a different session name."
+                )
         except (OSError, subprocess.TimeoutExpired) as e:
             return (
                 f"[ERROR] Sandbox capture failed: {e}\n"
@@ -415,15 +460,18 @@ class TmuxSessionManager:
         initial_count = len(PS1_PATTERN.findall(baseline))
 
         if command:
-            if is_input:
-                if command in ("C-c", "C-z", "C-d"):
-                    await asyncio.to_thread(
-                        self._docker_tmux, ["send-keys", "-t", self.session, command]
-                    )
+            try:
+                if is_input:
+                    if command in ("C-c", "C-z", "C-d"):
+                        await asyncio.to_thread(
+                            self._docker_tmux, ["send-keys", "-t", self._target(), command]
+                        )
+                    else:
+                        await asyncio.to_thread(self._send, command, True)
                 else:
                     await asyncio.to_thread(self._send, command, True)
-            else:
-                await asyncio.to_thread(self._send, command, True)
+            except RuntimeError as e:
+                return f"[ERROR] Could not send command to session '{self.session}': {e}"
 
         start = time.monotonic()
         prev_screen = baseline
@@ -434,18 +482,12 @@ class TmuxSessionManager:
             try:
                 screen = await asyncio.to_thread(self._capture)
             except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
-                    with TmuxSessionManager._init_lock:
-                        TmuxSessionManager._initialized.discard(self.session)
-                    return (
-                        f"[ERROR] tmux session '{self.session}' was destroyed mid-command.\n"
-                        f"The command likely killed the shell process (e.g. pkill bash).\n"
-                        f"Session will auto-recover on next bash() call."
-                    )
-                # Other RuntimeError — keep polling, reset stall timer
-                log.debug("transient RuntimeError in poll loop: %s", poll_err)
-                last_change_time = time.monotonic()
-                continue
+                self._forget_cached_state()
+                return (
+                    f"[ERROR] tmux session '{self.session}' was destroyed mid-command: {poll_err}\n"
+                    f"The command likely killed the shell process (e.g. pkill bash).\n"
+                    f"Session will auto-recover on next bash() call."
+                )
             except (OSError, subprocess.TimeoutExpired) as poll_err:
                 # docker exec stall — keep polling, do not let it trigger stall detection
                 log.debug("transient capture error in poll loop: %s", poll_err)
@@ -477,7 +519,7 @@ class TmuxSessionManager:
                 )
                 try:
                     await asyncio.to_thread(
-                        self._docker_tmux, ["send-keys", "-t", self.session, "C-c"]
+                        self._docker_tmux, ["send-keys", "-t", self._target(), "C-c"]
                     )
                 except RuntimeError:
                     pass

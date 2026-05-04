@@ -369,3 +369,58 @@ def test_poll_loop_capture_errors_dont_falsely_trigger_stall_detection():
     # And not [TIMEOUT] either — the loop should have detected completion.
     assert "[TIMEOUT]" not in result, f"Should have completed: {result!r}"
     assert "[ERROR]" not in result, f"Should not have errored: {result!r}"
+
+
+def test_initialize_recreates_stale_cached_pane_without_error_string_matching():
+    mgr = TmuxSessionManager("stale", "decepticon-sandbox")
+    mgr._pane_id = "%old"
+    TmuxSessionManager._initialized.add("stale")
+
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = [
+            RuntimeError("arbitrary tmux target failure"),  # cached pane verification
+            RuntimeError("arbitrary missing session failure"),  # has-session
+            "%new",  # new-session -P -F '#{pane_id}'
+            "",  # send-keys ps1_cmd
+            "",  # send-keys Enter
+            "",  # send-keys C-l
+            "",  # clear-history
+            "",  # pipe-pane
+        ]
+        mock_run.return_value.returncode = 0
+        mgr.initialize()
+
+    assert mgr._pane_id == "%new"
+    assert "stale" in TmuxSessionManager._initialized
+    sent_targets = [c.args[0][2] for c in mock_tmux.call_args_list if c.args[0][0] == "send-keys"]
+    assert "%new" in sent_targets
+
+
+def test_execute_recovers_initial_capture_failure_without_error_string_matching():
+    mgr = TmuxSessionManager("recover", "decepticon-sandbox")
+    mgr._pane_id = "%bad"
+    TmuxSessionManager._initialized.add("recover")
+
+    with (
+        patch.object(mgr, "initialize", return_value=None) as mock_initialize,
+        patch.object(mgr, "_capture") as mock_capture,
+        patch.object(mgr, "_send", return_value=None),
+        patch.object(mgr, "_clear_screen", return_value=None),
+        patch("time.sleep"),
+    ):
+        mock_capture.side_effect = [
+            RuntimeError("arbitrary tmux capture failure"),
+            "[DCPTN:0:/workspace] ",
+            "[DCPTN:0:/workspace] ls\nfile.txt\n[DCPTN:0:/workspace] ",
+        ]
+        result = mgr.execute(command="ls", is_input=False, timeout=2)
+
+    assert mock_initialize.call_count == 2
+    assert mgr._pane_id is None
+    assert "recover" not in TmuxSessionManager._initialized
+    assert "[ERROR]" not in result
+    assert "file.txt" in result
