@@ -13,20 +13,22 @@ metadata:
 
 ## Recording Findings
 
-When you discover a vulnerability or notable security issue, create an individual
-Markdown file in the `findings/` directory using `write_file()`.
+When you discover a verified vulnerability or notable security issue, create an
+individual Markdown file in the `findings/` directory using `write_file()`.
+Do not create empty scaffold directories or placeholder files before there is a
+real artifact to write.
 
 ### File Naming Convention
-`findings/{severity}-{slugified-title}.md`
+`findings/FIND-{NNN}.md`
 
-Derive the slug from the finding title — lowercase, hyphens for spaces, strip special characters.
-The `id` field in YAML frontmatter (FIND-001, FIND-002, ...) is the canonical cross-reference.
+The file name and the `id` field in YAML frontmatter (FIND-001, FIND-002, ...)
+use the same canonical cross-reference.
 Determine the next ID by counting existing files: `ls findings/*.md | wc -l`.
 
 Examples:
-- `findings/critical-exposed-mysql-api-example-com.md`
-- `findings/high-subdomain-takeover-staging-herokuapp.md`
-- `findings/medium-missing-hsts-header-www.md`
+- `findings/FIND-001.md`
+- `findings/FIND-002.md`
+- `findings/FIND-003.md`
 
 ### Finding Document Template
 Every finding MUST use this Markdown structure with YAML frontmatter:
@@ -84,10 +86,8 @@ enable audit logging for authentication attempts.
 ```
 
 ### After Creating a Finding
-1. Save raw evidence to `findings/evidence/FIND-{NNN}_{description}.txt`
-2. Append a one-line summary to `findings.md`:
-   `## [FIND-001] [CRITICAL] SQL Injection in api.example.com/login (OBJ-001, T1190)`
-3. Append a timeline entry to `timeline.jsonl`:
+1. Save raw evidence to `findings/evidence/FIND-{NNN}_{description}.txt` only when it supports the finding.
+2. Append a timeline entry to `timeline.jsonl` for the real finding event:
    `{"ts":"...","type":"finding","id":"FIND-001","severity":"critical","agent":"recon","objective":"OBJ-001"}`
 
 ### Severity Guide (CVSS v4.0)
@@ -106,5 +106,5 @@ enable audit logging for authentication attempts.
 - One Markdown file per finding — do NOT bundle multiple vulnerabilities
 - ALL agent documents use Markdown format — never write JSON as a deliverable document
 - CVSS v4.0 is the primary scoring system (include v3.1 only if dual-reporting needed)
-- Do NOT write to findings.md without a corresponding finding .md file
+- Do NOT create `findings.md`; each finding lives in its own `findings/FIND-{NNN}.md` file
 - Detection field should be filled when Blue Team visibility is known

@@ -558,12 +558,11 @@ class EngagementBundle(BaseModel):
 
         Layout:
           <engagement_dir>/plan/roe.json, conops.json, opplan.json, deconfliction.json
-          <engagement_dir>/findings/             (per-finding reports: FIND-001.md, ...)
-          <engagement_dir>/findings/attack-paths/ (attack path JSON files)
-          <engagement_dir>/findings/evidence/    (evidence artifacts)
-          <engagement_dir>/timeline.jsonl        (activity timeline)
-          <engagement_dir>/report/               (final report output)
-          <engagement_dir>/recon/  exploit/  post-exploit/
+
+        Phase artifact directories such as ``recon/``, ``exploit/``,
+        ``post-exploit/``, ``findings/``, and ``report/`` are created lazily
+        by the tool or agent that writes a real artifact there. This avoids
+        polluting a fresh Docker workspace with empty scaffold directories.
 
         Returns a mapping of document type → file path.
         """
@@ -573,18 +572,6 @@ class EngagementBundle(BaseModel):
         root = Path(engagement_dir)
         plan_dir = root / "plan"
         plan_dir.mkdir(parents=True, exist_ok=True)
-
-        # Create execution subdirectories
-        for subdir in (
-            "recon",
-            "exploit",
-            "post-exploit",
-            "findings",
-            "findings/attack-paths",
-            "findings/evidence",
-            "report",
-        ):
-            (root / subdir).mkdir(parents=True, exist_ok=True)
 
         files = {}
         for name, doc in [
@@ -599,24 +586,5 @@ class EngagementBundle(BaseModel):
                 encoding="utf-8",
             )
             files[name] = str(path)
-
-        # Initialize findings directory README (replaces legacy findings.md)
-        findings_readme = root / "findings" / "README.md"
-        if not findings_readme.exists():
-            findings_readme.write_text(
-                f"# Findings — {self.roe.engagement_name}\n\n"
-                f"Started: {datetime.now().isoformat()}\n\n"
-                "Each finding is a separate file: `FIND-001.md`, `FIND-002.md`, ...\n"
-                "Attack paths: `attack-paths/PATH-001.md`, ...\n"
-                "Evidence artifacts: `evidence/`\n",
-                encoding="utf-8",
-            )
-            files["findings"] = str(root / "findings")
-
-        # Initialize empty timeline.jsonl (activity log)
-        timeline_path = root / "timeline.jsonl"
-        if not timeline_path.exists():
-            timeline_path.write_text("", encoding="utf-8")
-            files["timeline"] = str(timeline_path)
 
         return files

@@ -13,10 +13,11 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
-    FilesystemMiddlewareNoExecute,
+    EngagementContextMiddleware,
+    FilesystemMiddleware,
     SandboxNotificationMiddleware,
 )
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.ad.tools import AD_TOOLS
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
@@ -45,8 +46,9 @@ def create_ad_operator_agent():
     backend = sandbox
 
     middleware = [
-        DecepticonSkillsMiddleware(backend=backend, sources=["/skills/ad/", "/skills/shared/"]),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        EngagementContextMiddleware(),
+        SkillsMiddleware(backend=backend, sources=["/skills/ad/", "/skills/shared/"]),
+        FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:

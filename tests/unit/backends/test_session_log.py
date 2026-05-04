@@ -42,6 +42,42 @@ def test_initialize_pipes_pane_to_workspace_sessions_log():
     assert cmd_arg == "cat >> /workspace/.sessions/scan-1.log"
 
 
+def test_initialize_pipes_pane_to_engagement_scoped_sessions_log():
+    mgr = TmuxSessionManager(
+        "dcptn_test-main",
+        "decepticon-sandbox",
+        workspace_path="/workspace/test",
+        log_name="main",
+    )
+    TmuxSessionManager._initialized.discard("dcptn_test-main")
+
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = [
+            RuntimeError("session not found"),
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+        mock_run.return_value.returncode = 0
+        mgr.initialize()
+
+    new_session_call = next(c for c in mock_tmux.call_args_list if c.args[0][0] == "new-session")
+    new_session_args = new_session_call.args[0]
+    assert new_session_args[new_session_args.index("-c") + 1] == "/workspace/test"
+
+    pipe_pane_call = next(c for c in mock_tmux.call_args_list if c.args[0][0] == "pipe-pane")
+    pipe_pane_args = pipe_pane_call.args[0]
+    cmd_arg = pipe_pane_args[pipe_pane_args.index("-o") + 1]
+    assert cmd_arg == "cat >> /workspace/test/.sessions/main.log"
+
+
 def test_initialize_creates_sessions_directory_inside_container():
     mgr = TmuxSessionManager("scan-2", "decepticon-sandbox")
     TmuxSessionManager._initialized.discard("scan-2")
@@ -130,6 +166,19 @@ def test_read_session_log_diff_returns_full_log_on_first_call():
         diff = sandbox.read_session_log_diff("scan")
 
     assert "line1" in diff and "line3" in diff
+
+
+def test_read_session_log_diff_uses_engagement_workspace_path():
+    sandbox = DockerSandbox(container_name="test")
+
+    with patch.object(sandbox, "download_files") as mock_dl:
+        mock_dl.return_value = [
+            _file_response("/workspace/test/.sessions/scan.log", b"scoped\n"),
+        ]
+        diff = sandbox.read_session_log_diff("scan", workspace_path="/workspace/test")
+
+    assert diff == "scoped\n"
+    mock_dl.assert_called_once_with(["/workspace/test/.sessions/scan.log"])
 
 
 def test_read_session_log_diff_returns_only_new_bytes_on_second_call():

@@ -5,9 +5,11 @@ from unittest.mock import MagicMock
 
 from decepticon.backends.docker_sandbox import BackgroundJobTracker
 from decepticon.tools.bash.bash import (
+    bash,
     bash_kill,
     bash_output,
     bash_status,
+    bash_workspace,
     set_sandbox,
 )
 
@@ -89,3 +91,28 @@ def test_bash_status_empty_returns_empty_marker():
     set_sandbox(sandbox)
     result = asyncio.run(bash_status.ainvoke({}))
     assert "[EMPTY]" in result
+
+
+def test_bash_background_uses_engagement_workspace_context():
+    sandbox = _fake_sandbox()
+    sandbox.execute = MagicMock()
+    sandbox.start_background = MagicMock()
+    set_sandbox(sandbox)
+
+    with bash_workspace("/workspace/test"):
+        result = asyncio.run(
+            bash.ainvoke(
+                {
+                    "command": "sleep 1",
+                    "background": True,
+                    "session": "scan",
+                }
+            )
+        )
+
+    sandbox.start_background.assert_called_once_with(
+        command="sleep 1",
+        session="scan",
+        workspace_path="/workspace/test",
+    )
+    assert "[BACKGROUND]" in result

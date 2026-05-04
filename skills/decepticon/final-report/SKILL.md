@@ -23,7 +23,7 @@ metadata:
 5. Read plan/opplan.json               (objective status summary)
 6. Generate report/executive-summary.md
 7. Generate report/technical-report.md
-8. (Optional) Refresh findings.md with final summary
+8. Do not create a legacy findings.md summary; summaries belong in report/
 ```
 
 ### Step 1: Initialize Output Directory

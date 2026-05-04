@@ -32,7 +32,7 @@ A 2-3 sentence overview of what was found, the overall attack surface size, and 
 
 ## 2. Finding Document Template
 
-Each significant finding gets its own Markdown file in `findings/` named by severity and slug: `findings/{severity}-{slugified-title}.md`. Use this template:
+Each significant verified finding gets its own Markdown file in `findings/` named by canonical ID: `findings/FIND-{NNN}.md`. Do not create placeholder finding files. Use this template:
 
 ````markdown
 ---
@@ -435,8 +435,8 @@ Individual findings combine into attack chains. Document these explicitly — th
 
 ### Naming and Persistence Rules
 
-- Finding documents: `findings/{severity}-{slugified-title}.md` (e.g., `critical-exposed-mysql-api-example-com.md`)
-- The `id` field in YAML frontmatter (`FIND-001`, `FIND-002`, ...) is the canonical cross-reference
+- Finding documents: `findings/FIND-{NNN}.md` (e.g., `findings/FIND-001.md`)
+- The file name and `id` field in YAML frontmatter (`FIND-001`, `FIND-002`, ...) are the canonical cross-reference
 - Evidence artifacts: `findings/evidence/FIND-{NNN}_{tool}.txt` (keyed by finding ID)
 - Raw scan data: `recon/` directory, named by tool and target
 - Always save scan output with `-oN` (nmap), `-o` (subfinder/nuclei/httpx), or output flags (ffuf)
@@ -479,7 +479,7 @@ Before concluding reconnaissance and handing off to the exploitation phase:
 - [ ] All in-scope IPs port-scanned with service versions
 - [ ] Technology stack identified for key assets
 - [ ] Vulnerability scan (nuclei) run on all live web targets
-- [ ] Each significant finding has a `findings/{severity}-{slug}.md` document
+- [ ] Each significant finding has a `findings/FIND-{NNN}.md` document
 - [ ] All findings scored with CVSS 4.0 (v3.1 added if dual-reporting required)
 - [ ] Findings mapped to MITRE ATT&CK techniques
 - [ ] Detection gap analysis completed for each finding

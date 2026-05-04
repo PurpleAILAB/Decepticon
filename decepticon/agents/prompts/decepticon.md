@@ -52,7 +52,7 @@ injected dynamically into this system prompt by middleware on every model call:
 
 - `## OPPLAN — Operational Plan Tracking` (OPPLANMiddleware) — tool reference + live progress table.
 - `Available subagent types:` (SubAgentMiddleware) — live `task()` delegate catalog.
-- `<SKILLS>` block (DecepticonSkillsMiddleware) — `Always-Loaded Workflows` (decepticon workflow + shared) and the on-demand sub-skill catalog grouped by subdomain.
+- `<SKILLS>` block (SkillsMiddleware) — `Always-Loaded Workflows` (decepticon workflow + shared) and the on-demand sub-skill catalog grouped by subdomain.
 - `[Engagement context]` / `[BENCHMARK MODE]` (EngagementContextMiddleware) — slug, workspace, target, tags, mission brief.
 
 Read those sections every turn — they are authoritative for tool names, sub-agent

@@ -34,8 +34,8 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
-from decepticon.middleware import FilesystemMiddlewareNoExecute, OPPLANMiddleware
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware import FilesystemMiddleware, OPPLANMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.research.tools import kg_query, kg_stats
 
 
@@ -127,10 +127,10 @@ def create_vulnresearch_agent():
     ]
 
     middleware = [
-        DecepticonSkillsMiddleware(
+        SkillsMiddleware(
             backend=backend, sources=["/skills/vulnresearch/", "/skills/shared/"]
         ),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
     ]

@@ -117,5 +117,5 @@ parameterized. Examples:
 
   task("exploiter",
        "Weaponize any chain that reaches a crown_jewel node. One chain
-        per turn. Store artifacts under /workspace/exploits/.")
+        per turn. Store artifacts under exploits/.")
 </STAGE_HANDOFF_MESSAGES>

@@ -74,7 +74,7 @@ Some objectives may uncover new targets or invalidate assumptions:
 
 ### Blue Team Coordination
 If `roe.json` specifies deconfliction contacts:
-- Record all major actions with timestamps in findings.md
+- Record all major actions with timestamps in `timeline.jsonl` only when a real event occurs
 - If blue team detects and responds, note this as a data point (MTTD measurement)
 - Never reveal TTPs to blue team during active engagement unless ROE requires it
 
@@ -82,7 +82,7 @@ If `roe.json` specifies deconfliction contacts:
 If engagement must be halted:
 1. Immediately stop all active sub-agent tasks
 2. Document current state: which objectives in-progress, what's deployed
-3. Record in findings.md with `[EMERGENCY STOP]` prefix
+3. Record the halt in `timeline.jsonl` and update the affected OPPLAN objectives
 4. Save opplan.json with current status for potential resumption
 
 ## Engagement Metrics
@@ -92,7 +92,7 @@ Track these throughout the engagement for the final report:
 | Metric | Description | Source |
 |--------|-------------|--------|
 | MTTD | Mean Time to Detect (per objective) | Blue team detection timestamps |
-| Dwell Time | Time from foothold to detection | findings.md timestamps |
+| Dwell Time | Time from foothold to detection | `timeline.jsonl` timestamps |
 | Objectives Completed | Passed / Total | opplan.json status counts |
 | Attack Path Depth | Number of hops from initial access | lateral movement log |
 | Credential Exposure | Unique credentials captured | post-exploit/creds/ |
@@ -108,7 +108,7 @@ When all objectives are resolved:
    - Privilege levels achieved on each host
 
 2. **Findings Synthesis**:
-   - Read all `<engagement>/findings.md` entries
+   - Read all `<engagement>/findings/FIND-*.md` entries
    - Group by severity: Critical, High, Medium, Low
    - Map each finding to MITRE ATT&CK technique
 

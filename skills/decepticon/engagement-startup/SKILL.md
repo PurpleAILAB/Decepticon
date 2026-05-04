@@ -52,7 +52,7 @@ What is the target or scope for this engagement?
    read_file("<engagement>/plan/conops.json")
    read_file("<engagement>/plan/deconfliction.json")
    read_file("<engagement>/plan/opplan.json")
-   read_file("<engagement>/findings.md")
+   read relevant files under "<engagement>/findings/"
    ```
 2. Summarize progress to the operator:
    - Objectives completed / total
@@ -70,7 +70,7 @@ and planning documents already exist.
 
 1. Verify documents exist:
    ```
-   bash(command="ls /workspace/plan/roe.json /workspace/plan/conops.json /workspace/plan/deconfliction.json")
+   bash(command="ls plan/roe.json plan/conops.json plan/deconfliction.json")
    ```
    If any are missing, delegate to `soundwave` to regenerate:
    ```

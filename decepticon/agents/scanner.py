@@ -26,10 +26,11 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
-    FilesystemMiddlewareNoExecute,
+    EngagementContextMiddleware,
+    FilesystemMiddleware,
     SandboxNotificationMiddleware,
 )
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
@@ -65,11 +66,12 @@ def create_scanner_agent():
     backend = sandbox
 
     middleware = [
-        DecepticonSkillsMiddleware(
+        EngagementContextMiddleware(),
+        SkillsMiddleware(
             backend=backend,
             sources=["/skills/scanner/", "/skills/shared/"],
         ),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:

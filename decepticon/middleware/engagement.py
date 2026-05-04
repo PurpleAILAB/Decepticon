@@ -27,8 +27,11 @@ from typing import Annotated, NotRequired, cast
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, ToolMessage
+from langgraph.types import Command
 from typing_extensions import override
+
+from decepticon.tools.bash.bash import bash_workspace
 
 
 class EngagementContextState(AgentState):
@@ -64,8 +67,8 @@ def _build_engagement_injection(slug: str, workspace: str) -> str:
         "\n\n[Engagement context — set by the launcher]\n"
         f"Workspace slug: {slug}\n"
         f"Workspace root: {workspace}\n"
-        "The sandbox /workspace bind already points at this engagement's "
-        "directory. Read and write planning documents directly under "
+        "Treat Workspace root as the only engagement directory for this run. "
+        "Read and write planning documents directly under "
         f"{workspace}/plan/. Do NOT re-prompt the operator for a slug or an "
         "engagement directory name; the launcher already chose them. The "
         "human-friendly engagement title belongs in roe.json:engagement_name "
@@ -146,6 +149,22 @@ class EngagementContextMiddleware(AgentMiddleware):
     @override
     async def awrap_model_call(self, request, handler):
         return await handler(self._inject(request))
+
+    @override
+    def wrap_tool_call(self, request, handler) -> ToolMessage | Command:
+        if request.tool and request.tool.name in {"bash", "bash_output", "bash_kill", "bash_status"}:
+            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            with bash_workspace(workspace):
+                return handler(request)
+        return handler(request)
+
+    @override
+    async def awrap_tool_call(self, request, handler) -> ToolMessage | Command:
+        if request.tool and request.tool.name in {"bash", "bash_output", "bash_kill", "bash_status"}:
+            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            with bash_workspace(workspace):
+                return await handler(request)
+        return await handler(request)
 
     def _inject(self, request):
         state = request.state or {}

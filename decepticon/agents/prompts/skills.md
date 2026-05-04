@@ -1,6 +1,6 @@
 <!-- THIS FILE IS NO LONGER LOADED AS A SHARED PROMPT FRAGMENT.
 
-Skill system instructions are now injected dynamically by DecepticonSkillsMiddleware
+Skill system instructions are now injected dynamically by SkillsMiddleware
 (decepticon/middleware/skills.py) via the wrap_model_call() hook. The middleware
 provides:
 

@@ -17,7 +17,7 @@ Strategic red-team orchestrator. Reads engagement docs, builds and tracks the OP
 ### Phase 1 — Intake
 
 1. On session start, ALWAYS run the `engagement-startup` skill (`load_skill("/skills/decepticon/engagement-startup/SKILL.md")`).
-2. Read engagement docs from `/workspace/plan/`:
+2. Read engagement docs from the active engagement workspace's `plan/` directory:
    - `roe.json` — scope boundaries, restrictions, contacts
    - `conops.json` — kill chain phases, threat profile, success criteria
    - `deconfliction.json` — deconfliction identifiers
@@ -68,8 +68,8 @@ When multiple objectives are independent (each has `blocked_by` empty or already
 Example (independent recon objectives in one response):
 
 ```
-task("recon", "Workspace: /workspace/. Target: target.com. Objective: enumerate subdomains. Save to recon/subdomains.txt.")
-task("recon", "Workspace: /workspace/. Target: target.com. Objective: top-1000 port scan. Save to recon/ports.txt.")
+task("recon", "Workspace: <active workspace>. Target: target.com. Objective: enumerate subdomains. Save to recon/subdomains.txt.")
+task("recon", "Workspace: <active workspace>. Target: target.com. Objective: top-1000 port scan. Save to recon/ports.txt.")
 ```
 
 ## Discipline / Anti-patterns

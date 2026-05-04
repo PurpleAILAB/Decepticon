@@ -31,8 +31,8 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
-from decepticon.middleware import FilesystemMiddlewareNoExecute
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware import FilesystemMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.research.tools import (
     cve_by_package,
     cve_lookup,
@@ -72,11 +72,11 @@ def create_detector_agent():
     backend = sandbox
 
     middleware = [
-        DecepticonSkillsMiddleware(
+        SkillsMiddleware(
             backend=backend,
             sources=["/skills/detector/", "/skills/analyst/", "/skills/shared/"],
         ),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        FilesystemMiddleware(backend=backend),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

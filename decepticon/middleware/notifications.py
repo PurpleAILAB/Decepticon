@@ -35,12 +35,12 @@ class SandboxNotificationMiddleware(AgentMiddleware):
             new = [
                 j
                 for j in self._sandbox._jobs.pending_completions()
-                if j.session not in self._notified
+                if j.key not in self._notified
             ]
             if not new:
                 return None
             for job in new:
-                self._notified.add(job.session)
+                self._notified.add(job.key)
 
         lines = ["<system-reminder>", "Background sandbox session updates:"]
         for job in new:
@@ -56,7 +56,7 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         # Refresh status of still-running jobs (sync subprocess calls).
         for job in list(self._sandbox._jobs.all_jobs()):
             if job.status == "running":
-                self._sandbox.poll_completion(job.session)
+                self._sandbox.poll_completion(job.session, workspace_path=job.workspace_path)
         return self._build_message()
 
     async def abefore_model(self, state, runtime):  # type: ignore[override]
@@ -64,5 +64,9 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         # do not stall the LangGraph event loop.
         for job in list(self._sandbox._jobs.all_jobs()):
             if job.status == "running":
-                await asyncio.to_thread(self._sandbox.poll_completion, job.session)
+                await asyncio.to_thread(
+                    self._sandbox.poll_completion,
+                    job.session,
+                    workspace_path=job.workspace_path,
+                )
         return self._build_message()

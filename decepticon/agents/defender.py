@@ -4,8 +4,8 @@ Uses create_agent() directly (not create_deep_agent()) to control the
 middleware stack precisely.
 
 Middleware stack (selected for defense):
-  1. DecepticonSkillsMiddleware — progressive disclosure of defender SKILL.md knowledge
-  2. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools (no execute; use bash)
+  1. SkillsMiddleware — progressive disclosure of defender SKILL.md knowledge
+  2. FilesystemMiddleware — ls/read/write/edit/glob/grep tools (no execute; use bash)
   3. ModelFallbackMiddleware  — primary → fallback on provider failure
   4. SummarizationMiddleware  — auto-compact when context budget exceeded
   5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
@@ -26,10 +26,11 @@ from decepticon.backends import DockerDefenseBackend, DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
-    FilesystemMiddlewareNoExecute,
+    EngagementContextMiddleware,
+    FilesystemMiddleware,
     SandboxNotificationMiddleware,
 )
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.defense import set_defense_backend
@@ -81,11 +82,12 @@ def create_defender_agent():
 
     # Assemble middleware stack
     middleware = [
-        DecepticonSkillsMiddleware(
+        EngagementContextMiddleware(),
+        SkillsMiddleware(
             backend=backend,
             sources=["/skills/defender/", "/skills/shared/"],
         ),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:

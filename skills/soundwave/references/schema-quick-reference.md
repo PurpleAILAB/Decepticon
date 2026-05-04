@@ -131,15 +131,11 @@ EngagementBundle
 ├── opplan: OPPLAN
 └── deconfliction: DeconflictionPlan
 
-.save(engagement_dir) creates:
+.save(engagement_dir) creates planning documents only:
   <engagement_dir>/
   ├── plan/
   │   ├── roe.json
   │   ├── conops.json
   │   ├── opplan.json
   │   └── deconfliction.json
-  ├── recon/
-  ├── exploit/
-  ├── post-exploit/
-  └── findings.md
 ```

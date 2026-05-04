@@ -5,7 +5,7 @@ middleware stack precisely.
 
 Middleware stack (selected for recon):
   1. SkillsMiddleware — progressive disclosure of SKILL.md knowledge
-  2. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools (no execute; use bash)
+  2. FilesystemMiddleware — ls/read/write/edit/glob/grep tools (no execute; use bash)
   3. ModelFallbackMiddleware — haiku 4.5 → gemini 2.5 flash fallback on primary failure
   4. SummarizationMiddleware — auto-compact when context budget exceeded
   5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
@@ -26,10 +26,11 @@ from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
-    FilesystemMiddlewareNoExecute,
+    EngagementContextMiddleware,
+    FilesystemMiddleware,
     SandboxNotificationMiddleware,
 )
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import killchain_lookup, oneliner_search
@@ -78,8 +79,9 @@ def create_recon_agent():
 
     # Assemble middleware stack
     middleware = [
-        DecepticonSkillsMiddleware(backend=backend, sources=["/skills/recon/", "/skills/shared/"]),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        EngagementContextMiddleware(),
+        SkillsMiddleware(backend=backend, sources=["/skills/recon/", "/skills/shared/"]),
+        FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
     ]
     if fallback_models:

@@ -11,8 +11,8 @@ middleware stack precisely.
 
 Middleware stack (selected for orchestration):
   1. EngagementContextMiddleware — inject engagement metadata (slug, target, RoE)
-  2. DecepticonSkillsMiddleware — progressive disclosure of SKILL.md knowledge
-  3. FilesystemMiddlewareNoExecute — file ops for reading/updating engagement docs
+  2. SkillsMiddleware — progressive disclosure of SKILL.md knowledge
+  3. FilesystemMiddleware — file ops for reading/updating engagement docs
   4. SubAgentMiddleware — task() tool for delegating to sub-agents
   5. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
   6. ModelFallbackMiddleware — primary → fallback on provider failure (chain from Credentials inventory)
@@ -50,10 +50,10 @@ from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
-    DecepticonSkillsMiddleware,
     EngagementContextMiddleware,
-    FilesystemMiddlewareNoExecute,
+    FilesystemMiddleware,
     OPPLANMiddleware,
+    SkillsMiddleware,
 )
 
 
@@ -73,7 +73,7 @@ def create_decepticon_agent():
     llm = factory.get_model("decepticon")
     fallback_models = factory.get_fallback_models("decepticon")
 
-    # DockerSandbox here only backs FilesystemMiddlewareNoExecute (read/write
+    # DockerSandbox here only backs FilesystemMiddleware (read/write
     # engagement docs). The orchestrator has tools=[], so the bash module's
     # global _sandbox is set by sub-agent factories when they execute.
     sandbox = DockerSandbox(
@@ -116,7 +116,7 @@ def create_decepticon_agent():
                 "Reconnaissance agent. Passive/active recon, OSINT, web/cloud recon. "
                 "Use for: subdomain enumeration, port scanning, service detection, "
                 "vulnerability scanning, OSINT gathering. "
-                "Saves results to /workspace/recon/"
+                "Saves results under the active engagement workspace's recon/ directory."
             ),
             runnable=StreamingRunnable(create_recon_agent(), "recon"),
         ),
@@ -126,7 +126,7 @@ def create_decepticon_agent():
                 "Exploitation agent. Initial access via web/AD attacks. "
                 "Use for: SQLi, SSTI, Kerberoasting, ADCS abuse, credential attacks. "
                 "Use after recon identifies attack surface. "
-                "Saves results to /workspace/exploit/"
+                "Saves results under the active engagement workspace's exploit/ directory."
             ),
             runnable=StreamingRunnable(create_exploit_agent(), "exploit"),
         ),
@@ -193,7 +193,7 @@ def create_decepticon_agent():
                 "Post-exploitation agent. Credential access, privilege escalation, "
                 "lateral movement, C2 management. "
                 "Use after initial foothold is established. "
-                "Saves results to /workspace/post-exploit/"
+                "Saves results under the active engagement workspace's post-exploit/ directory."
             ),
             runnable=StreamingRunnable(create_postexploit_agent(), "postexploit"),
         ),
@@ -202,10 +202,10 @@ def create_decepticon_agent():
     # Assemble middleware stack
     middleware = [
         EngagementContextMiddleware(),
-        DecepticonSkillsMiddleware(
+        SkillsMiddleware(
             backend=backend, sources=["/skills/decepticon/", "/skills/shared/"]
         ),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),
     ]

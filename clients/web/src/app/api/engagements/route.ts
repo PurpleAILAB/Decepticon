@@ -6,7 +6,7 @@ import * as path from "path";
 
 const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
 
-const WORKSPACE_SUBDIRS = ["plan", "recon", "exploit", "findings", "post-exploit"];
+const WORKSPACE_SUBDIRS = ["plan"];
 
 // Slug regex matches the Go launcher (clients/launcher/internal/engagement/picker.go).
 // Web and launcher share one engagement-naming policy so directories created
@@ -109,7 +109,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Create workspace directory structure
+    // Create only the planning root. Phase artifact directories are created
+    // lazily when an agent writes a real artifact there.
     try {
       await Promise.all(
         WORKSPACE_SUBDIRS.map((sub) => fs.mkdir(path.join(wsPath, sub), { recursive: true }))

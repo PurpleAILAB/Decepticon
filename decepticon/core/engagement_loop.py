@@ -636,7 +636,8 @@ class EngagementLoop:
             f"### Prior Findings\n"
             f"{findings_block}\n\n"
             + (f"### Rules of Engagement\n{roe_scope}\n\n" if roe_scope else "")
-            + "Execute the objective. Write findings to workspace/findings/FIND-NNN.md. "
+            + "Execute the objective. Write verified findings to workspace/findings/FIND-NNN.md. "
+            "Do not create empty workspace scaffold directories or placeholder artifacts. "
             "Signal OBJECTIVE PASSED or OBJECTIVE BLOCKED when done."
         )
 

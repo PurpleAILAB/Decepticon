@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import functools
+import hashlib
 import io
 import logging
 import os
@@ -109,9 +110,17 @@ class TmuxSessionManager:
     _initialized: set[str] = set()
     _init_lock: threading.RLock = threading.RLock()
 
-    def __init__(self, session: str, container_name: str) -> None:
+    def __init__(
+        self,
+        session: str,
+        container_name: str,
+        workspace_path: str = "/workspace",
+        log_name: str | None = None,
+    ) -> None:
         self.session = session
         self._container = container_name
+        self._workspace_path = workspace_path.rstrip("/") or "/workspace"
+        self._log_name = log_name or session
         self._pane_id: str | None = None
 
     # ── docker / tmux helpers ──
@@ -211,12 +220,21 @@ class TmuxSessionManager:
         if not session_exists:
             log.info("Creating tmux session: %s", self.session)
             try:
+                if self._workspace_path != "/workspace":
+                    subprocess.run(
+                        ["docker", "exec", self._container, "mkdir", "-p", self._workspace_path],
+                        capture_output=True,
+                        timeout=5,
+                        check=True,
+                    )
                 pane_id = self._docker_tmux(
                     [
                         "new-session",
                         "-d",
                         "-s",
                         self.session,
+                        "-c",
+                        self._workspace_path,
                         "-P",
                         "-F",
                         "#{pane_id}",
@@ -243,12 +261,19 @@ class TmuxSessionManager:
         time.sleep(0.2)
 
         if not session_exists:
-            log_path = f"/workspace/.sessions/{self.session}.log"
+            log_path = f"{self._workspace_path}/.sessions/{self._log_name}.log"
             try:
                 # Idempotent — the directory is bind-mounted to the host so
                 # operators can tail the same file the agent reads.
                 subprocess.run(
-                    ["docker", "exec", self._container, "mkdir", "-p", "/workspace/.sessions"],
+                    [
+                        "docker",
+                        "exec",
+                        self._container,
+                        "mkdir",
+                        "-p",
+                        f"{self._workspace_path}/.sessions",
+                    ],
                     capture_output=True,
                     timeout=5,
                     check=True,
@@ -373,7 +398,7 @@ class TmuxSessionManager:
                     f"{_truncate(output).strip()}\n\n"
                     f"[SIZE LIMIT] Output exceeded {SIZE_WATCHDOG_CHARS // 1_000_000}M chars. "
                     f"Command interrupted.\n"
-                    f"Redirect output to a file: command > /workspace/output.txt"
+                    f"Redirect output to a file: command > {self._workspace_path}/output.txt"
                 )
 
             # Stall detection: if screen changed from baseline (program produced
@@ -667,9 +692,9 @@ def _truncate(text: str) -> str:
     mid_chars = len(mid_text)
     return (
         f"{text[:head_chars]}\n\n"
-        f"[... {mid_lines} lines / {mid_chars} chars truncated — "
-        f"save full output to file with -oN or redirect (> /workspace/output.txt) "
-        f"to preserve complete results ...]\n\n"
+            f"[... {mid_lines} lines / {mid_chars} chars truncated — "
+            "save full output to file with -oN or redirect to a workspace file "
+            f"to preserve complete results ...]\n\n"
         f"{text[-tail_chars:]}"
     )
 
@@ -687,9 +712,11 @@ class BackgroundJob:
     """
 
     session: str
+    key: str
     command: str
     initial_markers: int
     started_at: float
+    workspace_path: str = "/workspace"
     status: str = "running"  # running | done
     exit_code: int | None = None
     completed_at: float | None = None
@@ -708,33 +735,43 @@ class BackgroundJobTracker:
         self._jobs: dict[str, BackgroundJob] = {}
         self._lock = threading.RLock()
 
-    def register(self, session: str, command: str, initial_markers: int) -> BackgroundJob:
+    def register(
+        self,
+        session: str,
+        command: str,
+        initial_markers: int,
+        key: str | None = None,
+        workspace_path: str = "/workspace",
+    ) -> BackgroundJob:
+        job_key = key or session
         with self._lock:
             job = BackgroundJob(
                 session=session,
+                key=job_key,
+                workspace_path=workspace_path,
                 command=command,
                 initial_markers=initial_markers,
                 started_at=time.monotonic(),
             )
-            self._jobs[session] = job
+            self._jobs[job_key] = job
             return job
 
-    def get(self, session: str) -> BackgroundJob | None:
+    def get(self, session: str, key: str | None = None) -> BackgroundJob | None:
         with self._lock:
-            return self._jobs.get(session)
+            return self._jobs.get(key or session)
 
-    def mark_complete(self, session: str, exit_code: int) -> None:
+    def mark_complete(self, session: str, exit_code: int, key: str | None = None) -> None:
         with self._lock:
-            job = self._jobs.get(session)
+            job = self._jobs.get(key or session)
             if job is None or job.status != "running":
                 return
             job.status = "done"
             job.exit_code = exit_code
             job.completed_at = time.monotonic()
 
-    def mark_consumed(self, session: str) -> None:
+    def mark_consumed(self, session: str, key: str | None = None) -> None:
         with self._lock:
-            job = self._jobs.get(session)
+            job = self._jobs.get(key or session)
             if job is not None:
                 job.consumed = True
 
@@ -746,9 +783,9 @@ class BackgroundJobTracker:
         with self._lock:
             return list(self._jobs.values())
 
-    def remove(self, session: str) -> None:
+    def remove(self, session: str, key: str | None = None) -> None:
         with self._lock:
-            self._jobs.pop(session, None)
+            self._jobs.pop(key or session, None)
 
 
 # ─── DockerSandbox ────────────────────────────────────────────────────────
@@ -780,17 +817,79 @@ class DockerSandbox(BaseSandbox):
         self,
         container_name: str = "decepticon-sandbox",
         default_timeout: int = 120,
+        workspace_path: str = "/workspace",
     ) -> None:
         self._container_name = container_name
         self._default_timeout = default_timeout
+        self._workspace_path = self._normalize_workspace_path(workspace_path)
         self._managers: dict[str, TmuxSessionManager] = {}
         self._managers_lock = threading.RLock()
 
-    def _get_manager(self, session: str) -> TmuxSessionManager:
+    @staticmethod
+    def _normalize_workspace_path(workspace_path: str | None) -> str:
+        path = (workspace_path or "/workspace").strip()
+        if path == "/workspace":
+            return path
+        if not path.startswith("/workspace/"):
+            return "/workspace"
+        path = path.rstrip("/")
+        components = path[len("/workspace/") :].split("/")
+        if any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", component) for component in components):
+            return "/workspace"
+        return path
+
+    @staticmethod
+    def _workspace_slug(workspace_path: str) -> str:
+        path = DockerSandbox._normalize_workspace_path(workspace_path)
+        if path == "/workspace":
+            return "root"
+        digest = hashlib.sha1(path.encode("utf-8")).hexdigest()[:8]
+        slug = path.rsplit("/", 1)[-1] or "workspace"
+        safe_slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", slug).strip("-") or "workspace"
+        return f"{safe_slug}-{digest}"
+
+    def _workspace_key(self, workspace_path: str | None = None) -> str:
+        return self._workspace_slug(workspace_path or self._workspace_path)
+
+    def _manager_key(self, session: str, workspace_path: str) -> str:
+        if self._normalize_workspace_path(workspace_path) == "/workspace":
+            return session
+        return f"{self._workspace_key(workspace_path)}:{session}"
+
+    @staticmethod
+    def _tmux_session_name(session: str, workspace_path: str) -> str:
+        if DockerSandbox._normalize_workspace_path(workspace_path) == "/workspace":
+            return DockerSandbox._safe_session_name(session)
+        workspace_key = DockerSandbox._workspace_slug(workspace_path)
+        safe_session = DockerSandbox._safe_session_name(session)
+        return f"dcptn_{workspace_key}_{safe_session}"
+
+    @staticmethod
+    def _safe_session_name(session: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_.-]+", "-", session).strip("-") or "main"
+
+    def session_log_path(self, session: str, workspace_path: str | None = None) -> str:
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        return f"{effective_workspace}/.sessions/{self._safe_session_name(session)}.log"
+
+    def _get_manager(
+        self,
+        session: str,
+        workspace_path: str | None = None,
+    ) -> TmuxSessionManager:
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        key = self._manager_key(session, effective_workspace)
+        tmux_session = self._tmux_session_name(session, effective_workspace)
+        log_name = f"{self._safe_session_name(session)}"
         with self._managers_lock:
-            if session not in self._managers:
-                self._managers[session] = TmuxSessionManager(session, self._container_name)
-            return self._managers[session]
+            if key not in self._managers:
+                self._managers[key] = TmuxSessionManager(
+                    tmux_session,
+                    self._container_name,
+                    workspace_path=effective_workspace,
+                    log_name=log_name,
+                )
+            return self._managers[key]
 
     # ── BaseSandbox abstract methods ──────────────────────────────────────
 
@@ -874,30 +973,34 @@ class DockerSandbox(BaseSandbox):
                 )
         return responses
 
-    def read_session_log_diff(self, session: str) -> str:
-        """Return new bytes appended to /workspace/.sessions/<session>.log
+    def read_session_log_diff(self, session: str, workspace_path: str | None = None) -> str:
+        """Return new bytes appended to <workspace>/.sessions/<session>.log
         since the previous call (or the whole file on first call).
 
         Per-process offset tracking only — restart resets to 0 (safe fallback).
         File truncation/rotation also resets to 0.
         """
-        log_path = f"/workspace/.sessions/{session}.log"
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        key = self._manager_key(session, effective_workspace)
+        log_path = self.session_log_path(session, effective_workspace)
         results = self.download_files([log_path])
         if not results or results[0].error or results[0].content is None:
             return ""
         full = results[0].content
         with self._log_offsets_lock:
-            prev_offset = self._log_offsets.get(session, 0)
+            prev_offset = self._log_offsets.get(key, 0)
             if prev_offset > len(full):
                 prev_offset = 0
             new_bytes = full[prev_offset:]
-            self._log_offsets[session] = len(full)
+            self._log_offsets[key] = len(full)
         return new_bytes.decode("utf-8", errors="replace")
 
-    def reset_session_log_offset(self, session: str) -> None:
+    def reset_session_log_offset(self, session: str, workspace_path: str | None = None) -> None:
         """Forget the read offset (used after kill / GC)."""
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        key = self._manager_key(session, effective_workspace)
         with self._log_offsets_lock:
-            self._log_offsets.pop(session, None)
+            self._log_offsets.pop(key, None)
 
     # ── Tmux execution (for bash tool) ───────────────────────────────────
 
@@ -907,6 +1010,7 @@ class DockerSandbox(BaseSandbox):
         session: str = "main",
         timeout: int | None = None,
         is_input: bool = False,
+        workspace_path: str | None = None,
     ) -> str:
         """Tmux-based execution with session persistence and interactive support.
 
@@ -916,7 +1020,7 @@ class DockerSandbox(BaseSandbox):
         - Output truncation for large outputs
         """
         effective = timeout if timeout is not None else self._default_timeout
-        mgr = self._get_manager(session)
+        mgr = self._get_manager(session, workspace_path)
 
         if not command and not is_input:
             return mgr.read_screen()
@@ -933,6 +1037,7 @@ class DockerSandbox(BaseSandbox):
         session: str = "main",
         timeout: int | None = None,
         is_input: bool = False,
+        workspace_path: str | None = None,
     ) -> str:
         """Async tmux execution — cancellable via asyncio.CancelledError.
 
@@ -940,7 +1045,9 @@ class DockerSandbox(BaseSandbox):
         (Ctrl+C → cancelMany) interrupts the polling loop promptly.
         """
         effective = timeout if timeout is not None else self._default_timeout
-        mgr = self._get_manager(session)
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        job_key = self._manager_key(session, effective_workspace)
+        mgr = self._get_manager(session, effective_workspace)
 
         if not command and not is_input:
             return await asyncio.to_thread(mgr.read_screen)
@@ -950,6 +1057,8 @@ class DockerSandbox(BaseSandbox):
                 session,
                 command=cmd,
                 initial_markers=len(PS1_PATTERN.findall(baseline)),
+                key=job_key,
+                workspace_path=effective_workspace,
             )
 
         return await mgr.execute_async(
@@ -959,30 +1068,49 @@ class DockerSandbox(BaseSandbox):
             on_auto_background=_on_auto_background,
         )
 
-    def start_background(self, command: str, session: str = "main") -> None:
+    def start_background(
+        self,
+        command: str,
+        session: str = "main",
+        workspace_path: str | None = None,
+    ) -> None:
         """Launch a command in a named tmux session without blocking.
 
         Registers a BackgroundJob keyed by the PS1-marker count at launch;
         ``poll_completion`` later compares against this baseline.
         """
-        mgr = self._get_manager(session)
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        job_key = self._manager_key(session, effective_workspace)
+        mgr = self._get_manager(session, effective_workspace)
         mgr.initialize()
         baseline = mgr._capture()
         initial_markers = len(PS1_PATTERN.findall(baseline))
-        self._jobs.register(session, command=command, initial_markers=initial_markers)
+        self._jobs.register(
+            session,
+            command=command,
+            initial_markers=initial_markers,
+            key=job_key,
+            workspace_path=effective_workspace,
+        )
         mgr._send(command, enter=True)
 
-    def poll_completion(self, session: str) -> "BackgroundJob | None":
+    def poll_completion(
+        self,
+        session: str,
+        workspace_path: str | None = None,
+    ) -> "BackgroundJob | None":
         """Check whether a background job has produced a new PS1 marker.
 
         Updates the tracker in place; returns the job (or None if not tracked).
         Capture failures are swallowed — the job stays running, retried later.
         """
-        job = self._jobs.get(session)
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        job_key = self._manager_key(session, effective_workspace)
+        job = self._jobs.get(session, key=job_key)
         if job is None or job.status != "running":
             return job
         try:
-            mgr = self._get_manager(session)
+            mgr = self._get_manager(session, effective_workspace)
             screen = mgr._capture()
         except (RuntimeError, OSError, subprocess.TimeoutExpired):
             return job
@@ -992,32 +1120,36 @@ class DockerSandbox(BaseSandbox):
                 exit_code = int(markers[-1].group(1))
             except ValueError:
                 exit_code = -1
-            self._jobs.mark_complete(session, exit_code=exit_code)
+            self._jobs.mark_complete(session, exit_code=exit_code, key=job_key)
         return job
 
-    def kill_session(self, session: str) -> None:
+    def kill_session(self, session: str, workspace_path: str | None = None) -> None:
         """Send Ctrl+C, then kill the tmux session, then clear all caches.
 
         Best-effort: errors are logged, not raised. The pipe-pane log file
-        is preserved at /workspace/.sessions/<session>.log for audit.
+        is preserved at <engagement>/.sessions/<session>.log for audit.
         """
+        effective_workspace = self._normalize_workspace_path(workspace_path or self._workspace_path)
+        manager_key = self._manager_key(session, effective_workspace)
+        mgr: TmuxSessionManager | None = None
         try:
-            mgr = self._get_manager(session)
+            mgr = self._get_manager(session, effective_workspace)
             try:
-                mgr._docker_tmux(["send-keys", "-t", session, "C-c"])
+                mgr._docker_tmux(["send-keys", "-t", mgr.session, "C-c"])
             except RuntimeError as e:
                 log.debug("send-keys C-c failed for '%s': %s", session, e)
             try:
-                mgr._docker_tmux(["kill-session", "-t", session])
+                mgr._docker_tmux(["kill-session", "-t", mgr.session])
             except RuntimeError as e:
                 log.warning("kill-session failed for '%s': %s", session, e)
         finally:
             with self._managers_lock:
-                self._managers.pop(session, None)
-            with TmuxSessionManager._init_lock:
-                TmuxSessionManager._initialized.discard(session)
-            self.reset_session_log_offset(session)
-            self._jobs.remove(session)
+                self._managers.pop(manager_key, None)
+            if mgr is not None:
+                with TmuxSessionManager._init_lock:
+                    TmuxSessionManager._initialized.discard(mgr.session)
+            self.reset_session_log_offset(session, effective_workspace)
+            self._jobs.remove(session, key=manager_key)
 
 
 # ─── Pre-flight check ────────────────────────────────────────────────────

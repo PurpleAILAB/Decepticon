@@ -1,4 +1,4 @@
-"""Decepticon Skills Middleware — red-team-aware skill system.
+"""SkillsMiddleware — red-team-aware skill system.
 
 Subclasses the Deep Agents SkillsMiddleware to provide:
 
@@ -26,9 +26,9 @@ the base middleware's generic `SKILLS_SYSTEM_PROMPT`. All skill instructions
 are consolidated here.
 
 Usage:
-    from decepticon.middleware.skills import DecepticonSkillsMiddleware
+    from decepticon.middleware.skills import SkillsMiddleware
 
-    middleware = DecepticonSkillsMiddleware(
+    middleware = SkillsMiddleware(
         backend=backend,
         sources=["/skills/recon/", "/skills/shared/"],
     )
@@ -40,7 +40,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 
 from deepagents.middleware._utils import append_to_system_message
-from deepagents.middleware.skills import SkillsMiddleware
+from deepagents.middleware.skills import SkillsMiddleware as BaseSkillsMiddleware
 from langchain_core.tools import tool
 
 if TYPE_CHECKING:
@@ -127,7 +127,7 @@ when a specialized skill exists is a critical failure.
 _WORKFLOW_FILENAME = "workflow.md"
 
 
-class DecepticonSkillsMiddleware(SkillsMiddleware):
+class SkillsMiddleware(BaseSkillsMiddleware):
     """Red-team-aware skill middleware with phase grouping and MITRE ATT&CK tags.
 
     Subclasses the base SkillsMiddleware to provide:
@@ -472,4 +472,4 @@ def _build_load_skill_tool(backend: Any):  # type: ignore[no-untyped-def]
     return load_skill
 
 
-__all__ = ["DecepticonSkillsMiddleware"]
+__all__ = ["SkillsMiddleware"]

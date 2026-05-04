@@ -13,7 +13,8 @@ BASH_PROMPT = """\
 
 Four tools share persistent tmux sessions inside the Kali sandbox.
 Working directory, environment variables, and background jobs persist
-across calls within the same session name.
+across calls within the same session name. The session starts in the
+active engagement workspace supplied by the launcher.
 
 ### bash() — execute a command
 
@@ -68,10 +69,10 @@ session | status                | elapsed | command
 ### bash_kill(session) — terminate a session
 
 Sends Ctrl+C, tears down the tmux session, removes the job from the
-tracker, and clears local state. The pipe-pane log is preserved at
-`/workspace/.sessions/<session>.log` for audit. Returns:
+tracker, and clears local state. The pipe-pane log is preserved under
+the active engagement workspace's `.sessions/` directory. Returns:
 ```
-[KILLED] session '<name>' terminated. Log preserved at /workspace/.sessions/<name>.log.
+[KILLED] session '<name>' terminated. Log preserved at <workspace>/.sessions/<name>.log.
 ```
 Subsequent `bash_output(session=<name>)` returns `[IDLE]`.
 
@@ -96,9 +97,9 @@ bash(..., background=True)            ┐
 
 ## Working Directory & Session State
 
-The session starts at `/workspace/`. After one `cd recon`, every
+The session starts at the active engagement workspace. After one `cd recon`, every
 subsequent `bash(..., session="main")` runs in `recon/` — do NOT
-re-prefix every command with `cd /workspace/... && ...`. Different
+re-prefix every command with repeated absolute workspace paths. Different
 sessions have INDEPENDENT cwd.
 
 ## Parallel Workflow
@@ -117,7 +118,7 @@ bash(command="curl -sI target", session="main")
 | Output Size | Behavior |
 |-------------|----------|
 | ≤15K chars | Returned inline |
-| >15K chars | Auto-saved to `/workspace/.scratch/`, preview + path returned |
+| >15K chars | Auto-saved to the active engagement workspace's `.scratch/`, preview + path returned |
 | >5M chars | Command killed (size watchdog). Redirect to a file: `command > /workspace/output.txt` |
 
 ANSI codes stripped, repetitive lines compressed.
@@ -166,7 +167,7 @@ untrusted until the rules below hold.
 Symptom: `bash_status()` shows session as `running` for >90s past expected completion AND `bash_output(session=...)` returns empty diffs across two consecutive checks.
 
 1. Check `bash_status()` — confirm `running` not `done(...) consumed`.
-2. `bash_kill(session=<wedged>)` — tears down tmux, preserves log at `/workspace/.sessions/<name>.log` for forensics.
+2. `bash_kill(session=<wedged>)` — tears down tmux, preserves the session log under `.sessions/` for forensics.
 3. Open a fresh session under a NEW name (e.g. `<orig>_retry`) — do NOT reuse the killed session name in the same turn (race with cleanup).
 4. Re-launch with both `sock.settimeout(5)` AND `timeout 60` outer wall.
 

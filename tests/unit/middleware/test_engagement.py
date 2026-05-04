@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from langchain_core.messages import SystemMessage
 
-from decepticon.middleware.engagement_context import (
+from decepticon.middleware.engagement import (
     EngagementContextMiddleware,
     _benchmark_mode_active,
 )

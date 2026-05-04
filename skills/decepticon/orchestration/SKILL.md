@@ -80,7 +80,7 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 ├── conops.json           # Operation concept
 ├── deconfliction.json    # Deconfliction identifiers and procedures
 ├── opplan.json           # Objective tracker (update status after each sub-agent)
-├── findings.json         # Append-only discovery log
+├── findings/            # Per-finding Markdown files, created lazily
 ├── lessons_learned.md    # Failed approaches + what worked
 └── .ralph_state.json     # Loop iteration counter + completion flags
 ```
@@ -88,12 +88,12 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 ### State Update Protocol (After Each Sub-Agent Returns)
 1. **Parse result** — Did the sub-agent report PASSED or BLOCKED?
 2. **Update opplan.json** — Set objective status (`passed`, `blocked`, `in_progress`)
-3. **Append findings.json** — Add new discoveries with timestamp + source objective
+3. **Record verified findings** — Add `findings/FIND-{NNN}.md` only when a real finding exists
 4. **Append lessons_learned.md** — Record what worked, what failed, and why
 5. **Check completion** — All objectives passed? → Generate summary
 
 ### Context Window Budget
-- Read findings.json each iteration (keep last ~3000 chars)
+- Read recent `findings/FIND-*.md` entries each iteration (keep only relevant excerpts)
 - Summarize verbose sub-agent outputs before appending to findings
 - Use files on disk as persistent memory — don't rely on conversation history
 

@@ -689,9 +689,7 @@ export function useAgent({
         };
         if (slug) {
           input.engagement_name = slug;
-          // Sandbox /workspace is bound to this engagement directory, so the
-          // agent always sees its workspace at /workspace regardless of slug.
-          input.workspace_path = "/workspace";
+          input.workspace_path = process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
         }
 
         try {

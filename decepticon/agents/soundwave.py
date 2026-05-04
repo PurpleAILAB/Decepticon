@@ -12,7 +12,7 @@ middleware stack precisely.
 
 Middleware stack (selected for document writer):
   1. SkillsMiddleware — progressive disclosure of planning SKILL.md
-  2. FilesystemMiddlewareNoExecute — ls/read/write/edit/glob/grep tools
+  2. FilesystemMiddleware — ls/read/write/edit/glob/grep tools
   3. ModelFallbackMiddleware — haiku 4.5 → gemini 2.5 flash fallback on primary failure
   4. SummarizationMiddleware — auto-compact when context budget exceeded
   5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
@@ -32,8 +32,8 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import DockerSandbox
 from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
-from decepticon.middleware import EngagementContextMiddleware, FilesystemMiddlewareNoExecute
-from decepticon.middleware.skills import DecepticonSkillsMiddleware
+from decepticon.middleware import EngagementContextMiddleware, FilesystemMiddleware
+from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.tools.interaction import ask_user_question, complete_engagement_planning
 
 
@@ -64,8 +64,8 @@ def create_soundwave_agent():
     # Assemble middleware stack
     middleware = [
         EngagementContextMiddleware(),
-        DecepticonSkillsMiddleware(backend=backend, sources=["/skills/soundwave/"]),
-        FilesystemMiddlewareNoExecute(backend=backend),
+        SkillsMiddleware(backend=backend, sources=["/skills/soundwave/"]),
+        FilesystemMiddleware(backend=backend),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

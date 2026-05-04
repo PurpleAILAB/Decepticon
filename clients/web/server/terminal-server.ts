@@ -109,6 +109,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
     // explicitly so the CLI subprocess does not fall back to localhost.
     DECEPTICON_ASSISTANT_ID: agentId,
     DECEPTICON_ENGAGEMENT: engagementSlug,
+    DECEPTICON_WORKSPACE_PATH: engagementSlug ? `/workspace/${engagementSlug}` : "/workspace",
     DECEPTICON_API_URL: LANGGRAPH_API_URL,
   };
   if (threadId) {

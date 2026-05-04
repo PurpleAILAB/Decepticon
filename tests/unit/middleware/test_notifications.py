@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 from langchain_core.messages import AIMessage, HumanMessage
 
 from decepticon.backends.docker_sandbox import BackgroundJobTracker
-from decepticon.middleware.sandbox_notifications import (
+from decepticon.middleware.notifications import (
     SandboxNotificationMiddleware,
 )
 
