@@ -157,7 +157,23 @@ class TmuxSessionManager:
         """Create session if needed and inject PS1 marker (once per session)."""
         with TmuxSessionManager._init_lock:
             if self.session in TmuxSessionManager._initialized:
-                return
+                # Double-check the tmux session still exists — the cache can
+                # become stale when a previous command killed the shell (e.g.
+                # "exit", "reboot", or a rogue SIGKILL). Without this check,
+                # every subsequent bash call for this session would fail with
+                # "can't find pane: <session>" because initialize() skips
+                # creation, then _capture() / _send() hit a dead session.
+                try:
+                    self._docker_tmux(["has-session", "-t", self.session], timeout=5)
+                    return  # Session exists, cache is valid.
+                except RuntimeError:
+                    # Session was destroyed since the cache was populated.
+                    # Discard and fall through to re-initialize below.
+                    log.warning(
+                        "Session '%s' is cached but dead — reinitializing",
+                        self.session,
+                    )
+                    TmuxSessionManager._initialized.discard(self.session)
 
         session_exists = False
         try:
