@@ -62,6 +62,7 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.OPENROUTER_API,
     AuthMethod.NVIDIA_API,
     AuthMethod.OLLAMA_LOCAL,
+    AuthMethod.OLLAMA_CLOUD,
 )
 
 # Each AuthMethod's detection rule:
@@ -89,6 +90,18 @@ _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.GROK_OAUTH: "DECEPTICON_AUTH_GROK",
     AuthMethod.PERPLEXITY_OAUTH: "DECEPTICON_AUTH_PERPLEXITY",
 }
+
+
+def _ollama_cloud_configured() -> bool:
+    """Return True when the user has wired up Ollama Cloud.
+
+    Either ``OLLAMA_CLOUD_API_BASE`` (preferred — explicit endpoint) or
+    ``OLLAMA_CLOUD_MODEL`` is enough to opt in.
+    """
+    return bool(
+        os.getenv("OLLAMA_CLOUD_API_BASE", "").strip()
+        or os.getenv("OLLAMA_CLOUD_MODEL", "").strip()
+    )
 
 
 def _ollama_local_configured() -> bool:
@@ -170,19 +183,25 @@ def _resolve_credentials() -> Credentials:
         elif method == AuthMethod.OLLAMA_LOCAL:
             if _ollama_local_configured():
                 methods.append(method)
+        elif method == AuthMethod.OLLAMA_CLOUD:
+            if _ollama_cloud_configured():
+                methods.append(method)
 
     if not methods:
-        # Local-only OSS path: a user who set OLLAMA_API_BASE / OLLAMA_MODEL
-        # but didn't write a priority list (or whose priority list was all
-        # empty placeholders) gets a single-method Ollama chain. Without
-        # this branch we'd fall back to ``all_api_methods()`` and every
-        # request would fail with 401s on providers the user doesn't have.
+        # Local-only or cloud-only OSS path: a user who set Ollama env vars
+        # but didn't write a priority list gets a single-method Ollama chain.
         if _ollama_local_configured():
             log.info(
                 "Only OLLAMA_API_BASE/OLLAMA_MODEL detected; "
                 "running against local Ollama exclusively"
             )
             return Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
+        if _ollama_cloud_configured():
+            log.info(
+                "Only OLLAMA_CLOUD_API_BASE/OLLAMA_CLOUD_MODEL detected; "
+                "running against Ollama Cloud exclusively"
+            )
+            return Credentials(methods=[AuthMethod.OLLAMA_CLOUD])
         log.info(
             "No credentials detected in environment; using all-API-methods "
             "fallback so module-level agent constructors stay importable"

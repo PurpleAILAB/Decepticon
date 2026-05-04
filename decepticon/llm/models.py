@@ -92,6 +92,7 @@ class AuthMethod(StrEnum):
     OPENROUTER_API = "openrouter_api"
     NVIDIA_API = "nvidia_api"
     OLLAMA_LOCAL = "ollama_local"  # Local LLM via Ollama (no API key, OLLAMA_API_BASE)
+    OLLAMA_CLOUD = "ollama_cloud"  # Ollama Cloud (API key, OLLAMA_CLOUD_API_BASE)
     COPILOT_OAUTH = "copilot_oauth"  # Microsoft Copilot Pro subscription
     GROK_OAUTH = "grok_oauth"  # xAI SuperGrok (X Premium+)
     PERPLEXITY_OAUTH = "perplexity_oauth"  # Perplexity Pro subscription
@@ -172,6 +173,15 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "ollama_chat/__OLLAMA_MODEL__",
         Tier.MID: "ollama_chat/__OLLAMA_MODEL__",
         Tier.LOW: "ollama_chat/__OLLAMA_MODEL__",
+    },
+    AuthMethod.OLLAMA_CLOUD: {
+        # Same shape as OLLAMA_LOCAL — resolved dynamically from
+        # OLLAMA_CLOUD_MODEL at chain-build time. Uses the same
+        # ollama_chat/ provider prefix (tool-call-capable /api/chat
+        # endpoint) but routes through the cloud API base + key.
+        Tier.HIGH: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
+        Tier.MID: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
+        Tier.LOW: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
     },
     AuthMethod.COPILOT_OAUTH: {
         Tier.HIGH: "copilot/gpt-4o",
@@ -295,6 +305,7 @@ class Credentials(BaseModel):
 
 
 _OLLAMA_DEFAULT_MODEL = "llama3.2"
+_OLLAMA_CLOUD_DEFAULT_MODEL = "llama3.2"
 
 
 def _resolve_ollama_model() -> str | None:
@@ -321,6 +332,23 @@ def _resolve_ollama_model() -> str | None:
     return f"ollama_chat/{model}"
 
 
+def _resolve_ollama_cloud_model() -> str | None:
+    """Return the LiteLLM model id for the user's Ollama Cloud, or None.
+
+    Reads ``OLLAMA_CLOUD_API_BASE`` and ``OLLAMA_CLOUD_MODEL`` from the
+    environment. Falls back to ``_OLLAMA_CLOUD_DEFAULT_MODEL`` when the
+    base URL is set but no model is specified. Returns None when no cloud
+    endpoint is configured at all.
+    """
+    base = os.getenv("OLLAMA_CLOUD_API_BASE", "").strip()
+    model = os.getenv("OLLAMA_CLOUD_MODEL", "").strip()
+    if not base and not model:
+        return None
+    if not model:
+        model = _OLLAMA_CLOUD_DEFAULT_MODEL
+    return f"ollama_chat/{model}"
+
+
 def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
     """Build the model chain (primary first, then fallbacks) for a tier.
 
@@ -334,7 +362,7 @@ def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
     every tier resolves to the same id derived from ``OLLAMA_MODEL``.
     When the env isn't wired up, the entry is skipped — preventing a
     placeholder ``ollama_chat/__OLLAMA_MODEL__`` from leaking into the
-    chain.
+    chain. ``OLLAMA_CLOUD`` follows the same pattern.
     """
     chain: list[str] = []
     for method in credentials.methods:
@@ -342,6 +370,11 @@ def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
             ollama_model = _resolve_ollama_model()
             if ollama_model is not None:
                 chain.append(ollama_model)
+            continue
+        if method == AuthMethod.OLLAMA_CLOUD:
+            ollama_cloud_model = _resolve_ollama_cloud_model()
+            if ollama_cloud_model is not None:
+                chain.append(ollama_cloud_model)
             continue
         model = METHOD_MODELS[method].get(tier)
         if model is not None:

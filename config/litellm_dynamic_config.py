@@ -59,6 +59,9 @@ ALLOWED_DYNAMIC_PROVIDERS = frozenset(
         # calling and is rejected by validate_model_name() with a
         # remediation hint, before reaching this set.
         "ollama_chat",
+        # ``ollama_cloud`` — same ``/api/chat`` tool-calling endpoint but
+        # routed through OLLAMA_CLOUD_API_BASE with OLLAMA_CLOUD_API_KEY.
+        "ollama_cloud",
         # ``auth/`` is listed but rejected by validate() — kept here so
         # the unrecognized-provider error doesn't fire first and
         # confuse the user with a misleading "use custom/<model>" hint.

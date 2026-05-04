@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 # legacy models often don't.
 _TOOLS_CAPABILITY = "tools"
 
-_OLLAMA_PROVIDER_PREFIXES = ("ollama_chat", "ollama")
+_OLLAMA_PROVIDER_PREFIXES = ("ollama_chat", "ollama", "ollama_cloud")
 
 _HttpOpener = Callable[[Any, float], Any]
 
