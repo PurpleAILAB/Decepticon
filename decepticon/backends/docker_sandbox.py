@@ -392,8 +392,8 @@ class TmuxSessionManager:
                 )
                 try:
                     self._docker_tmux(["send-keys", "-t", self._target(), "C-c"])
-                except RuntimeError:
-                    pass
+                except RuntimeError as interrupt_err:
+                    log.debug("Failed to interrupt oversized tmux command: %s", interrupt_err)
                 output = _extract_interactive_output(screen, baseline)
                 return (
                     f"{_truncate(output).strip()}\n\n"
@@ -547,8 +547,8 @@ class TmuxSessionManager:
                     await asyncio.to_thread(
                         self._docker_tmux, ["send-keys", "-t", self._target(), "C-c"]
                     )
-                except RuntimeError:
-                    pass
+                except RuntimeError as interrupt_err:
+                    log.debug("Failed to interrupt oversized tmux command: %s", interrupt_err)
                 output = _extract_interactive_output(screen, baseline)
                 return (
                     f"{_truncate(output).strip()}\n\n"

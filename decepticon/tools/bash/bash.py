@@ -52,7 +52,7 @@ INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to <engageme
 # Process-level throttle keeps the prune off the hot path of every bash call.
 SCRATCH_TTL_MINUTES = 60
 SCRATCH_PRUNE_INTERVAL = 600  # seconds between prune attempts (per process)
-_last_scratch_prune: float = 0.0
+_scratch_prune_state: dict[str, float] = {}
 
 # ─── ANSI escape code pattern ────────────────────────────────────────────
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
@@ -168,13 +168,12 @@ async def _prune_old_scratch(workspace_path: str = "/workspace") -> None:
     path pays for cleanup at most every ~10 minutes per process. Best-effort:
     a failure here must never block the agent's command.
     """
-    global _last_scratch_prune
     if _sandbox is None:
         return
     now = time.monotonic()
-    if now - _last_scratch_prune < SCRATCH_PRUNE_INTERVAL:
+    if now - _scratch_prune_state.get(workspace_path, 0.0) < SCRATCH_PRUNE_INTERVAL:
         return
-    _last_scratch_prune = now
+    _scratch_prune_state[workspace_path] = now
     try:
         await asyncio.to_thread(
             _sandbox.execute,

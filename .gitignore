@@ -18,9 +18,6 @@ __pycache__/
 *.swp
 *.swo
 
-# Poetry / uv
-uv.lock
-
 # Python specific
 build/
 develop-eggs/

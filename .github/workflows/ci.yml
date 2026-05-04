@@ -134,7 +134,7 @@ jobs:
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
-      - run: uv sync --dev
+      - run: uv sync --dev --locked
       - name: Ruff lint
         run: uv run ruff check .
       - name: Ruff format
@@ -298,7 +298,7 @@ jobs:
       - name: Install pip-audit
         run: uv tool install pip-audit
       - name: Export requirements
-        run: uv export --format requirements-txt --no-hashes --no-dev > requirements.txt
+        run: uv export --locked --format requirements-txt --no-hashes --no-dev > requirements.txt
       - name: Run pip-audit
         run: uv tool run pip-audit --requirement requirements.txt --ignore-vuln GHSA-xxxx-xxxx-xxxx || true
       - name: Gitleaks
