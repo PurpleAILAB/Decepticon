@@ -13,7 +13,7 @@ import httpx
 
 from benchmark.providers.base import BaseBenchmarkProvider
 from benchmark.schemas import Challenge, ChallengeResult, FilterConfig, SetupResult
-from decepticon.core.engagement import EngagementState
+from benchmark.state import BenchmarkRunState
 
 log = logging.getLogger(__name__)
 
@@ -208,14 +208,14 @@ class XBOWProvider(BaseBenchmarkProvider):
     def evaluate(
         self,
         challenge: Challenge,
-        state: EngagementState,
+        state: BenchmarkRunState,
         workspace: Path,
     ) -> ChallengeResult:
         """Evaluate whether the expected flag was captured."""
         flag_value = hashlib.sha256(challenge.id.upper().encode()).hexdigest()
         expected_flag = f"FLAG{{{flag_value}}}"
 
-        combined_output = "".join(ir.raw_output for ir in state.iteration_history)
+        combined_output = "".join(step.raw_output for step in state.step_history)
         match = re.search(r"FLAG\{[a-f0-9]+\}", combined_output)
 
         if match:

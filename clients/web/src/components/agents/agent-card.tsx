@@ -2,7 +2,7 @@
 
 import type { AgentConfig } from "@/lib/agents";
 import { cn } from "@/lib/utils";
-import { AgentSpline } from "./agent-spline";
+import { AgentAvatar } from "./agent-avatar";
 
 interface AgentCardProps {
   agent: AgentConfig;
@@ -37,7 +37,7 @@ export function AgentCard({ agent, selected, onClick }: AgentCardProps) {
         "bg-accent/50 group-hover:scale-105",
         selected && "scale-110"
       )}>
-        <AgentSpline agent={agent} size={64} />
+        <AgentAvatar agent={agent} size={64} />
       </div>
 
       {/* Info */}

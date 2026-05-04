@@ -65,7 +65,7 @@ Interactive visualization of the Neo4j knowledge graph:
 - Color-coded by node type (Host, Service, Vulnerability, Credential)
 - Live — updates as the agent adds nodes and edges
 
-Powered by [React Flow](https://reactflow.dev/) with `d3-force` for graph layout. Selected agent visualizations also use `@react-three/fiber` for 3D effects.
+Powered by [React Flow](https://reactflow.dev/) with `d3-force` for graph layout.
 
 ### OPPLAN Tracker
 
@@ -113,7 +113,7 @@ cd clients/web && npx prisma generate
 ```
 Or run `make web-build` to regenerate the client and build the dashboard in one step.
 
-Schema is at `clients/web/prisma/schema.prisma`. Key models: `User`, `Engagement`, `Finding`, `Objective`, `DefenseAction`.
+Schema is at `clients/web/prisma/schema.prisma`. Key model: `Engagement`.
 
 ---
 

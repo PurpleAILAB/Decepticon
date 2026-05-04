@@ -119,7 +119,6 @@ export function AttackGraphCanvas({ engagementId, mockNodes, mockEdges }: Attack
                 Credential: "#eab308",
                 Finding: "#ec4899",
                 AttackPath: "#06b6d4",
-                DefenseAction: "#10b981",
               };
               const nodeType = String((node.data as Record<string, unknown>)?.nodeType ?? "");
               return colors[nodeType] ?? "#71717a";

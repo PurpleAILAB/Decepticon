@@ -717,8 +717,7 @@ Decepticon (Orchestrator)
 │   ├── Exploit → initial access, payload delivery
 │   ├── Post-Exploit → privesc, lateral movement, C2
 │   ├── AD Operator → Active Directory attack chains
-│   ├── Cloud Hunter → cloud infrastructure attacks
-│   └── Defender → Offensive Vaccine (attack→defend→verify)
+│   └── Cloud Hunter → cloud infrastructure attacks
 ├── Tracks progress in Neo4j knowledge graph
 ├── Adapts strategy based on findings
 └── Generates final report via Analyst agent

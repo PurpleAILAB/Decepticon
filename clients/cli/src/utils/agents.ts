@@ -31,7 +31,6 @@ export const AGENT_LABELS: Record<string, string> = {
   verifier: "Verifier",
   patcher: "Patcher",
   exploiter: "Exploiter",
-  defender: "Defender",
 };
 
 /** Convert a backend agent name to its display label. */

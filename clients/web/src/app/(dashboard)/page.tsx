@@ -6,7 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Crosshair, FileWarning, Shield, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
+import { Crosshair, FileWarning, AlertTriangle, TrendingUp, TrendingDown } from "lucide-react";
 
 const metrics = [
   {
@@ -36,15 +36,6 @@ const metrics = [
     iconColor: "text-red-400",
     borderGlow: "hover:border-red-500/30",
   },
-  {
-    title: "Defenses Verified",
-    value: "0",
-    change: null,
-    icon: Shield,
-    gradient: "from-emerald-500/20 to-green-500/20",
-    iconColor: "text-emerald-400",
-    borderGlow: "hover:border-emerald-500/30",
-  },
 ];
 
 const severityData = [
@@ -66,7 +57,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metric Cards — CTEM style with gradient backgrounds */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {metrics.map((metric) => (
           <Card
             key={metric.title}

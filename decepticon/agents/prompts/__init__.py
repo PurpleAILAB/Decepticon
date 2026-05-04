@@ -23,7 +23,7 @@ Usage:
     prompt = (
         PromptBuilder("recon")
         .with_tool_prompts(["bash"])
-        .with_shared(["skills"])
+        .with_shared(["language"])
         .build()
     )
 """
@@ -154,7 +154,7 @@ class PromptBuilder:
         prompt = (
             PromptBuilder("recon")
             .with_tool_prompts(["bash"])
-            .with_shared(["skills"])
+            .with_shared(["language"])
             .with_dynamic("Current engagement: acme-corp-2026")
             .build()
         )
@@ -172,7 +172,7 @@ class PromptBuilder:
         return self
 
     def with_shared(self, fragments: list[str]) -> PromptBuilder:
-        """Add shared prompt fragments (e.g., skills.md)."""
+        """Add shared prompt fragments."""
         self._shared = fragments
         return self
 

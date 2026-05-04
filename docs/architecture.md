@@ -69,9 +69,8 @@ Two logical databases: `litellm` (managed by LiteLLM) and `decepticon_web` (mana
 
 Graph database for the attack graph. Stores:
 - Hosts, services, vulnerabilities, credentials, accounts
-- Typed relationships (EXPLOITS, REQUIRES, MITIGATES, RESPONDS_TO)
+- Typed relationships (EXPLOITS, REQUIRES, AFFECTS, LEADS_TO)
 - Attack chain paths for multi-hop planning
-- Defense actions from the Offensive Vaccine loop
 
 **Dual-homed by design**: the sandbox writes operational findings into the graph (`cypher-shell` from inside Kali), and the agent in LangGraph reads them back to plan the next objective. Both networks see the same Neo4j instance on the same `bolt://neo4j:7687` URI.
 

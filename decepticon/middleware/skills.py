@@ -21,7 +21,7 @@ Subclasses the Deep Agents SkillsMiddleware to provide:
    every session with the agent-level workflow (phases, scope rules, handoff
    format) loaded — no relying on the model to issue ``read_file`` first.
 
-This middleware replaces BOTH the old `skills.md` shared prompt fragment AND
+This middleware replaces BOTH the old shared skill prompt fragment AND
 the base middleware's generic `SKILLS_SYSTEM_PROMPT`. All skill instructions
 are consolidated here.
 
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
 
 # ── Decepticon skill system prompt template ──────────────────────────────────
-# Replaces both the shared `skills.md` fragment and the base middleware's
+# Replaces both the old shared skill prompt fragment and the base middleware's
 # generic SKILLS_SYSTEM_PROMPT. Placeholders:
 #   {skills_locations} — `**Decepticon Skills**: /skills/recon/` style headers
 #   {workflow}         — full body of <source>/workflow.md files (auto-loaded)

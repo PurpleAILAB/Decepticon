@@ -32,7 +32,7 @@ make dogfood
 ```
 decepticon/          # Core Python package (LangGraph agents, middleware, tools)
 ├── agents/          # Agent factory functions (create_*_agent)
-├── core/            # Engagement loop, schemas, logging
+├── core/            # Config, engagement document schemas, logging, streaming helpers
 ├── llm/             # Model profiles, LiteLLM configuration
 ├── middleware/       # Skills, filesystem, OPPLAN, safe command, fallback, etc.
 └── tools/           # Bash, research (KG, CVE, chain planning), reporting

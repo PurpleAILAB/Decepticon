@@ -134,9 +134,9 @@ Upgrade vsftpd to 2.3.5 or later.
 
 ---
 
-## Phase 3: Offensive Vaccine (optional)
+## Phase 3: Offensive Vaccine (planned)
 
-After the attack phase, Decepticon can run the defense feedback loop. See [Offensive Vaccine](offensive-vaccine.md).
+The defense feedback loop is planned for a future implementation. See [Offensive Vaccine](offensive-vaccine.md).
 
 ---
 

@@ -98,12 +98,6 @@ Each node type gets its own Neo4j label for native indexing and constraint enfor
 | `:Hypothesis` | Unverified theory about a vulnerability | `confidence`, `evidence`, `status: {active, confirmed, rejected}` |
 | `:Patch` | Proposed/applied fix | `diff`, `verified: bool`, `poc_still_works: bool` |
 
-### Defense Layer
-
-| Label | Description | Key Properties |
-|-------|-------------|----------------|
-| `:DefenseAction` | Executed defensive measure | `action_type`, `target`, `parameters: map`, `status: {pending, applied, rolled_back, failed}`, `executed_at`, `rollback_command`, `finding_ref` |
-
 ---
 
 ## 3. Relationship Types
@@ -163,14 +157,6 @@ Each node type gets its own Neo4j label for native indexing and constraint enfor
 | `DERIVED_FROM` | Vulnerability → Candidate | Promoted from candidate | - |
 | `PATCHES` | Patch → Vulnerability | Fix for this vulnerability | - |
 | `MAPS_TO` | Finding → CVE | Finding corresponds to known CVE | - |
-
-### Defense
-
-| Relationship | Direction | Description | Weight |
-|-------------|-----------|-------------|--------|
-| `MITIGATES` | DefenseAction → Vulnerability | Defense action addresses this vulnerability | - |
-| `DEFENDS` | DefenseAction → Host/Service | Defense action protects this asset | - |
-| `RESPONDS_TO` | DefenseAction → Finding | Defense action responds to this finding | - |
 
 ---
 
@@ -345,29 +331,6 @@ RETURN crown.description AS target,
 ORDER BY path_count DESC, min_cost ASC
 ```
 
-### Q8. Defense Coverage Assessment
-
-```cypher
-// Which findings have been mitigated vs still open?
-MATCH (f:Finding)
-OPTIONAL MATCH (da:DefenseAction)-[:RESPONDS_TO]->(f)
-WITH f, collect(da) AS defenses,
-     CASE WHEN size(collect(da)) > 0 THEN 'mitigated' ELSE 'open' END AS status
-RETURN f.title AS finding,
-       f.severity AS severity,
-       status,
-       [d IN defenses | d.action_type + ' → ' + d.target] AS defense_actions
-ORDER BY CASE f.severity
-  WHEN 'critical' THEN 1
-  WHEN 'high' THEN 2
-  WHEN 'medium' THEN 3
-  WHEN 'low' THEN 4
-  ELSE 5
-END
-```
-
----
-
 ## 7. Migration from Current Schema
 
 ### Current → New Mapping
@@ -407,7 +370,6 @@ END
 | `:Weakness` | CWE mapping for vulnerability classification |
 | `:Technique` | MITRE ATT&CK technique mapping |
 | `:Contract` | Smart contract for DeFi attack graphs |
-| `:DefenseAction` | Defensive measures for the offensive vaccine feedback loop |
 
 ### Relationship Mapping
 
@@ -450,6 +412,3 @@ END
 | `INSTANCE_OF` | Vulnerability → Weakness for CWE classification |
 | `MANAGES` | CloudResource → CloudResource for cloud control plane |
 | `PART_OF` | Container → Host for container topology |
-| `MITIGATES` | DefenseAction → Vulnerability for defense tracking |
-| `DEFENDS` | DefenseAction → Host/Service for asset protection |
-| `RESPONDS_TO` | DefenseAction → Finding for finding-to-defense mapping |

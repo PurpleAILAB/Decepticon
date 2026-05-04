@@ -40,7 +40,6 @@ export interface GraphNode {
   label: string;
   color: string;
   runtimeState: AgentRuntimeState;
-  mascotEmoji: string;
   role: string;
   /** Tool name when in waiting_for_permission state or for tool-session nodes. */
   waitingToolName?: string;

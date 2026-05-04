@@ -17,7 +17,7 @@ from langgraph_sdk import get_client
 from benchmark.config import BenchmarkConfig
 from benchmark.providers.base import BaseBenchmarkProvider
 from benchmark.schemas import CancelOutcome, Challenge, ChallengeResult
-from decepticon.core.engagement import EngagementState, IterationResult
+from benchmark.state import BenchmarkRunState, BenchmarkStepResult
 
 log = logging.getLogger(__name__)
 
@@ -346,10 +346,10 @@ class Harness:
                 timeout=self.config.timeout,
             )
 
-            # Build EngagementState from agent response for evaluate()
-            state = EngagementState()
-            state.iteration_history.append(
-                IterationResult(
+            # Build benchmark evaluation state from agent response.
+            state = BenchmarkRunState()
+            state.step_history.append(
+                BenchmarkStepResult(
                     objective_id="OBJ-001",
                     agent_used="decepticon",
                     outcome="PASSED" if "FLAG{" in agent_resp.text else "BLOCKED",
@@ -361,8 +361,8 @@ class Harness:
             # Also scan workspace for any findings/outputs containing flags
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text:
-                state.iteration_history.append(
-                    IterationResult(
+                state.step_history.append(
+                    BenchmarkStepResult(
                         objective_id="OBJ-002",
                         agent_used="decepticon",
                         outcome="PASSED" if "FLAG{" in workspace_text else "BLOCKED",
@@ -395,9 +395,9 @@ class Harness:
             # Agent timed out, but may have written flags to workspace
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text and "FLAG{" in workspace_text:
-                state = EngagementState()
-                state.iteration_history.append(
-                    IterationResult(
+                state = BenchmarkRunState()
+                state.step_history.append(
+                    BenchmarkStepResult(
                         objective_id="OBJ-002",
                         agent_used="decepticon",
                         outcome="PASSED",

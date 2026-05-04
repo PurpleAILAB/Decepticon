@@ -104,7 +104,6 @@ class TestAgentTiers:
             "detector",
             "verifier",
             "postexploit",
-            "defender",
             "ad_operator",
             "cloud_hunter",
             "reverser",

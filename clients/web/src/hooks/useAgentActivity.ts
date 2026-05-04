@@ -117,7 +117,6 @@ export function useAgentActivity({
         label: agent.name,
         color: agent.color,
         runtimeState,
-        mascotEmoji: agent.mascotEmoji,
         role: agent.role,
         waitingToolName: agentToolNames.get(agent.id),
       });
@@ -157,7 +156,6 @@ export function useAgentActivity({
           label: session.toolName,
           color,
           runtimeState: session.done ? "completed" : "processing",
-          mascotEmoji: "",
           role: "tool",
           parentAgentId: agentId,
         });

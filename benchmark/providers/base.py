@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from benchmark.schemas import Challenge, ChallengeResult, FilterConfig, SetupResult
-    from decepticon.core.engagement import EngagementState
+    from benchmark.state import BenchmarkRunState
 
 
 class BaseBenchmarkProvider(ABC):
@@ -42,7 +42,7 @@ class BaseBenchmarkProvider(ABC):
     def evaluate(
         self,
         challenge: Challenge,
-        state: EngagementState,
+        state: BenchmarkRunState,
         workspace: Path,
     ) -> ChallengeResult:
         """Evaluate whether the challenge was solved.

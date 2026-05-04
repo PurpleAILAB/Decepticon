@@ -192,16 +192,9 @@ class TestHarness:
         await harness.run_challenge(challenge)
 
         state = captured_state["state"]
-        assert len(state.iteration_history) >= 1
-        assert flag in state.iteration_history[0].raw_output
-        assert state.iteration_history[0].outcome == "PASSED"
-
-    @pytest.mark.asyncio
-    async def test_no_engagement_loop_used(self, tmp_path: Path) -> None:
-        """Verify harness does NOT use EngagementLoop."""
-        import benchmark.harness as harness_module
-
-        assert not hasattr(harness_module, "EngagementLoop")
+        assert len(state.step_history) >= 1
+        assert flag in state.step_history[0].raw_output
+        assert state.step_history[0].outcome == "PASSED"
 
     def test_extract_message_from_runs_wait(self) -> None:
         """Verify _extract_message parses /runs/wait response format."""

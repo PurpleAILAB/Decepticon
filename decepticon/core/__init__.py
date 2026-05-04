@@ -1,1 +1,1 @@
-"""Decepticon core module — configuration, exceptions, types."""
+"""Decepticon core module — configuration, logging, schemas, and streaming helpers."""

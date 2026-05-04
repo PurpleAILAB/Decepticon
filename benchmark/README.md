@@ -139,7 +139,7 @@ class MyProvider(BaseBenchmarkProvider):
     def setup(self, challenge: Challenge) -> SetupResult:
         ...
 
-    def evaluate(self, challenge: Challenge, state: EngagementState, workspace: Path) -> ChallengeResult:
+    def evaluate(self, challenge: Challenge, state: BenchmarkRunState, workspace: Path) -> ChallengeResult:
         ...
 
     def teardown(self, challenge: Challenge) -> None:

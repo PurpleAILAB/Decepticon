@@ -54,7 +54,7 @@ Each agent runs at the tier suited to its workload:
 | Tier  | Agents                                                                                          |
 |-------|-------------------------------------------------------------------------------------------------|
 | HIGH  | `decepticon`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`              |
-| MID   | `exploit`, `detector`, `verifier`, `postexploit`, `defender`, `ad_operator`, `cloud_hunter`, `reverser` |
+| MID   | `exploit`, `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser` |
 | LOW   | `soundwave`, `recon`, `scanner`                                                                 |
 
 ### `max` — every agent on HIGH

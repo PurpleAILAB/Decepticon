@@ -1,6 +1,6 @@
 # Agents
 
-Decepticon ships **17 specialist agents** organized by kill chain phase. Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
+Decepticon ships **16 specialist agents** organized by kill chain phase. Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
 
 ---
 
@@ -11,7 +11,7 @@ Decepticon ships **17 specialist agents** organized by kill chain phase. Each ag
 | Agent | Role |
 |-------|------|
 | **Decepticon** | Main red-team orchestrator. Reads the OPPLAN, dispatches objectives to specialist sub-agents, and tracks status transitions. Sub-agents: `recon`, `exploit`, `postexploit`, `analyst`, `reverser`, `contract_auditor`, `cloud_hunter`, `ad_operator`. |
-| **Vulnresearch** | Vulnerability research orchestrator — runs the five-stage pipeline (`scanner → detector → verifier → exploiter → patcher`) with state passed between stages exclusively through the knowledge graph. |
+| **Vulnresearch** | Vulnerability research orchestrator — runs the five-stage pipeline (`scanner → detector → verifier → patcher → exploiter`) with state passed between stages exclusively through the knowledge graph. |
 | **Soundwave** | Engagement planner. Standalone graph (not a sub-agent of Decepticon). Interviews the operator and generates RoE, ConOps, Deconfliction Plan, and OPPLAN. |
 
 ### Reconnaissance
@@ -38,12 +38,6 @@ Sub-agents of the **Vulnresearch** orchestrator. State flows between stages via 
 |-------|------|
 | **Exploit** | Initial access and exploitation tactics. Web/AD attacks (SQLi, SSTI, Kerberoasting, ADCS abuse, credential attacks). |
 | **Post-Exploit** | Privilege escalation, lateral movement, credential harvesting, persistence. Operates via C2 sessions once initial access is established. |
-
-### Defense
-
-| Agent | Role |
-|-------|------|
-| **Defender** | Standalone graph for the Offensive Vaccine loop. Receives a defense brief for each finding, applies mitigations, and tracks results in the knowledge graph. |
 
 ### Domain Specialists
 

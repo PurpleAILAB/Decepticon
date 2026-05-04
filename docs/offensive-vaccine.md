@@ -2,11 +2,13 @@
 
 ## The Core Idea
 
+This is a planned product direction, not an active implementation in the current codebase.
+
 Most offensive security tools treat the attack as the destination. Find a vulnerability, write a report, close the ticket.
 
 Decepticon treats the attack as Step 1.
 
-The **Offensive Vaccine** is a closed feedback loop: attack → defend → verify. Every vulnerability discovered doesn't just become a finding — it becomes a test case for the defense system. The defender applies a mitigation, then the attacker verifies the defense actually holds. If it doesn't, the loop continues.
+The **Offensive Vaccine** is intended to become a closed feedback loop: attack → defend → verify. Every vulnerability discovered should become a test case for the defense system. A future defense component applies a mitigation, then the attacker verifies the defense actually holds. If it doesn't, the loop continues.
 
 The name is intentional. A biological vaccine works by exposing the immune system to controlled doses of a pathogen, training it to respond. Decepticon does the same thing to your infrastructure — relentless, structured exposure builds real immunity.
 
@@ -16,7 +18,7 @@ The name is intentional. A biological vaccine works by exposing the immune syste
 
 Traditional security operates in two separate, disconnected lanes: Red Team attacks, Blue Team defends. The feedback between them is slow — a report written weeks after an engagement, reviewed in a meeting, turned into tickets, maybe patched. By the time a defense is actually applied, the threat landscape has moved on.
 
-The Offensive Vaccine collapses that timeline. The same platform that finds vulnerabilities also drives the remediation loop, verifies the fix, and records the result — all autonomously, all within a single engagement.
+The Offensive Vaccine is intended to collapse that timeline. The same platform that finds vulnerabilities should eventually drive the remediation loop, verify the fix, and record the result within a single engagement.
 
 This shifts the value proposition from *"here's a list of what's broken"* to *"here's a system that got broken, got fixed, and got verified — and will do it again tomorrow."*
 
@@ -33,17 +35,17 @@ For each finding:
      Agent discovers vulnerability → writes FIND-NNN.md → updates KG
 
   2. BRIEF GENERATION
-     Orchestrator generates a Defense Brief from the finding:
+     A future vaccine component generates a remediation brief from the finding:
      - What was exploited
      - Recommended mitigations (firewall rule, patch, config change)
      - Priority: immediate / short-term / long-term
 
   3. DEFENSE
-     Defender agent receives the brief → executes mitigations:
+     A future defense component receives the brief → executes mitigations:
      - Applies firewall rules
      - Patches service configuration
      - Disables vulnerable endpoint
-     Records DefenseAction node in Neo4j with MITIGATES relationship
+     Records mitigation evidence in the knowledge graph
 
   4. VERIFICATION
      Re-attack: the same exploit vector is run again
@@ -57,9 +59,9 @@ For each finding:
 
 ---
 
-## Defense Agent
+## Future Defense Component
 
-The **Defender** agent executes against a pluggable backend:
+The previous Defender graph and Docker defense backend have been removed. A future implementation should be rebuilt around the current OPPLAN middleware and a dedicated vaccine concept instead of the legacy loop.
 
 | Backend | Use case |
 |---------|---------|
@@ -67,42 +69,7 @@ The **Defender** agent executes against a pluggable backend:
 | Cloud | Apply security group rules, IAM policy changes, bucket policies |
 | Host OS | System-level hardening (for authorized host-level engagements) |
 
-Defense actions are tracked as `DefenseAction` nodes in the knowledge graph:
-
-```
-(DefenseAction) -[:MITIGATES]->  (Vulnerability)
-(DefenseAction) -[:DEFENDS]->    (Service)
-(DefenseAction) -[:RESPONDS_TO]-> (Attack)
-```
-
-This makes the defense history queryable — you can see exactly what was applied, when, and whether it was verified.
-
----
-
-## Knowledge Graph Integration
-
-The Offensive Vaccine loop produces a complete, auditable trail in Neo4j:
-
-```cypher
--- See all defense actions and their verification status
-MATCH (d:DefenseAction)-[:MITIGATES]->(v:Vulnerability)
-RETURN v.cve_id, d.action_type, d.description, d.status
-ORDER BY d.applied_at DESC
-```
-
-```cypher
--- Find vulnerabilities where defense failed verification
-MATCH (d:DefenseAction {status: "failed"})-[:MITIGATES]->(v:Vulnerability)
-RETURN v.cve_id, v.severity, d.action_type
-```
-
----
-
-## Enabling the Vaccine Loop
-
-The Vaccine phase runs automatically after the attack phase completes, if configured in the OPPLAN. You can also trigger it manually from the Orchestrator.
-
-The loop runs up to `max_iterations` times per finding. If a defense cannot be verified within the iteration limit, the finding is marked `partially-mitigated` and escalated for human review.
+The concrete schemas, tools, backend APIs, knowledge-graph relationships, and verification flow are intentionally left for that future implementation.
 
 ---
 
@@ -119,4 +86,4 @@ Deploy the agent to generate continuous, diverse attack scenarios — an endless
 **Step 3 — Defensive Evolution**
 Channel that feedback into Blue Team capabilities — detection rules, response playbooks, hardening strategies. The defense evolves because the offense never stops.
 
-The Offensive Vaccine is the bridge between Step 1 and Step 3. It's the mechanism that turns attack findings into defense improvements, automatically, at machine speed.
+The Offensive Vaccine is the planned bridge between Step 1 and Step 3. It is the mechanism that should eventually turn attack findings into defense improvements.

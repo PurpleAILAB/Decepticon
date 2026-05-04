@@ -1,6 +1,6 @@
 # Knowledge Graph
 
-Decepticon uses [Neo4j](https://neo4j.com/) as a persistent attack graph. Every host, service, vulnerability, credential, and defense action discovered during an engagement becomes a typed node with typed relationships. This is the agent's long-term memory across iterations — not conversation history.
+Decepticon uses [Neo4j](https://neo4j.com/) as a persistent attack graph. Every host, service, vulnerability, credential, and finding discovered during an engagement becomes a typed node with typed relationships. This is the agent's long-term memory across iterations — not conversation history.
 
 The graph lives on `sandbox-net` and is accessible at:
 - **Bolt**: `bolt://localhost:7687` (driver connection)
@@ -19,7 +19,6 @@ Default credentials: `neo4j` / `decepticon-graph` (set via `NEO4J_PASSWORD`).
 | `Vulnerability` | `cve_id`, `cwe_id`, `cvss_score`, `severity`, `description` | Scanner, Detector, Verifier |
 | `Credential` | `username`, `hash_type`, `hash`, `plaintext`, `source` | Post-Exploit, Exploit |
 | `Account` | `username`, `domain`, `privileges`, `groups` | Post-Exploit, AD Operator |
-| `DefenseAction` | `action_type`, `description`, `applied_at`, `status` | Defender |
 
 ---
 
@@ -33,9 +32,6 @@ Default credentials: `neo4j` / `decepticon-graph` (set via `NEO4J_PASSWORD`).
 | `REQUIRES` | Vulnerability → Vulnerability | Exploit chain dependency |
 | `USES` | Attack → Credential | Attack uses a credential |
 | `OWNS` | Account → Host | Account has access to host |
-| `MITIGATES` | DefenseAction → Vulnerability | Defense addresses this vuln |
-| `DEFENDS` | DefenseAction → Service | Defense hardens this service |
-| `RESPONDS_TO` | DefenseAction → Attack | Defense responds to this attack |
 
 ---
 
@@ -111,10 +107,4 @@ RETURN path
 ```cypher
 MATCH (c:Credential)
 RETURN c.username, c.hash_type, c.source
-```
-
-**Show all defense actions applied:**
-```cypher
-MATCH (d:DefenseAction)-[:MITIGATES]->(v:Vulnerability)
-RETURN d.action_type, d.description, v.cve_id, d.status
 ```

@@ -63,7 +63,7 @@ decepticon           # Start everything: terminal CLI + web dashboard at http://
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-Decepticon-red?style=for-the-badge&logo=github)](https://github.com/sponsors/PurpleCHOIms)
 
-We're building Decepticon as an **Offensive Vaccine** for the AI-driven threat landscape. If you believe in autonomous red teaming as a path to stronger defense, consider supporting the project.
+We're building Decepticon toward an **Offensive Vaccine** for the AI-driven threat landscape. If you believe in autonomous red teaming as a path to stronger defense, consider supporting the project.
 
 ---
 
@@ -97,7 +97,7 @@ But more importantly: it operates under the discipline that separates red teamer
 
 **Hardened sandbox isolation.** All commands run inside a Kali Linux sandbox on a dedicated operational network (`sandbox-net`), separate from the management plane (`decepticon-net`). LangGraph drives the sandbox via the Docker socket. → **[Architecture](docs/architecture.md)**
 
-**Offense serves defense.** The [Offensive Vaccine](docs/offensive-vaccine.md) loop turns every finding into a defense improvement — automatically. Attack → defend → verify, at machine speed.
+**Offense serves defense.** The planned [Offensive Vaccine](docs/offensive-vaccine.md) loop will turn findings into defense improvements through an attack → defend → verify cycle.
 
 ---
 
@@ -115,9 +115,9 @@ Two-network design — management services (LiteLLM, PostgreSQL, LangGraph, Web)
 
 ## Agents
 
-17 specialist agents organized by kill chain phase, with a fresh context window per objective — no accumulated noise.
+16 specialist agents organized by kill chain phase, with a fresh context window per objective — no accumulated noise.
 
-Orchestration · Reconnaissance · Exploitation · Post-Exploitation · Vulnerability Research · Defense · Domain Specialists (AD, Cloud, Smart Contracts, Reversing, Analyst).
+Orchestration · Reconnaissance · Exploitation · Post-Exploitation · Vulnerability Research · Domain Specialists (AD, Cloud, Smart Contracts, Reversing, Analyst).
 
 → **[Full agent roster and middleware stack](docs/agents.md)**
 

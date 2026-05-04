@@ -10,7 +10,6 @@ import {
   Key,
   FileWarning,
   Route,
-  Shield,
 } from "lucide-react";
 
 const nodeConfig: Record<
@@ -25,7 +24,6 @@ const nodeConfig: Record<
   Credential: { color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30", icon: Key },
   Finding: { color: "text-pink-400", bg: "bg-pink-500/10 border-pink-500/30", icon: FileWarning },
   AttackPath: { color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/30", icon: Route },
-  DefenseAction: { color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/30", icon: Shield },
 };
 
 const defaultConfig = {

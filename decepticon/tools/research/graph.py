@@ -83,8 +83,6 @@ class NodeKind(StrEnum):
     CANDIDATE = "Candidate"
     HYPOTHESIS = "Hypothesis"
     PATCH = "Patch"
-    # Defense
-    DEFENSE_ACTION = "DefenseAction"
 
 
 class EdgeKind(StrEnum):
@@ -130,10 +128,6 @@ class EdgeKind(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PATCHES = "PATCHES"
     MAPS_TO = "MAPS_TO"
-    # Defense
-    MITIGATES = "MITIGATES"
-    DEFENDS = "DEFENDS"
-    RESPONDS_TO = "RESPONDS_TO"
 
 
 class Severity(StrEnum):

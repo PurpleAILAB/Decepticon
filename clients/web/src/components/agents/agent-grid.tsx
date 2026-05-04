@@ -1,7 +1,7 @@
 "use client";
 
 import { groupByKillChain, type AgentConfig } from "@/lib/agents";
-import { AgentSpline } from "./agent-spline";
+import { AgentAvatar } from "./agent-avatar";
 
 interface AgentGridProps {
   agents: AgentConfig[];
@@ -39,7 +39,7 @@ export function AgentGrid({ agents, onAgentClick }: AgentGridProps) {
                     animationDelay: `${i * 0.2}s`,
                   }}
                 >
-                  <AgentSpline agent={agent} size={56} />
+                  <AgentAvatar agent={agent} size={56} />
                 </div>
                 <h3 className="text-sm font-semibold text-white">{agent.name}</h3>
                 <p className="text-[11px] text-zinc-500 text-center leading-relaxed line-clamp-2">

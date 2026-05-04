@@ -8,7 +8,7 @@ from pathlib import Path
 
 from benchmark.providers.xbow import XBOWProvider
 from benchmark.schemas import Challenge, FilterConfig
-from decepticon.core.engagement import EngagementState, IterationResult
+from benchmark.state import BenchmarkRunState, BenchmarkStepResult
 
 
 def _create_mock_benchmarks(tmp_path: Path) -> Path:
@@ -38,11 +38,11 @@ def _create_mock_benchmarks(tmp_path: Path) -> Path:
     return benchmarks_dir
 
 
-def _mock_state(raw_outputs: list[str]) -> EngagementState:
-    """Create a mock EngagementState with iteration results."""
-    state = EngagementState()
-    state.iteration_history = [
-        IterationResult(
+def _mock_state(raw_outputs: list[str]) -> BenchmarkRunState:
+    """Create a mock benchmark state with iteration results."""
+    state = BenchmarkRunState()
+    state.step_history = [
+        BenchmarkStepResult(
             objective_id="OBJ-001",
             agent_used="test-agent",
             outcome="PASSED",
