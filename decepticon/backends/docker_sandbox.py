@@ -67,6 +67,7 @@ class TmuxCommandError(RuntimeError):
         self.output = output
         super().__init__(output)
 
+
 # ─── Semantic exit code interpretation (Claude Code best practice) ────────
 _EXIT_CODE_MESSAGES: dict[int, str] = {
     1: "general error",
@@ -692,9 +693,9 @@ def _truncate(text: str) -> str:
     mid_chars = len(mid_text)
     return (
         f"{text[:head_chars]}\n\n"
-            f"[... {mid_lines} lines / {mid_chars} chars truncated — "
-            "save full output to file with -oN or redirect to a workspace file "
-            f"to preserve complete results ...]\n\n"
+        f"[... {mid_lines} lines / {mid_chars} chars truncated — "
+        "save full output to file with -oN or redirect to a workspace file "
+        f"to preserve complete results ...]\n\n"
         f"{text[-tail_chars:]}"
     )
 

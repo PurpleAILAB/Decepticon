@@ -363,12 +363,11 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
         raise RuntimeError("DockerSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
-    await asyncio.to_thread(_sandbox.kill_session, session, **_with_workspace_kwargs(workspace_path))
-    log_path = _sandbox.session_log_path(session, workspace_path)
-    return (
-        f"[KILLED] session '{session}' terminated. "
-        f"Log preserved at {log_path}."
+    await asyncio.to_thread(
+        _sandbox.kill_session, session, **_with_workspace_kwargs(workspace_path)
     )
+    log_path = _sandbox.session_log_path(session, workspace_path)
+    return f"[KILLED] session '{session}' terminated. Log preserved at {log_path}."
 
 
 @tool

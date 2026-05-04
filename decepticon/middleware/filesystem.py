@@ -46,7 +46,7 @@ class EngagementFilesystemBackend(BackendProtocol):
         if normalized == self._root:
             return WORKSPACE
         if normalized.startswith(f"{self._root}/"):
-            return f"{WORKSPACE}/{normalized[len(self._root) + 1:]}"
+            return f"{WORKSPACE}/{normalized[len(self._root) + 1 :]}"
         return None
 
     def _glob(self, pattern: str) -> str:
@@ -62,7 +62,11 @@ class EngagementFilesystemBackend(BackendProtocol):
         return {**info, "path": path} if path else None
 
     def ls_info(self, path: str) -> list[FileInfo]:
-        return [mapped for item in self._backend.ls_info(self._real(path)) if (mapped := self._info(item))]
+        return [
+            mapped
+            for item in self._backend.ls_info(self._real(path))
+            if (mapped := self._info(item))
+        ]
 
     def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
         return self._backend.read(self._real(file_path), offset=offset, limit=limit)
@@ -118,7 +122,11 @@ def _workspace_from_runtime(runtime: Any) -> str:
     if hasattr(state, "get") and state.get("workspace_path"):
         return str(state["workspace_path"])
     configurable = (getattr(runtime, "config", {}) or {}).get("configurable", {})
-    return str(configurable.get("workspace_path", WORKSPACE)) if isinstance(configurable, dict) else WORKSPACE
+    return (
+        str(configurable.get("workspace_path", WORKSPACE))
+        if isinstance(configurable, dict)
+        else WORKSPACE
+    )
 
 
 class FilesystemMiddleware(BaseFilesystemMiddleware):
@@ -129,4 +137,6 @@ class FilesystemMiddleware(BaseFilesystemMiddleware):
         self.tools = [tool for tool in self.tools if tool.name != "execute"]
 
     def _get_backend(self, runtime) -> BackendProtocol:
-        return EngagementFilesystemBackend(super()._get_backend(runtime), _workspace_from_runtime(runtime))
+        return EngagementFilesystemBackend(
+            super()._get_backend(runtime), _workspace_from_runtime(runtime)
+        )

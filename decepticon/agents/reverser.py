@@ -56,9 +56,7 @@ def create_reverser_agent():
 
     middleware = [
         EngagementContextMiddleware(),
-        SkillsMiddleware(
-            backend=backend, sources=["/skills/reverser/", "/skills/shared/"]
-        ),
+        SkillsMiddleware(backend=backend, sources=["/skills/reverser/", "/skills/shared/"]),
         FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
     ]

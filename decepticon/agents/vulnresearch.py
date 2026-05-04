@@ -127,9 +127,7 @@ def create_vulnresearch_agent():
     ]
 
     middleware = [
-        SkillsMiddleware(
-            backend=backend, sources=["/skills/vulnresearch/", "/skills/shared/"]
-        ),
+        SkillsMiddleware(backend=backend, sources=["/skills/vulnresearch/", "/skills/shared/"]),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
         OPPLANMiddleware(),

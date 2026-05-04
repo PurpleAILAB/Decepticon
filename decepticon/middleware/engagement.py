@@ -152,7 +152,12 @@ class EngagementContextMiddleware(AgentMiddleware):
 
     @override
     def wrap_tool_call(self, request, handler) -> ToolMessage | Command:
-        if request.tool and request.tool.name in {"bash", "bash_output", "bash_kill", "bash_status"}:
+        if request.tool and request.tool.name in {
+            "bash",
+            "bash_output",
+            "bash_kill",
+            "bash_status",
+        }:
             workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
             with bash_workspace(workspace):
                 return handler(request)
@@ -160,7 +165,12 @@ class EngagementContextMiddleware(AgentMiddleware):
 
     @override
     async def awrap_tool_call(self, request, handler) -> ToolMessage | Command:
-        if request.tool and request.tool.name in {"bash", "bash_output", "bash_kill", "bash_status"}:
+        if request.tool and request.tool.name in {
+            "bash",
+            "bash_output",
+            "bash_kill",
+            "bash_status",
+        }:
             workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
             with bash_workspace(workspace):
                 return await handler(request)

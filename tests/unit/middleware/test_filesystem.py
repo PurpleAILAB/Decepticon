@@ -47,7 +47,10 @@ def test_returns_virtual_paths_to_agent() -> None:
     scoped = EngagementFilesystemBackend(backend, "/workspace/test")
 
     assert scoped.ls_info("/workspace") == [{"path": "/workspace/plan/roe.json", "is_dir": False}]
-    assert scoped.write("/workspace/findings/FIND-001.md", "x").path == "/workspace/findings/FIND-001.md"
+    assert (
+        scoped.write("/workspace/findings/FIND-001.md", "x").path
+        == "/workspace/findings/FIND-001.md"
+    )
 
 
 def test_scopes_glob_and_grep_without_exposing_real_engagement_path() -> None:
