@@ -52,8 +52,8 @@ def ask_user_question(
     header: Annotated[
         str,
         Field(
-            max_length=12,
-            description="Short label (≤12 chars) shown as the picker's compact chrome label.",
+            max_length=60,
+            description="Short label (≤60 chars) shown as the picker's compact chrome label.",
         ),
     ],
     options: Annotated[

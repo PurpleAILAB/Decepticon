@@ -11,7 +11,7 @@ from decepticon.tools.interaction import ask_user_question
 
 # Pydantic constraints expressed in the tool signature; mirrored here so the
 # tests document the contract without re-importing private constants.
-HEADER_MAX_CHARS = 12
+HEADER_MAX_CHARS = 60
 MAX_OPTIONS = 5
 
 

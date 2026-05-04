@@ -876,7 +876,10 @@ def _make_tools() -> list:
         counter = state.get("objective_counter", 0)
         created_ids: list[str] = []
         parent_phase = parent.get("phase")
-        parent_priority = int(parent.get("priority", 100))
+        try:
+            parent_priority = int(parent.get("priority", 100))
+        except (ValueError, TypeError):
+            parent_priority = 100
         for idx, child in enumerate(children, start=1):
             counter += 1
             obj_id = f"OBJ-{counter:03d}"
@@ -899,7 +902,10 @@ def _make_tools() -> list:
                     }
                 )
             phase = child.get("phase", parent_phase)
-            priority = int(child.get("priority", parent_priority + idx))
+            try:
+                priority = int(child.get("priority", parent_priority + idx))
+            except (ValueError, TypeError):
+                priority = parent_priority + idx
             child_dict = {
                 "id": obj_id,
                 "title": title,

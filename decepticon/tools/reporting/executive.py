@@ -27,7 +27,10 @@ def _top_chains(graph: KnowledgeGraph, limit: int = 5) -> list[tuple[str, float,
     out: list[tuple[str, float, int]] = []
     for node in graph.by_kind(NodeKind.ATTACK_PATH):
         cost = float(node.props.get("total_cost", 99.0))
-        length = int(node.props.get("length", 0))
+        try:
+            length = int(node.props.get("length", 0))
+        except (ValueError, TypeError):
+            length = 0
         out.append((node.label, cost, length))
     out.sort(key=lambda t: t[1])
     return out[:limit]

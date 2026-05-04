@@ -472,7 +472,11 @@ def rank_candidates(shard_results: str, top_k: int = 50) -> str:
             continue
         for hit in blob.get("hits", []):
             total += 1
-            key = (hit.get("path", ""), int(hit.get("line", 0)), hit.get("sink_kind", ""))
+            try:
+                line_num = int(hit.get("line", 0))
+            except (ValueError, TypeError):
+                line_num = 0
+            key = (hit.get("path", ""), line_num, hit.get("sink_kind", ""))
             prior = seen.get(key)
             if prior is None or hit.get("score", 0) > prior.get("score", 0):
                 seen[key] = hit
@@ -527,7 +531,9 @@ def kg_add_candidate(
     props: dict[str, Any] = {
         "key": f"{path}:{line}:{sink_kind}",
         "path": path,
-        "line": int(line),
+        "line": int(line)
+        if isinstance(line, (int, str)) and str(line).lstrip("-").isdigit()
+        else 0,
         "sink_kind": sink_kind,
         "score": float(score),
         "status": "pending",  # detector flips to promoted/rejected

@@ -2092,8 +2092,14 @@ def kg_ingest_ffuf(path: str) -> str:
         url = row.get("url") or ""
         if not url:
             continue
-        status = int(row.get("status") or 0)
-        length = int(row.get("length") or 0)
+        try:
+            status = int(row.get("status") or 0)
+        except (ValueError, TypeError):
+            status = 0
+        try:
+            length = int(row.get("length") or 0)
+        except (ValueError, TypeError):
+            length = 0
         parsed_url = urlparse(url)
         host_value = (parsed_url.hostname or "").lower()
         host = None
