@@ -11,6 +11,7 @@ from deepagents.backends.protocol import (
     FileDownloadResponse,
     FileInfo,
     GrepMatch,
+    ReadResult,
     WriteResult,
 )
 from deepagents.backends.utils import validate_path
@@ -68,7 +69,7 @@ class EngagementFilesystemBackend(BackendProtocol):
             if (mapped := self._info(item))
         ]
 
-    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         return self._backend.read(self._real(file_path), offset=offset, limit=limit)
 
     def write(self, file_path: str, content: str) -> WriteResult:

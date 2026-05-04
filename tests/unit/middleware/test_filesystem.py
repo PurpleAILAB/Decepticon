@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from deepagents.backends.protocol import FileDownloadResponse, FileInfo, WriteResult
+from deepagents.backends.protocol import FileDownloadResponse, FileInfo, ReadResult, WriteResult
 
 from decepticon.middleware.filesystem import EngagementFilesystemBackend
 
@@ -13,9 +13,9 @@ class RecordingBackend:
         self.calls.append(("ls_info", path))
         return [{"path": f"{path}/plan/roe.json", "is_dir": False}]
 
-    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> str:
+    def read(self, file_path: str, offset: int = 0, limit: int = 2000) -> ReadResult:
         self.calls.append(("read", (file_path, offset, limit)))
-        return f"read:{file_path}"
+        return ReadResult(file_data={"content": f"read:{file_path}", "encoding": "utf-8"})
 
     def write(self, file_path: str, content: str) -> WriteResult:
         self.calls.append(("write", (file_path, content)))
@@ -38,7 +38,12 @@ def test_maps_virtual_workspace_paths_to_engagement_root() -> None:
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace/test")
 
-    assert scoped.read("/workspace/plan/roe.json") == "read:/workspace/test/plan/roe.json"
+    result = scoped.read("/workspace/plan/roe.json")
+
+    assert result.file_data == {
+        "content": "read:/workspace/test/plan/roe.json",
+        "encoding": "utf-8",
+    }
     assert backend.calls[-1] == ("read", ("/workspace/test/plan/roe.json", 0, 2000))
 
 
