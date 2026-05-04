@@ -118,7 +118,11 @@ class TmuxSessionManager:
         if result.returncode != 0:
             error_msg = result.stderr or result.stdout
             # Detect tmux server death and invalidate session cache
-            if "no server running" in error_msg or "server exited" in error_msg:
+            if (
+                "no server running" in error_msg
+                or "server exited" in error_msg
+                or "can't find pane" in error_msg
+            ):
                 log.warning("tmux server died — invalidating all session caches")
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.clear()
@@ -157,7 +161,18 @@ class TmuxSessionManager:
         """Create session if needed and inject PS1 marker (once per session)."""
         with TmuxSessionManager._init_lock:
             if self.session in TmuxSessionManager._initialized:
-                return
+                # Stale-cache guard: the tmux server may have been killed
+                # externally (e.g. benchmark harness cleanup) since we last
+                # created this session.
+                try:
+                    self._docker_tmux(["has-session", "-t", self.session], timeout=5)
+                    return
+                except RuntimeError:
+                    log.warning(
+                        "Session '%s' was in init cache but tmux says it is gone — recreating",
+                        self.session,
+                    )
+                    TmuxSessionManager._initialized.discard(self.session)
 
         session_exists = False
         try:
@@ -231,7 +246,11 @@ class TmuxSessionManager:
             baseline = self._capture()
         except RuntimeError as e:
             error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
+            if (
+                "no server running" in error_msg
+                or "session not found" in error_msg
+                or "can't find pane" in error_msg
+            ):
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
@@ -273,7 +292,7 @@ class TmuxSessionManager:
             try:
                 screen = self._capture()
             except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
+                if "no server running" in str(poll_err) or "can't find pane" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (
@@ -390,7 +409,11 @@ class TmuxSessionManager:
             baseline = await asyncio.to_thread(self._capture)
         except RuntimeError as e:
             error_msg = str(e)
-            if "no server running" in error_msg or "session not found" in error_msg:
+            if (
+                "no server running" in error_msg
+                or "session not found" in error_msg
+                or "can't find pane" in error_msg
+            ):
                 log.warning("Session '%s' is dead — attempting recovery", self.session)
                 with TmuxSessionManager._init_lock:
                     TmuxSessionManager._initialized.discard(self.session)
@@ -434,7 +457,7 @@ class TmuxSessionManager:
             try:
                 screen = await asyncio.to_thread(self._capture)
             except RuntimeError as poll_err:
-                if "no server running" in str(poll_err):
+                if "no server running" in str(poll_err) or "can't find pane" in str(poll_err):
                     with TmuxSessionManager._init_lock:
                         TmuxSessionManager._initialized.discard(self.session)
                     return (

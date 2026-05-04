@@ -369,3 +369,110 @@ def test_poll_loop_capture_errors_dont_falsely_trigger_stall_detection():
     # And not [TIMEOUT] either — the loop should have detected completion.
     assert "[TIMEOUT]" not in result, f"Should have completed: {result!r}"
     assert "[ERROR]" not in result, f"Should not have errored: {result!r}"
+
+
+def test_initialize_recreate_when_stale_cache():
+    """If _initialized contains the session but tmux has no such session,
+    initialize() must detect the stale cache and recreate the session."""
+    mgr = TmuxSessionManager("stale", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("stale")
+
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = [
+            RuntimeError("can't find pane: stale"),  # has-session inside cache check
+            "",  # has-session after cache discard
+            "",  # new-session
+            "",  # send-keys ps1_cmd
+            "",  # send-keys Enter
+            "",  # send-keys C-l
+            "",  # clear-history
+            "",  # pipe-pane
+        ]
+        mock_run.return_value.returncode = 0
+        mgr.initialize()
+
+    # Should have called has-session, detected failure, discarded cache, then recreated
+    assert "stale" in TmuxSessionManager._initialized
+
+
+def test_execute_recovers_from_cant_find_pane():
+    """execute() must treat 'can't find pane' as a recoverable session-death
+    error, same as 'no server running' and 'session not found'."""
+    mgr = TmuxSessionManager("pane-test", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("pane-test")
+
+    side_effects = [
+        RuntimeError("can't find pane: pane-test"),  # first _capture fails
+        "",  # has-session in recovery
+        "",  # new-session in recovery
+        "[DCPTN:0:/workspace] ",  # recovery _capture baseline
+        "",  # _send command
+        "[DCPTN:0:/workspace] ls\nfile.txt\n[DCPTN:0:/workspace] ",  # poll _capture
+        "",  # _clear_screen
+    ]
+
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = side_effects
+        result = mgr.execute(command="ls", is_input=False, timeout=2)
+
+    assert "[ERROR]" not in result
+    assert "file.txt" in result
+
+
+def test_execute_async_recovers_from_cant_find_pane():
+    """execute_async() must treat 'can't find pane' as a recoverable
+    session-death error."""
+    import asyncio
+
+    mgr = TmuxSessionManager("async-pane", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("async-pane")
+
+    side_effects = [
+        RuntimeError("can't find pane: async-pane"),  # first _capture fails
+        "",  # has-session in recovery
+        "",  # new-session in recovery
+        "[DCPTN:0:/workspace] ",  # recovery _capture baseline
+        "",  # _send command
+        "[DCPTN:0:/workspace] ls\nfile.txt\n[DCPTN:0:/workspace] ",  # poll _capture
+        "",  # _clear_screen
+    ]
+
+    with (
+        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch("asyncio.sleep", return_value=None),
+        patch("time.sleep"),
+    ):
+        mock_tmux.side_effect = side_effects
+        result = asyncio.run(
+            mgr.execute_async(command="ls", is_input=False, timeout=2)
+        )
+
+    assert "[ERROR]" not in result
+    assert "file.txt" in result
+
+
+def test_docker_tmux_invalidates_cache_on_cant_find_pane():
+    """_docker_tmux() must clear _initialized when tmux reports 'can't find pane',
+    because that means the server (or at least the session) is gone."""
+    mgr = TmuxSessionManager("die", "decepticon-sandbox")
+    TmuxSessionManager._initialized.add("die")
+    TmuxSessionManager._initialized.add("other")
+
+    import subprocess
+
+    with patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stderr = "can't find pane: die"
+        mock_run.return_value.stdout = ""
+        with pytest.raises(RuntimeError, match="can't find pane"):
+            mgr._docker_tmux(["send-keys", "-t", "die", "ls"])
+
+    assert "die" not in TmuxSessionManager._initialized
+    assert "other" not in TmuxSessionManager._initialized
