@@ -123,6 +123,33 @@ bash(command="curl -sI target", session="main")
 
 ANSI codes stripped, repetitive lines compressed.
 
+## Output Externalization (mandatory for >2KB output)
+
+If a bash command will produce more than ~2KB of output (HTML page, API JSON, file dump, recursive directory listing, multi-host scan), redirect to a file FIRST and then extract only the fragment you need:
+
+```bash
+# WRONG — 50KB curl output joins the LLM context, causes summarization slowdown
+curl -s "https://target/"
+
+# RIGHT — capture once, extract narrowly
+curl -s "https://target/" > /tmp/root.html
+grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
+```
+
+**Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn. Compaction can take several minutes on large contexts (observed: 848s dead zone). One pre-extraction `grep` fits in the response budget; the raw page does not.
+
+**Heuristics for what to extract** (instead of dumping):
+
+| Source | Extract |
+|--------|---------|
+| HTML page | `grep -E 'href|action|src|name=' page.html | head -30` |
+| JSON response | `jq -r '. | keys'` then `jq '.<field>'` for field of interest |
+| File dump (`/etc/passwd`, etc.) | `head -20` then `grep` for keywords |
+| Multi-host scan output | `awk '/PASS|FAIL|200|500/ {print}'` |
+| Recursive `ls`/`find` | pipe to `head -50` always |
+
+**Exception**: If the entire output IS the flag (single line ≤200 bytes), inline it.
+
 ## Interactive Programs (msfconsole, sliver, evil-winrm, REPLs)
 
 The tool auto-detects waiting prompts:
