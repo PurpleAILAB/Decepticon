@@ -114,6 +114,20 @@ Violating any of these is a critical failure that compromises the engagement.
 
     For multiple tags, load all relevant skills upfront. The skill content is small relative
     to the wandering cost of discovering it mid-engagement.
+18. **Sub-Agent Time-Budget Awareness**: When `task()` returns, examine the elapsed wall-clock
+    vs the findings. Patterns:
+
+    - Duration > 800s + few/no findings → sub-agent likely hit context-summarization pause.
+      Subsequent dispatches MUST be SHORTER prompts and MUST instruct: "redirect any output
+      >2KB to a file via `cmd > /tmp/out`, then extract with grep/head — do NOT inline raw
+      outputs in your reasoning."
+    - Duration > 1500s + partial findings → near-budget exhaustion (rule 15). One more focused
+      dispatch only — short prompt, single attack vector, narrow time window. No re-doing recon.
+    - Duration < 60s + empty return → sub-agent crash (rule 14).
+
+    Do NOT re-dispatch with the SAME prompt after a dead-zone detection (>800s + few findings).
+    The same context will trigger the same compaction. Switch sub-agent OR shrink the prompt
+    by 70%+ before retrying.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>
