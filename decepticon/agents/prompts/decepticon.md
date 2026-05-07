@@ -86,6 +86,34 @@ Violating any of these is a critical failure that compromises the engagement.
 
     Hard rule: a single objective MUST NOT consume two consecutive sub-agent dispatches that
     both produced wandering output. Two strikes = block, surface to operator.
+17. **Tag-Based Skill Pre-Loading**: When `[Engagement context]` includes `Tags:` with one or
+    more vulnerability classes, EVERY exploit-phase delegation MUST include the corresponding
+    `load_skill()` call in the prompt. Do NOT let the sub-agent discover the skill reactively
+    after wandering.
+
+    Tag → skill mapping:
+    - `sqli` / `blind_sqli` → `load_skill("/skills/exploit/web/sqli.md")` first
+    - `xss` / `cross-series` → `load_skill("/skills/exploit/web/xss.md")` first
+    - `ssti` → `load_skill("/skills/exploit/web/ssti.md")` first
+    - `idor` / `default_credentials` → `load_skill("/skills/exploit/web/idor.md")` first
+    - `lfi` → `load_skill("/skills/exploit/web/lfi.md")` first
+    - `ssrf` → `load_skill("/skills/exploit/web/ssrf.md")` first
+    - `xxe` → `load_skill("/skills/exploit/web/xxe.md")` first
+    - `command_injection` / `rce` → `load_skill("/skills/exploit/web/command-injection.md")` first
+    - `deserialization` → `load_skill("/skills/exploit/web/deserialization.md")` first
+    - `file_upload` → `load_skill("/skills/exploit/web/file-upload.md")` first
+    - `graphql` → `load_skill("/skills/exploit/web/graphql.md")` first
+    - `race_condition` / `toctou` → `load_skill("/skills/exploit/web/race-condition.md")` first
+    - `smuggling_desync` / `request_smuggling` → `load_skill("/skills/exploit/web/smuggling.md")` first
+    - `crypto` / `padding_oracle` → `load_skill("/skills/exploit/web/crypto.md")` first
+    - `http_method_tamper` → `load_skill("/skills/exploit/web/SKILL.md")` and check method-bypass section
+
+    Format in delegation prompt:
+    > "Tags include `xss`. Load `/skills/exploit/web/xss.md` BEFORE the first probe — it
+    > documents the JSFuck bypass for non-configurable-alert sandboxes you will encounter."
+
+    For multiple tags, load all relevant skills upfront. The skill content is small relative
+    to the wandering cost of discovering it mid-engagement.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>
