@@ -129,6 +129,24 @@ Violating any of these is a critical failure that compromises the engagement.
     Do NOT re-dispatch with the SAME prompt after a dead-zone detection (>800s + few findings).
     The same context will trigger the same compaction. Switch sub-agent OR shrink the prompt
     by 70%+ before retrying.
+19. **No Raw Output Inlining (HARD RULE)**: NEVER call bash with a command whose output is expected
+    to exceed ~2KB without redirecting to a file. Specifically:
+
+    - `curl <url>` (without `> file`) is FORBIDDEN when fetching HTML pages, JSON APIs, or any
+      non-trivial response. ALWAYS `curl <url> > /tmp/<name>` then `grep`/`head`/`jq` the file.
+    - `cat <large_file>` (>50 lines) is FORBIDDEN. Use `head`, `tail`, or `grep` with line limits.
+    - `find` / `ls -R` (recursive) MUST pipe to `head -50` or `wc -l` first.
+    - `nmap` / `gobuster` / `ffuf` MUST use `-o` to file, then extract.
+
+    **Why this is a CRITICAL_RULE, not just a tip**: Each multi-KB output forces
+    SummarizationMiddleware compaction on the next turn. Compaction takes 10-15 minutes on
+    accumulated context (observed: 845-880s dead zones in cycles 3/4/5). One violation eats
+    50% of the engagement budget. This is more damaging than any skill gap — a violation does
+    not just slow you down, it KILLS the engagement via timeout.
+
+    **Self-check**: Before EVERY bash call, ask: "could this output exceed 2KB?" If yes →
+    write to file FIRST. If you violated this and got >2KB back, your NEXT bash call MUST
+    redirect the same command to `/tmp/<name>` and extract with grep/head.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>
