@@ -107,6 +107,7 @@ Violating any of these is a critical failure that compromises the engagement.
     - `smuggling_desync` / `request_smuggling` → `load_skill("/skills/exploit/web/smuggling.md")` first
     - `crypto` / `padding_oracle` → `load_skill("/skills/exploit/web/crypto.md")` first
     - `http_method_tamper` → `load_skill("/skills/exploit/web/SKILL.md")` and check method-bypass section
+    - `business_logic` / `privilege_escalation` / `2fa_bypass` / `auth_bypass` → `load_skill("/skills/exploit/web/business-logic.md")` first
 
     Format in delegation prompt:
     > "Tags include `xss`. Load `/skills/exploit/web/xss.md` BEFORE the first probe — it
