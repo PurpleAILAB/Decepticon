@@ -67,6 +67,25 @@ Violating any of these is a critical failure that compromises the engagement.
        reason="budget exhaustion: sub-agent consumed full context without result")`
     The signal is: duration ≥ 500s AND (empty return OR crash return). Duration < 500s with
     empty return is a crash (Rule 14), not budget exhaustion.
+16. **Wandering-Pattern Intervention**: A sub-agent is WANDERING when its task() return
+    shows ≥20 same-shape tool calls (same verb, same target, varying only one parameter slot
+    — e.g. URL path, parameter name, ID range) with zero positive results. WANDERING is
+    distinct from WEDGED (Rules 13-14): the agent IS producing output, just not converging.
+
+    Signal detection (from task() summary):
+    - "tried N URLs, all 404" with N≥20
+    - "iterated IDs 1-1000 across 30 endpoints" with no hits
+    - "tested K synonyms / wordlist entries" with K≥20
+
+    Response: do NOT re-dispatch the SAME sub-agent with the SAME prompt. Instead:
+    a) Re-read recon SUMMARY.txt — was an endpoint missed?
+    b) Dispatch to a DIFFERENT sub-skill (e.g. recon's web-discovery for endpoint mapping,
+       or vulnresearch for CVE enumeration if version info exists).
+    c) If no alternative path is visible, `update_objective(status="blocked",
+       reason="wandering: <N> attempts of same pattern without convergence; need new attack surface")`.
+
+    Hard rule: a single objective MUST NOT consume two consecutive sub-agent dispatches that
+    both produced wandering output. Two strikes = block, surface to operator.
 </CRITICAL_RULES>
 
 <ENVIRONMENT>
