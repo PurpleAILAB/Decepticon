@@ -137,7 +137,7 @@ class StreamingRunnable:
     def _process_messages(
         self,
         new_messages: list,
-        active_tool_calls: dict[str, dict],
+        active_tool_calls: dict[str, Any],
         renderer: Any,
         has_renderer: bool,
         writer: Callable | None,
@@ -166,7 +166,9 @@ class StreamingRunnable:
 
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
-                        active_tool_calls[tc["id"]] = tc
+                        tc_id: str | None = tc.get("id")
+                        if tc_id is not None:
+                            active_tool_calls[tc_id] = tc
                         tc_args = {
                             k: str(v) if not isinstance(v, (str, int, float, bool)) else v
                             for k, v in tc["args"].items()
@@ -228,7 +230,7 @@ class StreamingRunnable:
         start = time.monotonic()
         last_state = None
         last_count = 0
-        active_tool_calls: dict[str, dict] = {}
+        active_tool_calls: dict[str, Any] = {}
 
         try:
             for state in self._runnable.stream(
@@ -310,7 +312,7 @@ class StreamingRunnable:
         start = time.monotonic()
         last_state = None
         last_count = 0
-        active_tool_calls: dict[str, dict] = {}
+        active_tool_calls: dict[str, Any] = {}
 
         try:
             async for state in self._runnable.astream(

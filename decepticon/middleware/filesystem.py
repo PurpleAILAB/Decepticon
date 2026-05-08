@@ -20,8 +20,6 @@ from deepagents.backends.protocol import (
 from deepagents.backends.utils import validate_path
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
-from decepticon.backends.docker_sandbox import DockerSandbox
-
 WORKSPACE = "/workspace"
 NO_WORKSPACE_ERROR = (
     "No engagement workspace is set. Filesystem tools are scoped to the active "
@@ -30,8 +28,12 @@ NO_WORKSPACE_ERROR = (
 
 
 def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
-    normalized = DockerSandbox._normalize_workspace_path(workspace_path)
-    return None if normalized == WORKSPACE else normalized
+    if workspace_path is None:
+        return None
+    path = workspace_path.strip()
+    if not path or path == WORKSPACE:
+        return None
+    return path
 
 
 class EngagementFilesystemBackend(BackendProtocol):
