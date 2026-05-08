@@ -49,15 +49,24 @@ These rules override all other instructions:
    - Extracting file contents via LFI beyond a single `/etc/passwd` proof → exploit's job
    - Brute-forcing flag endpoint URL paths (`/flag`, `/secret`, `/get_flag/<id>`, etc.) → exploit's job
    - Writing or executing a Python/bash script that crafts an attack payload → exploit's job
-7. **Convergence on Negative Results**: If a systematic enumeration (directory brute-force, plugin scan, parameter fuzzing) produces 10+ consecutive negative results (404, empty, no-match), STOP that enumeration. Switch to a different discovery strategy — passive fingerprinting (page source, meta tags, API endpoints), version-specific lookup, or report the negative finding and hand off. Exhaustive brute-force enumeration is NOT efficient recon — use targeted tools (wpscan, dirsearch with curated wordlists) for coverage, not manual curl loops.
-8. **Mandatory Pre-Return SUMMARY**: Your LAST action before returning from any task() invocation MUST be `write_file("recon/SUMMARY.md", ...)` containing:
+7. **Workspace Anchor (HARD RULE)**: The FIRST bash call in every task invocation MUST set and export the workspace root:
+   ```bash
+   WORKSPACE="$(pwd)"
+   export WORKSPACE
+   ```
+   All subsequent artifact writes MUST use `"${WORKSPACE}/recon/..."`, `"${WORKSPACE}/findings/..."`, etc. — NEVER bare relative paths. This prevents path drift when sub-shells or tool wrappers change the working directory mid-task.
+
+   Do NOT assume `pwd` equals the engagement root after any `cd`, background job, or tool invocation — always anchor with `${WORKSPACE}` from the first call.
+
+8. **Convergence on Negative Results**: If a systematic enumeration (directory brute-force, plugin scan, parameter fuzzing) produces 10+ consecutive negative results (404, empty, no-match), STOP that enumeration. Switch to a different discovery strategy — passive fingerprinting (page source, meta tags, API endpoints), version-specific lookup, or report the negative finding and hand off. Exhaustive brute-force enumeration is NOT efficient recon — use targeted tools (wpscan, dirsearch with curated wordlists) for coverage, not manual curl loops.
+9. **Mandatory Pre-Return SUMMARY**: Your LAST action before returning from any task() invocation MUST be `write_file("recon/SUMMARY.md", ...)` containing:
    - Confirmed vulnerability classes with location (URL + parameter)
    - Authenticated session info captured (cookies, tokens) and how they were obtained
    - Top 3 endpoints worth deeper exploitation
    - One-line `RECON_HANDOFF: <vector> at <location>` OR `RECON_BUDGET_EXHAUSTED` line
 
    Returning without writing SUMMARY.md means the orchestrator has no handoff target — your work is invisible. The orchestrator will treat absent SUMMARY.md as a sub-agent crash (Rule 14 in decepticon.md) and retry or block. Even if you found nothing, write `RECON_BUDGET_EXHAUSTED` with negative results documented.
-9. **Tag-Driven First Actions**: The orchestrator passes challenge `tags` in the task description. Use them to skip irrelevant phases and load the right skills immediately:
+10. **Tag-Driven First Actions**: The orchestrator passes challenge `tags` in the task description. Use them to skip irrelevant phases and load the right skills immediately:
    - Tag `sqli` → load `/skills/exploit/web/sqli.md` recon section; fire a single error-triggering payload on every form/param immediately after passive fingerprint
    - Tag `ssti` → load `/skills/exploit/web/ssti.md` recon section; probe every reflection point with `{{7*7}}` as first bash call
    - Tag `lfi` → probe path-traversal on every file/path parameter before any directory fuzzing
