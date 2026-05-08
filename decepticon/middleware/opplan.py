@@ -727,9 +727,19 @@ def _make_tools() -> list:
                 obj_phase = target.get("phase", "")
                 if obj_phase in ("initial-access", "post-exploit", "c2", "exfiltration"):
                     recon_done = any(
-                        o.get("phase") == "recon" and o.get("status") == "completed"
+                        o.get("phase") == "recon"
+                        and o.get("status") in ("completed", "passed", "in-progress")
                         for o in objectives
                     )
+                    # Filesystem fallback: accept recon/SUMMARY.md or any findings/FIND-*.md
+                    if not recon_done:
+                        workspace = state.get("workspace_path", "/workspace")
+                        summary_md = Path(workspace) / "recon" / "SUMMARY.md"
+                        findings_dir = Path(workspace) / "findings"
+                        finding_files = (
+                            list(findings_dir.glob("FIND-*.md")) if findings_dir.exists() else []
+                        )
+                        recon_done = summary_md.exists() or len(finding_files) > 0
                     if not recon_done:
                         return Command(
                             update={
@@ -737,9 +747,11 @@ def _make_tools() -> list:
                                     ToolMessage(
                                         content=(
                                             f"RECON-FIRST GUARD: Cannot start {objective_id} "
-                                            f"(phase: {obj_phase}) — no recon objective "
-                                            "has been completed yet. Dispatch task('recon', ...) "
-                                            "first and complete it before starting exploitation. "
+                                            f"(phase: {obj_phase}) — recon not yet complete. "
+                                            "Satisfy EITHER: (A) recon objective status='completed' "
+                                            "in the OPPLAN, OR (B) recon/SUMMARY.md or "
+                                            "findings/FIND-*.md exists on disk. "
+                                            "Dispatch task('recon', ...) first. "
                                             "Rule 22 requires recon before any exploit objective."
                                         ),
                                         tool_call_id=tool_call_id,
@@ -1356,10 +1368,21 @@ class OPPLANMiddleware(AgentMiddleware):
             and tc.get("args", {}).get("subagent_type") in ("exploit", "postexploit")
         ]
         if exploit_task_calls:
-            # Match completed recon objective by phase field (ObjectivePhase.RECON = "recon").
+            # Accept recon done via OPPLAN status (any active/terminal recon status)
+            # OR via filesystem evidence (recon/SUMMARY.md or findings/FIND-*.md).
             recon_done = any(
-                o.get("phase") == "recon" and o.get("status") == "completed" for o in objectives
+                o.get("phase") == "recon"
+                and o.get("status") in ("completed", "passed", "in-progress")
+                for o in objectives
             )
+            if not recon_done:
+                workspace = state.get("workspace_path", "/workspace")
+                summary_md = Path(workspace) / "recon" / "SUMMARY.md"
+                findings_dir = Path(workspace) / "findings"
+                finding_files = (
+                    list(findings_dir.glob("FIND-*.md")) if findings_dir.exists() else []
+                )
+                recon_done = summary_md.exists() or len(finding_files) > 0
             if not recon_done:
                 return {
                     "messages": [
@@ -1367,9 +1390,10 @@ class OPPLANMiddleware(AgentMiddleware):
                             content=(
                                 "RECON-FIRST GUARD (task layer): Cannot dispatch "
                                 f"task('{tc['args'].get('subagent_type')}', ...) — "
-                                "no recon objective (owner='recon') has status='completed' in the OPPLAN. "
-                                "Dispatch task('recon', ...) first and wait for it to complete "
-                                "before dispatching exploit or postexploit. "
+                                "recon not yet complete. Satisfy EITHER: "
+                                "(A) recon objective status='completed'/'in-progress' in the OPPLAN, "
+                                "OR (B) recon/SUMMARY.md or findings/FIND-*.md exists on disk. "
+                                "Dispatch task('recon', ...) first. "
                                 "Rule 22: recon is mandatory before exploitation."
                             ),
                             tool_call_id=tc["id"],
