@@ -720,6 +720,40 @@ def _make_tools() -> list:
                         }
                     )
 
+            # Soft-block guard: reject blocked status when recon found an exploitable
+            # vector but exploit has not been dispatched yet (Rule 20.a).
+            if status == "blocked":
+                notes_text = (target.get("notes") or "").lower()
+                recon_handoff_present = (
+                    "recon_handoff" in notes_text
+                    or "critical" in notes_text
+                    or "high" in notes_text
+                )
+                exploit_dispatched = target.get("owner") in (
+                    "exploit",
+                    "exploit-agent",
+                    "postexploit",
+                )
+                if recon_handoff_present and not exploit_dispatched:
+                    return Command(
+                        update={
+                            "messages": [
+                                ToolMessage(
+                                    content=(
+                                        f"SOFT-BLOCK GUARD: Cannot mark {objective_id} as blocked — "
+                                        "recon notes contain a RECON_HANDOFF/CRITICAL/HIGH signal "
+                                        "but exploit has not been dispatched (owner is not 'exploit'). "
+                                        "Rule 20 requires dispatching task('exploit', ...) before "
+                                        "blocking. Dispatch exploit first, then update status based "
+                                        "on the exploit result."
+                                    ),
+                                    tool_call_id=tool_call_id,
+                                    status="error",
+                                )
+                            ],
+                        }
+                    )
+
             # Parents cannot complete until every child is done.
             if status == "completed":
                 children = [o for o in objectives if o.get("parent_id") == objective_id]

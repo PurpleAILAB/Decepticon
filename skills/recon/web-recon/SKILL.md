@@ -24,6 +24,18 @@ Sub-skills under this directory:
 
 For overall recon workflow, scope rules, and handoff format, see `load_skill("/skills/recon/workflow.md")` (root workflow).
 
+## Tag-Driven Fast Paths
+
+When the orchestrator passes challenge tags, skip straight to the matching sub-skill:
+
+| Tag | First action | Sub-skill to load |
+|-----|-------------|-------------------|
+| `sqli` | Fire a single error-triggering payload on every form/param | `/skills/exploit/web/sqli.md` recon section |
+| `ssti` | Probe every reflection point with `{{7*7}}` | `/skills/exploit/web/ssti.md` recon section |
+| `lfi` | Path-traversal probe on every file/path param | discovery.md |
+| `idor` | Enumerate object IDs on every user-data endpoint | api-enumeration.md |
+| `auth` | Map the full auth flow before other recon | auth-mapping.md |
+
 ## Output files
 
 ```
