@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from typing import Any
 
@@ -30,8 +31,18 @@ NO_WORKSPACE_ERROR = (
 
 
 def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
-    normalized = DockerSandbox._normalize_workspace_path(workspace_path)
-    return None if normalized == WORKSPACE else normalized
+    path = (workspace_path or "").strip()
+    if not path:
+        return None
+    if path == WORKSPACE:
+        return WORKSPACE
+    if not path.startswith(f"{WORKSPACE}/"):
+        return None
+    expected = path.rstrip("/")
+    if os.path.normpath(expected) != expected:
+        return None
+    normalized = DockerSandbox._normalize_workspace_path(path)
+    return normalized if normalized == expected else None
 
 
 class EngagementFilesystemBackend(BackendProtocol):

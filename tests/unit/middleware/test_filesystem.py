@@ -144,9 +144,48 @@ def test_missing_engagement_workspace_fails_closed() -> None:
     assert backend.calls == []
 
 
-def test_root_workspace_fails_closed() -> None:
+def test_root_workspace_accepted_as_engagement_root() -> None:
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace")
 
-    assert scoped.ls("/workspace").error is not None
+    result = scoped.ls("/workspace")
+    assert result.error is None
+    assert backend.calls == [("ls_info", "/workspace")]
+
+
+def test_root_workspace_no_prefix_doubling() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    scoped.read("/workspace/plan/roe.json")
+
+    assert backend.calls[-1] == ("read", ("/workspace/plan/roe.json", 0, 2000))
+
+
+def test_root_workspace_glob_scoped_to_root() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    scoped.glob("**/*.json")
+
+    # Non-/-prefixed patterns pass through _glob unchanged; root is /workspace
+    assert backend.calls[-1] == ("glob_info", ("**/*.json", "/workspace"))
+
+
+def test_root_workspace_trailing_slash_accepted() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test/")
+
+    scoped.read("/workspace/plan/roe.json")
+
+    assert backend.calls[-1] == ("read", ("/workspace/test/plan/roe.json", 0, 2000))
+
+
+def test_invalid_workspace_paths_fail_closed() -> None:
+    backend = RecordingBackend()
+
+    for bad_path in ("/tmp/foo", "/etc/passwd", "/workspace/../etc", "relative/path", ""):
+        scoped = EngagementFilesystemBackend(backend, bad_path)
+        assert scoped.ls("/workspace").error is not None, f"expected error for {bad_path!r}"
+
     assert backend.calls == []
