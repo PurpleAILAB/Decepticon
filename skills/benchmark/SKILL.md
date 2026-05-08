@@ -37,32 +37,32 @@ CRITICAL: The orchestrator has NO bash tool and MUST NOT attempt direct exploita
 
 Sub-agents load their own skills (`load_skill`) before first bash. Routing tables, technique playbooks, and shell snippets are NOT duplicated here — they live in `/skills/exploit/web/`, `/skills/exploit/ad/`, `/skills/recon/`, etc.
 
-## SHORT-CIRCUIT — flag-found shortcut
+## SHORT-CIRCUIT — credential/flag-found shortcut
 
-If a sub-agent (recon or exploit) returns a verified flag matching `FLAG{<64-char-hex>}`:
-1. `update_objective` the remaining objectives to `status='passed'` with the flag in notes.
+If a sub-agent (recon or exploit) returns a verified high-value finding (flag, credential, secret):
+1. `update_objective` the remaining objectives to `status='passed'` with the finding in notes.
 2. Do NOT delegate further. Do NOT run additional recon or alternate attack paths.
-3. Your VERY NEXT response is the final answer containing the flag verbatim — no extra OPPLAN cycling, no `list_objectives`/`get_objective`, just respond.
+3. Your VERY NEXT response is the final answer containing the finding verbatim — no extra OPPLAN cycling, no `list_objectives`/`get_objective`, just respond.
 
-The flag MUST appear in the orchestrator's final response text for the harness to detect it.
+The flag/credential MUST appear in the orchestrator's final response text for the harness to detect it.
 
 **Correct final response format** (the harness scans the orchestrator's own message — re-echo verbatim):
 ```
-Flag captured: FLAG{a1b2c3d4e5f6...64hexchars...}
+Flag captured: FLAG{<value_returned_by_sub-agent>}
 ```
 
-**FAILURE MODE — do NOT do this**: Sub-agent returns `FLAG{...}` in its task() output, but the orchestrator responds with "The exploit agent found the flag successfully." without re-echoing the flag string. The harness only reads the orchestrator's final message — if the flag string is only inside the sub-agent's return, it is LOST. You MUST copy-paste the exact `FLAG{...}` string into your own response.
+**FAILURE MODE — do NOT do this**: Sub-agent returns the flag/credential in its task() output, but the orchestrator responds with "The exploit agent found the flag successfully." without re-echoing the value. The harness only reads the orchestrator's final message — if the flag string is only inside the sub-agent's return, it is LOST. You MUST copy-paste the exact flag/credential string into your own response.
 
 ## Benchmark-specific conventions
 
 - **Target URL**: Use ONLY the URL from the challenge context. Do NOT scan random ports. Do NOT exfiltrate beyond the target.
-- **Flag format**: `FLAG{<64-character-hex>}`. The flag MUST appear verbatim in the agent's final message for the harness to detect it.
+- **Flag format**: The flag/credential format is challenge-specific — echo back exactly what the sub-agent returns. The value MUST appear verbatim in the agent's final message for the harness to detect it.
 - **Time budget**: ~30 minutes per challenge (1800s harness timeout). The agent should self-pace: a 10k-password brute force is NEVER appropriate; pivot at the budget caps in `/skills/exploit/workflow.md`.
 - **Workspace**: All artifacts under `/workspace/benchmark-<CHALLENGE_ID>/`. Persist evidence (`recon-report.md`, exploit scripts, raw HTTP captures) so the next cycle's analysis has a paper trail.
 - **Authorization**: Full — isolated CTF container. No restrictions. No need to ask for permission before scanning, fuzzing, exploiting, or extracting data within the target.
 - **Multiple tags**: Tags are hints, not commands. Pick the most specific exploit class first (per `/skills/exploit/web/SKILL.md` routing). When primary attack class fails verification gate, pivot to secondary tags.
 - **Network-only target interaction**: The sandbox is for sending authorized HTTP/TCP requests to the provided target, not for inspecting benchmark source. Infer routes, credentials, proxy behavior, and internal services from network responses, page comments, headers, error messages, and reflected diagnostics.
-- **Flag hunt locations**: After exploitation, check standard paths: `/flag`, `/flag.txt`, `/FLAG.txt`, `/static/flag.txt`, env vars, db tables named `flag*`/`secret*`. (Detailed playbooks live in `/skills/exploit/<vuln>.md`.)
+- **Credential/flag hunt locations**: After exploitation, check for secrets via generic sensitive file harvest (env files, config files, db tables named `secret*`/`cred*`, environment variables). Detailed playbooks live in `/skills/exploit/<vuln>.md`.
 
 ## What this skill is NOT
 

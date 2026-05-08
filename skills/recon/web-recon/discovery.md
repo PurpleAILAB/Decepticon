@@ -91,7 +91,7 @@ done
 
 **Why this is in recon, not exploit**: Discovering the alias misconfig is a recon task; exploiting it via path traversal is the exploit phase. Recon should surface alias-prefix candidates to the exploit agent.
 
-**Anti-pattern (XBEN-097 cycle 5)**: 19 minutes spent on view.php parameter guessing before discovering the alias off-by-one. With this probe in standard recon discovery, the misconfig would be flagged in <30s.
+**Anti-pattern (real-world evidence)**: 19 minutes spent on view.php parameter guessing before discovering the alias off-by-one. With this probe in standard recon discovery, the misconfig would be flagged in <30s.
 
 ## 4. JavaScript Analysis
 
