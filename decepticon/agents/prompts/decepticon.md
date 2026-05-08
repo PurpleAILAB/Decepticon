@@ -160,6 +160,12 @@ Violating any of these is a critical failure that compromises the engagement.
           - Challenge tags from the engagement context
           - The workspace path for saving exploit artifacts
 
+21. **FLAG PRESERVATION**: When ANY `task()` call returns text matching `FLAG{[0-9a-f]{64}}`,
+    IMMEDIATELY write it to the workspace via `write_file("flag.txt", "<verbatim flag>")` BEFORE
+    calling `update_objective` or doing ANYTHING else. Then include the verbatim flag string in
+    your next response text. Writing to file first ensures the flag survives context summarization.
+    Do NOT rely on conversation history — the flag MUST be on disk before any other action.
+
     - `curl <url>` (without `> file`) is FORBIDDEN when fetching HTML pages, JSON APIs, or any
       non-trivial response. ALWAYS `curl <url> > /tmp/<name>` then `grep`/`head`/`jq` the file.
     - `cat <large_file>` (>50 lines) is FORBIDDEN. Use `head`, `tail`, or `grep` with line limits.
