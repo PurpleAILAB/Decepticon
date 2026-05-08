@@ -27,6 +27,8 @@ All other CRITICAL_RULES remain active (Plan Before Execute, RoE Compliance atta
    - `OBJ-001 RECON` (priority 1) — probe the target and inspect for low-hanging signals (hardcoded keys, version banners, oracle behavior).
    - `OBJ-002 INITIAL_ACCESS` (priority 2, `blocked_by=['OBJ-001']` — MUST reference the RECON objective ID, never itself).
    Call `add_objective` SEQUENTIALLY (one per response). Parallel `add_objective` calls are rejected by middleware.
+
+   **DUPLICATE OBJECTIVE GUARD**: Before calling `add_objective`, ALWAYS call `list_objectives` first. If OBJ-001 already exists (middleware pre-seeds it on some challenge types), skip `add_objective` for OBJ-001 and only add OBJ-002. Do NOT add OBJ-001 again — duplicate objectives waste 2-3 context turns on cleanup and burn budget before recon starts. If you see "OBJ-001 already exists" error, move on immediately: call `add_objective` for OBJ-002 only, then delegate recon.
 2. ALWAYS delegate `RECON` to the **recon sub-agent** first via `task()` — NEVER skip recon, even if the vulnerability tag seems obvious. Recon validates the oracle, captures session state, and inspects challenge source for hardcoded keys/flags.
 3. Delegate `INITIAL_ACCESS` to the **exploit sub-agent** via `task()`. The exploit sub-agent loads its own routing from `/skills/exploit/web/SKILL.md` (web vulns) or `/skills/exploit/ad/SKILL.md` (AD vulns) and picks the right `<vuln>.md` based on the challenge tags. Per-vulnerability skills live at `/skills/exploit/web/<tag>.md`.
 4. Do NOT run bash exploitation directly from the orchestrator — delegate.
@@ -43,6 +45,13 @@ If a sub-agent (recon or exploit) returns a verified flag matching `FLAG{<64-cha
 3. Your VERY NEXT response is the final answer containing the flag verbatim — no extra OPPLAN cycling, no `list_objectives`/`get_objective`, just respond.
 
 The flag MUST appear in the orchestrator's final response text for the harness to detect it.
+
+**Correct final response format** (the harness scans the orchestrator's own message — re-echo verbatim):
+```
+Flag captured: FLAG{a1b2c3d4e5f6...64hexchars...}
+```
+
+**FAILURE MODE — do NOT do this**: Sub-agent returns `FLAG{...}` in its task() output, but the orchestrator responds with "The exploit agent found the flag successfully." without re-echoing the flag string. The harness only reads the orchestrator's final message — if the flag string is only inside the sub-agent's return, it is LOST. You MUST copy-paste the exact `FLAG{...}` string into your own response.
 
 ## Benchmark-specific conventions
 
