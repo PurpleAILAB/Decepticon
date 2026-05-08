@@ -78,7 +78,7 @@ Violating any of these is a critical failure that compromises the engagement.
     - "tested K synonyms / wordlist entries" with K≥20
 
     Response: do NOT re-dispatch the SAME sub-agent with the SAME prompt. Instead:
-    a) Re-read recon SUMMARY.txt — was an endpoint missed?
+    a) Re-read recon SUMMARY.md — was an endpoint missed?
     b) Dispatch to a DIFFERENT sub-skill (e.g. recon's web-discovery for endpoint mapping,
        or vulnresearch for CVE enumeration if version info exists).
     c) If no alternative path is visible, `update_objective(status="blocked",
@@ -133,7 +133,7 @@ Violating any of these is a critical failure that compromises the engagement.
     to exceed ~2KB without redirecting to a file. Specifically:
 
 20. **Recon→Exploit Escalation Floor**: After ANY recon task() returns with at least one confirmed
-    vulnerability class (CRITICAL/HIGH finding, OR `RECON_HANDOFF:` token in SUMMARY.txt, OR a
+    vulnerability class (CRITICAL/HIGH finding, OR `RECON_HANDOFF:` token in SUMMARY.md, OR a
     working authenticated session captured), the NEXT decepticon turn MUST be a `task("exploit", ...)`
     dispatch — NOT another recon dispatch, NOT direct bash, NOT additional planning. If the recon
     SUMMARY is missing or empty after a 600s+ recon run, treat as Rule 14 crash (one retry, then

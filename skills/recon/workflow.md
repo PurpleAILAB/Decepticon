@@ -2,7 +2,7 @@
 name: recon-workflow
 description: "Recon agent workflow — intake, scope discipline, execute, structured handoff to exploit. Tag-conditional rules for race-condition / smuggling-desync challenges."
 metadata:
-  when_to_use: "recon, reconnaissance, enumeration, recon workflow, scope rules, recon handoff, SUMMARY.txt, recon → exploit handoff"
+  when_to_use: "recon, reconnaissance, enumeration, recon workflow, scope rules, recon handoff, SUMMARY.md, recon → exploit handoff"
   subdomain: workflow
 ---
 
@@ -61,12 +61,12 @@ Web-recon order within the hub:
 
 ### Phase 4 — Handoff
 
-Every recon run MUST produce `SUMMARY.txt` with this fixed structure. Exploit reads this file first; missing sections are a recon-incomplete signal.
+Every recon run MUST produce `SUMMARY.md` with this fixed structure. Exploit reads this file first; missing sections are a recon-incomplete signal.
 
-**MANDATORY**: Writing `SUMMARY.txt` is your LAST action before returning. No exceptions — even a null result run MUST write `RECON_BUDGET_EXHAUSTED` with negative findings. The orchestrator treats absent `SUMMARY.txt` as a sub-agent crash (Rule 14 in decepticon.md) and will retry or block the objective. Your findings are invisible without this file.
+**MANDATORY**: Writing `SUMMARY.md` is your LAST action before returning. No exceptions — even a null result run MUST write `RECON_BUDGET_EXHAUSTED` with negative findings. The orchestrator treats absent `SUMMARY.md` as a sub-agent crash (Rule 14 in decepticon.md) and will retry or block the objective. Your findings are invisible without this file.
 
 ```
-# SUMMARY.txt — recon handoff
+# SUMMARY.md — recon handoff
 
 Target: <url>
 Tags: <comma-separated challenge tags, e.g. race_condition, deserialization>
@@ -115,6 +115,6 @@ Recommended exploit gate: <e.g. "run smuggling.md confirm-desync gate before ite
 ```
 ./
 ├── recon_notes.md                  # working scratch
-├── SUMMARY.txt                     # the handoff (fixed structure above)
+├── SUMMARY.md                     # the handoff (fixed structure above)
 └── recon_<target>_*.{json,txt}     # per-tool artifacts (ffuf, httpx, nmap, etc.)
 ```
