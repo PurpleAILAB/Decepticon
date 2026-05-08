@@ -720,6 +720,34 @@ def _make_tools() -> list:
                         }
                     )
 
+            # Exploit-class guard: reject in-progress for exploit/postexploit-phase
+            # objectives when no recon objective has been completed yet (Rule 22).
+            if status == "in-progress":
+                obj_phase = target.get("phase", "")
+                if obj_phase in ("exploitation", "post-exploitation"):
+                    recon_done = any(
+                        o.get("phase") == "reconnaissance" and o.get("status") == "completed"
+                        for o in objectives
+                    )
+                    if not recon_done:
+                        return Command(
+                            update={
+                                "messages": [
+                                    ToolMessage(
+                                        content=(
+                                            f"RECON-FIRST GUARD: Cannot start {objective_id} "
+                                            f"(phase: {obj_phase}) — no reconnaissance objective "
+                                            "has been completed yet. Dispatch task('recon', ...) "
+                                            "first and complete it before starting exploitation. "
+                                            "Rule 22 requires recon before any exploit objective."
+                                        ),
+                                        tool_call_id=tool_call_id,
+                                        status="error",
+                                    )
+                                ],
+                            }
+                        )
+
             # Soft-block guard: reject blocked status when recon found an exploitable
             # vector but exploit has not been dispatched yet (Rule 20.a).
             if status == "blocked":

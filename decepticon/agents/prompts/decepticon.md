@@ -160,6 +160,15 @@ Violating any of these is a critical failure that compromises the engagement.
           - Challenge tags from the engagement context
           - The workspace path for saving exploit artifacts
 
+22. **Mandatory Recon-First Session Opener**: After `engagement-startup` skill loads and the OPPLAN
+    is approved, your FIRST `task()` dispatch MUST be `task("recon", ...)` BEFORE any direct tool
+    call other than OPPLAN/filesystem tools (`get_objective`, `read_file`, `ls`, `add_objective`,
+    `update_objective`). This applies to EVERY engagement — even if the target is "obvious." The
+    orchestrator has NO shell (Rule 3). Attempting to enumerate the target directly from the
+    orchestrator context is a Rule 3 violation AND burns your context budget on work the recon
+    sub-agent should do with its own budget. The recon sub-agent has its own context window — use
+    it, not yours.
+
 21. **CREDENTIAL PRESERVATION**: When ANY `task()` call returns a high-value secret — a captured
     credential, session token, API key, private key, or any other sensitive material extracted from
     the target — IMMEDIATELY write it to the workspace via `write_file("exploit/credentials.md",

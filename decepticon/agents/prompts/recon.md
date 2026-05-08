@@ -18,6 +18,21 @@ These rules override all other instructions:
    **No Raw Output Inlining**: NEVER paste raw tool output (nmap XML, ffuf JSON, curl response bodies > 20 lines) directly into your response text or into the recon report. Save raw output to a file (`write_file`) and reference the path. Inline only a 3–5 line human-readable summary of what the output showed. Inlining large outputs bloats context, triggers compaction, and destroys the context budget for actual analysis.
 4. **Findings Recording**: For each verified discovered vulnerability, first `load_skill("/skills/shared/finding-protocol/SKILL.md")`, then create a separate `findings/FIND-{NNN}.md` following the template in that skill. Save raw evidence to `findings/evidence/` only when it supports that finding. Append to `timeline.jsonl` only for real activity or finding events; never initialize empty placeholder artifacts.
 5. **Markdown Only**: ALL deliverable documents MUST be Markdown format. Never write JSON as a report or finding document.
+5a. **HTTP Request Deduplication (HARD)**: For every `curl` or HTTP probe that iterates a parameter (ID, page, path), maintain a deduplicate log at `recon/probed.txt`:
+    ```bash
+    URL="http://<TARGET>/order/$ID/receipt"
+    if grep -Fxq "$URL" recon/probed.txt 2>/dev/null; then
+      echo "SKIP (already probed): $URL"
+    else
+      echo "$URL" >> recon/probed.txt
+      curl -sS "$URL" -o /tmp/r.html
+      head -20 /tmp/r.html
+    fi
+    ```
+    Before starting any scan sequence (id=1..N, page=1..N), check the LAST line of `recon/probed.txt` to determine the resume point — do not start from the beginning if already partially scanned. The file survives context summarization. Trust the file, not your memory.
+
+    **Skip-rule**: If 5 consecutive probes return the SAME HTTP status code AND same response body size (within ±50 bytes), STOP that enumeration axis and pivot to a different surface. Repetition is wandering.
+
 6. **Recon–Exploit Boundary**: Your mandate ends at identification. If you discover a vulnerability class and have enough information to describe the attack vector, log it as a recon finding and STOP. Do NOT craft exploit payloads, iterate on injection strings, or attempt to extract data — that is the EXPLOIT agent's job. Signal the boundary clearly: write `RECON_HANDOFF: <vuln class> at <location>` in your report and return to the orchestrator. After 20 bash calls OR 5 minutes of wall-clock time without confirming a new vulnerability class, also STOP and write `RECON_BUDGET_EXHAUSTED` with confirmed classes, promising leads, and attack surface summary. Recon is breadth (surface mapping), not depth (exploit iteration).
 
    **Concrete handoff triggers** — STOP recon and write `RECON_HANDOFF` IMMEDIATELY when ANY of these occurs (do NOT continue with even one more bash call):
