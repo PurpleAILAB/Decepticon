@@ -25,6 +25,7 @@ import {
   stripResultTags,
 } from "@decepticon/streaming";
 import { getModelOverride } from "../commands/modelOverride.js";
+import { buildSubmitInput } from "./buildSubmitInput.js";
 
 interface LangChainMessage {
   type: string; // "human", "ai", "tool"
@@ -155,6 +156,10 @@ export function useAgent({
   // Slug captured from the engagement_ready event — kept for system-level
   // logging when the handoff fires.
   const pendingHandoffRef = useRef<string | null>(null);
+  // Real slug authored by Soundwave's complete_engagement_planning tool.
+  // Queued here so the first Decepticon submit can inject it as engagement_name,
+  // taking priority over the potentially-stale DECEPTICON_ENGAGEMENT env var.
+  const queuedEngagementSlugRef = useRef<string | null>(null);
 
   // Derived for backward compatibility
   const isStreaming = runState === "streaming" || runState === "connecting";
@@ -301,6 +306,9 @@ export function useAgent({
             // message); thread handoff fires from handleStreamComplete.
             const slug = data.engagement ?? "";
             pendingHandoffRef.current = slug || "(unnamed)";
+            if (slug) {
+              queuedEngagementSlugRef.current = slug;
+            }
             assistantIdRef.current = "decepticon";
             setAssistantId("decepticon");
             addEvent({
@@ -533,6 +541,7 @@ export function useAgent({
         lastCountRef.current = 0;
         askedQuestionIds.current.clear();
         pendingHandoffRef.current = null;
+        queuedEngagementSlugRef.current = null;
       }
 
       // Auto-submit queued message
@@ -679,31 +688,17 @@ export function useAgent({
         setActiveAgent("decepticon");
         setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
 
-        // Engagement context flows in as regular state fields. A small
-        // middleware on the agent side picks engagement_name + workspace_path
-        // out of state and injects them into the model's system prompt —
-        // the LangGraph-idiomatic way to surface launcher-set context to the
-        // LLM without polluting user messages.
-        const slug = process.env.DECEPTICON_ENGAGEMENT;
-        const input: Record<string, unknown> = {
-          messages: [{ role: "user", content: message }],
-        };
-        if (slug) {
-          input.engagement_name = slug;
-          input.workspace_path = process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
-        }
-
-        // /model command — inject the active runtime override into BOTH
-        // input state and config.configurable. The agent's
-        // ModelOverrideMiddleware reads either path, so the call works
-        // whether the LangGraph runtime surfaces the field via state or
-        // via the runnable config.
-        const modelOverride = getModelOverride();
-        const streamConfig: { configurable?: Record<string, unknown> } = {};
-        if (modelOverride) {
-          input.model_override = modelOverride;
-          streamConfig.configurable = { model_override: modelOverride };
-        }
+        // Build the run input. Slug precedence: the slug queued from
+        // Soundwave's engagement_ready event takes priority over the
+        // DECEPTICON_ENGAGEMENT env var, which may be stale for a
+        // freshly-authored engagement. See buildSubmitInput for details.
+        const { input, streamConfig } = buildSubmitInput({
+          message,
+          handoffSlug: queuedEngagementSlugRef.current,
+          envSlug: process.env.DECEPTICON_ENGAGEMENT,
+          envWorkspacePath: process.env.DECEPTICON_WORKSPACE_PATH,
+          modelOverride: getModelOverride(),
+        });
 
         try {
           const stream = client.runs.stream(
@@ -711,7 +706,7 @@ export function useAgent({
             assistantIdRef.current,
             {
               input,
-              ...(modelOverride ? { config: streamConfig } : {}),
+              ...(streamConfig.configurable ? { config: streamConfig } : {}),
               ...STREAM_OPTIONS,
               onDisconnect: "continue",
               signal: abortController.signal,
