@@ -1342,6 +1342,42 @@ class OPPLANMiddleware(AgentMiddleware):
                 ]
             }
 
+        # Recon-first guard at task() dispatch layer (Rule 22 runtime enforcement).
+        # opplan.py update_objective guard covers OPPLAN state transitions, but the
+        # orchestrator can dispatch task("exploit", ...) without ever calling
+        # update_objective. This guard closes that hole by intercepting the task
+        # tool call itself before it reaches SubAgentMiddleware.
+        objectives = state.get("objectives", [])
+        exploit_task_calls = [
+            tc
+            for tc in last_ai.tool_calls
+            if tc["name"] == "task"
+            and tc.get("args", {}).get("subagent_type") in ("exploit", "postexploit")
+        ]
+        if exploit_task_calls:
+            recon_done = any(
+                o.get("phase") == "reconnaissance" and o.get("status") == "completed"
+                for o in objectives
+            )
+            if not recon_done:
+                return {
+                    "messages": [
+                        ToolMessage(
+                            content=(
+                                "RECON-FIRST GUARD (task layer): Cannot dispatch "
+                                f"task('{tc['args'].get('subagent_type')}', ...) — "
+                                "no reconnaissance objective has status='completed' in the OPPLAN. "
+                                "Dispatch task('recon', ...) first and wait for it to complete "
+                                "before dispatching exploit or postexploit. "
+                                "Rule 22: recon is mandatory before exploitation."
+                            ),
+                            tool_call_id=tc["id"],
+                            status="error",
+                        )
+                        for tc in exploit_task_calls
+                    ]
+                }
+
         return None
 
     @override

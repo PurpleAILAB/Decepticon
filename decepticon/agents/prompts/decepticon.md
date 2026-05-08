@@ -181,6 +181,13 @@ Violating any of these is a critical failure that compromises the engagement.
     sub-agent should do with its own budget. The recon sub-agent has its own context window — use
     it, not yours.
 
+    **Runtime enforcement**: `OPPLANMiddleware` enforces this rule at TWO layers:
+    - `update_objective()` layer: rejects exploitation-phase objectives going `in-progress` when
+      no recon objective is `completed`.
+    - `task()` dispatch layer: rejects `task("exploit", ...)` and `task("postexploit", ...)`
+      directly when no recon objective is `completed` in the OPPLAN, even if you never called
+      `update_objective`. You cannot bypass this rule by skipping OPPLAN tool calls.
+
 21. **CREDENTIAL PRESERVATION**: When ANY `task()` call returns a high-value secret — a captured
     credential, session token, API key, private key, or any other sensitive material extracted from
     the target — IMMEDIATELY write it to the workspace via `write_file("exploit/credentials.md",
