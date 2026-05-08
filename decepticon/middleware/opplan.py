@@ -722,11 +722,12 @@ def _make_tools() -> list:
 
             # Exploit-class guard: reject in-progress for exploit/postexploit-phase
             # objectives when no recon objective has been completed yet (Rule 22).
+            # ObjectivePhase values: "recon", "initial-access", "post-exploit", "c2", "exfiltration"
             if status == "in-progress":
                 obj_phase = target.get("phase", "")
-                if obj_phase in ("exploitation", "post-exploitation"):
+                if obj_phase in ("initial-access", "post-exploit", "c2", "exfiltration"):
                     recon_done = any(
-                        o.get("phase") == "reconnaissance" and o.get("status") == "completed"
+                        o.get("phase") == "recon" and o.get("status") == "completed"
                         for o in objectives
                     )
                     if not recon_done:
@@ -736,7 +737,7 @@ def _make_tools() -> list:
                                     ToolMessage(
                                         content=(
                                             f"RECON-FIRST GUARD: Cannot start {objective_id} "
-                                            f"(phase: {obj_phase}) — no reconnaissance objective "
+                                            f"(phase: {obj_phase}) — no recon objective "
                                             "has been completed yet. Dispatch task('recon', ...) "
                                             "first and complete it before starting exploitation. "
                                             "Rule 22 requires recon before any exploit objective."
@@ -1355,9 +1356,9 @@ class OPPLANMiddleware(AgentMiddleware):
             and tc.get("args", {}).get("subagent_type") in ("exploit", "postexploit")
         ]
         if exploit_task_calls:
+            # Match completed recon objective by phase field (ObjectivePhase.RECON = "recon").
             recon_done = any(
-                o.get("phase") == "reconnaissance" and o.get("status") == "completed"
-                for o in objectives
+                o.get("phase") == "recon" and o.get("status") == "completed" for o in objectives
             )
             if not recon_done:
                 return {
@@ -1366,7 +1367,7 @@ class OPPLANMiddleware(AgentMiddleware):
                             content=(
                                 "RECON-FIRST GUARD (task layer): Cannot dispatch "
                                 f"task('{tc['args'].get('subagent_type')}', ...) — "
-                                "no reconnaissance objective has status='completed' in the OPPLAN. "
+                                "no recon objective (owner='recon') has status='completed' in the OPPLAN. "
                                 "Dispatch task('recon', ...) first and wait for it to complete "
                                 "before dispatching exploit or postexploit. "
                                 "Rule 22: recon is mandatory before exploitation."
