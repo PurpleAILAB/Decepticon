@@ -699,7 +699,7 @@ class LLMFactory:
         belt-and-suspenders for any future client that bypasses this
         factory.
         """
-        kwargs: dict[str, object] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "base_url": self._proxy.url,
             "api_key": SecretStr(self._proxy.api_key),
