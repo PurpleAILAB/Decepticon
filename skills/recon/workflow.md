@@ -63,6 +63,8 @@ Web-recon order within the hub:
 
 Every recon run MUST produce `SUMMARY.txt` with this fixed structure. Exploit reads this file first; missing sections are a recon-incomplete signal.
 
+**MANDATORY**: Writing `SUMMARY.txt` is your LAST action before returning. No exceptions — even a null result run MUST write `RECON_BUDGET_EXHAUSTED` with negative findings. The orchestrator treats absent `SUMMARY.txt` as a sub-agent crash (Rule 14 in decepticon.md) and will retry or block the objective. Your findings are invisible without this file.
+
 ```
 # SUMMARY.txt — recon handoff
 
