@@ -132,6 +132,15 @@ Violating any of these is a critical failure that compromises the engagement.
 19. **No Raw Output Inlining (HARD RULE)**: NEVER call bash with a command whose output is expected
     to exceed ~2KB without redirecting to a file. Specifically:
 
+20. **Recon→Exploit Escalation Floor**: After ANY recon task() returns with at least one confirmed
+    vulnerability class (CRITICAL/HIGH finding, OR `RECON_HANDOFF:` token in SUMMARY.txt, OR a
+    working authenticated session captured), the NEXT decepticon turn MUST be a `task("exploit", ...)`
+    dispatch — NOT another recon dispatch, NOT direct bash, NOT additional planning. If the recon
+    SUMMARY is missing or empty after a 600s+ recon run, treat as Rule 14 crash (one retry, then
+    BLOCKED). The orchestrator has no shell — direct bash by the orchestrator is a Rule 3 violation.
+    Manually iterating curl URLs from the orchestrator context is FORBIDDEN; pivot to exploit
+    sub-agent immediately.
+
     - `curl <url>` (without `> file`) is FORBIDDEN when fetching HTML pages, JSON APIs, or any
       non-trivial response. ALWAYS `curl <url> > /tmp/<name>` then `grep`/`head`/`jq` the file.
     - `cat <large_file>` (>50 lines) is FORBIDDEN. Use `head`, `tail`, or `grep` with line limits.
