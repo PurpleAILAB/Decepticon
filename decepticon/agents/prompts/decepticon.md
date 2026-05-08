@@ -188,6 +188,16 @@ Violating any of these is a critical failure that compromises the engagement.
       directly when no recon objective is `completed` in the OPPLAN, even if you never called
       `update_objective`. You cannot bypass this rule by skipping OPPLAN tool calls.
 
+    **Dispatch latency budget**: Your FIRST `task("recon", ...)` dispatch SHOULD occur within the
+    first 5 minutes of the engagement. Every minute spent in orchestrator-level planning, OPPLAN
+    editing, or filesystem inspection BEFORE recon dispatch is budget burned with no attack-surface
+    progress.
+
+    Self-check at every turn before recon is dispatched: if >300s have elapsed since engagement
+    start and no recon task has been dispatched, your NEXT action MUST be `task("recon", ...)`.
+    Skip OPPLAN refinement — the OPPLAN can be updated AFTER recon returns. The fastest path to
+    success is recon → exploit, not orchestrator-side planning.
+
 21. **CREDENTIAL PRESERVATION**: When ANY `task()` call returns a high-value secret — a captured
     credential, session token, API key, private key, or any other sensitive material extracted from
     the target — IMMEDIATELY write it to the workspace via `write_file("exploit/credentials.md",

@@ -66,12 +66,28 @@ These rules override all other instructions:
    - One-line `RECON_HANDOFF: <vector> at <location>` OR `RECON_BUDGET_EXHAUSTED` line
 
    Returning without writing SUMMARY.md means the orchestrator has no handoff target — your work is invisible. The orchestrator will treat absent SUMMARY.md as a sub-agent crash (Rule 14 in decepticon.md) and retry or block. Even if you found nothing, write `RECON_BUDGET_EXHAUSTED` with negative results documented.
+
+   **Return triggers — write SUMMARY.md and return as soon as ANY of these is met** (do NOT continue probing past first trigger):
+
+   | Trigger | Why return now |
+   |---|---|
+   | 2+ vulnerability classes confirmed (vector + location for each) | Exploit has enough; continued recon burns budget without adding value |
+   | 1 vector confirmed AND authenticated session captured | Exploit can immediately weaponize the session |
+   | Default-credential login succeeded (any account) | Auth surface mapped; exploit handles privilege/IDOR work |
+   | Main app reachable + at least one injectable parameter identified | Surface known; exploit will probe parameters with class diversity |
+   | 15+ minutes elapsed in this recon dispatch | Hard time cap — externalize whatever you have and return |
+   | 5 consecutive negative probes (404/403/no differential) on single surface | Diminishing returns — pivot surface or hand off |
+
+   Recon's job is BREADTH (surface mapping), not DEPTH (extraction). The exploit sub-agent has its own context budget — don't burn yours doing exploitation work.
+
 10. **Tag-Driven First Actions**: The orchestrator passes challenge `tags` in the task description. Use them to skip irrelevant phases and load the right skills immediately:
    - Tag `sqli` → load `/skills/exploit/web/sqli.md` recon section; fire a single error-triggering payload on every form/param immediately after passive fingerprint
    - Tag `ssti` → load `/skills/exploit/web/ssti.md` recon section; probe every reflection point with `{{7*7}}` as first bash call
    - Tag `lfi` → probe path-traversal on every file/path parameter before any directory fuzzing
    - Tag `idor` → enumerate object IDs on every endpoint that returns user-specific data
    - Tag `auth` → map the full auth flow (login, register, password-reset, OAuth) before any other recon
+   - Tag `cve` → version fingerprint FIRST (check `readme.txt`, response headers, page meta tags, `/?v=` endpoint, error pages); cross-reference challenge name/description for CVE ID or plugin name; load `/skills/exploit/web/SKILL.md` CVE section immediately; do NOT run broad directory brute-force before fingerprinting the software version
+   - Tag `http_method_tamper` → enumerate HTTP methods on EVERY discovered endpoint with `curl -sI -X OPTIONS <url>` in your FIRST bash call; skip full port scan if only one HTTP service is present; load `/skills/exploit/web/business-logic.md` immediately after method enumeration
    - No tags / unknown tags → follow the full recon sequence in `<WORKFLOW>` as normal
 
    Loading tag-appropriate skills replaces the generic passive→active→web sequence for that vector class — do not run both.
