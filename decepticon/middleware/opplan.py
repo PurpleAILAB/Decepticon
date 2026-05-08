@@ -721,38 +721,46 @@ def _make_tools() -> list:
                     )
 
             # Exploit-class guard: reject in-progress for exploit/postexploit-phase
-            # objectives when no recon objective has been completed yet (Rule 22).
-            # ObjectivePhase values: "recon", "initial-access", "post-exploit", "c2", "exfiltration"
+            # objectives when no recon evidence exists yet (Rule 22).
+            # RELAXED: agents often omit phase= when updating objectives, so we
+            # also match on owner=="recon" or "recon" in title (phase-field bug fix).
             if status == "in-progress":
                 obj_phase = target.get("phase", "")
                 if obj_phase in ("initial-access", "post-exploit", "c2", "exfiltration"):
-                    recon_done = any(
-                        o.get("phase") == "recon"
+                    recon_done_in_opplan = any(
+                        (
+                            o.get("phase") == "recon"
+                            or o.get("owner") == "recon"
+                            or "recon" in (o.get("title") or "").lower()
+                        )
                         and o.get("status") in ("completed", "passed", "in-progress")
                         for o in objectives
                     )
-                    # Filesystem fallback: accept recon/SUMMARY.md or any findings/FIND-*.md
-                    if not recon_done:
-                        workspace = state.get("workspace_path", "/workspace")
-                        summary_md = Path(workspace) / "recon" / "SUMMARY.md"
-                        findings_dir = Path(workspace) / "findings"
-                        finding_files = (
-                            list(findings_dir.glob("FIND-*.md")) if findings_dir.exists() else []
+                    recon_done_on_disk = False
+                    if state and state.get("workspace_path"):
+                        wp = Path(state["workspace_path"])
+                        summary_md = wp / "recon" / "SUMMARY.md"
+                        findings_dir = wp / "findings"
+                        recon_done_on_disk = summary_md.exists() or (
+                            findings_dir.is_dir() and any(findings_dir.glob("FIND-*.md"))
                         )
-                        recon_done = summary_md.exists() or len(finding_files) > 0
-                    if not recon_done:
+                    if not (recon_done_in_opplan or recon_done_on_disk):
                         return Command(
                             update={
                                 "messages": [
                                     ToolMessage(
                                         content=(
                                             f"RECON-FIRST GUARD: Cannot start {objective_id} "
-                                            f"(phase: {obj_phase}) — recon not yet complete. "
-                                            "Satisfy EITHER: (A) recon objective status='completed' "
-                                            "in the OPPLAN, OR (B) recon/SUMMARY.md or "
-                                            "findings/FIND-*.md exists on disk. "
-                                            "Dispatch task('recon', ...) first. "
-                                            "Rule 22 requires recon before any exploit objective."
+                                            f"(phase: {obj_phase}) — no reconnaissance evidence "
+                                            "found. Accepted signals: "
+                                            "(a) an OPPLAN objective with phase='recon' "
+                                            "OR owner='recon' OR title containing 'recon', "
+                                            "in status completed/passed/in-progress, OR "
+                                            "(b) recon/SUMMARY.md exists in workspace, OR "
+                                            "(c) findings/FIND-*.md present. "
+                                            "Either dispatch task('recon', ...) and let it "
+                                            "externalize SUMMARY.md, OR set the recon "
+                                            "objective owner/phase explicitly."
                                         ),
                                         tool_call_id=tool_call_id,
                                         status="error",
@@ -1368,32 +1376,41 @@ class OPPLANMiddleware(AgentMiddleware):
             and tc.get("args", {}).get("subagent_type") in ("exploit", "postexploit")
         ]
         if exploit_task_calls:
-            # Accept recon done via OPPLAN status (any active/terminal recon status)
-            # OR via filesystem evidence (recon/SUMMARY.md or findings/FIND-*.md).
-            recon_done = any(
-                o.get("phase") == "recon"
+            # Accept recon done via OPPLAN (phase OR owner OR title match) OR filesystem.
+            # Phase-field bug: agents often omit phase= when updating; owner/title are fallbacks.
+            recon_done_in_opplan = any(
+                (
+                    o.get("phase") == "recon"
+                    or o.get("owner") == "recon"
+                    or "recon" in (o.get("title") or "").lower()
+                )
                 and o.get("status") in ("completed", "passed", "in-progress")
                 for o in objectives
             )
-            if not recon_done:
-                workspace = state.get("workspace_path", "/workspace")
-                summary_md = Path(workspace) / "recon" / "SUMMARY.md"
-                findings_dir = Path(workspace) / "findings"
-                finding_files = (
-                    list(findings_dir.glob("FIND-*.md")) if findings_dir.exists() else []
+            recon_done_on_disk = False
+            if state and state.get("workspace_path"):
+                wp = Path(state["workspace_path"])
+                summary_md = wp / "recon" / "SUMMARY.md"
+                findings_dir = wp / "findings"
+                recon_done_on_disk = summary_md.exists() or (
+                    findings_dir.is_dir() and any(findings_dir.glob("FIND-*.md"))
                 )
-                recon_done = summary_md.exists() or len(finding_files) > 0
-            if not recon_done:
+            if not (recon_done_in_opplan or recon_done_on_disk):
                 return {
                     "messages": [
                         ToolMessage(
                             content=(
                                 "RECON-FIRST GUARD (task layer): Cannot dispatch "
                                 f"task('{tc['args'].get('subagent_type')}', ...) — "
-                                "recon not yet complete. Satisfy EITHER: "
-                                "(A) recon objective status='completed'/'in-progress' in the OPPLAN, "
-                                "OR (B) recon/SUMMARY.md or findings/FIND-*.md exists on disk. "
-                                "Dispatch task('recon', ...) first. "
+                                "no reconnaissance evidence found. Accepted signals: "
+                                "(a) an OPPLAN objective with phase='recon' "
+                                "OR owner='recon' OR title containing 'recon', "
+                                "in status completed/passed/in-progress, OR "
+                                "(b) recon/SUMMARY.md exists in workspace, OR "
+                                "(c) findings/FIND-*.md present. "
+                                "Either dispatch task('recon', ...) and let it "
+                                "externalize SUMMARY.md, OR set the recon "
+                                "objective owner/phase explicitly. "
                                 "Rule 22: recon is mandatory before exploitation."
                             ),
                             tool_call_id=tc["id"],
