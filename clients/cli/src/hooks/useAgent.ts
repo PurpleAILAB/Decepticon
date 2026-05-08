@@ -541,7 +541,9 @@ export function useAgent({
         lastCountRef.current = 0;
         askedQuestionIds.current.clear();
         pendingHandoffRef.current = null;
-        queuedEngagementSlugRef.current = null;
+        // queuedEngagementSlugRef is intentionally NOT cleared here — the
+        // auto-submitted Decepticon run still needs to read it. It is cleared
+        // in submit() after the run that consumed it completes successfully.
       }
 
       // Auto-submit queued message
@@ -688,13 +690,20 @@ export function useAgent({
         setActiveAgent("decepticon");
         setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
 
+        // Capture slug before the stream so we can clear it only after the
+        // run that actually consumed it completes. Clearing in
+        // handleStreamComplete (during the *preceding* Soundwave run) is too
+        // early — the ref would be null by the time this Decepticon submit
+        // reads it. Retaining it on failure lets the operator retry safely.
+        const handoffSlug = queuedEngagementSlugRef.current;
+
         // Build the run input. Slug precedence: the slug queued from
         // Soundwave's engagement_ready event takes priority over the
         // DECEPTICON_ENGAGEMENT env var, which may be stale for a
         // freshly-authored engagement. See buildSubmitInput for details.
         const { input, streamConfig } = buildSubmitInput({
           message,
-          handoffSlug: queuedEngagementSlugRef.current,
+          handoffSlug,
           envSlug: process.env.DECEPTICON_ENGAGEMENT,
           envWorkspacePath: process.env.DECEPTICON_WORKSPACE_PATH,
           modelOverride: getModelOverride(),
@@ -714,6 +723,8 @@ export function useAgent({
           );
 
           await processStream(stream, abortController);
+          // Clear only after the run that used the slug completes — not before.
+          if (handoffSlug) queuedEngagementSlugRef.current = null;
         } catch (err) {
           // Ignore abort errors — triggered by interrupt() or cancel()
           if (abortController.signal.aborted) return;
