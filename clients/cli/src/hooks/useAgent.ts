@@ -152,9 +152,11 @@ export function useAgent({
   // tool flips this to "decepticon" mid-flight; the next submit() then opens
   // a fresh thread on the new assistant.
   const assistantIdRef = useRef<string>(INITIAL_ASSISTANT_ID);
-  // Slug captured from the engagement_ready event — kept for system-level
-  // logging when the handoff fires.
-  const pendingHandoffRef = useRef<string | null>(null);
+  // Boolean handoff signal — set when soundwave emits engagement_ready; consumed
+  // in handleStreamComplete to drop the soundwave thread before the auto-submit
+  // opens a fresh decepticon thread. Carries no slug; the launcher is the single
+  // source of truth and reaches the agent via config.configurable.
+  const pendingHandoffRef = useRef<boolean>(false);
 
   // Derived for backward compatibility
   const isStreaming = runState === "streaming" || runState === "connecting";
@@ -299,15 +301,15 @@ export function useAgent({
             // active assistant so the next submit() lands on decepticon.
             // The current run continues to completion (soundwave's closing
             // message); thread handoff fires from handleStreamComplete.
-            const slug = data.engagement ?? "";
-            pendingHandoffRef.current = slug || "(unnamed)";
+            // Pure boolean signal — the engagement slug travels independently
+            // via config.configurable from the launcher's env.
+            pendingHandoffRef.current = true;
             assistantIdRef.current = "decepticon";
             setAssistantId("decepticon");
             addEvent({
               type: "system",
-              content: slug
-                ? `Engagement '${slug}' planning complete — Decepticon will pick up your next message.`
-                : "Engagement planning complete — Decepticon will pick up your next message.",
+              content:
+                "Engagement planning complete — Decepticon will pick up your next message.",
             });
             break;
           }
@@ -532,7 +534,7 @@ export function useAgent({
         threadIdRef.current = null;
         lastCountRef.current = 0;
         askedQuestionIds.current.clear();
-        pendingHandoffRef.current = null;
+        pendingHandoffRef.current = false;
       }
 
       // Auto-submit queued message
@@ -679,31 +681,31 @@ export function useAgent({
         setActiveAgent("decepticon");
         setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
 
-        // Engagement context flows in as regular state fields. A small
-        // middleware on the agent side picks engagement_name + workspace_path
-        // out of state and injects them into the model's system prompt —
-        // the LangGraph-idiomatic way to surface launcher-set context to the
-        // LLM without polluting user messages.
-        const slug = process.env.DECEPTICON_ENGAGEMENT;
+        // Engagement context and the /model override flow as runnable
+        // ``config.configurable`` entries. EngagementContextMiddleware
+        // hydrates state from configurable on before_agent so OPPLAN and
+        // filesystem middlewares see the values as ordinary state fields,
+        // and ModelOverrideMiddleware reads model_override straight from
+        // configurable. The launcher is the single source of truth for the
+        // engagement slug; the LLM never decides it.
         const input: Record<string, unknown> = {
           messages: [{ role: "user", content: message }],
         };
+
+        const configurable: Record<string, unknown> = {};
+        const slug = process.env.DECEPTICON_ENGAGEMENT;
         if (slug) {
-          input.engagement_name = slug;
-          input.workspace_path = process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
+          configurable.engagement_name = slug;
+          configurable.workspace_path =
+            process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
+        }
+        const modelOverride = getModelOverride();
+        if (modelOverride) {
+          configurable.model_override = modelOverride;
         }
 
-        // /model command — inject the active runtime override into BOTH
-        // input state and config.configurable. The agent's
-        // ModelOverrideMiddleware reads either path, so the call works
-        // whether the LangGraph runtime surfaces the field via state or
-        // via the runnable config.
-        const modelOverride = getModelOverride();
-        const streamConfig: { configurable?: Record<string, unknown> } = {};
-        if (modelOverride) {
-          input.model_override = modelOverride;
-          streamConfig.configurable = { model_override: modelOverride };
-        }
+        const hasConfigurable = Object.keys(configurable).length > 0;
+        const streamConfig = hasConfigurable ? { configurable } : undefined;
 
         try {
           const stream = client.runs.stream(
@@ -711,7 +713,7 @@ export function useAgent({
             assistantIdRef.current,
             {
               input,
-              ...(modelOverride ? { config: streamConfig } : {}),
+              ...(streamConfig ? { config: streamConfig } : {}),
               ...STREAM_OPTIONS,
               onDisconnect: "continue",
               signal: abortController.signal,

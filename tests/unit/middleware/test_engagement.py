@@ -14,6 +14,8 @@ from decepticon.middleware.engagement import (
     EngagementContextMiddleware,
     EngagementContextState,
     _benchmark_mode_active,
+    _hydrate_engagement_state,
+    _resolve_workspace_path,
 )
 from decepticon.middleware.opplan import OPPLANState
 
@@ -108,6 +110,37 @@ def test_engagement_name_reducer_handles_concurrent_updates(schema) -> None:
     result = graph.compile().invoke({"messages": []})
 
     assert result["engagement_name"] == "demo-engagement"
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        OPPLANState,
+        EngagementContextState,
+        _resolve_schemas({AgentState, OPPLANState, EngagementContextState})[0],
+    ],
+)
+def test_workspace_path_reducer_handles_concurrent_updates(schema) -> None:
+    """Regression for #153 — parallel objectives must not trigger
+    INVALID_CONCURRENT_GRAPH_UPDATE on workspace_path."""
+
+    def set_workspace(_state):
+        return {"workspace_path": "/workspace"}
+
+    def keep_workspace(_state):
+        return {"workspace_path": None}
+
+    graph = StateGraph(schema)
+    graph.add_node("set_workspace", set_workspace)
+    graph.add_node("keep_workspace", keep_workspace)
+    graph.add_edge(START, "set_workspace")
+    graph.add_edge(START, "keep_workspace")
+    graph.add_edge("set_workspace", END)
+    graph.add_edge("keep_workspace", END)
+
+    result = graph.compile().invoke({"messages": []})
+
+    assert result["workspace_path"] == "/workspace"
 
 
 # ── inject paths ───────────────────────────────────────────────────────
@@ -278,6 +311,114 @@ def test_appended_to_existing_system_message(
     assert "Workspace slug: demo" in text
     assert "## CTF Benchmark Challenge" in text
     assert text.index("ORIGINAL_PROMPT_BODY") < text.index("Workspace slug")
+
+
+# ── runnable-config hydration ──────────────────────────────────────────
+
+
+def test_hydrate_pulls_engagement_from_configurable_when_state_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """before_agent must copy engagement_name + workspace_path from config to state."""
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"engagement_name": "from-launcher", "workspace_path": "/workspace"},
+    )
+
+    updates = _hydrate_engagement_state({})
+
+    assert updates == {
+        "engagement_name": "from-launcher",
+        "workspace_path": "/workspace",
+    }
+
+
+def test_hydrate_is_idempotent_when_state_already_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If state already carries the field, configurable is ignored for that field."""
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"engagement_name": "from-launcher", "workspace_path": "/workspace"},
+    )
+
+    updates = _hydrate_engagement_state(
+        {"engagement_name": "already-on-state", "workspace_path": "/workspace"}
+    )
+
+    assert updates is None
+
+
+def test_hydrate_partial_when_only_one_field_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hydrates only the missing field; preserves the one already on state."""
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"engagement_name": "from-launcher", "workspace_path": "/workspace"},
+    )
+
+    updates = _hydrate_engagement_state({"engagement_name": "kept-on-state"})
+
+    assert updates == {"workspace_path": "/workspace"}
+
+
+def test_hydrate_returns_none_when_neither_state_nor_configurable_have_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        dict,
+    )
+
+    assert _hydrate_engagement_state({}) is None
+
+
+def test_hydrate_ignores_non_string_configurable_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Defensive: configurable values that are not non-empty strings are ignored."""
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"engagement_name": 123, "workspace_path": ""},
+    )
+
+    assert _hydrate_engagement_state({}) is None
+
+
+def test_resolve_workspace_path_prefers_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"workspace_path": "/workspace/from-config"},
+    )
+
+    assert _resolve_workspace_path({"workspace_path": "/workspace/from-state"}) == (
+        "/workspace/from-state"
+    )
+
+
+def test_resolve_workspace_path_falls_back_to_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {"workspace_path": "/workspace/from-config"},
+    )
+
+    assert _resolve_workspace_path({}) == "/workspace/from-config"
+
+
+def test_resolve_workspace_path_defaults_when_neither_set(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        dict,
+    )
+
+    assert _resolve_workspace_path({}) == "/workspace"
 
 
 def test_benchmark_with_missing_optional_fields(

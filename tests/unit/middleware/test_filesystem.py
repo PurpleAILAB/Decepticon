@@ -144,9 +144,61 @@ def test_missing_engagement_workspace_fails_closed() -> None:
     assert backend.calls == []
 
 
-def test_root_workspace_fails_closed() -> None:
+def test_root_workspace_accepted_as_engagement_root() -> None:
+    """Launcher mode binds the engagement directory directly at ``/workspace``.
+
+    The bare root must be accepted as a valid engagement root so filesystem
+    tools work without a slug prefix. ``ls /workspace`` must hit the backend
+    at ``/workspace`` (no doubling) and surface entries unchanged.
+    """
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    result = scoped.ls("/workspace")
+
+    assert result.error is None
+    assert result.entries == [{"path": "/workspace/plan/roe.json", "is_dir": False}]
+    assert backend.calls[-1] == ("ls_info", "/workspace")
+
+
+def test_root_workspace_no_prefix_doubling_under_engagement_root() -> None:
+    """Reads under ``/workspace`` in launcher mode must not get prefixed twice."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    scoped.read("/workspace/plan/roe.json")
+
+    assert backend.calls[-1] == ("read", ("/workspace/plan/roe.json", 0, 2000))
+
+
+def test_root_workspace_accepts_trailing_slash() -> None:
+    """``/workspace/`` (trailing slash) is the same engagement root."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/")
+
+    result = scoped.ls("/workspace")
+
+    assert result.error is None
+    assert backend.calls[-1] == ("ls_info", "/workspace")
+
+
+def test_traversal_path_fails_closed_does_not_silently_coerce() -> None:
+    """``..`` traversal must fail closed rather than collapse to ``/workspace``.
+
+    Without the ``os.path.normpath`` guard the slug regex would accept the
+    component, which would then resolve to a path outside the engagement.
+    """
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/../etc")
+
+    assert scoped.ls("/workspace").error is not None
+    assert backend.calls == []
+
+
+def test_invalid_path_outside_workspace_fails_closed() -> None:
+    """Anything not under ``/workspace`` must fail closed (no silent coerce)."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/etc")
 
     assert scoped.ls("/workspace").error is not None
     assert backend.calls == []

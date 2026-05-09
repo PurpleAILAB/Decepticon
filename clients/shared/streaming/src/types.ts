@@ -43,8 +43,6 @@ export interface SubagentCustomEvent {
   options?: AskUserOption[];
   multi_select?: boolean;
   allow_other?: boolean;
-  // engagement_ready field — slug whose planning bundle is now complete.
-  engagement?: string;
 }
 
 /** Minimal event shape accepted by shared utility functions. */

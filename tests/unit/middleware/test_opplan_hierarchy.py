@@ -13,7 +13,7 @@ from decepticon.core.schemas import (
     ObjectivePhase,
     ObjectiveStatus,
 )
-from decepticon.middleware import opplan as opplan_mod
+from decepticon.tools.opplan import build_opplan_tools
 
 
 def _objective(
@@ -139,10 +139,10 @@ class TestSchemaHierarchy:
 
 
 class _ToolBag:
-    """Convenience accessor over the tuple returned by ``_make_tools()``."""
+    """Convenience accessor over the OPPLAN tool list."""
 
     def __init__(self) -> None:
-        self.tools = opplan_mod._make_tools()
+        self.tools = build_opplan_tools()
         by_name = {getattr(t, "name", None) or t.__name__: t for t in self.tools}
         self.add = by_name["add_objective"]
         self.update = by_name["update_objective"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from typing import Any
 
@@ -21,6 +22,7 @@ from deepagents.backends.utils import validate_path
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
 from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.tools.filesystem import filesystem_tools_without_execute
 
 WORKSPACE = "/workspace"
 NO_WORKSPACE_ERROR = (
@@ -30,8 +32,29 @@ NO_WORKSPACE_ERROR = (
 
 
 def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
-    normalized = DockerSandbox._normalize_workspace_path(workspace_path)
-    return None if normalized == WORKSPACE else normalized
+    """Strict 4-case contract for resolving the engagement workspace root.
+
+    - Empty / None → ``None`` (fail closed; no engagement configured).
+    - ``/workspace`` → ``/workspace`` (launcher mode: the bind-mount IS the
+      engagement root, so the literal root is a valid workspace).
+    - ``/workspace/<safe-slug>`` → normalized path (web mode: shared root with
+      per-engagement subdirectories).
+    - Anything else (traversal like ``/workspace/../etc``, characters outside
+      the slug regex, etc.) → ``None``. Invalid paths are NOT silently coerced
+      to ``/workspace``.
+    """
+    path = (workspace_path or "").strip()
+    if not path:
+        return None
+    if path == WORKSPACE:
+        return WORKSPACE
+    if not path.startswith(f"{WORKSPACE}/"):
+        return None
+    expected = path.rstrip("/")
+    if os.path.normpath(expected) != expected:
+        return None
+    normalized = DockerSandbox._normalize_workspace_path(path)
+    return normalized if normalized == expected else None
 
 
 class EngagementFilesystemBackend(BackendProtocol):
@@ -201,7 +224,7 @@ class FilesystemMiddleware(BaseFilesystemMiddleware):
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
-        self.tools = [tool for tool in self.tools if tool.name != "execute"]
+        self.tools = filesystem_tools_without_execute(self.tools)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         return EngagementFilesystemBackend(

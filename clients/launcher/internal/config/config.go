@@ -277,15 +277,21 @@ func ValidateAPIKeys(env map[string]string) error {
 //     instead of a single session token. accept either env name.
 //   - Copilot Pro uses a refresh-token rotation (COPILOT_REFRESH_TOKEN)
 //     instead of a session cookie. Same fall-through, different env name.
-//   - ChatGPT uses LiteLLM's native chatgpt provider. It persists OAuth
-//     credentials as auth.json and can create that file via device-code login,
-//     so the launcher must not require a pasted browser session cookie.
+//   - ChatGPT uses Decepticon's auth/ handler reading the Codex CLI
+//     credential store at ~/.codex/auth.json. The launcher mounts that
+//     file into the container so a host-side `codex login` is visible
+//     to the running proxy without rebuilding.
+//
+// AbsolutePath is set for handlers that store a single credential file
+// at a fixed absolute path (rather than under ~/.config/<dir>/<file>).
+// When set, ConfigDir / TokenFile are ignored.
 type subscriptionMethod struct {
 	Toggle                string   // DECEPTICON_AUTH_<X> boolean enabling this path
 	TokenEnvs             []string // env vars that satisfy the path on their own
 	ConfigDir             string   // ~/.config/<dir>/<token file> fallback
 	TokenFile             string   // token file name; defaults to tokens.json
 	DirEnv                string   // optional host-side token directory env var
+	AbsolutePath          string   // optional fixed-relative-to-$HOME path (e.g. .codex/auth.json)
 	LegacyDir             string   // optional legacy ~/.config/<dir>/<token file> fallback
 	Label                 string   // human name for error messages
 	AllowInteractiveLogin bool     // provider can bootstrap credentials at runtime
@@ -294,9 +300,7 @@ type subscriptionMethod struct {
 var oauthSubscriptions = map[string]subscriptionMethod{
 	"chatgpt": {
 		Toggle:                "DECEPTICON_AUTH_CHATGPT",
-		ConfigDir:             "litellm/chatgpt",
-		TokenFile:             "auth.json",
-		DirEnv:                "LITELLM_CHATGPT_TOKEN_DIR",
+		AbsolutePath:          ".codex/auth.json",
 		Label:                 "ChatGPT",
 		AllowInteractiveLogin: true,
 	},
@@ -513,6 +517,12 @@ func validateSubscriptionCredentials(env map[string]string, sub subscriptionMeth
 
 func subscriptionTokenPaths(env map[string]string, home string, sub subscriptionMethod) []string {
 	var paths []string
+	if sub.AbsolutePath != "" {
+		// Single-file handler (e.g. ChatGPT → ~/.codex/auth.json).
+		// ConfigDir / TokenFile / LegacyDir do not apply.
+		paths = append(paths, filepath.Join(home, sub.AbsolutePath))
+		return dedupeStrings(paths)
+	}
 	tokenFile := sub.TokenFile
 	if tokenFile == "" {
 		tokenFile = "tokens.json"

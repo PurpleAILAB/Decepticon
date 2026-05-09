@@ -105,6 +105,16 @@ func runStart(cmd *cobra.Command, args []string) error {
 		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", "/dev/null")
 	}
 
+	// Same pattern for the Codex CLI credential store at ~/.codex/auth.json.
+	// The new auth/ ChatGPT handler reads (and writes) this file directly so
+	// a host-side `codex login` flows into the container without a rebuild.
+	codexAuthPath := filepath.Join(os.Getenv("HOME"), ".codex", "auth.json")
+	if _, statErr := os.Stat(codexAuthPath); statErr == nil {
+		_ = os.Setenv("CODEX_AUTH_VOLUME", codexAuthPath)
+	} else {
+		_ = os.Setenv("CODEX_AUTH_VOLUME", "/dev/null")
+	}
+
 	// 2.5. Update notice. Applying updates is intentionally explicit via
 	// `decepticon update` because it can replace the binary, compose files,
 	// LiteLLM config, and Docker images.

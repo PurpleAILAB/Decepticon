@@ -25,6 +25,15 @@ from typing import Any
 import httpx
 import litellm
 from litellm import CustomLLM, ModelResponse
+from oauth_token_store import (
+    DEFAULT_REFRESH_BUFFER_SECONDS,
+    FileBackedCache,
+    is_timestamp_expired,
+    oauth_refresh_request,
+    read_json_file,
+    with_retry_on_401,
+    write_json_atomic,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -36,9 +45,9 @@ GEMINI_TOKENS_PATH = Path(
 )
 
 GEMINI_API_BASE = "https://generativelanguage.googleapis.com"
-REFRESH_BUFFER_SECONDS = 5 * 60
 
-_token_cache: dict[str, Any] = {}
+
+_gemini_file_cache = FileBackedCache(GEMINI_TOKENS_PATH, read_json_file)
 
 
 def _load_tokens() -> dict[str, Any] | None:
@@ -55,20 +64,7 @@ def _load_tokens() -> dict[str, Any] | None:
         except json.JSONDecodeError:
             _log.debug("Malformed GEMINI_SESSION_COOKIES JSON")
 
-    if GEMINI_TOKENS_PATH.exists():
-        try:
-            return json.loads(GEMINI_TOKENS_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            _log.debug("Could not read token file")
-
-    return None
-
-
-def _is_expired(tokens: dict[str, Any]) -> bool:
-    expires_at = tokens.get("expiresAt", 0)
-    if expires_at == 0:
-        return False
-    return time.time() + REFRESH_BUFFER_SECONDS >= expires_at
+    return _gemini_file_cache.get()
 
 
 def _refresh_google_token(tokens: dict[str, Any]) -> dict[str, Any]:
@@ -83,18 +79,18 @@ def _refresh_google_token(tokens: dict[str, Any]) -> dict[str, Any]:
             llm_provider="gemini-sub",
         )
 
-    resp = httpx.post(
+    data = oauth_refresh_request(
         "https://oauth2.googleapis.com/token",
-        data={
+        {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
             "client_id": client_id,
             "client_secret": client_secret,
         },
+        json_body=False,
         timeout=30,
+        provider_label="gemini-sub",
     )
-    resp.raise_for_status()
-    data = resp.json()
 
     new_tokens = {
         **tokens,
@@ -102,18 +98,15 @@ def _refresh_google_token(tokens: dict[str, Any]) -> dict[str, Any]:
         "expiresAt": int(time.time() + data.get("expires_in", 3600)),
     }
 
-    try:
-        GEMINI_TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        GEMINI_TOKENS_PATH.write_text(json.dumps(new_tokens, indent=2))
-        os.chmod(GEMINI_TOKENS_PATH, 0o600)
-    except OSError:
-        _log.debug("Could not persist tokens to disk")
-
+    write_json_atomic(GEMINI_TOKENS_PATH, new_tokens)
+    _gemini_file_cache.replace(new_tokens)
     return new_tokens
 
 
-def get_access_token() -> str:
-    tokens = _token_cache.get("token") or _load_tokens()
+def get_gemini_access_token(force_refresh: bool = False) -> str:
+    if force_refresh:
+        _gemini_file_cache.invalidate()
+    tokens = _load_tokens()
     if tokens is None:
         raise litellm.AuthenticationError(
             message=(
@@ -124,10 +117,12 @@ def get_access_token() -> str:
             llm_provider="gemini-sub",
         )
 
-    if _is_expired(tokens) and tokens.get("refreshToken"):
+    expired = is_timestamp_expired(
+        tokens.get("expiresAt"), buffer_seconds=DEFAULT_REFRESH_BUFFER_SECONDS
+    )
+    if (force_refresh or expired) and tokens.get("refreshToken"):
         tokens = _refresh_google_token(tokens)
 
-    _token_cache["token"] = tokens
     return tokens.get("accessToken", "")
 
 
@@ -155,7 +150,6 @@ class GeminiSubHandler(CustomLLM):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        access_token = get_access_token()
         actual_model = model.split("/", 1)[-1] if "/" in model else model
 
         # Gemini API uses generateContent endpoint with OAuth bearer
@@ -201,18 +195,24 @@ class GeminiSubHandler(CustomLLM):
         if system_instruction:
             request_body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-        req_headers = {
-            "authorization": f"Bearer {access_token}",
-            "content-type": "application/json",
-        }
-
         url = f"{GEMINI_API_BASE}/v1beta/models/{actual_model}:generateContent"
-        resp = httpx.post(url, json=request_body, headers=req_headers, timeout=timeout or 600)
+
+        def _send(force_refresh: bool) -> httpx.Response:
+            access_token = get_gemini_access_token(force_refresh=force_refresh)
+            req_headers = {
+                "authorization": f"Bearer {access_token}",
+                "content-type": "application/json",
+            }
+            return httpx.post(url, json=request_body, headers=req_headers, timeout=timeout or 600)
+
+        resp = with_retry_on_401(_send)
 
         if resp.status_code == 401:
-            _token_cache.pop("token", None)
             raise litellm.AuthenticationError(
-                message=f"Gemini auth failed (401): {resp.text}",
+                message=(
+                    "Gemini Advanced authentication was rejected. Re-extract the "
+                    f"GEMINI_SESSION_COOKIES / refresh GEMINI_ACCESS_TOKEN. Underlying: {resp.text}"
+                ),
                 model=model,
                 llm_provider="gemini-sub",
             )

@@ -328,9 +328,9 @@ Use your ChatGPT Pro, Plus, or Team subscription instead of OpenAI API billing.
 
 | Tier | Models Available (via `auth/gpt-5.x` route) |
 |------|--------------------------------------------|
-| ChatGPT Plus ($20/mo) | `auth/gpt-5.5`, `auth/gpt-5.4` |
-| ChatGPT Pro ($200/mo) | `auth/gpt-5.5`, `auth/gpt-5.4` |
-| ChatGPT Team | `auth/gpt-5.5`, `auth/gpt-5.4` + admin controls |
+| ChatGPT Plus ($20/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` |
+| ChatGPT Pro ($200/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` |
+| ChatGPT Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` + admin controls |
 
 **Setup:**
 
@@ -358,18 +358,25 @@ decepticon
 
 - Decepticon exposes ChatGPT subscription models as `auth/gpt-5.5`
   and `auth/gpt-5.4`.
-- LiteLLM dynamic config maps those aliases to LiteLLM's native
-  `chatgpt/gpt-*` provider routes only when `DECEPTICON_AUTH_CHATGPT=true`.
-- `docker-compose.yml` mounts the host token directory into the LiteLLM
-  container at `/root/.config/litellm/chatgpt`.
-- Access tokens are handled by LiteLLM's native ChatGPT provider. It stores
-  OAuth credentials in `~/.config/litellm/chatgpt/auth.json` and refreshes
-  them as needed.
+- LiteLLM dynamic config maps those aliases through Decepticon's custom
+  `auth/` handler (`codex_chatgpt_handler`) only when
+  `DECEPTICON_AUTH_CHATGPT=true`.
+- `docker-compose.yml` mounts the host's Codex CLI credential file
+  (`~/.codex/auth.json`) into the LiteLLM container at
+  `/root/.codex/auth.json` (read-write, so the in-container refresh path
+  can persist rotated tokens back to the host).
+- The `auth/` handler reads and writes the same `auth.json` the Codex CLI
+  itself uses, so a host-side `codex login` is visible to the running
+  container without a restart, and a refresh inside the container is
+  visible to the host CLI on the next call.
 
-**Custom token path:**
+**Setup:**
 
 ```bash
-LITELLM_CHATGPT_TOKEN_DIR=/custom/host/token/dir
+# Install the Codex CLI and run the device-code login on the host:
+codex login
+# Confirm the file exists:
+ls ~/.codex/auth.json
 ```
 
 ---
@@ -852,10 +859,10 @@ cat ~/.claude/.credentials.json | python3 -c "import sys,json; d=json.load(sys.s
 
 **ChatGPT OAuth: missing or expired auth**
 
-LiteLLM's native ChatGPT provider stores credentials at
-`~/.config/litellm/chatgpt/auth.json`. If the file is missing or expired,
-restart Decepticon and follow the ChatGPT device-code login instructions shown
-in the LiteLLM logs.
+The Decepticon `auth/` ChatGPT handler reads the Codex CLI credential
+store at `~/.codex/auth.json`. If the file is missing or the refresh
+token is rejected, run `codex login` on the host and retry. The handler
+picks up the refreshed file automatically (no container restart needed).
 
 **API Key: "401 Unauthorized"**
 

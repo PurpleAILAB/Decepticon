@@ -24,8 +24,8 @@ The orchestrator has tools=[] — all offensive work goes through task()
 delegation to specialist sub-agents. SandboxNotificationMiddleware lives
 on each sub-agent (where bash actually runs), not here.
 
-OPPLAN replaces TodoListMiddleware with domain-specific objective tracking:
-  - 5 CRUD tools following Claude Code's V2 Task tool patterns
+OPPLAN provides domain-specific objective tracking:
+  - CRUD tools for engagement objectives and child task trees
   - Dynamic state injection: every LLM call sees OPPLAN progress table
   - State transition validation with dependency checking
 
@@ -64,7 +64,7 @@ def create_decepticon_agent():
     Context engineering decisions:
       - Explicit middleware stack instead of create_deep_agent() defaults
       - SubAgentMiddleware: task() tool for delegating to specialist sub-agents
-      - OPPLANMiddleware: 5 CRUD tools for objective tracking (Claude Code V2 Task pattern)
+      - OPPLANMiddleware: CRUD tools for objective tracking
       - ModelFallbackMiddleware: primary → fallback chain built from the user's Credentials inventory
     Returns a compiled LangGraph agent ready for invocation.
     """
@@ -214,7 +214,7 @@ def create_decepticon_agent():
         ),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
-        OPPLANMiddleware(),
+        OPPLANMiddleware(backend=backend),
         ModelOverrideMiddleware(),
     ]
     if fallback_models:

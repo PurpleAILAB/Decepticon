@@ -1627,29 +1627,19 @@ def suggest_objectives_from_chains(
 
     for idx, chain in enumerate(ranked[:top_k], start=1):
         chain_score = critical_path_score(chain)
-        mitre: list[str] = []
-        highest = Severity.INFO
-
-        for step in chain.steps:
-            step_mitre = step.node.props.get("mitre")
-            if isinstance(step_mitre, list):
-                mitre.extend([m for m in step_mitre if isinstance(m, str)])
-            sev = _severity_from_string(step.node.props.get("severity"))
-            if sev in {Severity.CRITICAL, Severity.HIGH}:
-                highest = sev
 
         phase = "initial-access"
-        if any(step.node.kind in {NodeKind.CREDENTIAL, NodeKind.SECRET} for step in chain.steps):
+        if any(step.node_kind in {NodeKind.CREDENTIAL, NodeKind.SECRET} for step in chain.steps):
             phase = "post-exploit"
         elif (
-            "admin" in chain.crown_jewel.label.lower()
-            or "domain" in chain.crown_jewel.label.lower()
+            "admin" in chain.crown_jewel_label.lower()
+            or "domain" in chain.crown_jewel_label.lower()
         ):
             phase = "post-exploit"
 
-        title = f"Exploit chain {idx}: {chain.entrypoint.label} -> {chain.crown_jewel.label}"
+        title = f"Exploit chain {idx}: {chain.entrypoint_label} -> {chain.crown_jewel_label}"
         acceptance = [
-            f"Demonstrate path from {chain.entrypoint.label} to {chain.crown_jewel.label}.",
+            f"Demonstrate path from {chain.entrypoint_label} to {chain.crown_jewel_label}.",
             "Capture evidence for each hop (commands, outputs, and impacted asset IDs).",
             "Validate the highest-risk step with PoC evidence or explain why blocked.",
         ]
@@ -1660,8 +1650,8 @@ def suggest_objectives_from_chains(
                 "title": title,
                 "description": chain.summary(),
                 "acceptance_criteria": acceptance,
-                "mitre": sorted(set(mitre)),
-                "opsec": "careful" if highest in {Severity.HIGH, Severity.CRITICAL} else "standard",
+                "mitre": [],
+                "opsec": "standard",
                 "notes": {
                     "chain_total_cost": chain.total_cost,
                     "chain_score": chain_score,

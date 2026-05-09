@@ -195,13 +195,44 @@ def _provider_prefix(model_name: str) -> str:
     return model_name.split("/", 1)[0].lower().replace("-", "_")
 
 
+_SUBSCRIPTION_PROVIDER_PREFIXES = frozenset(
+    {
+        "auth",  # auth/claude-*, auth/gpt-* — Claude Code OAuth + Codex ChatGPT
+        "gemini_sub",  # gemini-sub/* — Gemini Advanced subscription
+        "copilot",  # copilot/* — Copilot Pro subscription
+        "grok_sub",  # grok-sub/* — SuperGrok subscription
+        "pplx_sub",  # pplx-sub/* — Perplexity Pro subscription
+    }
+)
+
+
 def validate_model_name(model_name: str) -> None:
-    """Validate user-supplied dynamic model IDs before registering routes."""
+    """Validate user-supplied dynamic model IDs before registering routes.
+
+    Rejects subscription / OAuth provider prefixes (``auth/*``, ``gemini-sub/*``,
+    ``copilot/*``, ``grok-sub/*``, ``pplx-sub/*``) for the API-key registration
+    path — those routes are added by ``_inject_subscription_routes`` when the
+    matching ``DECEPTICON_AUTH_*`` flag is set, with custom-provider dispatch
+    in ``litellm_startup.py``. Trying to register them as API-key routes here
+    would produce a phantom ``<PROVIDER>_API_KEY`` env-var lookup that never
+    resolves.
+
+    ``merge_dynamic_models`` skips this validation when the model is already
+    present in the model_list, so a user setting
+    ``DECEPTICON_MODEL=auth/gpt-5.4-mini`` plus ``DECEPTICON_AUTH_CHATGPT=true``
+    is fine — the subscription path injected the route first and the requested
+    model is satisfied.
+    """
     if "/" not in model_name:
         raise ValueError(f"model {model_name!r} must use LiteLLM provider/model format")
     provider = _provider_prefix(model_name)
-    if provider == "auth":
-        raise ValueError("auth/* routes are not allowed as dynamic API-key model routes")
+    if provider in _SUBSCRIPTION_PROVIDER_PREFIXES:
+        raise ValueError(
+            f"{provider}/* routes are not allowed as dynamic API-key model "
+            f"routes. Enable the matching subscription via "
+            f"DECEPTICON_AUTH_<provider>=true so the route is registered "
+            f"through litellm_startup.py's custom_provider_map instead."
+        )
     if provider == "ollama":
         # Legacy ``ollama/`` (/api/generate) lacks tool calling — fail
         # closed since Decepticon agents always emit tool calls.
@@ -301,8 +332,27 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
 _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
     # env flag → model_list entries
     "DECEPTICON_AUTH_CHATGPT": [
-        {"model_name": "auth/gpt-5.5", "litellm_params": {"model": "chatgpt/gpt-5.5"}},
-        {"model_name": "auth/gpt-5.4", "litellm_params": {"model": "chatgpt/gpt-5.4"}},
+        # User-facing model_name stays ``auth/gpt-*`` for consistency with
+        # ``auth/claude-*``. The internal LiteLLM route uses the dedicated
+        # ``codex-oauth`` custom provider plus the ``oauth-gpt-`` slug
+        # sentinel — without the sentinel LiteLLM's main.py:2561 falls
+        # into the OpenAI branch (``model in open_ai_chat_completion_models``
+        # short-circuits before the custom_llm_provider check) and forwards
+        # to api.openai.com regardless of provider. The codex_chatgpt
+        # handler strips the ``oauth-`` prefix before sending the model
+        # name upstream, so chatgpt.com still receives ``gpt-5.5``.
+        {
+            "model_name": "auth/gpt-5.5",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.5"},
+        },
+        {
+            "model_name": "auth/gpt-5.4",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.4"},
+        },
+        {
+            "model_name": "auth/gpt-5.4-mini",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
+        },
     ],
     "DECEPTICON_AUTH_GEMINI": [
         {
@@ -332,6 +382,7 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
 _SUBSCRIPTION_FALLBACKS: dict[str, list[dict[str, list[str]]]] = {
     "DECEPTICON_AUTH_CHATGPT": [
         {"auth/gpt-5.5": ["auth/gpt-5.4"]},
+        {"auth/gpt-5.4": ["auth/gpt-5.4-mini"]},
     ],
     "DECEPTICON_AUTH_GEMINI": [
         {"gemini-sub/gemini-2.5-pro": ["gemini-sub/gemini-2.5-flash"]},
@@ -382,6 +433,18 @@ def _inject_subscription_routes(
                 fallbacks.append(fb)
 
 
+def has_subscription_routes(env: Mapping[str, str] | None = None) -> bool:
+    """Return True if any DECEPTICON_AUTH_* flag enables a subscription route.
+
+    Used by ``litellm_startup.py`` to decide whether to regenerate the
+    LiteLLM config even when no ``DECEPTICON_MODEL*`` overrides are set —
+    a user who only enables ``DECEPTICON_AUTH_CHATGPT=true`` still needs
+    the corresponding ``auth/gpt-*`` model_list entries.
+    """
+    source = env if env is not None else os.environ
+    return any(_is_truthy(source.get(flag, "")) for flag in _SUBSCRIPTION_ROUTES)
+
+
 def merge_dynamic_models(
     config: MutableMapping[str, Any], env: Mapping[str, str] | None = None
 ) -> dict[str, Any]:
@@ -395,9 +458,14 @@ def merge_dynamic_models(
     existing = {entry.get("model_name") for entry in model_list if isinstance(entry, dict)}
 
     for model_name in sorted(collect_requested_models(env)):
-        validate_model_name(model_name)
         if model_name in existing:
+            # Already registered by ``_inject_subscription_routes`` (or a
+            # static entry in litellm.yaml). Skip the API-key validator —
+            # ``auth/*`` slugs are deliberately rejected by
+            # ``validate_model_name`` for the API-key path even though
+            # they are valid subscription targets.
             continue
+        validate_model_name(model_name)
         model_list.append(build_model_entry(model_name))
         existing.add(model_name)
 
@@ -431,6 +499,7 @@ def write_dynamic_config(config_path: str | Path, output_path: str | Path) -> Pa
 __all__ = [
     "build_model_entry",
     "collect_requested_models",
+    "has_subscription_routes",
     "merge_dynamic_models",
     "validate_model_name",
     "write_dynamic_config",

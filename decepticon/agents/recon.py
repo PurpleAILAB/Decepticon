@@ -59,7 +59,7 @@ def create_recon_agent():
 
     Context engineering decisions:      - InMemoryStore: cross-thread memory for persisting findings across sessions
       - ModelFallbackMiddleware: haiku 4.5 primary → gemini 2.5 flash fallback on failure
-      - No TodoListMiddleware: opplan.json handles task tracking
+      - OPPLAN is owned by the orchestrator; this specialist writes evidence only
       - No SubAgentMiddleware: Decepticon orchestrator handles agent delegation
     """
     config = load_config()

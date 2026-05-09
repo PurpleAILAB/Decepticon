@@ -74,6 +74,38 @@ def test_validate_model_name_rejects_bare_or_internal_routes() -> None:
         validate_model_name("unknown/model")
 
 
+def test_validate_model_name_rejects_other_subscription_prefixes() -> None:
+    """Subscription providers register through ``custom_provider_map`` in
+    ``litellm_startup.py`` — admitting them on the API-key dynamic path
+    would synthesize a ``<PROVIDER>_API_KEY`` env lookup that never works.
+    """
+    for slug in (
+        "gemini-sub/gemini-2.5-pro",
+        "copilot/gpt-4o",
+        "grok-sub/grok-3",
+        "pplx-sub/sonar",
+    ):
+        with pytest.raises(ValueError, match="not allowed as dynamic API-key model routes"):
+            validate_model_name(slug)
+
+
+def test_merge_dynamic_models_allows_subscription_model_override() -> None:
+    """A user setting ``DECEPTICON_MODEL=auth/gpt-5.4-mini`` together with
+    ``DECEPTICON_AUTH_CHATGPT=true`` must succeed — the subscription path
+    injects the route first, and the API-key validator is skipped because
+    the model is already present in the model_list.
+    """
+    merged = merge_dynamic_models(
+        {"model_list": [], "litellm_settings": {"fallbacks": []}},
+        {
+            "DECEPTICON_AUTH_CHATGPT": "true",
+            "DECEPTICON_MODEL": "auth/gpt-5.4-mini",
+        },
+    )
+    names = {entry["model_name"] for entry in merged["model_list"]}
+    assert "auth/gpt-5.4-mini" in names
+
+
 def test_validate_model_name_rejects_legacy_ollama_with_remediation() -> None:
     """``ollama/`` (legacy /api/generate) does not support tool calling per
     LiteLLM's own ``supports_function_calling`` assertion. Decepticon agents
@@ -145,12 +177,19 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
         {"DECEPTICON_AUTH_CHATGPT": "true"},
     )
 
-    routes = {
-        entry["model_name"]: entry["litellm_params"]["model"] for entry in merged["model_list"]
+    # User-facing model_name stays ``auth/gpt-*`` for consistency with
+    # ``auth/claude-*``, but the internal litellm_params.model uses the
+    # dedicated ``codex-oauth`` custom provider — bare ``auth/gpt-*``
+    # makes LiteLLM strip the prefix and route to the native OpenAI
+    # provider because the ``gpt-*`` slug collides with OpenAI's aliases.
+    entries = {entry["model_name"]: entry["litellm_params"] for entry in merged["model_list"]}
+    assert entries == {
+        "auth/gpt-5.5": {"model": "codex-oauth/oauth-gpt-5.5"},
+        "auth/gpt-5.4": {"model": "codex-oauth/oauth-gpt-5.4"},
+        "auth/gpt-5.4-mini": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
     }
-    assert routes == {
-        "auth/gpt-5.5": "chatgpt/gpt-5.5",
-        "auth/gpt-5.4": "chatgpt/gpt-5.4",
-    }
-    assert "auth/gpt-5-nano" not in routes
-    assert merged["litellm_settings"]["fallbacks"] == [{"auth/gpt-5.5": ["auth/gpt-5.4"]}]
+    assert "auth/gpt-5-nano" not in entries
+    assert merged["litellm_settings"]["fallbacks"] == [
+        {"auth/gpt-5.5": ["auth/gpt-5.4"]},
+        {"auth/gpt-5.4": ["auth/gpt-5.4-mini"]},
+    ]

@@ -234,7 +234,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Options(
 					huh.NewOption("Claude Code OAuth — Anthropic subscription (auth/*)", methodAnthropicOAuth),
 					huh.NewOption("Anthropic API Key — sk-ant-...", methodAnthropicAPI),
-					huh.NewOption("ChatGPT OAuth     — ChatGPT Pro/Plus/Team subscription (auth/gpt-*)", methodOpenAIOAuth),
+					huh.NewOption("ChatGPT OAuth     — ChatGPT Pro/Plus/Team subscription via `codex login` (auth/gpt-*)", methodOpenAIOAuth),
 					huh.NewOption("OpenAI API Key    — sk-...", methodOpenAIAPI),
 					huh.NewOption("Google API Key    — AIza... (Gemini)", methodGoogleAPI),
 					huh.NewOption("MiniMax API Key   — eyJ...", methodMiniMaxAPI),

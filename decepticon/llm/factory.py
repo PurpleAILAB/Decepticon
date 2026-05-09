@@ -19,8 +19,10 @@ ordering AuthMethods in the fallback chain.
 
 from __future__ import annotations
 
+import json
 import os
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -120,6 +122,64 @@ _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.PERPLEXITY_OAUTH: "DECEPTICON_AUTH_PERPLEXITY",
 }
 
+# Vendor-specific API key prefix hints. When the method has a known
+# canonical prefix, ``_is_real_key`` requires the value to start with one
+# of these strings — protects against placeholder strings the launcher
+# didn't emit (e.g. a user pasting ``sk-ant-not-used`` into .env).
+_KEY_PREFIX_HINTS: dict[AuthMethod, tuple[str, ...]] = {
+    AuthMethod.ANTHROPIC_API: ("sk-ant-",),
+    AuthMethod.OPENAI_API: ("sk-",),
+    AuthMethod.GOOGLE_API: ("AIza",),
+    AuthMethod.XAI_API: ("xai-",),
+    AuthMethod.GROQ_API: ("gsk_",),
+    AuthMethod.OPENROUTER_API: ("sk-or-",),
+    AuthMethod.NVIDIA_API: ("nvapi-",),
+    AuthMethod.DEEPSEEK_API: ("sk-",),
+    AuthMethod.GITHUB_MODELS_API: ("ghp_", "github_pat_", "gho_", "ghs_"),
+}
+
+# Substring tokens that mark a value as obviously not a real key.
+# Catches creative placeholder values that don't match the launcher's
+# ``your-…-key-here`` template.
+_PLACEHOLDER_TOKENS: tuple[str, ...] = (
+    "placeholder",
+    "not-used",
+    "not_used",
+    "dummy",
+    "fake",
+    "example",
+)
+
+# Minimum length for any value that should be treated as a real key. All
+# vendor-issued keys exceed this — Anthropic ``sk-ant-api03-…`` ≈ 100 chars,
+# OpenAI ``sk-…`` ≥ 48 chars, Google ``AIza…`` 39 chars. 24 leaves headroom
+# for vendors with shorter formats (Mistral, etc.) without admitting
+# obviously-junk values.
+_KEY_MIN_LENGTH = 24
+
+# OAuth methods carry a host-side credentials file. Booleans like
+# ``DECEPTICON_AUTH_CLAUDE_CODE=true`` are intent (the user enabled the
+# subscription) — they don't guarantee the actual file exists. The
+# factory verifies file presence + valid JSON before adding a method to
+# the chain so a user who ran ``codex logout`` without flipping the
+# boolean back doesn't generate a noisy 401-fallback storm.
+#
+# Each tuple is ordered: primary path first, legacy paths after. Env-var
+# overrides take precedence over the literal default. The langgraph
+# compose service mounts the Claude + Codex paths read-only so this
+# check sees the same files the LiteLLM handlers will read.
+_OAUTH_CREDENTIAL_PATHS: dict[AuthMethod, tuple[tuple[str, str], ...]] = {
+    AuthMethod.ANTHROPIC_OAUTH: (
+        ("CLAUDE_CODE_CREDENTIALS_PATH", "~/.claude/.credentials.json"),
+        ("", "~/.config/anthropic/q/tokens.json"),  # legacy emulator path
+    ),
+    AuthMethod.OPENAI_OAUTH: (("CODEX_AUTH_PATH", "~/.codex/auth.json"),),
+    AuthMethod.GOOGLE_OAUTH: (("GEMINI_TOKENS_PATH", "~/.config/gemini/tokens.json"),),
+    AuthMethod.COPILOT_OAUTH: (("COPILOT_TOKENS_PATH", "~/.config/copilot/tokens.json"),),
+    AuthMethod.GROK_OAUTH: (("GROK_TOKENS_PATH", "~/.config/grok/tokens.json"),),
+    AuthMethod.PERPLEXITY_OAUTH: (("PERPLEXITY_TOKENS_PATH", "~/.config/perplexity/tokens.json"),),
+}
+
 
 def _ollama_cloud_configured() -> bool:
     """Return True when the user has wired up Ollama Cloud.
@@ -164,24 +224,80 @@ def _custom_openai_configured() -> bool:
     return bool(base) and _is_real_key(key)
 
 
-def _is_real_key(value: str) -> bool:
-    """Reject empty values and the placeholders shipped in .env.example.
+def _is_real_key(value: str, method: AuthMethod | None = None) -> bool:
+    """Validate that ``value`` looks like a real provider API key.
 
-    Onboard-written keys pass; values like ``your-anthropic-key-here``
-    or empty strings are treated as "not configured" so the resolved
-    Credentials inventory stays honest.
+    Layers, in order:
+      1. Strip whitespace; reject empty.
+      2. Reject anything shorter than ``_KEY_MIN_LENGTH`` (24 chars) —
+         every vendor-issued key exceeds this, while typical placeholders
+         (``sk-ant-test``, ``not-set``) do not.
+      3. Reject the launcher's template strings (``your-…-key-here``).
+      4. Reject values containing obvious placeholder tokens
+         (``placeholder``, ``not-used``, ``dummy``, …) — guards against
+         creative .env values that escape the launcher template.
+      5. When ``method`` is given and ``_KEY_PREFIX_HINTS`` defines a
+         canonical prefix for it, require ``value`` to start with one of
+         the prefixes. Catches mis-pasted keys (e.g. an OpenAI key in
+         the Anthropic slot) before they propagate into the chain.
 
-    Match the launcher's IsPlaceholder check (``-key-here`` suffix) so
-    a real key that happens to contain the substring elsewhere is not
-    accidentally rejected.
+    ``method=None`` skips the prefix check — kept for callers like
+    ``_custom_openai_configured`` where the vendor's expected prefix is
+    deployment-specific (any OpenAI-compatible gateway).
     """
     v = value.strip()
-    if not v:
+    if not v or len(v) < _KEY_MIN_LENGTH:
         return False
     lower = v.lower()
     if lower.startswith("your-") or lower.endswith("-key-here"):
         return False
+    if any(token in lower for token in _PLACEHOLDER_TOKENS):
+        return False
+    if method is not None:
+        prefixes = _KEY_PREFIX_HINTS.get(method)
+        if prefixes and not any(v.startswith(prefix) for prefix in prefixes):
+            return False
     return True
+
+
+def _oauth_credentials_present(method: AuthMethod) -> bool:
+    """Return True if the host-side credential file for ``method`` exists.
+
+    The factory layer reads this to keep the credentials inventory
+    honest — without it, ``DECEPTICON_AUTH_CLAUDE_CODE=true`` plus a
+    deleted ``~/.claude/.credentials.json`` would still place the OAuth
+    method in every fallback chain, generating one 401 per request.
+
+    Each path is checked in order. ``/dev/null`` (the docker-compose
+    fallback when no credentials volume is wired) parses as empty, so
+    the JSON-validation step fails closed.
+    """
+    candidates = _OAUTH_CREDENTIAL_PATHS.get(method)
+    if not candidates:
+        # Method has no documented file path — fall back to the boolean
+        # flag alone for forward compatibility.
+        return True
+    for env_var, default in candidates:
+        raw = os.environ.get(env_var, "").strip() if env_var else ""
+        path = Path(raw).expanduser() if raw else Path(default).expanduser()
+        try:
+            text = path.read_text()
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError):
+            continue
+        except OSError:
+            # ``/dev/null`` reads to empty without raising; other transient
+            # I/O errors fall through to the next candidate.
+            text = ""
+        text = text.strip()
+        if not text:
+            continue
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data:
+            return True
+    return False
 
 
 def _is_truthy(value: str) -> bool:
@@ -223,10 +339,17 @@ def _resolve_credentials() -> Credentials:
     methods: list[AuthMethod] = []
     for method in priority:
         if method in _API_METHOD_ENV:
-            if _is_real_key(os.getenv(_API_METHOD_ENV[method], "")):
+            if _is_real_key(os.getenv(_API_METHOD_ENV[method], ""), method):
                 methods.append(method)
         elif method in _OAUTH_METHOD_ENV:
-            if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")):
+            # OAuth methods need BOTH the boolean intent and the actual
+            # credential file. Without the file check a stale flag (e.g.
+            # ``codex logout`` after onboard) generates a 401-fallback
+            # storm — see ``_oauth_credentials_present`` for the full
+            # rationale.
+            if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")) and _oauth_credentials_present(
+                method
+            ):
                 methods.append(method)
         elif method == AuthMethod.OLLAMA_LOCAL:
             if _ollama_local_configured():
@@ -322,20 +445,6 @@ def _model_drops_temperature(model: str) -> bool:
     """
     slug = model.rsplit("/", 1)[-1].lower()
     return slug.startswith("claude-opus-4")
-
-
-def _model_uses_chatgpt_responses_api(model: str) -> bool:
-    """Return True for Codex/OpenAI OAuth models routed via LiteLLM chatgpt.
-
-    LiteLLM's native ChatGPT/Codex OAuth provider is healthy on the Responses
-    API path (``/backend-api/codex/responses``). The Chat Completions path can
-    hang or hit Cloudflare challenges, while the official Codex CLI also uses
-    the Responses-style backend. Force LangChain's ChatOpenAI wrapper onto
-    Responses API for our ``auth/gpt-*`` aliases.
-    """
-
-    lowered = model.lower()
-    return lowered.startswith("auth/gpt-") or lowered.startswith("chatgpt/gpt-")
 
 
 def _model_is_deepseek_thinking(model: str) -> bool:
@@ -699,7 +808,7 @@ class LLMFactory:
         belt-and-suspenders for any future client that bypasses this
         factory.
         """
-        kwargs: dict[str, object] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "base_url": self._proxy.url,
             "api_key": SecretStr(self._proxy.api_key),
@@ -713,9 +822,6 @@ class LLMFactory:
             kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
-        if _model_uses_chatgpt_responses_api(model):
-            kwargs["use_responses_api"] = True
-            kwargs["output_version"] = "responses/v1"
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)

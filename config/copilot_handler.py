@@ -31,10 +31,8 @@ slug after ``copilot/`` is forwarded verbatim as the upstream model id.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import time
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
@@ -42,6 +40,13 @@ from typing import Any
 import httpx
 import litellm
 from litellm import CustomLLM, ModelResponse
+from oauth_token_store import (
+    DEFAULT_REFRESH_BUFFER_SECONDS,
+    FileBackedCache,
+    is_timestamp_expired,
+    read_json_file,
+    with_retry_on_401,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -58,7 +63,6 @@ COPILOT_PLUGIN_HOSTS = Path(os.path.expanduser("~/.config/github-copilot/hosts.j
 
 GITHUB_TOKEN_MINT_URL = "https://api.github.com/copilot_internal/v2/token"
 GITHUB_COPILOT_API_BASE = "https://api.githubcopilot.com"
-REFRESH_BUFFER_SECONDS = 5 * 60
 
 # Editor headers the Copilot endpoint enforces. Anything not advertising
 # itself as a recognized editor is rejected with HTTP 401.
@@ -69,11 +73,24 @@ _COPILOT_EDITOR_HEADERS = {
     "User-Agent": os.environ.get("COPILOT_USER_AGENT", "GithubCopilot/1.155.0"),
 }
 
-# Cached state.
-#   "source_token"  — long-lived gho_/ghu_/ghr_ (or pre-minted bearer)
-#   "copilot_token" — short-lived API bearer
-#   "expires_at"    — unix seconds for copilot_token expiry
-_token_cache: dict[str, Any] = {}
+
+def _load_copilot_source(path: Path) -> dict[str, Any] | None:
+    """FileBackedCache loader for ``~/.config/copilot/tokens.json``.
+
+    Normalizes whichever shape the on-disk file uses (oauth_token /
+    refreshToken / access_token) into a single ``{"source": str}`` dict
+    so the caller can branch on a stable key.
+    """
+    raw = read_json_file(path)
+    if raw is None:
+        return None
+    tok = raw.get("oauth_token") or raw.get("refreshToken") or raw.get("access_token") or ""
+    if isinstance(tok, str) and tok.strip():
+        return {"source": tok.strip()}
+    return None
+
+
+_copilot_file_cache = FileBackedCache(COPILOT_TOKENS_PATH, _load_copilot_source)
 
 
 def _read_plugin_source_token() -> str:
@@ -89,9 +106,8 @@ def _read_plugin_source_token() -> str:
     for path in (COPILOT_PLUGIN_APPS, COPILOT_PLUGIN_HOSTS):
         if not path.exists():
             continue
-        try:
-            data = json.loads(path.read_text())
-        except (json.JSONDecodeError, OSError):
+        data = read_json_file(path)
+        if data is None:
             _log.debug("Could not parse %s", path)
             continue
         for key, entry in data.items():
@@ -117,19 +133,9 @@ def _resolve_source_token() -> tuple[str, str]:
     refresh = os.environ.get("COPILOT_REFRESH_TOKEN", "").strip()
     if refresh:
         return refresh, "github"
-    if COPILOT_TOKENS_PATH.exists():
-        try:
-            data = json.loads(COPILOT_TOKENS_PATH.read_text())
-            tok = (
-                data.get("oauth_token")
-                or data.get("refreshToken")
-                or data.get("access_token")
-                or ""
-            )
-            if isinstance(tok, str) and tok.strip():
-                return tok.strip(), "github"
-        except (json.JSONDecodeError, OSError):
-            pass
+    cached = _copilot_file_cache.get()
+    if cached is not None:
+        return cached["source"], "github"
     plugin_token = _read_plugin_source_token()
     if plugin_token:
         return plugin_token, "github"
@@ -143,6 +149,13 @@ def _resolve_source_token() -> tuple[str, str]:
         model="copilot",
         llm_provider="copilot",
     )
+
+
+# Cached state.
+#   "copilot_token" — short-lived API bearer
+#   "expires_at"    — unix seconds for copilot_token expiry
+#   "endpoints"     — optional enterprise endpoint overrides
+_token_cache: dict[str, Any] = {}
 
 
 def _mint_copilot_token(github_token: str) -> dict[str, Any]:
@@ -175,11 +188,18 @@ def _mint_copilot_token(github_token: str) -> dict[str, Any]:
     }
 
 
-def get_access_token() -> str:
+def get_copilot_access_token(force_refresh: bool = False) -> str:
     """Return a valid Copilot API bearer, minting / refreshing as needed."""
+    if force_refresh:
+        _token_cache.clear()
+        _copilot_file_cache.invalidate()
     cached = _token_cache.get("copilot_token")
     expires_at = _token_cache.get("expires_at", 0)
-    if cached and expires_at - REFRESH_BUFFER_SECONDS > time.time():
+    if (
+        cached
+        and not force_refresh
+        and not is_timestamp_expired(expires_at, buffer_seconds=DEFAULT_REFRESH_BUFFER_SECONDS)
+    ):
         return cached
 
     source_token, kind = _resolve_source_token()
@@ -190,7 +210,6 @@ def get_access_token() -> str:
 
     minted = _mint_copilot_token(source_token)
     _token_cache.update(minted)
-    _token_cache["source_token"] = source_token
     return minted["copilot_token"]
 
 
@@ -233,15 +252,7 @@ class CopilotHandler(CustomLLM):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        access_token = get_access_token()
         actual_model = model.split("/", 1)[-1] if "/" in model else model
-
-        req_headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            **_COPILOT_EDITOR_HEADERS,
-        }
 
         opts = optional_params or {}
         request_body: dict[str, Any] = {"model": actual_model, "messages": messages}
@@ -259,19 +270,32 @@ class CopilotHandler(CustomLLM):
         if opts.get("tool_choice"):
             request_body["tool_choice"] = opts["tool_choice"]
 
-        api_url = api_base or _api_base()
-        resp = httpx.post(
-            f"{api_url}/chat/completions",
-            json=request_body,
-            headers=req_headers,
-            timeout=timeout or 600,
-        )
+        def _send(force_refresh: bool) -> httpx.Response:
+            access_token = get_copilot_access_token(force_refresh=force_refresh)
+            req_headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                **_COPILOT_EDITOR_HEADERS,
+            }
+            api_url = api_base or _api_base()
+            return httpx.post(
+                f"{api_url}/chat/completions",
+                json=request_body,
+                headers=req_headers,
+                timeout=timeout or 600,
+            )
+
+        resp = with_retry_on_401(_send)
 
         if resp.status_code == 401:
             # Bust both layers — source token may also be invalid.
             _token_cache.clear()
             raise litellm.AuthenticationError(
-                message=f"Copilot auth failed (401): {resp.text[:300]}",
+                message=(
+                    "Copilot authentication was rejected. Run `gh auth login --scopes "
+                    f"copilot` and retry. Underlying: {resp.text[:300]}"
+                ),
                 model=model,
                 llm_provider="copilot",
             )

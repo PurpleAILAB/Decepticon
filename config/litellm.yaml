@@ -199,10 +199,12 @@ model_list:
   # ChatGPT (auth/gpt-*), Gemini Advanced (gemini-sub/*), Copilot
   # (copilot/*), SuperGrok (grok-sub/*), and Perplexity Pro (pplx-sub/*)
   # are registered DYNAMICALLY by litellm_dynamic_config.py, gated on
-  # their respective DECEPTICON_AUTH_* flags. Registering them statically
-  # here caused LiteLLM's native providers to attempt OAuth handshakes at
-  # startup even when the user disabled the auth method, blocking the
-  # container health check and making it unhealthy.
+  # their respective DECEPTICON_AUTH_* flags. Each route dispatches to a
+  # Decepticon custom handler defined under config/<provider>_handler.py
+  # (claude_code, codex_chatgpt, gemini, copilot, grok, perplexity) — all
+  # share oauth_token_store.py for atomic token refresh + mtime caching,
+  # so a host-side ``codex login`` / Claude Code rotation is picked up by
+  # the running container without restart.
 
   # ── Local LLM (Ollama) ──────────────────────────────────────────────
   # Ollama routes are registered dynamically at proxy startup by
@@ -226,10 +228,9 @@ litellm_settings:
   # when ``database_url`` is set, and listing handlers here would also
   # create a circular import with the dispatcher defined in startup.
   #
-  # Active custom providers (registered in litellm_startup.py):
-  #   - auth         → dispatches Claude Code OAuth only (auth/claude-*)
-  # Native providers used directly:
-  #   - chatgpt      → Codex/OpenAI OAuth for auth/gpt-* aliases above
+  # Active custom providers (all registered in litellm_startup.py):
+  #   - auth         → dispatches Claude Code (auth/claude-*) +
+  #                    Codex ChatGPT (auth/gpt-*) via auth_handler.AuthDispatcher
   #   - gemini-sub   → gemini_handler.gemini_sub_handler_instance
   #   - copilot      → copilot_handler.copilot_handler_instance
   #   - grok-sub     → grok_handler.grok_sub_handler_instance
