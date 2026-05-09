@@ -134,7 +134,7 @@ def create_vulnresearch_agent():
         ),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
-        OPPLANMiddleware(),
+        OPPLANMiddleware(backend=backend),
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))

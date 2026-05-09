@@ -2,7 +2,7 @@
 
 Generates RoE, CONOPS, and Deconfliction Plan documents that frame the
 red team engagement. Does NOT generate OPPLAN — the orchestrator owns
-OPPLAN directly via OPPLANMiddleware (Claude Code V2 Task pattern).
+OPPLAN directly via OPPLANMiddleware.
 
 Named after the Decepticon intelligence officer who intercepts, processes,
 and organizes strategic information for Megatron's operations.
