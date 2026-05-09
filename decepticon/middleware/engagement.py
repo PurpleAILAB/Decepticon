@@ -3,10 +3,12 @@
 Two channels feed this middleware:
 
 1. Launcher path (CLI / web): the launcher decides the engagement slug at
-   session start and the client forwards it as state fields on every run
-   (input.engagement_name and input.workspace_path). This middleware reads
-   those fields and prepends a system-prompt addendum so the model knows the
-   active engagement without operator hand-holding or filesystem markers.
+   session start. Clients inject ``engagement_name`` and ``workspace_path``
+   via ``config.configurable`` on every run. ``before_agent`` hydrates these
+   into agent state on the first step of each thread so downstream middleware
+   (OPPLAN, filesystem) and the prompt-injection path see them as ordinary
+   state fields. The checkpointer persists the hydrated state across runs,
+   so subsequent runs read straight from state without re-hydrating.
 
 2. Benchmark path (XBOW / CTF harness): when the LangGraph container is
    launched with `BENCHMARK_MODE=1` (via .env), this middleware additionally
@@ -23,11 +25,12 @@ state-backed context injection via wrap_model_call.
 from __future__ import annotations
 
 import os
-from typing import Annotated, NotRequired, cast
+from typing import Annotated, Any, NotRequired, cast
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import SystemMessage, ToolMessage
+from langgraph.config import get_config
 from langgraph.types import Command
 from typing_extensions import override
 
@@ -63,6 +66,58 @@ _FALSY_ENV_VALUES = frozenset({"", "0", "false", "no", "off"})
 def _benchmark_mode_active() -> bool:
     """Truthy evaluation of the BENCHMARK_MODE env var set on the LangGraph container."""
     return os.environ.get("BENCHMARK_MODE", "").strip().lower() not in _FALSY_ENV_VALUES
+
+
+def _configurable_from_runnable_config() -> dict[str, Any]:
+    """Read the active run's ``config.configurable`` block, defensively.
+
+    Returns an empty dict outside a LangGraph execution context so callers
+    can treat the result uniformly without try/except boilerplate.
+    """
+    try:
+        cfg = get_config()
+    except RuntimeError:
+        return {}
+    if not isinstance(cfg, dict):
+        return {}
+    configurable = cfg.get("configurable")
+    return configurable if isinstance(configurable, dict) else {}
+
+
+def _hydrate_engagement_state(state: Any) -> dict[str, Any] | None:
+    """Copy ``engagement_name``/``workspace_path`` from runnable config into state.
+
+    Runs in ``before_agent`` so the values are present on state before any
+    downstream middleware (OPPLAN, filesystem) reads them. Idempotent: if the
+    state already carries either field, it is left untouched and the config
+    value is ignored.
+    """
+    get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+    configurable = _configurable_from_runnable_config()
+    updates: dict[str, Any] = {}
+
+    if not get("engagement_name"):
+        cfg_slug = configurable.get("engagement_name")
+        if isinstance(cfg_slug, str) and cfg_slug:
+            updates["engagement_name"] = cfg_slug
+
+    if not get("workspace_path"):
+        cfg_workspace = configurable.get("workspace_path")
+        if isinstance(cfg_workspace, str) and cfg_workspace:
+            updates["workspace_path"] = cfg_workspace
+
+    return updates or None
+
+
+def _resolve_workspace_path(state: Any) -> str:
+    """Pick the live workspace path: state first, then runnable config, then default."""
+    get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+    workspace = get("workspace_path") or ""
+    if not workspace:
+        cfg_workspace = _configurable_from_runnable_config().get("workspace_path")
+        if isinstance(cfg_workspace, str) and cfg_workspace:
+            workspace = cfg_workspace
+    return workspace or "/workspace"
 
 
 def _build_engagement_injection(slug: str, workspace: str) -> str:
@@ -141,6 +196,14 @@ class EngagementContextMiddleware(AgentMiddleware):
         super().__init__()
 
     @override
+    def before_agent(self, state, runtime) -> dict[str, Any] | None:
+        return _hydrate_engagement_state(state)
+
+    @override
+    async def abefore_agent(self, state, runtime) -> dict[str, Any] | None:
+        return _hydrate_engagement_state(state)
+
+    @override
     def wrap_model_call(self, request, handler):
         return handler(self._inject(request))
 
@@ -156,7 +219,7 @@ class EngagementContextMiddleware(AgentMiddleware):
             "bash_kill",
             "bash_status",
         }:
-            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            workspace = _resolve_workspace_path(request.state)
             with bash_workspace(workspace):
                 return handler(request)
         return handler(request)
@@ -169,7 +232,7 @@ class EngagementContextMiddleware(AgentMiddleware):
             "bash_kill",
             "bash_status",
         }:
-            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            workspace = _resolve_workspace_path(request.state)
             with bash_workspace(workspace):
                 return await handler(request)
         return await handler(request)

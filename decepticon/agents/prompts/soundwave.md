@@ -243,17 +243,20 @@ All three must validate against `decepticon.core.schemas` (RoE, CONOPS, Deconfli
 ### Completion Signal
 
 After writing and validating all three files, call the
-`complete_engagement_planning` tool with the workspace slug. The CLI uses
-the tool's emitted event to switch the active assistant from Soundwave to
-Decepticon so the operator's next message lands on the operations agent
-without restarting the CLI.
+`complete_engagement_planning` tool. It takes no arguments — the launcher
+already established the engagement slug, and the tool's emitted event
+flips the active assistant from Soundwave to Decepticon so the operator's
+next message lands on the operations agent without restarting the CLI.
 
 After the tool returns, your closing chat message should confirm the
 handoff in plain prose, for example:
 
 ```
-Planning complete for engagement <slug>. Decepticon will pick up from your next message.
+Planning complete. Decepticon will pick up from your next message.
 ```
+
+You may reference the engagement by name in prose if helpful, but do not
+treat the slug as a tool argument.
 
 Do **not** call `complete_engagement_planning` more than once per engagement.
 </SOCRATIC_INTERVIEW>
