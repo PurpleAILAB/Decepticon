@@ -22,6 +22,7 @@ from deepagents.backends.utils import validate_path
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
 from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.tools.filesystem import filesystem_tools_without_execute
 
 WORKSPACE = "/workspace"
 NO_WORKSPACE_ERROR = (
@@ -223,7 +224,7 @@ class FilesystemMiddleware(BaseFilesystemMiddleware):
 
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
-        self.tools = [tool for tool in self.tools if tool.name != "execute"]
+        self.tools = filesystem_tools_without_execute(self.tools)
 
     def _get_backend(self, runtime) -> BackendProtocol:
         return EngagementFilesystemBackend(
