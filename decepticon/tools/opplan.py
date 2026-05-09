@@ -120,7 +120,9 @@ def _scoped_opplan_backend(
     return EngagementFilesystemBackend(backend, workspace_path)
 
 
-def _read_text_from_backend(backend: BackendProtocol, file_path: str) -> tuple[str | None, str | None]:
+def _read_text_from_backend(
+    backend: BackendProtocol, file_path: str
+) -> tuple[str | None, str | None]:
     result = backend.read(file_path, offset=0, limit=1_000_000)
     if result.error:
         return None, result.error
@@ -193,7 +195,6 @@ def _persist_opplan_to_backend(
             log.warning("OPPLAN persistence failed for workspace=%s: %s", workspace_path, error)
     except Exception as e:  # noqa: BLE001 — best-effort persistence
         log.warning("OPPLAN persistence failed for workspace=%s: %s", workspace_path, e)
-
 
 
 def _format_opplan_for_agent(
@@ -1020,9 +1021,9 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
 
         raw, read_error = _read_text_from_backend(scoped_backend, OPPLAN_VIRTUAL_PATH)
         if raw is None:
-            not_found = "file_not_found" in (read_error or "") or "not found" in (
-                read_error or ""
-            ).lower()
+            not_found = (
+                "file_not_found" in (read_error or "") or "not found" in (read_error or "").lower()
+            )
             content = (
                 f"No opplan.json found at {OPPLAN_VIRTUAL_PATH}. "
                 "Use add_objective to create a new OPPLAN."

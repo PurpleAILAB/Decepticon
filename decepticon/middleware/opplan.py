@@ -312,8 +312,6 @@ def _format_opplan_status(
     return "\n".join(lines)
 
 
-
-
 # ── Middleware Class ──────────────────────────────────────────────────
 
 

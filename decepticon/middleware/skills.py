@@ -51,8 +51,6 @@ if TYPE_CHECKING:
     from deepagents.middleware.skills import SkillMetadata
 
 
-
-
 # ── Decepticon skill system prompt template ──────────────────────────────────
 # Replaces both the old shared skill prompt fragment and the base middleware's
 # generic SKILLS_SYSTEM_PROMPT. Placeholders:
@@ -325,8 +323,6 @@ def _parse_comma_field(value: str | list | None) -> list[str]:
     if isinstance(value, list):
         return [str(v).strip() for v in value if str(v).strip()]
     return [t.strip() for t in str(value).replace(",", " ").split() if t.strip()]
-
-
 
 
 __all__ = ["SkillsMiddleware"]
