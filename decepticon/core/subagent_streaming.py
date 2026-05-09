@@ -31,6 +31,7 @@ import time
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage
+from langchain_core.messages.tool import ToolCall
 
 log = logging.getLogger("decepticon.subagent_streaming")
 
@@ -137,7 +138,7 @@ class StreamingRunnable:
     def _process_messages(
         self,
         new_messages: list,
-        active_tool_calls: dict[str, dict],
+        active_tool_calls: dict[str, ToolCall],
         renderer: Any,
         has_renderer: bool,
         writer: Callable | None,
@@ -166,7 +167,21 @@ class StreamingRunnable:
 
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
-                        active_tool_calls[tc["id"]] = tc
+                        # ToolCall.id is `str | None` in the LangChain spec.
+                        # Storing under a None key collides across multiple
+                        # id-less calls and yields wrong-name lookups for the
+                        # corresponding ToolMessage; skip and log instead so
+                        # the result falls through to the "unknown" branch.
+                        tc_id = tc.get("id")
+                        if tc_id is None:
+                            log.warning(
+                                "subagent %r emitted tool call without id (tool=%s); "
+                                "result will surface as 'unknown'",
+                                self._name,
+                                tc.get("name"),
+                            )
+                        else:
+                            active_tool_calls[tc_id] = tc
                         tc_args = {
                             k: str(v) if not isinstance(v, (str, int, float, bool)) else v
                             for k, v in tc["args"].items()
@@ -228,7 +243,7 @@ class StreamingRunnable:
         start = time.monotonic()
         last_state = None
         last_count = 0
-        active_tool_calls: dict[str, dict] = {}
+        active_tool_calls: dict[str, ToolCall] = {}
 
         try:
             for state in self._runnable.stream(
@@ -310,7 +325,7 @@ class StreamingRunnable:
         start = time.monotonic()
         last_state = None
         last_count = 0
-        active_tool_calls: dict[str, dict] = {}
+        active_tool_calls: dict[str, ToolCall] = {}
 
         try:
             async for state in self._runnable.astream(
