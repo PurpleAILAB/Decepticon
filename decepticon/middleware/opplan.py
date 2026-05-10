@@ -30,7 +30,6 @@ Design notes:
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from typing import Annotated, Any, NotRequired, cast, override
 
@@ -41,45 +40,6 @@ from langchain.agents.middleware.types import OmitFromInput
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 from decepticon.tools.opplan import OPPLAN_TOOL_NAMES, build_opplan_tools
-
-# Path-like substring inside a RECON_HANDOFF or skill-load line: starts at '/'
-# and runs through path/query characters, stopping at whitespace, angle
-# brackets, or quote marks. Tolerates trailing punctuation via .rstrip in the
-# helper. Lower-bound length filter avoids over-matching short noise like '/'.
-_ENDPOINT_TOKEN_RE = re.compile(r"/[A-Za-z0-9._\-/?=&%~]+")
-
-# Skill-path substring from `load_skill("/skills/.../foo.md")`,
-# `load_skill('/skills/.../foo.md')`, or `REQUIRED SKILL LOAD: <path>`.
-# Captures the path, not the surrounding call.
-_SKILL_LOAD_RE = re.compile(
-    r"load_skill\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
-    r"|REQUIRED\s+SKILL\s+LOAD:\s*([^\s,;]+)",
-    re.IGNORECASE,
-)
-
-
-def _extract_endpoint_tokens(text: str) -> list[str]:
-    """Return path-like substrings from a RECON_HANDOFF line, deduped, length-filtered."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for m in _ENDPOINT_TOKEN_RE.finditer(text):
-        tok = m.group(0).rstrip(".,;:)")
-        if len(tok) >= 4 and tok not in seen:
-            seen.add(tok)
-            out.append(tok)
-    return out
-
-
-def _extract_skill_paths(text: str) -> list[str]:
-    """Return skill paths from load_skill() or REQUIRED SKILL LOAD lines, deduped."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for m in _SKILL_LOAD_RE.finditer(text):
-        path = (m.group(1) or m.group(2) or "").strip()
-        if path and path not in seen:
-            seen.add(path)
-            out.append(path)
-    return out
 
 
 def _reduce_engagement_name(current: str | None, update: str | None) -> str | None:
@@ -514,66 +474,6 @@ class OPPLANMiddleware(AgentMiddleware):
                         for tc in exploit_task_calls
                     ]
                 }
-
-            # Handoff-adherence guard (Rule 20.c runtime enforcement).
-            # When recon/SUMMARY.md exists AND contains the literal
-            # `RECON_HANDOFF:` token, the orchestrator's exploit task() prompt
-            # MUST reference the recon-named endpoint(s) and/or the recon-named
-            # skill load. Otherwise reject so the orchestrator rebuilds the
-            # prompt with the verbatim handoff line. Inactive when SUMMARY.md
-            # is absent or has no RECON_HANDOFF — engagements where recon
-            # legitimately found nothing pass through.
-            if state and state.get("workspace_path"):
-                wp = Path(state["workspace_path"])
-                summary_md = wp / "recon" / "SUMMARY.md"
-                if summary_md.exists():
-                    try:
-                        summary_text = summary_md.read_text(errors="replace")
-                    except OSError:
-                        summary_text = ""
-                    handoff_endpoints: list[str] = []
-                    handoff_skill_paths: list[str] = []
-                    if "RECON_HANDOFF:" in summary_text:
-                        lines = summary_text.splitlines()
-                        for i, line in enumerate(lines):
-                            if "RECON_HANDOFF:" not in line:
-                                continue
-                            handoff_endpoints.extend(_extract_endpoint_tokens(line))
-                            window = "\n".join(lines[i : i + 6])
-                            handoff_skill_paths.extend(_extract_skill_paths(window))
-                    if handoff_endpoints or handoff_skill_paths:
-                        offending: list[dict[str, Any]] = []
-                        for tc in exploit_task_calls:
-                            prompt = tc.get("args", {}).get("prompt", "") or ""
-                            has_endpoint = any(ep in prompt for ep in handoff_endpoints)
-                            has_skill = any(sp in prompt for sp in handoff_skill_paths)
-                            if not has_endpoint and not has_skill:
-                                offending.append(tc)
-                        if offending:
-                            endpoints_repr = ", ".join(handoff_endpoints) or "(none extracted)"
-                            skills_repr = ", ".join(handoff_skill_paths) or "(none extracted)"
-                            return {
-                                "messages": [
-                                    ToolMessage(
-                                        content=(
-                                            "HANDOFF-ADHERENCE GUARD: exploit "
-                                            f"task('{tc['args'].get('subagent_type')}', ...) "
-                                            "prompt must reference the recon "
-                                            f"handoff vector(s) [{endpoints_repr}] "
-                                            f"and/or the skill load(s) [{skills_repr}] "
-                                            "from recon/SUMMARY.md. The current "
-                                            "prompt omits both. Rebuild the prompt "
-                                            "to include the verbatim RECON_HANDOFF "
-                                            "line and any load_skill directive on "
-                                            "the same/following lines, then retry. "
-                                            "decepticon.md Rule 20.c."
-                                        ),
-                                        tool_call_id=tc["id"],
-                                        status="error",
-                                    )
-                                    for tc in offending
-                                ]
-                            }
 
         return None
 
