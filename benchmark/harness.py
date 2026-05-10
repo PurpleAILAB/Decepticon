@@ -270,6 +270,51 @@ class Harness:
         active.thread_id = None
         active.run_id = None
 
+    async def _recover_postmortem_state(
+        self, active: _ActiveRun
+    ) -> tuple[str | None, str | None, int | None]:
+        """Best-effort capture of (agent_summary, trace_id, token_count) on FAIL.
+
+        Mirrors the natural-success branch shape (``run_challenge`` ``:444-456``)
+        so timeout / workspace-flag-recovery / generic-exception branches can
+        populate the same observability fields on the resulting ``ChallengeResult``.
+        Without this, post-cancel FAILs land with NULL on these fields and the
+        OCI loop's observer has no per-FAIL evidence to learn from.
+
+        If ``_force_restart_langgraph`` has already cleared ``active.thread_id``
+        / ``active.run_id`` (escalation path), state recovery is impossible
+        because the thread no longer exists on the restarted instance — return
+        ``(None, None, None)`` and log a single INFO line so observers can
+        distinguish "we tried and the thread was gone" from "we never tried."
+
+        Any exception is swallowed (best-effort observability, not
+        correctness-critical).
+        """
+        if not active.has_run:
+            log.info(
+                "harness.postmortem: state recovery skipped — active IDs cleared "
+                "(escalation path), thread no longer exists"
+            )
+            return (None, None, None)
+
+        trace_id = active.run_id
+        try:
+            client = get_client(url=active.langgraph_url)
+            state_data = await asyncio.wait_for(
+                client.threads.get_state(active.thread_id), timeout=30.0
+            )
+        except Exception as exc:
+            log.info("harness.postmortem: state recovery failed: %s", exc)
+            return (None, trace_id, None)
+
+        values: object = state_data.get("values") if isinstance(state_data, dict) else None
+        if not isinstance(values, dict):
+            values = state_data if isinstance(state_data, dict) else {}
+        text = self._extract_message(values)
+        token_count = _sum_token_usage(values.get("messages")) if isinstance(values, dict) else None
+        agent_summary = text[:500] if text else None
+        return (agent_summary, trace_id, token_count)
+
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
         # Check LiteLLM: verify models are loaded via /v1/models endpoint
@@ -478,14 +523,19 @@ class Harness:
                         duration_seconds=round(now - (agent_start or run_start), 2),
                     )
                 )
+                agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
                 result = self.provider.evaluate(challenge, state, workspace)
                 result.duration_seconds = round(now - (agent_start or run_start), 2)
                 result.setup_seconds = round((agent_start or run_start) - run_start, 2)
                 result.cancel_outcome = cancel_outcome
                 result.terminal_status_at_teardown = terminal_status
+                result.agent_summary = agent_summary
+                result.trace_id = trace_id
+                result.token_count = token_count
                 self.provider.teardown(challenge)
                 return result
 
+            agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
             now = time.time()
             self.provider.teardown(challenge)
             return ChallengeResult(
@@ -499,12 +549,16 @@ class Harness:
                 setup_seconds=round((agent_start or run_start) - run_start, 2),
                 cancel_outcome=cancel_outcome,
                 terminal_status_at_teardown=terminal_status,
+                agent_summary=agent_summary,
+                trace_id=trace_id,
+                token_count=token_count,
             )
         except Exception as exc:
             # Unexpected exception path — same discipline: cancel + verify
             # terminal before teardown so we don't tear the target out from
             # under a still-running graph node.
             cancel_outcome, terminal_status = await self._cancel_and_verify_terminal(active)
+            agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
             now = time.time()
             self.provider.teardown(challenge)
             return ChallengeResult(
@@ -518,6 +572,9 @@ class Harness:
                 setup_seconds=round((agent_start or run_start) - run_start, 2),
                 cancel_outcome=cancel_outcome,
                 terminal_status_at_teardown=terminal_status,
+                agent_summary=agent_summary,
+                trace_id=trace_id,
+                token_count=token_count,
             )
         finally:
             # Workspace cleanup is safe in unconditional finally — it doesn't
