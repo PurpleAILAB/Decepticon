@@ -39,7 +39,7 @@ from pydantic import SecretStr
 from typing_extensions import override
 
 from decepticon.core.logging import get_logger
-from decepticon.llm.models import ProxyConfig
+from decepticon.llm.factory import LLMFactory, _model_drops_temperature
 
 log = get_logger("middleware.model_override")
 
@@ -68,12 +68,24 @@ def _build_proxied_llm(model_id: str, original: BaseChatModel) -> BaseChatModel:
 
     Mirrors the configuration the LLMFactory uses for the baked-in
     primary so streaming, tool calling, and fallback semantics match.
-    Temperature inherits from the original model when present; missing
-    or unsupported values are dropped (matches Opus 4.7 handling in
-    the factory).
+    Resolves the proxy config via :meth:`LLMFactory._resolve_proxy_config`
+    so we honour ``DECEPTICON_LLM__PROXY_URL`` (e.g. ``http://litellm:4000``
+    inside the langgraph container) instead of falling back to the bare
+    pydantic defaults — which point at ``http://localhost:4000`` and
+    bind to the langgraph container itself, where nothing listens. See
+    issue #186.
+
+    Temperature inherits from the original model when present, except
+    for models the factory marks as dropping ``temperature`` (Opus 4.x
+    family) — those would 400 at the upstream API even when the proxy
+    masks the param. Same gate the factory's ``_create_chat_model``
+    uses for the baked-in primary.
     """
-    proxy = ProxyConfig()
-    temperature = getattr(original, "temperature", None)
+    proxy = LLMFactory._resolve_proxy_config()
+    if _model_drops_temperature(model_id):
+        temperature = None
+    else:
+        temperature = getattr(original, "temperature", None)
     kwargs: dict[str, Any] = {
         "model": model_id,
         "base_url": proxy.url,
