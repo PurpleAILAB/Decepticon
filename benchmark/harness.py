@@ -142,26 +142,32 @@ class Harness:
 
     async def _cancel_and_verify_terminal(
         self, active: _ActiveRun, *, deadline_seconds: int = 30
-    ) -> tuple[CancelOutcome, str | None]:
+    ) -> tuple[CancelOutcome, str | None, tuple[str | None, str | None, int | None]]:
         """Cancel ``active``'s run AND verify it reached terminal status.
 
-        Returns ``(outcome, terminal_status)``. Outcome is recorded on the
-        ChallengeResult so observers/critics can detect cancel/teardown
-        races without scraping LangSmith.
+        Returns ``(outcome, terminal_status, postmortem)``. Outcome is
+        recorded on the ChallengeResult so observers/critics can detect
+        cancel/teardown races without scraping LangSmith. ``postmortem``
+        is the ``(agent_summary, trace_id, token_count)`` 3-tuple that
+        callers paste onto FAIL ``ChallengeResult`` objects so observers
+        have post-cancel evidence on every branch.
 
         Sequence:
             1. Fire-and-forget cancel via ``_cancel_active_runs`` (rollback,
                wait=False, bounded by 5s).
             2. Poll ``runs.get`` every 2s for up to ``deadline_seconds``,
                looking for terminal status.
-            3. If terminal reached → return ("rollback", <status>). Caller
-               is now safe to teardown the target.
-            4. If NOT terminal within deadline → escalate to
-               ``_force_restart_langgraph`` and return
-               ("container_restart", last_status).
+            3. If terminal reached → capture postmortem (IDs still valid)
+               and return ("rollback", <status>, postmortem). Caller is
+               now safe to teardown the target.
+            4. If NOT terminal within deadline → capture postmortem
+               BEFORE container restart (which clears active IDs at
+               ``_force_restart_langgraph`` and would make the helper
+               unreachable), then escalate, then return
+               ("container_restart", last_status, postmortem).
         """
         if not active.has_run:
-            return ("clean", None)
+            return ("clean", None, (None, None, None))
 
         await self._cancel_active_runs(active)
 
@@ -182,7 +188,8 @@ class Harness:
                         active.run_id,
                         last_status,
                     )
-                    return ("rollback", last_status)
+                    postmortem = await self._recover_postmortem_state(active)
+                    return ("rollback", last_status, postmortem)
             except asyncio.TimeoutError:
                 pass
             except Exception as exc:
@@ -200,8 +207,19 @@ class Harness:
             deadline_seconds,
             last_status,
         )
+        # Snapshot IDs onto a fresh _ActiveRun and capture postmortem
+        # BEFORE _force_restart_langgraph zeros active.thread_id /
+        # active.run_id at :270-271. Without this snapshot, every
+        # post-escalation _recover_postmortem_state(active) call early-outs
+        # via `not active.has_run` (cycle-17 observer-2 RC).
+        snapshot = _ActiveRun(
+            langgraph_url=active.langgraph_url,
+            thread_id=active.thread_id,
+            run_id=active.run_id,
+        )
+        postmortem = await self._recover_postmortem_state(snapshot)
         self._force_restart_langgraph(active)
-        return ("container_restart", last_status)
+        return ("container_restart", last_status, postmortem)
 
     def _force_restart_langgraph(self, active: _ActiveRun) -> None:
         """Restart the langgraph container to dislodge a wedged run.
@@ -508,7 +526,10 @@ class Harness:
             # cancel_outcome="failed" tells the next critic loop the cancel
             # didn't dislodge the run, and the next pre-cycle sandbox restart
             # is the resolution path.
-            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal(active)
+            cancel_outcome, terminal_status, postmortem = await self._cancel_and_verify_terminal(
+                active
+            )
+            agent_summary, trace_id, token_count = postmortem
             # Agent timed out, but may have written flags to workspace
             workspace_text = self._scan_workspace_for_output(workspace)
             if workspace_text and "FLAG{" in workspace_text:
@@ -523,7 +544,6 @@ class Harness:
                         duration_seconds=round(now - (agent_start or run_start), 2),
                     )
                 )
-                agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
                 result = self.provider.evaluate(challenge, state, workspace)
                 result.duration_seconds = round(now - (agent_start or run_start), 2)
                 result.setup_seconds = round((agent_start or run_start) - run_start, 2)
@@ -535,7 +555,6 @@ class Harness:
                 self.provider.teardown(challenge)
                 return result
 
-            agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
             now = time.time()
             self.provider.teardown(challenge)
             return ChallengeResult(
@@ -557,8 +576,10 @@ class Harness:
             # Unexpected exception path — same discipline: cancel + verify
             # terminal before teardown so we don't tear the target out from
             # under a still-running graph node.
-            cancel_outcome, terminal_status = await self._cancel_and_verify_terminal(active)
-            agent_summary, trace_id, token_count = await self._recover_postmortem_state(active)
+            cancel_outcome, terminal_status, postmortem = await self._cancel_and_verify_terminal(
+                active
+            )
+            agent_summary, trace_id, token_count = postmortem
             now = time.time()
             self.provider.teardown(challenge)
             return ChallengeResult(
