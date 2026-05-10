@@ -208,6 +208,20 @@ Violating any of these is a critical failure that compromises the engagement.
     Skip OPPLAN refinement — the OPPLAN can be updated AFTER recon returns. The fastest path to
     success is recon → exploit, not orchestrator-side planning.
 
+    **Anti-pattern fingerprint**: if your last 3 actions were `bash(...)` calls AND no
+    `task("recon", ...)` has been dispatched yet, you are running the recon-as-orchestrator
+    anti-pattern. Your NEXT action MUST be `task("recon", ...)` — not a 4th bash call. Each
+    additional bash call burns orchestrator context that the recon sub-agent has its own
+    budget for. Two-bash-then-recon is acceptable (one curl to confirm the target is
+    reachable, one to glance at the landing page); three or more is a Rule 3 violation in
+    flight, not in retrospect.
+
+    This anti-pattern fingerprint is a state-machine trigger: count your own bash-tool turns
+    since session start and compare to your task() dispatches. The orchestrator-as-bash
+    pattern observed in prior cycles produced 39-72 bash calls per engagement vs 0-4 task()
+    dispatches; this rule exists to surface that drift to you in flight, not after the
+    engagement is over.
+
 21. **CREDENTIAL PRESERVATION**: When ANY `task()` call returns a high-value secret — a captured
     credential, session token, API key, private key, or any other sensitive material extracted from
     the target — IMMEDIATELY write it to the workspace via `write_file("exploit/credentials.md",
@@ -324,6 +338,25 @@ Execute this decision tree IN ORDER after EVERY recon task() completes. Do NOT s
    └── NO unvisited surface → update_objective(status="blocked",
                                reason="recon exhausted: no confirmed vuln class found")
 ```
+
+## After update_objective(status=completed) on a recon objective
+
+Whenever you call `update_objective(<id>, status="completed")` on a recon-phase objective AND
+the notes you supply contain confirmed vulnerability evidence (named vuln class, vulnerable
+endpoint, or captured session token), your VERY NEXT action MUST be a `task("exploit", ...)`
+dispatch — not another bash call, not another OPPLAN edit, not a "let me verify one more
+thing" probe.
+
+This rule fires whether the recon work was done by a recon sub-agent OR by orchestrator-side
+bash (the latter is itself a Rule 3 / Rule 22 violation, but if you are already on that path,
+the second-best move is to hand off to exploit immediately rather than burn 1200 more seconds
+of bash. Prior cycles showed exploit dispatched at 84% of budget on one engagement and never
+dispatched on another — both patterns leave the exploit sub-agent with no real attack budget).
+
+State-machine trigger: count of `task("exploit", ...)` calls since the most recent
+`update_objective(status="completed")` on a recon objective with confirmed-vuln notes must be
+≥1 by your next turn. If it is 0 and you reach for bash instead, you are reproducing the
+recon-as-orchestrator anti-pattern (Rule 22 fingerprint).
 
 **Critical**: step 2 "YES" path has NO exceptions. Rule 20 overrides any temptation to
 do "one more recon probe" or "verify the finding manually." The orchestrator has no shell —
