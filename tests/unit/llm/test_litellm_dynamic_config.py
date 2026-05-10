@@ -193,3 +193,42 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
         {"auth/gpt-5.5": ["auth/gpt-5.4"]},
         {"auth/gpt-5.4": ["auth/gpt-5.4-mini"]},
     ]
+
+
+# ── llama.cpp OpenAI-compatible backend (issue #151) ────────────────────
+
+
+def test_build_model_entry_routes_llamacpp_to_openai_with_custom_base() -> None:
+    """``llamacpp/<model>`` routes through LiteLLM's openai-compatible
+    path with ``LLAMACPP_API_BASE`` and ``LLAMACPP_API_KEY``. Symmetric
+    to the ``custom/`` branch but kept distinct so users can have BOTH
+    a generic custom OpenAI gateway AND llama.cpp configured.
+    """
+    entry = build_model_entry("llamacpp/qwen2.5-coder-7b-instruct-q4_k_m")
+
+    assert entry["model_name"] == "llamacpp/qwen2.5-coder-7b-instruct-q4_k_m", (
+        "model_name must be the agent-facing alias unchanged — per-role "
+        "DECEPTICON_MODEL_<ROLE> overrides depend on this passthrough"
+    )
+    assert entry["litellm_params"] == {
+        "model": "openai/qwen2.5-coder-7b-instruct-q4_k_m",
+        "api_key": "os.environ/LLAMACPP_API_KEY",
+        "api_base": "os.environ/LLAMACPP_API_BASE",
+    }
+
+
+def test_validate_model_name_accepts_llamacpp_prefix() -> None:
+    """``llamacpp/`` is in ``ALLOWED_DYNAMIC_PROVIDERS`` so the validator
+    must let it through. Pre-fix this would raise the
+    ``unsupported model provider`` error.
+    """
+    # Should not raise.
+    validate_model_name("llamacpp/qwen2.5-coder-7b-instruct-q4_k_m")
+
+
+def test_validate_model_name_rejects_llamacpp_without_model_slug() -> None:
+    """Bare ``llamacpp`` (no slash, no model) is still invalid — the
+    validator's first check is the provider/model format gate.
+    """
+    with pytest.raises(ValueError, match="provider/model"):
+        validate_model_name("llamacpp")

@@ -7,6 +7,7 @@ import pytest
 from decepticon.llm.factory import (
     LLMFactory,
     _is_real_key,
+    _llamacpp_local_configured,
     _oauth_credentials_present,
     _resolve_credentials,
 )
@@ -932,3 +933,123 @@ class TestDeepSeekReasoningContent:
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is False
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
+
+
+# ── LLAMACPP_LOCAL credential detection (issue #151) ────────────────────
+
+
+_LLAMACPP_RELATED_ENV = (
+    "LLAMACPP_API_BASE",
+    "LLAMACPP_MODEL",
+    "LLAMACPP_API_KEY",
+)
+
+
+def _scrub_other_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delete any env that would be detected as another credential.
+
+    The credential-detection tests below need to assert "only LLAMACPP
+    is detected"; without this scrub, a developer's exported
+    ``ANTHROPIC_API_KEY`` would creep in and the assertion would fail
+    locally only.
+    """
+    for var in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "MINIMAX_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "XAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "OPENROUTER_API_KEY",
+        "NVIDIA_API_KEY",
+        "GROQ_API_KEY",
+        "TOGETHER_API_KEY",
+        "FIREWORKS_API_KEY",
+        "COHERE_API_KEY",
+        "MOONSHOT_API_KEY",
+        "ZAI_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "GITHUB_API_KEY",
+        "OLLAMA_API_BASE",
+        "OLLAMA_MODEL",
+        "OLLAMA_CLOUD_API_BASE",
+        "OLLAMA_CLOUD_MODEL",
+        "LMSTUDIO_API_BASE",
+        "LMSTUDIO_MODEL",
+        "CUSTOM_OPENAI_API_BASE",
+        "CUSTOM_OPENAI_API_KEY",
+        "DECEPTICON_AUTH_PRIORITY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    for flag in (
+        "DECEPTICON_AUTH_CLAUDE_CODE",
+        "DECEPTICON_AUTH_CHATGPT",
+        "DECEPTICON_AUTH_COPILOT",
+        "DECEPTICON_AUTH_GEMINI",
+        "DECEPTICON_AUTH_GROK",
+        "DECEPTICON_AUTH_PERPLEXITY",
+    ):
+        monkeypatch.delenv(flag, raising=False)
+
+
+class TestLlamacppLocalConfigured:
+    """``_llamacpp_local_configured`` is the gate for adding
+    ``LLAMACPP_LOCAL`` to the credentials chain. Either env var being
+    set is enough — neither requires the other, mirroring the
+    LM Studio / Ollama detection contract.
+    """
+
+    def test_returns_false_when_neither_env_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        assert _llamacpp_local_configured() is False
+
+    def test_returns_true_when_only_base_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        assert _llamacpp_local_configured() is True
+
+    def test_returns_true_when_only_model_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+        assert _llamacpp_local_configured() is True
+
+    def test_whitespace_does_not_count_as_set(self, monkeypatch):
+        """Stray ``LLAMACPP_API_BASE=`` lines in .env must not silently
+        opt the user in — same fail-soft as the Ollama detector."""
+        monkeypatch.setenv("LLAMACPP_API_BASE", "   ")
+        monkeypatch.setenv("LLAMACPP_MODEL", "")
+        assert _llamacpp_local_configured() is False
+
+
+class TestResolveCredentialsForLlamacpp:
+    """End-to-end check that ``_resolve_credentials`` picks up the
+    user's llama.cpp config — both the explicit-priority path and the
+    "only LLAMACPP_* detected" auto-fallback at the bottom of
+    ``_resolve_credentials``.
+    """
+
+    def test_only_llamacpp_detected_returns_llamacpp_only_chain(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _scrub_other_credentials(monkeypatch)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+
+        creds = _resolve_credentials()
+        assert creds.methods == [AuthMethod.LLAMACPP_LOCAL]
+
+    def test_priority_list_with_llamacpp_picks_it_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """User wrote an explicit DECEPTICON_AUTH_PRIORITY listing
+        llamacpp_local — the resolver must respect that ordering."""
+        _scrub_other_credentials(monkeypatch)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen-coder")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
+        monkeypatch.setenv("DECEPTICON_AUTH_PRIORITY", "llamacpp_local,anthropic_api")
+
+        creds = _resolve_credentials()
+        assert creds.methods == [AuthMethod.LLAMACPP_LOCAL, AuthMethod.ANTHROPIC_API]

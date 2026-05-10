@@ -269,6 +269,91 @@ class TestOllamaLocalChain:
         assert chain == ["ollama_chat/qwen3-coder:30b", "openai/gpt-5.5"]
 
 
+# ── LLAMACPP_LOCAL dynamic resolution (issue #151) ──────────────────────
+
+
+class TestLlamacppLocalChain:
+    """LLAMACPP_LOCAL is OpenAI-compatible (llama-server) and collapses
+    across tiers like OLLAMA_LOCAL — llama-server runs one GGUF at a
+    time. Chain must read the live env value, not a static placeholder.
+    """
+
+    def test_llamacpp_resolves_user_chosen_model_at_high(self, monkeypatch):
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://host.docker.internal:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+        creds = Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["llamacpp/qwen2.5-coder-7b-instruct-q4_k_m"]
+
+    def test_llamacpp_collapses_across_tiers(self, monkeypatch):
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://host.docker.internal:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "llama-3.3-70b-instruct-q5_k_m")
+        creds = Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
+        for tier in (Tier.HIGH, Tier.MID, Tier.LOW):
+            assert resolve_chain(tier, creds) == ["llamacpp/llama-3.3-70b-instruct-q5_k_m"]
+
+    def test_llamacpp_skipped_when_env_unset(self, monkeypatch):
+        """LLAMACPP_LOCAL listed but not configured — chain must drop it
+        rather than emit ``llamacpp/__LLAMACPP_MODEL__`` placeholder."""
+        monkeypatch.delenv("LLAMACPP_API_BASE", raising=False)
+        monkeypatch.delenv("LLAMACPP_MODEL", raising=False)
+        creds = Credentials(methods=[AuthMethod.LLAMACPP_LOCAL, AuthMethod.OPENAI_API])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == ["openai/gpt-5.5"]
+
+    def test_llamacpp_default_when_only_base_set(self, monkeypatch):
+        """User opted in via base URL but didn't pick a model — fall
+        back to the documented default rather than failing."""
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://host.docker.internal:8080/v1")
+        monkeypatch.delenv("LLAMACPP_MODEL", raising=False)
+        creds = Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
+        chain = resolve_chain(Tier.HIGH, creds)
+        # The default lives in models._LLAMACPP_DEFAULT_MODEL — assert
+        # on the prefix + the format rather than the exact tag so a
+        # future bump doesn't churn this test.
+        assert len(chain) == 1
+        assert chain[0].startswith("llamacpp/")
+        assert chain[0] != "llamacpp/__LLAMACPP_MODEL__"
+
+    def test_llamacpp_mixed_with_api_chain_priority_wins(self, monkeypatch):
+        """User has llama.cpp primary + OpenAI fallback — chain leads
+        with llama.cpp."""
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://host.docker.internal:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+        creds = Credentials(methods=[AuthMethod.LLAMACPP_LOCAL, AuthMethod.OPENAI_API])
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == [
+            "llamacpp/qwen2.5-coder-7b-instruct-q4_k_m",
+            "openai/gpt-5.5",
+        ]
+
+    def test_llamacpp_coexists_with_lmstudio_and_custom_openai(self, monkeypatch):
+        """All three OpenAI-compatible local-ish methods configured at
+        once — each picks up its own env namespace and the chain holds
+        all three in priority order. Pins that the new ``llamacpp/``
+        prefix does not collide with ``custom/`` or ``lm_studio/``.
+        """
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://host.docker.internal:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "model-llamacpp")
+        monkeypatch.setenv("LMSTUDIO_API_BASE", "http://host.docker.internal:1234/v1")
+        monkeypatch.setenv("LMSTUDIO_MODEL", "model-lmstudio")
+        monkeypatch.setenv("CUSTOM_OPENAI_API_BASE", "https://gateway.example/v1")
+        monkeypatch.setenv("CUSTOM_OPENAI_MODEL", "model-custom")
+        creds = Credentials(
+            methods=[
+                AuthMethod.LLAMACPP_LOCAL,
+                AuthMethod.LMSTUDIO_LOCAL,
+                AuthMethod.CUSTOM_OPENAI_API,
+            ]
+        )
+        chain = resolve_chain(Tier.HIGH, creds)
+        assert chain == [
+            "llamacpp/model-llamacpp",
+            "lm_studio/model-lmstudio",
+            "custom/model-custom",
+        ]
+
+
 # ── ModelAssignment ─────────────────────────────────────────────────────
 
 

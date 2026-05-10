@@ -110,6 +110,7 @@ class AuthMethod(StrEnum):
     DASHSCOPE_API = "dashscope_api"  # Alibaba DashScope (Qwen)
     GITHUB_MODELS_API = "github_models_api"  # GitHub Models (PAT auth)
     LMSTUDIO_LOCAL = "lmstudio_local"  # Local LM Studio (OpenAI-compatible)
+    LLAMACPP_LOCAL = "llamacpp_local"  # Local llama.cpp llama-server (OpenAI-compatible)
     CUSTOM_OPENAI_API = "custom_openai_api"  # Custom OpenAI-compatible endpoint
 
 
@@ -315,6 +316,19 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.MID: "lm_studio/__LMSTUDIO_MODEL__",
         Tier.LOW: "lm_studio/__LMSTUDIO_MODEL__",
     },
+    # llama.cpp llama-server — local OpenAI-compatible server (GGUF
+    # models). Issue #151. Tiers collapse to a single model resolved at
+    # chain-build time from LLAMACPP_MODEL because llama-server runs one
+    # GGUF at a time. The route prefix is ``llamacpp/`` (not a native
+    # LiteLLM provider — remapped to ``openai/<model>`` plus a custom
+    # api_base by ``litellm_dynamic_config.build_model_entry``); kept
+    # distinct from ``custom/`` so users can have BOTH a generic
+    # OpenAI-compatible gateway AND llama.cpp wired up at the same time.
+    AuthMethod.LLAMACPP_LOCAL: {
+        Tier.HIGH: "llamacpp/__LLAMACPP_MODEL__",
+        Tier.MID: "llamacpp/__LLAMACPP_MODEL__",
+        Tier.LOW: "llamacpp/__LLAMACPP_MODEL__",
+    },
     # Custom OpenAI-compatible endpoint — collapses tiers, model id from
     # CUSTOM_OPENAI_MODEL, base URL from CUSTOM_OPENAI_API_BASE.
     AuthMethod.CUSTOM_OPENAI_API: {
@@ -431,6 +445,7 @@ class Credentials(BaseModel):
 _OLLAMA_DEFAULT_MODEL = "llama3.2"
 _OLLAMA_CLOUD_DEFAULT_MODEL = "llama3.2"
 _LMSTUDIO_DEFAULT_MODEL = "qwen2.5-coder-7b-instruct"
+_LLAMACPP_DEFAULT_MODEL = "qwen2.5-coder-7b-instruct-q4_k_m"
 _CUSTOM_OPENAI_DEFAULT_MODEL = "gpt-4o-mini"
 
 
@@ -493,6 +508,33 @@ def _resolve_lmstudio_model() -> str | None:
     return f"lm_studio/{model}"
 
 
+def _resolve_llamacpp_model() -> str | None:
+    """Return the LiteLLM model id for the user's llama.cpp server, or None.
+
+    llama.cpp's ``llama-server`` exposes an OpenAI-compatible REST API
+    (default ``http://localhost:8080/v1``). The route prefix is
+    ``llamacpp/`` and the actual model name comes from ``LLAMACPP_MODEL``
+    — typically the GGUF file's logical name (e.g. ``qwen2.5-coder-7b-
+    instruct-q4_k_m``). The model name is mostly cosmetic at the server
+    side because ``llama-server`` runs one GGUF at a time, but it shows
+    up in LiteLLM logs and dashboards so a meaningful name helps.
+
+    Returns None when neither ``LLAMACPP_API_BASE`` nor ``LLAMACPP_MODEL``
+    is set so resolve_chain skips the method without leaking the
+    placeholder ``llamacpp/__LLAMACPP_MODEL__`` into the chain. When
+    only the base URL is set, ``_LLAMACPP_DEFAULT_MODEL`` provides a
+    sensible default — same fail-soft policy as the Ollama / LM Studio
+    resolvers.
+    """
+    base = os.getenv("LLAMACPP_API_BASE", "").strip()
+    model = os.getenv("LLAMACPP_MODEL", "").strip()
+    if not base and not model:
+        return None
+    if not model:
+        model = _LLAMACPP_DEFAULT_MODEL
+    return f"llamacpp/{model}"
+
+
 def _resolve_custom_openai_model() -> str | None:
     """Return the LiteLLM model id for the user's custom endpoint, or None.
 
@@ -542,6 +584,11 @@ def resolve_chain(tier: Tier, credentials: Credentials) -> list[str]:
             lmstudio_model = _resolve_lmstudio_model()
             if lmstudio_model is not None:
                 chain.append(lmstudio_model)
+            continue
+        if method == AuthMethod.LLAMACPP_LOCAL:
+            llamacpp_model = _resolve_llamacpp_model()
+            if llamacpp_model is not None:
+                chain.append(llamacpp_model)
             continue
         if method == AuthMethod.CUSTOM_OPENAI_API:
             custom_model = _resolve_custom_openai_model()

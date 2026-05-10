@@ -223,6 +223,42 @@ Local model handles routine work; when the local model fails (OOM,
 context overflow, hardware fault), Anthropic takes over for that
 request only.
 
+
+### Local llama.cpp (GGUF) only
+
+```
+DECEPTICON_AUTH_PRIORITY=llamacpp_local
+LLAMACPP_API_BASE=http://host.docker.internal:8080/v1
+LLAMACPP_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+```
+
+| Agent (tier)     | Primary                                                  | Fallback |
+|------------------|----------------------------------------------------------|----------|
+| decepticon (HIGH)| `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| exploit (MID)    | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| recon (LOW)      | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+
+Run a GGUF model with llama.cpp's OpenAI-compatible server:
+
+```bash
+llama-server -m /path/to/qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 8080
+# server listens on http://localhost:8080/v1
+```
+
+Like Ollama, the model collapses across tiers — `llama-server` runs one
+GGUF at a time. The `llamacpp/<model>` route remaps to LiteLLM's
+`openai/` provider (since llama.cpp does not have a dedicated LiteLLM
+provider) plus a custom `api_base` pointed at `LLAMACPP_API_BASE`. This
+is the integration the maintainer recommended on issue #151 — it reuses
+the existing LiteLLM provider machinery and avoids vendoring
+`llama-cpp-python` as a runtime dependency.
+
+Tool calling works as long as the GGUF was trained or fine-tuned with
+function-calling support (Qwen 2.5 Coder, Llama 3.1 Instruct, Mistral
+Small Instruct all qualify). The `llama-server` request format is
+identical to OpenAI's; LiteLLM translates the agent's tool calls
+through unchanged.
+
 ### MiniMax-only (LOW gap)
 
 ```

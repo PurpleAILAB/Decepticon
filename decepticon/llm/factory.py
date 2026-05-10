@@ -75,6 +75,7 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.VERTEX_API,
     AuthMethod.AZURE_API,
     AuthMethod.LMSTUDIO_LOCAL,
+    AuthMethod.LLAMACPP_LOCAL,
     AuthMethod.CUSTOM_OPENAI_API,
     AuthMethod.OLLAMA_LOCAL,
     AuthMethod.OLLAMA_CLOUD,
@@ -209,6 +210,21 @@ def _lmstudio_local_configured() -> bool:
     """Return True when the user has wired up local LM Studio."""
     return bool(
         os.getenv("LMSTUDIO_API_BASE", "").strip() or os.getenv("LMSTUDIO_MODEL", "").strip()
+    )
+
+
+def _llamacpp_local_configured() -> bool:
+    """Return True when the user has wired up local llama.cpp llama-server.
+
+    Either ``LLAMACPP_API_BASE`` (preferred — explicit endpoint, e.g.
+    ``http://localhost:8080/v1``) or ``LLAMACPP_MODEL`` (a logical model
+    name) is enough to opt in. ``LLAMACPP_API_KEY`` is *not* required —
+    llama-server accepts any string by default and an unset key resolves
+    to a literal placeholder via LiteLLM's env interpolation, which the
+    server happily accepts. See issue #151.
+    """
+    return bool(
+        os.getenv("LLAMACPP_API_BASE", "").strip() or os.getenv("LLAMACPP_MODEL", "").strip()
     )
 
 
@@ -360,6 +376,9 @@ def _resolve_credentials() -> Credentials:
         elif method == AuthMethod.LMSTUDIO_LOCAL:
             if _lmstudio_local_configured():
                 methods.append(method)
+        elif method == AuthMethod.LLAMACPP_LOCAL:
+            if _llamacpp_local_configured():
+                methods.append(method)
         elif method == AuthMethod.CUSTOM_OPENAI_API:
             if _custom_openai_configured():
                 methods.append(method)
@@ -382,6 +401,9 @@ def _resolve_credentials() -> Credentials:
         if _lmstudio_local_configured():
             log.info("Only LMSTUDIO_API_BASE/LMSTUDIO_MODEL detected; using LM Studio")
             return Credentials(methods=[AuthMethod.LMSTUDIO_LOCAL])
+        if _llamacpp_local_configured():
+            log.info("Only LLAMACPP_API_BASE/LLAMACPP_MODEL detected; using llama.cpp")
+            return Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
         if _custom_openai_configured():
             log.info("Only CUSTOM_OPENAI_* detected; using custom OpenAI-compatible endpoint")
             return Credentials(methods=[AuthMethod.CUSTOM_OPENAI_API])

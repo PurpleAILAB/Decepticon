@@ -85,6 +85,7 @@ ALLOWED_DYNAMIC_PROVIDERS = frozenset(
         "grok_sub",
         "pplx_sub",
         "custom",
+        "llamacpp",
     }
 )
 # ``_provider_prefix`` normalizes ``vertex-ai`` → ``vertex_ai`` already,
@@ -290,6 +291,19 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
             "model": model_name,
             "api_base": "os.environ/LMSTUDIO_API_BASE",
             "api_key": "os.environ/LMSTUDIO_API_KEY",
+        }
+    elif provider == "llamacpp":
+        # llama.cpp's llama-server is OpenAI-compatible but is not a
+        # native LiteLLM provider, so we remap the route to ``openai/<m>``
+        # and point LiteLLM at LLAMACPP_API_BASE. Symmetric to the
+        # ``custom/`` branch above; kept as its own provider so a user
+        # can have a generic custom OpenAI gateway AND llama.cpp wired
+        # at the same time. Issue #151.
+        actual_model = model_name.split("/", 1)[1]
+        params = {
+            "model": f"openai/{actual_model}",
+            "api_key": "os.environ/LLAMACPP_API_KEY",
+            "api_base": "os.environ/LLAMACPP_API_BASE",
         }
     else:
         params = {"model": model_name}
