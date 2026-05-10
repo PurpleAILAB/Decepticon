@@ -135,3 +135,102 @@ def test_concurrent_before_model_calls_each_session_notified_once():
 
     emitted = [r for r in results if r is not None]
     assert len(emitted) == 1, f"Expected exactly one emission, got {len(emitted)}"
+
+
+# ── Issue #157 regressions: defensive error-handling paths ──────────────
+# Each test pins a fix that landed in current main so a future refactor
+# cannot silently regress to the original crashy behaviour. Cross-ref
+# the audit table in issue #157.
+
+
+def test_poll_completion_exception_does_not_crash_middleware() -> None:
+    """HIGH #1: ``poll_completion`` runs subprocess (docker exec) and can
+    raise on container disconnect, invalid session, or timeout. The
+    middleware must catch and log so a transient sandbox blip does not
+    take down the whole agent step.
+    """
+    sandbox = _sandbox_with_tracker()
+    sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
+    # Note: do NOT mark_complete — leave the job running so the
+    # poll_completion path is exercised on enumerate.
+    sandbox.poll_completion = MagicMock(side_effect=RuntimeError("docker exec disconnected"))
+
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    # Must not raise — the middleware is best-effort and a poll error
+    # cannot crash the model step.
+    update = mw.before_model(_state(HumanMessage(content="hi")), runtime=None)
+
+    # Nothing completed, nothing to notify.
+    assert update is None or not update.get("messages")
+    sandbox.poll_completion.assert_called()
+
+
+def test_poll_completion_exception_does_not_crash_async_middleware() -> None:
+    """HIGH #1 async sibling — same contract for ``abefore_model``."""
+    sandbox = _sandbox_with_tracker()
+    sandbox._jobs.register("scan", command="nmap", initial_markers=1)
+    sandbox.poll_completion = MagicMock(side_effect=RuntimeError("session lost"))
+
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    update = asyncio.run(mw.abefore_model(_state(HumanMessage(content="hi")), runtime=None))
+    assert update is None or not update.get("messages")
+
+
+def test_sandbox_without_jobs_attribute_returns_none() -> None:
+    """MED #5: ``self._sandbox._jobs`` is accessed via ``getattr`` so a
+    partially-constructed sandbox (e.g. test fixture, early init) does
+    not raise ``AttributeError`` from the middleware. Pin that contract.
+    """
+    sandbox = MagicMock(spec=[])  # spec=[] → no attributes whatsoever
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    update = mw.before_model(_state(HumanMessage(content="hi")), runtime=None)
+    assert update is None
+
+
+def test_command_none_does_not_crash_message_builder() -> None:
+    """MED #6: ``job.command`` can be None on jobs registered without an
+    explicit command. Slicing ``None[:80]`` would raise TypeError; the
+    fix uses ``(job.command or "")[:80]``. Pin it.
+    """
+    sandbox = _sandbox_with_tracker()
+    # Register with no command — BackgroundJobTracker accepts command=""
+    # and we patch the resulting job's ``command`` attribute to None to
+    # simulate the legacy/edge case the audit flagged.
+    sandbox._jobs.register("scan", command="", initial_markers=1)
+    sandbox._jobs.mark_complete("scan", exit_code=0)
+    for job in sandbox._jobs.all_jobs():
+        job.command = None  # type: ignore[assignment]
+
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+    update = mw.before_model(_state(HumanMessage(content="hi")), runtime=None)
+
+    assert update is not None
+    msg = update["messages"][0]
+    # Empty command renders as ``command=`` (no value); no crash.
+    assert "command=" in msg.content
+
+
+def test_notified_set_evicts_oldest_when_capped() -> None:
+    """LOW #9: ``_notified`` was unbounded; the fix caps at
+    ``_NOTIFIED_KEYS_MAX`` and evicts FIFO. Verify the cap is enforced
+    so a long-running agent session cannot leak memory through this set.
+    """
+    from decepticon.middleware.notifications import _NOTIFIED_KEYS_MAX
+
+    sandbox = _sandbox_with_tracker()
+    mw = SandboxNotificationMiddleware(sandbox=sandbox)
+
+    # Insert one beyond the cap; the oldest must have been evicted.
+    keys = [f"k{i}" for i in range(_NOTIFIED_KEYS_MAX + 5)]
+    mw._record_notified(keys)
+
+    assert len(mw._notified) == _NOTIFIED_KEYS_MAX
+    # FIFO eviction: the first 5 keys are the ones evicted.
+    for evicted in keys[:5]:
+        assert evicted not in mw._notified
+    # Keys past the eviction window are retained.
+    for kept in keys[5:]:
+        assert kept in mw._notified
