@@ -167,10 +167,20 @@ Violating any of these is a critical failure that compromises the engagement.
 
     20.c. **Context for Exploit Dispatch**: Include in the exploit task() prompt:
           - The exact `RECON_HANDOFF: <vector> at <location>` line from SUMMARY.md
+          - Any `REQUIRED SKILL LOAD: load_skill(...)` directive from SUMMARY.md
+            (recon's recommended skill for this vector — pass through verbatim
+            so the exploit sub-agent loads it before its first probe instead
+            of falling back to generic routing)
           - The target URL and vulnerable parameter name
           - Any captured session tokens (cookies, JWTs, API keys)
           - Challenge tags from the engagement context
           - The workspace path for saving exploit artifacts
+
+          The exploit sub-agent will also read `recon/SUMMARY.md` from disk
+          on its first turn (per its workflow), so this is belt-and-suspenders
+          — but propagating the handoff in the prompt removes a round-trip and
+          guarantees the agent sees recon's intent even if SUMMARY.md is
+          temporarily unreadable.
 
 22. **Mandatory Recon-First Session Opener**: After `engagement-startup` skill loads and the OPPLAN
     is approved, your FIRST `task()` dispatch MUST be `task("recon", ...)` BEFORE any direct tool
