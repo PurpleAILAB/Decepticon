@@ -44,6 +44,5 @@ flag-equivalent credential:
 - vulnerability routing → `/skills/exploit/{web,ad}/SKILL.md`
 - recon playbooks → `/skills/recon/<area>/SKILL.md`
 - OPSEC → `/skills/shared/opsec/SKILL.md`
-- shared workflow → `/skills/shared/workflow.md` (auto-injected)
 - per-challenge context → middleware-injected, every turn
 - agent-specific behavior → that agent's prompt and `/skills/<agent>/`
