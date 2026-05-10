@@ -1,19 +1,37 @@
 # Docker Compose override for development workflows.
 #
-# Docker Compose automatically merges this file with docker-compose.yml when
-# run from the same directory. The OSS installer (scripts/install.sh) does
-# NOT download this file, so end users get only the base compose with
-# skills baked into the sandbox image — they don't need a host-side
-# ./skills/ directory to function.
+# Auto-merge behaviour:
+#   - This file is automatically merged with `docker-compose.yml` whenever
+#     `docker compose <cmd>` is run *from this directory*. It is the
+#     contributor convenience layer — `make dev`, `make cli-dev`, the
+#     benchmark harness all run from here and pick this up.
+#   - The OSS installer (`scripts/install.sh`) does NOT download this
+#     file, so end users running the launcher (`decepticon start`) get
+#     only the base `docker-compose.yml` from `~/.decepticon/`. Skills
+#     are baked into the sandbox image — no host-side `./skills/`
+#     directory is needed.
+#
+# Where to put YOUR overrides depends on which stack you are running:
+#   - **Launcher / OSS install** (`decepticon start`): drop a
+#     `docker-compose.override.yml` into `~/.decepticon/`. The launcher
+#     runs Compose from that directory and Compose will merge it.
+#     Edits to *this* file (the repo copy) will NOT affect that stack.
+#   - **Repo dev clone** (`make dev`): edit this file directly, or
+#     add a sibling override that Compose will pick up by `-f`
+#     chaining in the relevant Makefile target.
 #
 # Developers who clone the repo (`make dev`, `make cli-dev`, benchmark
-# harness, etc.) get the bind mount below, which shadows the baked /skills/
-# in the running container with the working-tree copy. That makes skill
-# edits hot-visible to the agent without rebuilding the sandbox image.
+# harness, etc.) get the bind mount below, which shadows the baked
+# /skills/ in the running container with the working-tree copy. That
+# makes skill edits hot-visible to the agent without rebuilding the
+# sandbox image.
 #
 # To temporarily test the OSS path on a dev clone, override the merge:
 #   docker compose -f docker-compose.yml up
-# (skipping the override file).
+# (skipping this override file).
+#
+# See also: docs/proposals/156-compose-architecture.md for the
+# proposed direction on resolving this dual-config surface.
 
 services:
   sandbox:
