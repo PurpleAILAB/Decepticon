@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,9 +199,11 @@ func isInstallPathLine(line string) bool {
 	return strings.HasPrefix(s, "export PATH=") || strings.HasPrefix(s, "fish_add_path ")
 }
 
-// backupWorkspace moves src to dst, falling back to copy + remove on
-// cross-device or permission errors. Refuses to overwrite an existing dst
-// so a previous backup is never silently clobbered.
+// backupWorkspace moves src to dst, falling back to a pure-Go recursive
+// copy + remove on cross-device or permission errors. The Go fallback works
+// on all platforms including Windows where 'cp' is not available.
+// Refuses to overwrite an existing dst so a previous backup is never
+// silently clobbered.
 func backupWorkspace(src, dst string) error {
 	if _, err := os.Stat(dst); err == nil {
 		return fmt.Errorf("backup target already exists: %s", dst)
@@ -209,8 +212,51 @@ func backupWorkspace(src, dst string) error {
 		return nil
 	}
 	// Cross-device or other rename failure: copy then remove.
-	if out, err := exec.Command("cp", "-r", src, dst).CombinedOutput(); err != nil {
-		return fmt.Errorf("cp -r: %w (%s)", err, strings.TrimSpace(string(out)))
+	if err := copyDirAll(src, dst); err != nil {
+		return fmt.Errorf("copy workspace: %w", err)
 	}
 	return os.RemoveAll(src)
+}
+
+// copyDirAll recursively copies the directory tree rooted at src into dst
+// using only the Go standard library. File permissions are preserved.
+func copyDirAll(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		return copyFile(path, target, info.Mode())
+	})
+}
+
+// copyFile copies a single regular file from src to dst with the given
+// permissions. The destination is written atomically via O_TRUNC so a
+// partial write does not leave a corrupt file behind on error.
+func copyFile(src, dst string, mode os.FileMode) (retErr error) {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); retErr == nil {
+			retErr = cerr
+		}
+	}()
+
+	_, err = io.Copy(out, in)
+	return err
 }
