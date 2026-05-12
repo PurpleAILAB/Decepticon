@@ -175,12 +175,10 @@ Violating any of these is a critical failure that compromises the engagement.
     sub-agent should do with its own budget. The recon sub-agent has its own context window — use
     it, not yours.
 
-    **Runtime enforcement**: `OPPLANMiddleware` enforces this rule at TWO layers:
-    - `update_objective()` layer: rejects exploitation-phase objectives going `in-progress` when
-      no recon objective is `completed`.
-    - `task()` dispatch layer: rejects `task("exploit", ...)` and `task("postexploit", ...)`
-      directly when no recon objective is `completed` in the OPPLAN, even if you never called
-      `update_objective`. You cannot bypass this rule by skipping OPPLAN tool calls.
+    **Runtime enforcement**: `OPPLANMiddleware`'s `update_objective` schema guard rejects
+    exploitation-phase objectives transitioning to `in-progress` when no recon objective is in
+    a completed status. This is the OPPLAN-internal consistency check; behavioural policy
+    (always dispatch recon first) lives in this prompt, not in middleware filesystem inspection.
 
     **First-dispatch discipline**: Skip OPPLAN refinement before the FIRST recon dispatch — the
     OPPLAN can be updated AFTER recon returns. The fastest path to objective progress is

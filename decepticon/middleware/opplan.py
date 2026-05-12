@@ -30,7 +30,6 @@ Design notes:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Annotated, Any, NotRequired, cast, override
 
 from deepagents.backends.protocol import BackendProtocol
@@ -417,63 +416,6 @@ class OPPLANMiddleware(AgentMiddleware):
                     for tc in opplan_calls
                 ]
             }
-
-        # Recon-first guard at task() dispatch layer (Rule 22 runtime enforcement).
-        # opplan.py update_objective guard covers OPPLAN state transitions, but the
-        # orchestrator can dispatch task("exploit", ...) without ever calling
-        # update_objective. This guard closes that hole by intercepting the task
-        # tool call itself before it reaches SubAgentMiddleware.
-        objectives = state.get("objectives", [])
-        exploit_task_calls = [
-            tc
-            for tc in last_ai.tool_calls
-            if tc["name"] == "task"
-            and tc.get("args", {}).get("subagent_type") in ("exploit", "postexploit")
-        ]
-        if exploit_task_calls:
-            # Accept recon done via OPPLAN (phase OR owner OR title match) OR filesystem.
-            # Phase-field bug: agents often omit phase= when updating; owner/title are fallbacks.
-            recon_done_in_opplan = any(
-                (
-                    o.get("phase") == "recon"
-                    or o.get("owner") == "recon"
-                    or "recon" in (o.get("title") or "").lower()
-                )
-                and o.get("status") in ("completed", "passed", "in-progress")
-                for o in objectives
-            )
-            recon_done_on_disk = False
-            if state and state.get("workspace_path"):
-                wp = Path(state["workspace_path"])
-                summary_md = wp / "recon" / "SUMMARY.md"
-                findings_dir = wp / "findings"
-                recon_done_on_disk = summary_md.exists() or (
-                    findings_dir.is_dir() and any(findings_dir.glob("FIND-*.md"))
-                )
-            if not (recon_done_in_opplan or recon_done_on_disk):
-                return {
-                    "messages": [
-                        ToolMessage(
-                            content=(
-                                "RECON-FIRST GUARD (task layer): Cannot dispatch "
-                                f"task('{tc['args'].get('subagent_type')}', ...) — "
-                                "no reconnaissance evidence found. Accepted signals: "
-                                "(a) an OPPLAN objective with phase='recon' "
-                                "OR owner='recon' OR title containing 'recon', "
-                                "in status completed/passed/in-progress, OR "
-                                "(b) recon/SUMMARY.md exists in workspace, OR "
-                                "(c) findings/FIND-*.md present. "
-                                "Either dispatch task('recon', ...) and let it "
-                                "externalize SUMMARY.md, OR set the recon "
-                                "objective owner/phase explicitly. "
-                                "Rule 22: recon is mandatory before exploitation."
-                            ),
-                            tool_call_id=tc["id"],
-                            status="error",
-                        )
-                        for tc in exploit_task_calls
-                    ]
-                }
 
         return None
 
