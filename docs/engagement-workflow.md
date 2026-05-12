@@ -16,7 +16,7 @@ When you start a new engagement, Soundwave asks for the target. Five input types
 | Web URL | `https://app.example.com` |
 | Git repository | `https://github.com/org/repo` |
 | File upload | Upload a binary, archive, or source tree |
-| Local path | `/path/to/target/app` |
+| Local path (`source_code`) | `/path/to/target/app` — requires `DECEPTICON_SOURCE_ROOT`; staged at `/workspace/src` in the sandbox |
 
 ### 2. Soundwave interview
 

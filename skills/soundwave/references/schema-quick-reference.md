@@ -15,11 +15,16 @@ RoE
 ├── engagement_type: EngagementType (required)
 │   └── "external" | "internal" | "hybrid" | "assumed-breach" | "physical"
 ├── testing_window: str (required, must include timezone)
-├── in_scope: list[ScopeEntry] (at least 1 required)
+├── in_scope: list[ScopeEntry] (at least 1 required)     ← canonical key; use this
 │   └── ScopeEntry { target: str, type: str, notes: str }
 │       type values: domain | ip-range | cloud-resource | physical |
 │                    source_code | live_service | git-repo | file-upload
 │       source_code: local filesystem path — launcher auto-stages into /workspace/src
+│                   (requires DECEPTICON_SOURCE_ROOT env var; staging disabled without it)
+│                   Recommend: ask the operator to export DECEPTICON_SOURCE_ROOT before launching
+│
+│   Note: the launcher also accepts the key "in_scope_targets" for backward compatibility
+│   with older orchestration-skill-generated RoE documents, but "in_scope" is canonical.
 │       live_service: running HTTP/TCP endpoint (use host.docker.internal for local services)
 ├── out_of_scope: list[ScopeEntry]
 │   └── ScopeEntry { target: str, type: str, notes: str }

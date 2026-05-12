@@ -565,8 +565,15 @@ class EngagementBundle(BaseModel):
     def save(self, engagement_dir: str) -> dict[str, str]:
         """Save all documents to an engagement workspace directory.
 
+        Local-filesystem helper used by fixtures and tests. Live Soundwave
+        writes plan docs via the ``write_file`` tool and then calls
+        ``complete_engagement_planning``, which writes the marker through
+        DockerSandbox (sandbox-container boundary). Do not call this method
+        from inside in-container tools.
+
         Layout:
-          <engagement_dir>/plan/roe.json, conops.json, opplan.json, deconfliction.json
+          <engagement_dir>/plan/roe.json, conops.json, opplan.json,
+          deconfliction.json, .bundle_complete
 
         Phase artifact directories such as ``recon/``, ``exploit/``,
         ``post-exploit/``, ``findings/``, and ``report/`` are created lazily
@@ -576,11 +583,19 @@ class EngagementBundle(BaseModel):
         Returns a mapping of document type → file path.
         """
         import json
+        from datetime import datetime, timezone
         from pathlib import Path
+
+        from decepticon.core._atomic import atomic_write_bytes
 
         root = Path(engagement_dir)
         plan_dir = root / "plan"
         plan_dir.mkdir(parents=True, exist_ok=True)
+
+        # Invalidate any prior marker before writing docs so a partial save
+        # never leaves a stale marker on disk.
+        marker_path = plan_dir / ".bundle_complete"
+        marker_path.unlink(missing_ok=True)
 
         files = {}
         for name, doc in [
@@ -590,10 +605,20 @@ class EngagementBundle(BaseModel):
             ("deconfliction", self.deconfliction),
         ]:
             path = plan_dir / f"{name}.json"
-            path.write_text(
-                json.dumps(doc.model_dump(), indent=2, ensure_ascii=False),
-                encoding="utf-8",
+            atomic_write_bytes(
+                path,
+                json.dumps(doc.model_dump(), indent=2, ensure_ascii=False).encode(),
             )
             files[name] = str(path)
+
+        # Write the completion marker last, after all four docs are on disk.
+        marker_body = json.dumps(
+            {
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "schema_version": 1,
+            },
+            ensure_ascii=False,
+        ).encode()
+        atomic_write_bytes(marker_path, marker_body)
 
         return files

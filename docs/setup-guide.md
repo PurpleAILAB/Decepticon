@@ -793,6 +793,48 @@ decepticon logs web          # Web dashboard
 
 ---
 
+## Source Staging
+
+When a RoE names a `source_code` target (a local filesystem path), the launcher copies that directory tree into the engagement workspace at `/workspace/src` before the analyst starts. The sandbox bind-mount makes it visible to the analyst container at the same path.
+
+### Enabling Source Staging
+
+Set `DECEPTICON_SOURCE_ROOT` to the directory that contains your project(s) **before** launching:
+
+```bash
+export DECEPTICON_SOURCE_ROOT="$HOME/projects"
+decepticon
+```
+
+**Threat model.** Without this variable, source staging is disabled even if the RoE lists a `source_code` target. This prevents a prompt-injected or malformed RoE from staging sensitive credential directories (`~/.ssh`, `~/.aws`, etc.). Every staged path must be a child of the declared root.
+
+**Permissions.** Staged files are written with `0o600` (not world-readable on the host). The sandbox container runs as root, so the analyst still has full write access to the staged tree via the bind mount. True read-only staging is future work.
+
+### Tuning Limits
+
+| Variable | Default | Description |
+|---|---|---|
+| `DECEPTICON_SOURCE_ROOT` | (required) | Absolute path — only subtrees of this root may be staged |
+| `DECEPTICON_MAX_STAGED_BYTES` | `2147483648` (2 GiB) | Abort if the cumulative staged size exceeds this value |
+| `DECEPTICON_MAX_STAGED_DEPTH` | `32` | Abort if the source tree exceeds this directory depth |
+
+### Readiness Gate
+
+The launcher polls for `plan/.bundle_complete` (written by `complete_engagement_planning` after Soundwave validates the three plan docs) before staging begins. It also checks that the marker's mtime is ≥ every plan doc's mtime, preventing staging from a stale marker that survived a partial replan.
+
+### Status
+
+The launcher writes `<workspace>/.decepticon/staging-status.json` with a terminal state:
+
+| State | Meaning |
+|---|---|
+| `staged` | At least one `source_code` target was successfully copied |
+| `skipped` | RoE had no `source_code` targets |
+| `disabled` | `DECEPTICON_SOURCE_ROOT` was unset |
+| `failed` | Timeout, parse error, budget exceeded, or copy error — see `error` field |
+
+---
+
 ## Advanced Configuration
 
 ### Multiple API Keys

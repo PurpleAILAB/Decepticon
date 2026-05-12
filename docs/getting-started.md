@@ -39,6 +39,8 @@ The interactive setup wizard guides you through:
 
 For detailed provider setup including OAuth configuration, see [Setup Guide](setup-guide.md).
 
+If you plan to run white-box engagements targeting local source code, set `DECEPTICON_SOURCE_ROOT` before launching — see [Source Staging](setup-guide.md#source-staging) in the Setup Guide.
+
 Configuration is saved to `~/.decepticon/.env`. Run `decepticon onboard --reset` to reconfigure.
 
 ---

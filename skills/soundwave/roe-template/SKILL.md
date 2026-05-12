@@ -33,7 +33,7 @@ Ask these questions in **two rounds** (batch related questions to minimize back-
    - `domain` — hostname or wildcard (e.g. `*.example.com`)
    - `ip-range` — CIDR notation (e.g. `10.0.0.0/24`)
    - `cloud-resource` — AWS/GCP/Azure resource identifier
-   - `source_code` — **local filesystem path** (e.g. `/home/user/myapp`). The launcher automatically copies this into the sandbox at `/workspace/src` before the analyst starts — no manual `docker cp` needed.
+   - `source_code` — **local filesystem path** (e.g. `/home/user/myapp`). The launcher automatically copies this into the sandbox at `/workspace/src` — **requires `DECEPTICON_SOURCE_ROOT` to be set** to the approved project root before launching (e.g. `export DECEPTICON_SOURCE_ROOT=/home/user/projects`). If unset, staging is disabled and a warning is shown.
    - `live_service` — running HTTP/TCP endpoint (e.g. `http://host.docker.internal:8080`)
    - `git-repo` — git repository URL
    - `file-upload` — uploaded binary or archive
