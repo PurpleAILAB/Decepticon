@@ -24,6 +24,37 @@ Sub-skills under this directory:
 
 For overall recon workflow, scope rules, and handoff format, see `load_skill("/skills/recon/workflow.md")` (root workflow).
 
+## Tag-Driven Fast Paths
+
+When the orchestrator passes challenge tags, skip straight to the matching sub-skill:
+
+| Tag | First action | Sub-skill to load |
+|-----|-------------|-------------------|
+| `sqli` | Fire a single error-triggering payload on every form/param | `/skills/exploit/web/sqli.md` recon section |
+| `ssti` | Probe every reflection point with `{{7*7}}` | `/skills/exploit/web/ssti.md` recon section |
+| `lfi` | Path-traversal probe on every file/path param | discovery.md |
+| `idor` | Enumerate object IDs on every user-data endpoint | api-enumeration.md |
+| `auth` | Map the full auth flow before other recon | auth-mapping.md |
+
+## HTTP Request Deduplication Pattern
+
+When iterating parameters (IDs, pages, paths), always deduplicate via `recon/probed.txt` to avoid re-probing the same URLs after context summarization:
+
+```bash
+URL="http://<TARGET>/api/resource/$ID"
+if grep -Fxq "$URL" recon/probed.txt 2>/dev/null; then
+  echo "SKIP: $URL"
+else
+  echo "$URL" >> recon/probed.txt
+  curl -sS "$URL" -o /tmp/probe.html -w '%{http_code}\n'
+  head -10 /tmp/probe.html
+fi
+```
+
+**Resume rule**: Before any scan loop, check `tail -1 recon/probed.txt` to find the last probed item and continue from there — not from the beginning.
+
+**Stop rule**: If 5 consecutive probes return the same status code + same response size (±50 bytes), stop that enumeration axis and pivot to a different surface.
+
 ## Output files
 
 ```

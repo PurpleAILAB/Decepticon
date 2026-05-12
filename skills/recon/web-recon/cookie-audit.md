@@ -21,7 +21,7 @@ A "sink" (eval, deserialize, exec, template render) may behave differently — o
    - Probe with NO cookies.
    - Probe with FULL authenticated jar.
    - Bisect: drop one cookie at a time and re-probe. The cookie whose removal silences the sink is the gating cookie.
-4. Document a "Sink preconditions" table in `recon_notes.md` and `SUMMARY.txt`:
+4. Document a "Sink preconditions" table in `recon_notes.md` and `SUMMARY.md`:
 
 | Sink | Endpoint | Method | Required cookies | Behavior w/o cookie | Behavior w/ cookie | Notes |
 |------|----------|--------|------------------|--------------------|--------------------|-------|

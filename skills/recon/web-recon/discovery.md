@@ -62,7 +62,38 @@ ffuf -u https://FUZZ.<target>/ -w /usr/share/wordlists/subdomains.txt \
 - Multiple applications may share one IP but respond differently based on Host header
 - Internal/staging apps often hidden behind non-public vhost names
 
-## 3. JavaScript Analysis
+## 3. Nginx/Apache Alias Off-By-One Probe
+
+When a server uses `alias /var/www/static/` for `/static`, an off-by-one allows reading parent directory:
+- Configured: `location /static { alias /var/www/static/; }` → `/static../` becomes `/var/www/static/../` → escapes to `/var/www/`
+- Vulnerable to: `/static../<file>` requests reading outside the alias root
+
+```bash
+# Probe common alias-bound paths for off-by-one
+# Get homepage size baseline first
+curl -sk "https://<TARGET>/" -o /tmp/baseline.html
+BASELINE=$(wc -c < /tmp/baseline.html)
+
+for prefix in static images img assets files uploads media public; do
+    for suffix in '..' '..%2f' '%2e%2e' '%2e%2e%2f'; do
+        URL="https://<TARGET>/${prefix}${suffix}/"
+        CODE=$(curl -sk -o /tmp/probe.html -w "%{http_code}" "$URL")
+        SIZE=$(wc -c < /tmp/probe.html)
+        # Only flag if 200 AND size differs from homepage (not a fallback)
+        [ "$CODE" = "200" ] && [ "$SIZE" != "$BASELINE" ] && echo "CANDIDATE $CODE $SIZE $URL"
+    done
+done
+
+# If any candidate found, confirm with a known-content control file:
+# curl -s "https://<TARGET>/static../etc/hostname"
+# AND verify body content (see lfi.md "Response Body Verification" section)
+```
+
+**Why this is in recon, not exploit**: Discovering the alias misconfig is a recon task; exploiting it via path traversal is the exploit phase. Recon should surface alias-prefix candidates to the exploit agent.
+
+**Anti-pattern**: Skipping the alias-prefix probe and going straight to parameter fuzzing on `view.php` (or similar) wastes the dispatch when the off-by-one alias misconfig is the actual vector. Including this probe in standard recon discovery flags the misconfig immediately.
+
+## 4. JavaScript Analysis
 
 ### Endpoint Extraction from JS
 ```bash

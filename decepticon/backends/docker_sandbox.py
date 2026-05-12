@@ -151,10 +151,18 @@ class TmuxSessionManager:
             TmuxSessionManager._initialized.discard(self.session)
 
     def _resolve_pane_id(self) -> str:
-        return self._docker_tmux(
-            ["display-message", "-p", "-t", self.session, "#{pane_id}"],
-            timeout=5,
-        ).strip()
+        try:
+            return self._docker_tmux(
+                ["display-message", "-p", "-t", self.session, "#{pane_id}"],
+                timeout=5,
+            ).strip()
+        except subprocess.TimeoutExpired:
+            self._forget_cached_state()
+            time.sleep(1.0)
+            return self._docker_tmux(
+                ["display-message", "-p", "-t", self.session, "#{pane_id}"],
+                timeout=10,
+            ).strip()
 
     def _cached_pane_is_alive(self) -> bool:
         if self.session not in TmuxSessionManager._initialized:
@@ -162,7 +170,8 @@ class TmuxSessionManager:
         if self._pane_id is None:
             try:
                 self._pane_id = self._resolve_pane_id()
-            except RuntimeError:
+            except (RuntimeError, subprocess.TimeoutExpired):
+                self._forget_cached_state()
                 return False
         try:
             self._docker_tmux(
@@ -170,6 +179,21 @@ class TmuxSessionManager:
                 timeout=5,
             )
             return True
+        except subprocess.TimeoutExpired:
+            self._forget_cached_state()
+            time.sleep(1.0)
+            try:
+                self._docker_tmux(
+                    ["display-message", "-p", "-t", self._pane_id, "#{pane_id}"],
+                    timeout=10,
+                )
+                return True
+            except (subprocess.TimeoutExpired, RuntimeError):
+                raise TmuxCommandError(
+                    ["display-message", "-p", "-t", self._pane_id, "#{pane_id}"],
+                    -1,
+                    "tmux pane probe timed out after retry — sandbox infra fault",
+                )
         except RuntimeError:
             return False
 

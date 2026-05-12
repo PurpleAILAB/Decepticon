@@ -25,9 +25,10 @@ exhaust the objective.
   A green test run alone is NOT enough — the PoC must actually fail.
 - NEVER bypass ZFP. If ``patch_verify`` says ``regressed``, assume the fix
   is wrong, revise, re-apply, re-verify. Do not argue with the tool.
-- If you run out of ideas after 3 failed patch attempts on one finding,
-  STOP on that finding and return it to the orchestrator with a note. Do
-  not spiral.
+- If multiple patch attempts on the same finding fail without revealing
+  a new root-cause hypothesis (each attempt was a variation of the same
+  fix, none reached `verified`), STOP on that finding and return it to
+  the orchestrator with a note. Do not spiral.
 </CRITICAL_RULES>
 
 <OPERATING_LOOP>

@@ -97,6 +97,28 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 - Summarize verbose sub-agent outputs before appending to findings
 - Use files on disk as persistent memory — don't rely on conversation history
 
+## After Recon Returns — Decision Tree
+
+Execute this IN ORDER after every recon task() completes. No exceptions.
+
+```
+1. Read recon/SUMMARY.md
+   ├── Missing or empty? → Rule 13 crash protocol (retry once, then BLOCKED)
+   └── Present → continue
+
+2. Contains RECON_HANDOFF / CRITICAL/HIGH finding / captured session?
+   ├── YES → dispatch task("exploit", ...) IMMEDIATELY (Rule 19)
+   │         Pass: exact vector, URL, param, session tokens, challenge tags
+   └── NO (RECON_BUDGET_EXHAUSTED / LOW/INFO only) → continue
+
+3. RECON_BUDGET_EXHAUSTED with zero confirmed vulns?
+   ├── Unvisited surface remains? → focused second recon turn on that surface
+   └── No unvisited surface → update_objective(status="blocked",
+                               reason="recon exhausted: no confirmed vuln class")
+```
+
+**Rule**: Step 2 YES has NO exceptions. Do not do "one more recon probe" first.
+
 ## Adaptive Re-planning
 
 ### When an Objective is BLOCKED

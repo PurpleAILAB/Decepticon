@@ -1,132 +1,212 @@
 # Benchmark Framework
 
-xbow validation-benchmarks 기반 모듈형 벤치마크 프레임워크.
-Decepticon 메인 에이전트의 전체 파이프라인(OPPLAN 생성 → sub-agent 위임 → 플래그 캡처)을 CTF 챌린지에 대해 평가한다.
+Modular benchmark framework for the Decepticon main agent.
+Drives the full pipeline (OPPLAN approval → sub-agent delegation → flag
+capture) against CTF-style challenges and produces per-run evidence
+plus an aggregate report. The default provider wraps the XBOW
+validation-benchmarks suite; additional providers can be plugged in by
+implementing `BaseBenchmarkProvider`.
 
-## 사전 요구사항
+## Prerequisites
 
 - Docker + Docker Compose
-- `uv` (Python 패키지 매니저)
-- xbow 벤치마크 서브모듈 초기화:
+- `uv` (Python package manager)
+- The XBOW benchmarks submodule:
+
+  ```bash
+  git submodule add https://github.com/PurpleAILAB/xbow-validation-benchmarks \
+      benchmark/xbow-validation-benchmarks
+  git submodule update --init
+  ```
+
+- A reachable LangGraph server. Default URL is `http://localhost:2024`
+  (`BenchmarkConfig.langgraph_url`).
+- The `langgraph` container must be started in benchmark mode
+  (`BENCHMARK_MODE=1` in its env) so `EngagementContextMiddleware`
+  injects the per-challenge target / tags / flag-format / mission-brief
+  on every model call.
+
+## Run
+
+### Via Makefile (recommended)
 
 ```bash
-git submodule add https://github.com/PurpleAILAB/xbow-validation-benchmarks benchmark/xbow-validation-benchmarks
-git submodule update --init
-```
-
-- LangGraph 서버 실행 중 (`http://localhost:2024` 기본)
-
-## 실행 방법
-
-### Makefile (권장)
-
-```bash
-# 전체 벤치마크 실행
+# Run the full suite with defaults
 make benchmark
 
-# 옵션 전달
+# Pass arbitrary CLI flags
 make benchmark ARGS="--level 1 --batch-size 5"
 ```
 
-### 직접 실행
+### Direct invocation
 
 ```bash
-# python -m 으로 실행
+# python -m form
 uv run python -m benchmark.runner run
 
-# 또는 직접 모듈 호출
+# Module-as-script form
 uv run python -m benchmark
 ```
 
-## CLI 옵션
+## CLI options
 
-| 옵션 | 단축 | 설명 | 기본값 |
-|------|------|------|--------|
-| `--level` | `-l` | 난이도 필터 (1-3), 복수 지정 가능 | 전체 |
-| `--tags` | `-t` | 태그 필터 (sql-injection, xss 등), 복수 지정 가능 | 전체 |
-| `--range-start` | | 시작 인덱스 (1-based) | 처음부터 |
-| `--range-end` | | 끝 인덱스 (1-based) | 끝까지 |
-| `--batch-size` | `-b` | 배치당 챌린지 수 | 10 |
-| `--timeout` | | 챌린지당 타임아웃 (초) | 1800 (30분) |
-| `--parallel` | `-p` | 동시 실행 챌린지 수 (1=순차) | 1 |
+| Flag | Short | Description | Default |
+|------|-------|-------------|---------|
+| `--level` | `-l` | Difficulty filter (1-3); repeat for multiple | all |
+| `--tags` | `-t` | Vulnerability tag filter (e.g. `sqli`, `xss`); repeat for multiple | all |
+| `--ids` | | Explicit challenge IDs; repeat or comma-separated (e.g. `XBEN-001-24,XBEN-034-24`) | none |
+| `--range-start` | | Start index, 1-based | from start |
+| `--range-end` | | End index, 1-based, inclusive | to end |
+| `--batch-size` | `-b` | Reporting batch size | 10 |
+| `--timeout` | | Per-challenge timeout, seconds | 1800 (30 min) |
+| `--parallel` | `-p` | Max concurrent challenges (`1` = sequential) | 1 |
 
-## 사용 예시
+## Examples
 
 ```bash
-# 레벨 1 챌린지만 실행
+# Level-1 only
 make benchmark ARGS="--level 1"
 
-# SQL injection 태그 챌린지만
-make benchmark ARGS="--tags sql-injection"
+# Only SQL-injection-tagged challenges
+make benchmark ARGS="--tags sqli"
 
-# 레벨 1 + 레벨 2, 5개씩 배치
-make benchmark ARGS="--level 1 --level 2 --batch-size 5"
+# Levels 1 + 2
+make benchmark ARGS="--level 1 --level 2"
 
-# 1번~5번 챌린지만 (1-based)
-make benchmark ARGS="--range-start 1 --range-end 5"
+# Three specific challenges by ID
+make benchmark ARGS="--ids XBEN-034-24,XBEN-084-24,XBEN-095-24"
 
-# 타임아웃 5분으로 줄이기
-make benchmark ARGS="--timeout 300"
+# Index range (challenges 1..10 in load order)
+make benchmark ARGS="--range-start 1 --range-end 10"
 
-# 복합 필터
-make benchmark ARGS="--level 1 --tags xss --range-start 1 --range-end 10 --batch-size 5 --timeout 600"
+# Run 5 challenges in parallel with a tighter timeout
+make benchmark ARGS="--parallel 5 --timeout 1200"
 ```
 
-## 실행 흐름
+The runner sends back exit code `1` if any challenge failed and `0`
+if all passed.
 
-각 챌린지는 다음 순서로 실행된다:
+## Per-challenge flow
+
+For each challenge the harness runs:
 
 ```
-1. setup()           Docker 환경 빌드 및 ��작 (FLAG 주입)
-2. _invoke_agent()   LangGraph API를 통해 decepticon 메인 에이전트 호출
-                     - 에이전트가 OPPLAN 생성 (RECON + INITIAL_ACCESS)
-                     - sub-agent 위임 (recon → exploit)
-                     - 플래그 캡처
-3. evaluate()        에이전트 응답 + workspace에서 FLAG{...} 패턴 매칭
-4. teardown()        Docker 환경 정리 (docker compose down -v)
+1. provider.setup(challenge)
+       make build (with NO_CACHE=1 retry on failure) + make run
+       discover published ports via `docker compose ps`
+       TCP pre-flight on every published port (early-abort if a port
+         never opens — saves the agent from being dispatched against
+         a dead target)
+       HTTP readiness probe on the primary port (best-effort)
+
+2. harness._invoke_agent(challenge, target_url, ...)
+       reset sandbox container (full restart per user policy — keeps
+         tmux sessions / leaked python procs from cascading across
+         challenges)
+       create LangGraph thread + run via langgraph_sdk
+       poll run status to terminal; emit heartbeat log lines
+         when status is unchanged for an extended interval
+       on timeout / unexpected exception: cancel + verify-terminal,
+         escalate to a langgraph container restart if the run does
+         not reach terminal within the cancel deadline; capture
+         postmortem state (agent_summary, trace_id, token_count)
+         BEFORE clearing active IDs
+
+3. provider.evaluate(challenge, state, workspace)
+       grep the agent's emitted output for `FLAG{<hex>}`
+       compare against the expected per-challenge flag
+
+4. provider.teardown(challenge)
+       `docker compose down -v` (always runs, in `finally`)
+       remove the `.xben_build_done` guard so the next run rebuilds
 ```
 
-- 타임아웃 발생 시 자동 실패 처리
-- teardown은 성공/실패/에러 모든 경우에 실행됨 (finally)
+The harness uses `cancel + verify-terminal` discipline so containers
+are not torn down while a graph node is still issuing requests at the
+target — that pattern produces "connection refused" errors that
+contaminate observer evidence on the next cycle.
 
-## 스코어링
+## Scoring
 
-- **바이너리 판정**: FLAG 캡처 성공 = pass, 실패 = fail
-- FLAG 포맷: `FLAG{sha256(CHALLENGE_ID_UPPER)}`
-- 결과 집계: 전체 pass rate + 레벨별/태그별 breakdown
+- Binary outcome per challenge: flag captured against the expected
+  value = pass; anything else = fail.
+- Expected flag format: `FLAG{sha256(CHALLENGE_ID.upper())}`.
+- Aggregation: overall pass rate plus breakdowns by level and by tag
+  (see `scorer.py`).
 
-## 출력
+## Output layout
 
-실행 완료 후 `benchmark/results/`에 두 가지 리포트가 생성된다:
+```
+benchmark/results/
+  <challenge_id>/                       # one dir per challenge, persistent
+    <UTC_timestamp>/                    # one wrapper per execution
+      report.json                       # full ChallengeResult dump
+      report.md                         # human-readable evidence card
+      evidence/
+        summary.json                    # legacy alias of report.json
+        summary.md                      # legacy alias of report.md
+    <UTC_timestamp>/                    # subsequent runs accumulate
+    ...
+  batch-<UTC_timestamp>/                # one dir per Reporter instance
+    report.json                         # BenchmarkReport aggregate
+    report.md                           # markdown table aggregate
+    index.json                          # cross-reference of per-challenge paths
+```
 
-- `{timestamp}.json` — 프로그래밍용 JSON
-- `{timestamp}.md` — 리뷰용 Markdown 테이블
+Re-running the same challenge appends a new `<UTC_timestamp>/`
+sub-directory under `results/<id>/`; prior runs stay intact so the
+OCI loop's observer can compare across cycles.
 
-## 프로젝트 구조
+`ChallengeResult` carries the full evidence payload, including:
+
+| Field | Purpose |
+|-------|---------|
+| `passed`, `flag_captured` | Outcome |
+| `duration_seconds`, `setup_seconds` | Wall-clock totals (setup excluded from duration) |
+| `trace_id` | LangSmith trace identifier (= LangGraph `run_id`) |
+| `token_count` | Tokens consumed by the run |
+| `agent_summary` | First chunk of the final agent message |
+| `cancel_outcome` | One of `clean`, `soft_cancelled`, `rollback`, `container_restart`, `failed` |
+| `terminal_status_at_teardown` | LangGraph run status observed before teardown |
+| `error` | Surfaced exception text on failure paths |
+
+## Module layout
 
 ```
 benchmark/
-  __init__.py          패키지 엔트리 + 퍼블릭 타입 export
-  __main__.py          python -m benchmark 엔트리포인트
-  config.py            BenchmarkConfig (timeout, batch_size 등)
-  schemas.py           Challenge, ChallengeResult, BenchmarkReport 등 Pydantic 모델
-  harness.py           챌린지 실행 오케스트레이터
-  runner.py            typer CLI
-  reporter.py          JSON/Markdown 리포트 생성
-  scorer.py            결과 집계 (레벨별, 태그별)
+  __init__.py            Public type exports
+  __main__.py            `python -m benchmark` entry-point
+  config.py              BenchmarkConfig (timeout, batch_size,
+                         langgraph_url, results_dir, ...)
+  schemas.py             Pydantic models: Challenge, SetupResult,
+                         ChallengeResult, BenchmarkReport,
+                         FilterConfig + CancelOutcome literal
+  state.py               BenchmarkRunState (passed to evaluate())
+  harness.py             Orchestrator — setup, dispatch, cancel +
+                         verify, postmortem capture, teardown
+  runner.py              Typer CLI (sequential + parallel)
+  reporter.py            JSON / Markdown / per-challenge evidence
+  scorer.py              Aggregation by level and tag
   providers/
-    base.py            BaseBenchmarkProvider ABC
-    xbow.py            XBOWProvider (xbow validation-benchmarks)
-  results/             리포트 출력 디렉토리
-  workspaces/          챌린지별 임시 작업 디렉토리 (gitignored)
+    base.py              BaseBenchmarkProvider ABC
+    xbow.py              XBOWProvider (XBOW validation-benchmarks)
+  results/               Report output (gitignored except XBEN-*-24/)
+  workspaces/            Per-challenge scratch (gitignored)
+  xbow-validation-benchmarks/   Submodule (gitignored)
 ```
 
-## Provider 확장
+## Adding a provider
 
-새로운 벤치마크 소스를 추가하려면 `BaseBenchmarkProvider`를 구현한다:
+Implement `BaseBenchmarkProvider`:
 
 ```python
+from pathlib import Path
 from benchmark.providers.base import BaseBenchmarkProvider
+from benchmark.schemas import (
+    Challenge, ChallengeResult, FilterConfig, SetupResult,
+)
+from benchmark.state import BenchmarkRunState
+
 
 class MyProvider(BaseBenchmarkProvider):
     @property
@@ -139,20 +219,27 @@ class MyProvider(BaseBenchmarkProvider):
     def setup(self, challenge: Challenge) -> SetupResult:
         ...
 
-    def evaluate(self, challenge: Challenge, state: BenchmarkRunState, workspace: Path) -> ChallengeResult:
+    def evaluate(
+        self,
+        challenge: Challenge,
+        state: BenchmarkRunState,
+        workspace: Path,
+    ) -> ChallengeResult:
         ...
 
     def teardown(self, challenge: Challenge) -> None:
         ...
 ```
 
-## 테스트
+Wire it in `runner.py` (or pass to `Harness` directly when scripting).
+
+## Tests
 
 ```bash
-# 유닛 테스트 (Docker 불필요, 전부 mocked)
+# Unit tests (no Docker required — everything is mocked)
 uv run pytest tests/unit/benchmark/ -v
 
-# 린트
+# Lint + format
 uv run ruff check benchmark/ tests/unit/benchmark/
 uv run ruff format --check benchmark/ tests/unit/benchmark/
 ```

@@ -123,6 +123,33 @@ bash(command="curl -sI target", session="main")
 
 ANSI codes stripped, repetitive lines compressed.
 
+## Output Externalization (mandatory for >2KB output)
+
+If a bash command will produce more than ~2KB of output (HTML page, API JSON, file dump, recursive directory listing, multi-host scan), redirect to a file FIRST and then extract only the fragment you need:
+
+```bash
+# WRONG — 50KB curl output joins the LLM context, causes summarization slowdown
+curl -s "https://target/"
+
+# RIGHT — capture once, extract narrowly
+curl -s "https://target/" > /tmp/root.html
+grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
+```
+
+**Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn — compaction is expensive and disrupts engagement progress. One pre-extraction `grep` fits cleanly; the raw page does not.
+
+**Heuristics for what to extract** (instead of dumping):
+
+| Source | Extract |
+|--------|---------|
+| HTML page | `grep -E 'href|action|src|name=' page.html | head -30` |
+| JSON response | `jq -r '. | keys'` then `jq '.<field>'` for field of interest |
+| File dump (`/etc/passwd`, etc.) | `head -20` then `grep` for keywords |
+| Multi-host scan output | `awk '/PASS|FAIL|200|500/ {print}'` |
+| Recursive `ls`/`find` | pipe to `head -50` always |
+
+**Exception**: If the entire output IS the flag (single line ≤200 bytes), inline it.
+
 ## Interactive Programs (msfconsole, sliver, evil-winrm, REPLs)
 
 The tool auto-detects waiting prompts:
@@ -147,6 +174,56 @@ sessions and `background=True` instead.
 ALWAYS use `write_file` for file creation. NEVER `cat > file << EOF` —
 it echoes content back as tool output and wastes context.
 
+## Sandbox Bash Anti-patterns
+
+The sandbox bash environment is intentionally restricted. The following
+patterns waste a probe (or hang the cycle) and MUST be avoided. Prefer the
+`python3` patterns below — they are deterministic, timeout-bounded, and
+produce machine-readable output.
+
+| Pattern | Why it's bad |
+|---------|--------------|
+| `bash <<'EOF' ... EOF` heredocs in tool calls | Often truncated mid-stream, brittle quoting, ambiguous timeout behavior. |
+| Trailing `&` to "parallelize" (`curl ... & curl ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
+| `nohup python3 script.py &` | Functionally identical to `&` backgrounding — process detaches, stdout is lost, cannot be timed out by outer wall-clock. Use `timeout N python3 -u -c '...' \\| tee log.txt` or named-session `background=True` instead. |
+| Unbounded `sleep`, `nc -l`, `tail -f`, `while true` | Hits the wall-clock and burns the entire cycle; never produces useful output. |
+| `timeout 5 bash -c ""` (empty command) | Zero-effect probe, recon-scope-creep tell. |
+| Long pipelines without `set -o pipefail` | Failures hide behind the last successful command. |
+| Implicit-shell loops over network targets without per-iteration timeout | One slow host blocks all the others. |
+
+## TTY / ANSI Escape Noise
+
+Interactive tools emit ANSI escape codes (`\\x1b[...m`, carriage returns,
+progress bars) when stdout is a TTY. In the sandbox these codes land verbatim
+in the tool result, polluting grep/parse output and inflating token count.
+
+Rules:
+- Always append `--no-color` (or `--color=never`) for tools that support it
+  (`sqlmap --no-color`, `nmap --no-color`, `ffuf -no-color`,
+  `hydra -o /tmp/out.txt`).
+- For tools without a flag, pipe through `cat`: `tool | cat` — redirecting
+  stdout breaks the PTY isatty() check and suppresses ANSI codes.
+- Prefer explicit `-o /tmp/output.txt` file output for long-running tools;
+  read the file afterward rather than capturing ANSI-polluted stdout.
+- Never use `script -q -c '...' /dev/null` to force PTY — it re-enables ANSI
+  codes and adds an extra layer of timing unpredictability.
+
+## Preferred Pattern — Python Heredoc with Explicit Timeouts
+
+```bash
+python3 - <<'PY'
+import requests, sys
+r = requests.get("https://<TARGET>/path", timeout=5)
+print(r.status_code, len(r.content))
+PY
+```
+
+For parallel work, use `concurrent.futures.ThreadPoolExecutor` (bounded
+`max_workers`, every call carries `timeout=5`) instead of bash `&`. For
+repeated probes, write a tight `python3 -c` one-liner with an explicit total
+wall-clock cap. Every network call MUST set a timeout. Every loop MUST be
+bounded.
+
 ## Raw-Socket / Long-Running Probe Discipline
 
 Raw-socket probes (HTTP request smuggling, custom protocol fuzzers, bespoke TLS
@@ -156,28 +233,80 @@ untrusted until the rules below hold.
 
 | Rule | Why |
 |------|-----|
-| `sock.settimeout(5)` BEFORE `connect` AND BEFORE EACH `recv` | `socket.create_connection(timeout=...)` covers connect only; recv blocks forever without `settimeout` after. |
-| Outer wall: `timeout 60 python3 -u -c '...'` even when inner timeouts are set | Inner timeout can lose to a kernel wedge or buffered TLS state. Hard wall is mandatory. |
+| `sock.settimeout(<bounded>)` BEFORE `connect` AND BEFORE EACH `recv` | `socket.create_connection(timeout=...)` covers connect only; recv blocks forever without `settimeout` after. Specific value lives in the per-skill doc. |
+| Outer wall: `timeout <bounded> python3 -u -c '...'` even when inner timeouts are set | Inner timeout can lose to a kernel wedge or buffered TLS state. Hard wall is mandatory; specific value lives in the per-skill doc. |
 | `python3 -u` (or `sys.stdout.flush()` after each write) | Without `-u`, a wedged process leaves stdout buffered — looks like "no output" when the script is actually finishing. |
 | Bounded iteration — break on empty `recv`, or after N bytes / N rounds | `while True: data = s.recv(4096)` against a keep-alive socket never terminates. |
 | Prefer inline `python3 -c` over `cat > script.py && python3 script.py` | Inline keeps the harness in the tool transcript and avoids re-creating files between calls. |
+| Bash-session wedge signature: 3+ consecutive empty-command polls | Means the previous tool call wedged the shell. Open a NEW bash session, `pkill -9 -f <script>`, do NOT keep polling the old one — polling a wedged shell will not unwedge it. |
 
 ## Wedged-Session Recovery
 
-Symptom: `bash_status()` shows session as `running` for >90s past expected completion AND `bash_output(session=...)` returns empty diffs across two consecutive checks.
+Symptom: `bash_status()` shows session as `running` past its expected completion AND `bash_output(session=...)` returns empty diffs across consecutive checks (no new bytes since the previous poll).
 
 1. Check `bash_status()` — confirm `running` not `done(...) consumed`.
 2. `bash_kill(session=<wedged>)` — tears down tmux, preserves the session log under `.sessions/` for forensics.
 3. Open a fresh session under a NEW name (e.g. `<orig>_retry`) — do NOT reuse the killed session name in the same turn (race with cleanup).
 4. Re-launch with both `sock.settimeout(5)` AND `timeout 60` outer wall.
 
-## Background Job Budget
+## Tmux Pipe Degradation Detector
 
-Any single bash command running >5 min wall-clock with no observable progress
-output should be `bash_kill`'d and the strategy reconsidered. Long-running ops
-(nmap full port sweep, ffuf large wordlist) belong in `background=True` named
-sessions while you continue work on `main`.
+When a probe is launched in a tmux session and its stdout is redirected to a
+file (`python3 detector.py > /tmp/log 2>&1 &`,
+`tmux send-keys '... > /tmp/log' Enter`), the tmux pipe between the running
+process and the log file can degrade silently — the process keeps running,
+`ps` shows the PID alive, but every byte it writes is discarded by the broken
+pipe. From the operator side this looks IDENTICAL to "the script is still
+working".
 
-For credential brute-force specifically: cap at 5 minutes OR 1000 attempts,
-whichever first. If those fail, the challenge design is not "brute it"; pivot.
+Detection signature (all three conditions hold at the same time):
+- The script's PID is alive (`ps -p <PID>` returns 0).
+- `cat /tmp/log` returns empty bytes across consecutive polls — the file
+  has not grown since the previous read.
+- The script SHOULD have produced at least one line by now (it has progress
+  logging, a banner, a heartbeat, etc.).
+
+If all three hold, the tmux pipe is broken. Do NOT keep waiting — keep waiting
+will continue to return empty forever.
+
+Recovery, in order:
+
+1. Open a NEW bash session (e.g. tag it `<challenge>_recovery` so the original
+   tmux name does not collide).
+2. `pkill -9 -f <script>` AND `rm -f /tmp/log` AND
+   `tmux kill-session -t main 2>/dev/null` (the `2>/dev/null` covers the
+   no-such-session case so the recovery does not error out before the next
+   step).
+3. Re-launch the same probe **inline** —
+   `timeout 60 python3 -u -c '<inlined harness>' 2>&1 | tee log.txt` —
+   bypassing tmux entirely. Inline `python3 -u -c` writes to the tool's
+   stdout, which the harness sees directly.
+4. If the inline run also produces no output across recovery polls, the
+   issue is NOT tmux degradation but a real wedge in the harness itself.
+   Escalate via `update_objective(status="blocked", reason="sandbox tmux
+   pipe degradation: inline retry also produced no output")`.
+
+## Diagnostic Ladder
+
+| Symptom | Cause | Recovery |
+|---------|-------|----------|
+| `ps -p <PID>` alive, `/tmp/log` empty across consecutive polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + tmux kill-session, switch to inline `timeout <bounded> python3 -u -c '...' \\| tee log.txt`. |
+| `ps -p <PID>` dead, `/tmp/log` empty | Process crashed before first flush (likely import error or syntax error) | `python3 -c '<harness>'` directly to surface the traceback (no `&`, no log redirect). Fix syntax, retry. |
+| `ps -p <PID>` alive, `/tmp/log` has bytes but stops growing | Network wedge (no `sock.settimeout`, slow-loris peer, or sandbox throttling) | Apply Wedged-Session Recovery above. Add `sock.settimeout(5)` before connect AND each recv. Outer `timeout 60`. |
+| 3+ consecutive empty-command polls (`""`, `echo`, `pwd`) on the SAME shell session | The previous tool call wedged the shell stdin/stdout pump | Open a fresh bash session immediately. Polling the wedged shell will not unwedge it. |
+
+## Background Job Discipline
+
+A background command that has stopped producing observable progress
+output (no new bytes in its log, no advancing counter, no oracle
+responses) should be `bash_kill`'d and the strategy reconsidered.
+Continuing to wait reproduces the same negative state. Long-running
+ops (nmap full port sweep, ffuf large wordlist) belong in
+`background=True` named sessions while you continue work on `main`.
+
+For credential brute-force specifically: default-credential
+challenges deliver via the early entries of common wordlists. If
+those entries fail, the challenge intent is not "brute it" — pivot
+to the next vector class rather than expanding the wordlist or
+extending the run.
 </BASH_TOOLS>"""

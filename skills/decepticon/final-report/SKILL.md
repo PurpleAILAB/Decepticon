@@ -407,6 +407,80 @@ Reference specific FIND-IDs inline where findings were exploited.]
 | Empty attack paths | If no PATH-*.md files exist, omit Section 4 and note: "No complete attack paths were documented." |
 | Empty timeline | If timeline.jsonl is empty or missing, omit Section 6 and note accordingly |
 
+## Deliverable-Tier Finding Promotion
+
+Operational findings (`findings/FIND-NNN.md` per
+`skills/shared/finding-protocol/SKILL.md`) carry the minimum
+fields a sub-agent needs to make a decision: id, severity, title,
+agent, objective_id, discovered_at, evidence_pointer, plus
+Description / Evidence / Next sections. The orchestrator's
+final-report pass PROMOTES each operational finding into a
+deliverable-tier finding document (`report/finding-NNN.md`) with the
+heavyweight schema below — fields the orchestrator can compute from
+engagement context that sub-agents could not infer mid-engagement.
+
+Promotion is a step within this skill's report generation workflow.
+Skip promotion in any mode where the loaded mode skill (e.g.
+`skills/benchmark/SKILL.md`) replaces decepticon.md's
+`<COMPLETION_CRITERIA>` Final-response sequence with a mode-specific
+terminal behaviour (e.g. SHORT-CIRCUIT for direct credential / target
+return). The mode skill specifies the deliverable for that mode.
+
+### Heavyweight Schema (deliverable tier)
+
+Frontmatter fields beyond operational tier:
+
+```yaml
+---
+id: FIND-001                                # copied from operational
+severity: critical                          # copied from operational
+title: <one-line summary>                   # copied from operational
+cvss_score: 9.8                             # orchestrator-computed from severity + technique
+cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+cvss_version: "4.0"
+cwe: [CWE-89]                               # orchestrator-derived from technique evidence
+mitre: [T1190]                              # orchestrator-derived from technique evidence
+affected_target: "10.0.0.5"                 # extracted from operational description / evidence
+affected_component: "MySQL 5.7 on port 3306"
+confidence: verified                        # promoted per Findings Aggregation Rules (verified for any operational finding with 2+ evidence items)
+phase: recon                                # orchestrator-inferred from agent field (recon→reconnaissance, exploit→initial-access, postexploit→post-exploitation, etc.)
+agent: recon                                # copied from operational
+objective_id: OBJ-001                       # copied from operational
+discovered_at: "2026-04-06T14:23:11Z"       # copied from operational
+detected: null                              # explicit `unknown` if Blue Team visibility not assessed
+remediation_priority: immediate             # derived from severity (critical/high → immediate, medium → short-term, low → long-term)
+---
+```
+
+Body sections — extend operational tier with deliverable-grade content:
+
+- `## Description` — promoted from operational, expanded with engagement-context framing
+- `## Steps to Reproduce` — synthesized from evidence pointer files (numbered, copy-pasteable)
+- `## Impact` — orchestrator's business-impact framing (operational tier does not have this)
+- `## Evidence` — table form, references operational `evidence_pointer` files
+- `## Detection` — orchestrator-filled if blue-team visibility data exists; else `Detected by Blue Team: unknown`
+- `## Remediation` — orchestrator-derived from CWE / MITRE references
+- `## References` — CWE URL + MITRE ATT&CK URL list
+
+### Severity → CVSS-numeric Mapping (when CVSS not pre-assigned)
+
+When the technique evidence does not yield a precise CVSS vector, fall back to severity defaults from Findings Aggregation Rules: Critical=9.0, High=7.5, Medium=5.0, Low=2.5.
+
+### Promotion Algorithm
+
+For each operational `findings/FIND-NNN.md` in `findings/`:
+
+1. Read frontmatter and body (operational tier).
+2. If severity in {critical, high, medium}:
+   - Promote to `report/finding-NNN.md` with the full deliverable schema above.
+3. If severity in {low, informational}:
+   - Promote in condensed form (id / title / description / remediation only) per the existing "Low / Informational Findings" rule in Findings Detail (Section 3 of the technical-report template).
+4. Update the technical-report.md "Findings Detail" section to reference `report/finding-NNN.md`, not `findings/FIND-NNN.md`.
+
+### Promotion is One-Way
+
+Operational findings remain in `findings/` (the orchestrator does not mutate them); deliverable findings are generated copies in `report/`. If a sub-agent updates an operational finding mid-engagement (e.g. with additional evidence), the next final-report pass re-promotes the updated operational tier — the deliverable file is regenerated, not patched.
+
 ## Quality Checklist
 
 Before writing the final files, verify:
