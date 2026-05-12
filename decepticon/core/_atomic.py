@@ -44,5 +44,5 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         try:
             os.unlink(tmp_str)
         except OSError:
-            pass
+            pass  # best-effort cleanup; suppress so original exception propagates
         raise

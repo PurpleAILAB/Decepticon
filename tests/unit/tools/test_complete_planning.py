@@ -18,7 +18,6 @@ import pytest
 # Import these from the module under test; the import establishes the target
 # namespace for monkeypatching.
 import decepticon.tools.interaction.complete_planning as cp_module
-from decepticon.tools.interaction.complete_planning import complete_engagement_planning
 
 # ── Fake sandbox ─────────────────────────────────────────────────────────────
 
@@ -131,7 +130,7 @@ def _invoke_tool(tool_call_id: str = "test-id") -> Any:
     Tools with InjectedToolCallId require the full tool-call envelope dict.
     Returns unwrapped string content.
     """
-    result = complete_engagement_planning.invoke(
+    result = cp_module.complete_engagement_planning.invoke(
         {
             "args": {},
             "name": "complete_engagement_planning",

@@ -133,7 +133,8 @@ def test_save_unlinks_prior_marker_before_writing(tmp_path: Path) -> None:
 def test_save_partial_failure_leaves_no_marker(tmp_path: Path) -> None:
     """If the marker write raises, no marker should survive."""
     import decepticon.core._atomic as atomic_mod
-    from decepticon.core._atomic import atomic_write_bytes as _real_write
+
+    _real_write = atomic_mod.atomic_write_bytes  # snapshot before patch
 
     def failing_on_marker(path: Path, data: bytes) -> None:
         if path.name == ".bundle_complete":
