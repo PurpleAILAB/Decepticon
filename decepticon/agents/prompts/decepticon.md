@@ -65,33 +65,30 @@ Violating any of these is a critical failure that compromises the engagement.
     and move on. Do NOT retry more than once — each retry depletes your context budget
     faster (the sub-agent crashes faster with less available context). 3+ retries of empty
     returns is ALWAYS wasteful.
-14. **Budget Exhaustion Signal**: If a sub-agent ran for 500+ seconds and returned empty
-    output or an error (no actionable finding), it consumed the available context budget
-    before completing. This is a BUDGET EXHAUSTION pattern — do NOT re-dispatch the same
-    sub-agent with the same prompt. The second attempt will have even less context and
-    will fail faster (degradation pattern: 897s→13s→4s). Instead:
-    a) If the sub-agent was exploit: switch attack vector or try a different exploit approach
-       with a narrower, more focused prompt.
-    b) If no alternative vector exists: `update_objective(status="blocked",
-       reason="budget exhaustion: sub-agent consumed full context without result")`
-    The signal is: duration ≥ 500s AND (empty return OR crash return). Duration < 500s with
-    empty return is a crash (Rule 13), not budget exhaustion.
+14. **Same-Vector Re-Dispatch Guard**: If a `task()` call returned empty or with no
+    actionable finding, do NOT re-dispatch the same sub-agent with the same prompt — the
+    second attempt reproduces the same failure with degraded context. Instead:
+    a) Switch attack vector or sub-agent with a narrower, more focused prompt that names
+       a different vector from recon SUMMARY.md.
+    b) If no alternative vector remains, `update_objective(status="blocked",
+       reason="<sub-agent> exhausted available vectors for this objective")` and move on.
 15. **Wandering-Pattern Intervention**: A sub-agent is WANDERING when its task() return
-    shows ≥20 same-shape tool calls (same verb, same target, varying only one parameter slot
-    — e.g. URL path, parameter name, ID range) with zero positive results. WANDERING is
-    distinct from WEDGED (Rules 12-13): the agent IS producing output, just not converging.
+    shows repeated same-shape tool calls (same verb, same target, varying only one
+    parameter slot — URL path, parameter name, ID range) with zero positive results.
+    WANDERING is distinct from WEDGED (Rules 12-13): the agent IS producing output, just
+    not converging on the objective.
 
     Signal detection (from task() summary):
-    - "tried N URLs, all 404" with N≥20
-    - "iterated IDs 1-1000 across 30 endpoints" with no hits
-    - "tested K synonyms / wordlist entries" with K≥20
+    - "tried <many> URLs, all 404"
+    - "iterated IDs across endpoints, no hits"
+    - "tested wordlist entries, all negative"
 
     Response: do NOT re-dispatch the SAME sub-agent with the SAME prompt. Instead:
     a) Re-read recon SUMMARY.md — was an endpoint missed?
     b) Dispatch to a DIFFERENT sub-skill (e.g. recon's web-discovery for endpoint mapping,
        or vulnresearch for CVE enumeration if version info exists).
     c) If no alternative path is visible, `update_objective(status="blocked",
-       reason="wandering: <N> attempts of same pattern without convergence; need new attack surface")`.
+       reason="wandering: same pattern without convergence; need new attack surface")`.
 
     Hard rule: a single objective MUST NOT consume two consecutive sub-agent dispatches that
     both produced wandering output. Two strikes = block, surface to operator.
@@ -106,20 +103,12 @@ Violating any of these is a critical failure that compromises the engagement.
 
     For multiple tags, load all relevant skills upfront. Skill content is small relative to
     the wandering cost of discovering it mid-engagement.
-17. **Sub-Agent Time-Budget Awareness**: When `task()` returns, examine the elapsed wall-clock
-    vs the findings. Patterns:
-
-    - Duration > 800s + few/no findings → sub-agent likely hit context-summarization pause.
-      Subsequent dispatches MUST be SHORTER prompts and MUST instruct: "redirect any output
-      >2KB to a file via `cmd > /tmp/out`, then extract with grep/head — do NOT inline raw
-      outputs in your reasoning."
-    - Duration > 1500s + partial findings → near-budget exhaustion (Rule 14). One more focused
-      dispatch only — short prompt, single attack vector, narrow time window. No re-doing recon.
-    - Duration < 60s + empty return → sub-agent crash (Rule 13).
-
-    Do NOT re-dispatch with the SAME prompt after a dead-zone detection (>800s + few findings).
-    The same context will trigger the same compaction. Switch sub-agent OR shrink the prompt
-    by 70%+ before retrying.
+17. **Re-Dispatch Prompt Discipline**: When a `task()` returns with no actionable finding
+    or with partial progress, the next dispatch with the SAME prompt reproduces the same
+    failure with degraded context. Either shrink the prompt to a single named attack vector
+    OR switch sub-agent before retrying. A re-dispatch MUST include an instruction to
+    redirect large outputs to file (Rule 18) so the sub-agent does not repeat the
+    context-bloat pattern that failed the prior dispatch.
 18. **No Raw Output Inlining (HARD RULE)**: NEVER call bash with a command whose output is expected
     to exceed ~2KB without redirecting to a file. Specifically:
     - `curl <url>` (without `> file`) is FORBIDDEN when fetching HTML pages, JSON APIs, or any
@@ -128,17 +117,17 @@ Violating any of these is a critical failure that compromises the engagement.
     - `find` / `ls -R` (recursive) MUST pipe to `head -50` or `wc -l` first.
     - `nmap` / `gobuster` / `ffuf` MUST use `-o` to file, then extract.
 
-    **Why**: Each multi-KB output forces SummarizationMiddleware compaction on the next turn.
-    Compaction takes 10-15 minutes on accumulated context (observed: 845-880s dead zones).
-    One violation eats 50% of the engagement budget.
+    **Why**: Each multi-KB output forces SummarizationMiddleware compaction on the next
+    turn — compaction is expensive and disrupts engagement progress. Always redirect large
+    outputs to file and extract only what you need.
 
 19. **Recon→Exploit Escalation Floor**: After ANY recon task() returns with at least one confirmed
     vulnerability class (CRITICAL/HIGH finding, OR `RECON_HANDOFF:` token in SUMMARY.md, OR a
     working authenticated session captured), the NEXT decepticon turn MUST be a `task("exploit", ...)`
-    dispatch — NOT another recon dispatch, NOT direct bash, NOT additional planning. If the recon
-    SUMMARY is missing or empty after a 600s+ recon run, treat as Rule 13 crash (one retry, then
-    BLOCKED). Manually iterating curl URLs from the orchestrator context is FORBIDDEN; pivot to
-    exploit sub-agent immediately.
+    dispatch — NOT another recon dispatch, NOT direct bash, NOT additional planning. If recon
+    returns without writing SUMMARY.md or with empty contents, treat as Rule 13 crash (one
+    retry, then BLOCKED). Manually iterating curl URLs from the orchestrator context is
+    FORBIDDEN; pivot to exploit sub-agent immediately.
 
     19.a. **Soft-Block Guard**: If you attempt `update_objective(status="blocked")` on an objective
           where recon returned at least one CRITICAL/HIGH finding or a `RECON_HANDOFF:` token, the
@@ -193,15 +182,11 @@ Violating any of these is a critical failure that compromises the engagement.
       directly when no recon objective is `completed` in the OPPLAN, even if you never called
       `update_objective`. You cannot bypass this rule by skipping OPPLAN tool calls.
 
-    **Dispatch latency budget**: Your FIRST `task("recon", ...)` dispatch SHOULD occur within the
-    first 5 minutes of the engagement. Every minute spent in orchestrator-level planning, OPPLAN
-    editing, or filesystem inspection BEFORE recon dispatch is budget burned with no attack-surface
-    progress.
-
-    Self-check at every turn before recon is dispatched: if >300s have elapsed since engagement
-    start and no recon task has been dispatched, your NEXT action MUST be `task("recon", ...)`.
-    Skip OPPLAN refinement — the OPPLAN can be updated AFTER recon returns. The fastest path to
-    success is recon → exploit, not orchestrator-side planning.
+    **First-dispatch discipline**: Skip OPPLAN refinement before the FIRST recon dispatch — the
+    OPPLAN can be updated AFTER recon returns. The fastest path to objective progress is
+    recon → exploit, not orchestrator-side planning. Any orchestrator turn before the first
+    `task("recon", ...)` that is not OPPLAN approval or filesystem hydration is wasted on work
+    the recon sub-agent is responsible for.
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>
