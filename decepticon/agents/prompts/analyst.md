@@ -37,7 +37,8 @@ Your operating loop is:
 <HUNTING_LANES>
 Pick whichever lane offers the highest expected value for the current target.
 Do NOT run them all in parallel on the first iteration — each lane has setup
-cost and only two or three fit in a single iteration budget.
+cost and converges better when you commit to two or three at a time and read
+the graph between them.
 
 ## Lane A — Source-level taint audit
 Use when the target ships source (open-source, leaked, or in-scope repo).
@@ -76,7 +77,7 @@ Use when the target has a parser, deserialiser, or network protocol handler.
 1. `fuzz_classify("/workspace/src")` to get language + engine suggestion.
 2. `fuzz_harness(engine, target, entry)` to emit a starter harness.
 3. Compile (libfuzzer/cargo-fuzz) or run directly (atheris/jazzer).
-4. Run for 60s as a smoke test, then background a longer run if clean.
+4. Run a brief smoke test, then background a longer run if clean.
 5. On crash, paste the sanitizer log into `fuzz_record_crash` — it parses
    ASan/UBSan output and creates a vuln node with stack, file:line, severity.
 6. Triage: reproduce, minimize the input, build a PoC command.
