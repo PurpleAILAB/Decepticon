@@ -136,7 +136,7 @@ curl -s "https://target/" > /tmp/root.html
 grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
 ```
 
-**Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn. Compaction can take several minutes on large contexts (observed: 848s dead zone). One pre-extraction `grep` fits in the response budget; the raw page does not.
+**Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn — compaction is expensive and disrupts engagement progress. One pre-extraction `grep` fits cleanly; the raw page does not.
 
 **Heuristics for what to extract** (instead of dumping):
 
@@ -233,8 +233,8 @@ untrusted until the rules below hold.
 
 | Rule | Why |
 |------|-----|
-| `sock.settimeout(5)` BEFORE `connect` AND BEFORE EACH `recv` | `socket.create_connection(timeout=...)` covers connect only; recv blocks forever without `settimeout` after. |
-| Outer wall: `timeout 60 python3 -u -c '...'` even when inner timeouts are set | Inner timeout can lose to a kernel wedge or buffered TLS state. Hard wall is mandatory. |
+| `sock.settimeout(<bounded>)` BEFORE `connect` AND BEFORE EACH `recv` | `socket.create_connection(timeout=...)` covers connect only; recv blocks forever without `settimeout` after. Specific value lives in the per-skill doc. |
+| Outer wall: `timeout <bounded> python3 -u -c '...'` even when inner timeouts are set | Inner timeout can lose to a kernel wedge or buffered TLS state. Hard wall is mandatory; specific value lives in the per-skill doc. |
 | `python3 -u` (or `sys.stdout.flush()` after each write) | Without `-u`, a wedged process leaves stdout buffered — looks like "no output" when the script is actually finishing. |
 | Bounded iteration — break on empty `recv`, or after N bytes / N rounds | `while True: data = s.recv(4096)` against a keep-alive socket never terminates. |
 | Prefer inline `python3 -c` over `cat > script.py && python3 script.py` | Inline keeps the harness in the tool transcript and avoids re-creating files between calls. |
@@ -242,7 +242,7 @@ untrusted until the rules below hold.
 
 ## Wedged-Session Recovery
 
-Symptom: `bash_status()` shows session as `running` for >90s past expected completion AND `bash_output(session=...)` returns empty diffs across two consecutive checks.
+Symptom: `bash_status()` shows session as `running` past its expected completion AND `bash_output(session=...)` returns empty diffs across consecutive checks (no new bytes since the previous poll).
 
 1. Check `bash_status()` — confirm `running` not `done(...) consumed`.
 2. `bash_kill(session=<wedged>)` — tears down tmux, preserves the session log under `.sessions/` for forensics.
@@ -261,8 +261,8 @@ working".
 
 Detection signature (all three conditions hold at the same time):
 - The script's PID is alive (`ps -p <PID>` returns 0).
-- `cat /tmp/log` returns empty bytes across **2 consecutive `sleep 30` polls**
-  (60s total of zero new output).
+- `cat /tmp/log` returns empty bytes across consecutive polls — the file
+  has not grown since the previous read.
 - The script SHOULD have produced at least one line by now (it has progress
   logging, a banner, a heartbeat, etc.).
 
@@ -281,26 +281,32 @@ Recovery, in order:
    `timeout 60 python3 -u -c '<inlined harness>' 2>&1 | tee log.txt` —
    bypassing tmux entirely. Inline `python3 -u -c` writes to the tool's
    stdout, which the harness sees directly.
-4. If the inline run produces no output within 60 s, the issue is NOT tmux
-   degradation but a real wedge in the harness itself. Escalate via
-   `update_objective(status="blocked", reason="sandbox tmux pipe degradation: inline retry also produced no output in 60s")`.
+4. If the inline run also produces no output across recovery polls, the
+   issue is NOT tmux degradation but a real wedge in the harness itself.
+   Escalate via `update_objective(status="blocked", reason="sandbox tmux
+   pipe degradation: inline retry also produced no output")`.
 
 ## Diagnostic Ladder
 
 | Symptom | Cause | Recovery |
 |---------|-------|----------|
-| `ps -p <PID>` alive, `/tmp/log` empty across 2× 30 s polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + tmux kill-session, switch to inline `timeout 60 python3 -u -c '...' \\| tee log.txt`. |
+| `ps -p <PID>` alive, `/tmp/log` empty across consecutive polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + tmux kill-session, switch to inline `timeout <bounded> python3 -u -c '...' \\| tee log.txt`. |
 | `ps -p <PID>` dead, `/tmp/log` empty | Process crashed before first flush (likely import error or syntax error) | `python3 -c '<harness>'` directly to surface the traceback (no `&`, no log redirect). Fix syntax, retry. |
 | `ps -p <PID>` alive, `/tmp/log` has bytes but stops growing | Network wedge (no `sock.settimeout`, slow-loris peer, or sandbox throttling) | Apply Wedged-Session Recovery above. Add `sock.settimeout(5)` before connect AND each recv. Outer `timeout 60`. |
 | 3+ consecutive empty-command polls (`""`, `echo`, `pwd`) on the SAME shell session | The previous tool call wedged the shell stdin/stdout pump | Open a fresh bash session immediately. Polling the wedged shell will not unwedge it. |
 
-## Background Job Budget
+## Background Job Discipline
 
-Any single bash command running >5 min wall-clock with no observable progress
-output should be `bash_kill`'d and the strategy reconsidered. Long-running ops
-(nmap full port sweep, ffuf large wordlist) belong in `background=True` named
-sessions while you continue work on `main`.
+A background command that has stopped producing observable progress
+output (no new bytes in its log, no advancing counter, no oracle
+responses) should be `bash_kill`'d and the strategy reconsidered.
+Continuing to wait reproduces the same negative state. Long-running
+ops (nmap full port sweep, ffuf large wordlist) belong in
+`background=True` named sessions while you continue work on `main`.
 
-For credential brute-force specifically: cap at 5 minutes OR 1000 attempts,
-whichever first. If those fail, the challenge design is not "brute it"; pivot.
+For credential brute-force specifically: default-credential
+challenges deliver via the early entries of common wordlists. If
+those entries fail, the challenge intent is not "brute it" — pivot
+to the next vector class rather than expanding the wordlist or
+extending the run.
 </BASH_TOOLS>"""
