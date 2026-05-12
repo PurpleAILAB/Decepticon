@@ -103,11 +103,11 @@ Execute this IN ORDER after every recon task() completes. No exceptions.
 
 ```
 1. Read recon/SUMMARY.md
-   ├── Missing or empty? → Rule 14 crash protocol (retry once, then BLOCKED)
+   ├── Missing or empty? → Rule 13 crash protocol (retry once, then BLOCKED)
    └── Present → continue
 
 2. Contains RECON_HANDOFF / CRITICAL/HIGH finding / captured session?
-   ├── YES → dispatch task("exploit", ...) IMMEDIATELY (Rule 20)
+   ├── YES → dispatch task("exploit", ...) IMMEDIATELY (Rule 19)
    │         Pass: exact vector, URL, param, session tokens, challenge tags
    └── NO (RECON_BUDGET_EXHAUSTED / LOW/INFO only) → continue
 

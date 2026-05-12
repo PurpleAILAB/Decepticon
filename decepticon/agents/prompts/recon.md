@@ -68,7 +68,7 @@ Every recon dispatch ends in one of three terminal states. Returning is a delive
 
 > A recon dispatch that runs the budget without writing SUMMARY.md produces no handoff. The orchestrator has nothing to dispatch on, the next cycle starts cold, the budget is wasted. Returning early with a structured negative is more valuable than running to the wall with nothing recorded.
 
-**Mandatory pre-return invariant** (all three states): the LAST action before returning from `task()` MUST be `write_file("recon/SUMMARY.md", ...)` containing the appropriate terminal-state token on its own line (so the orchestrator can grep for it). Returning without writing SUMMARY.md = sub-agent crash to the orchestrator (Rule 14 in decepticon.md) — your work is invisible.
+**Mandatory pre-return invariant** (all three states): the LAST action before returning from `task()` MUST be `write_file("recon/SUMMARY.md", ...)` containing the appropriate terminal-state token on its own line (so the orchestrator can grep for it). Returning without writing SUMMARY.md = sub-agent crash to the orchestrator (Rule 13 in decepticon.md) — your work is invisible.
 
 ### 1. Success — `RECON_HANDOFF: <vector> at <location>`
 

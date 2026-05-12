@@ -202,7 +202,7 @@ Every engagement has one terminal state and one final-response sequence.
 
 **Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
 
-**Mode-specific overlay**: when an engagement loads a mode-specific skill (e.g. `skills/benchmark/SKILL.md` loaded by the benchmark harness on first turn), that skill may suspend or override Rules 9 and 10 of CRITICAL_RULES and add mode-specific terminal behavior (e.g. SHORT-CIRCUIT for direct credential/target-string return). Read the loaded mode skill — it specifies which CRITICAL_RULES are suspended for the mode and which mode-specific terminal behavior replaces the universal final-response sequence above.
+**Mode-specific overlay**: when an engagement loads a mode-specific skill (e.g. `skills/benchmark/SKILL.md` loaded by the benchmark harness on first turn), that skill may suspend or override `<CRITICAL_RULES>` items (e.g. Rule 9 engagement-startup) and replace the Final-response sequence above with a mode-specific terminal behavior (e.g. SHORT-CIRCUIT for direct credential / target-string return). Read the loaded mode skill — it names which rules are suspended for the mode and which terminal behavior replaces the universal sequence.
 </COMPLETION_CRITERIA>
 
 <ENVIRONMENT>

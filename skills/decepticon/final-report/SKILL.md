@@ -421,9 +421,10 @@ engagement context that sub-agents could not infer mid-engagement.
 
 Promotion is a step within this skill's report generation workflow.
 Skip promotion in any mode where the loaded mode skill (e.g.
-`skills/benchmark/SKILL.md`) suspends Rule 9 / Rule 10 of
-decepticon.md CRITICAL_RULES — the mode skill specifies the
-deliverable.
+`skills/benchmark/SKILL.md`) replaces decepticon.md's
+`<COMPLETION_CRITERIA>` Final-response sequence with a mode-specific
+terminal behaviour (e.g. SHORT-CIRCUIT for direct credential / target
+return). The mode skill specifies the deliverable for that mode.
 
 ### Heavyweight Schema (deliverable tier)
 
