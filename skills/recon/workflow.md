@@ -32,7 +32,7 @@ Before any probe:
 > **Recon stays a recon — no exploit harnesses.**
 > - At MOST 2 confirm probes per hypothesis. If 2 don't confirm, hand the hypothesis off, do not deepen.
 > - ZERO full exploit harnesses. NO race-condition scripts. NO multi-endpoint orchestrations. NO sqlmap dumps. NO ysoserial payloads. Those belong to exploit.
-> - Kill any probe that runs >10s wall-clock. Always set `timeout=5` on HTTP calls. Always bound loops.
+> - Always set tool-level timeouts on HTTP/network calls so a slow target cannot wedge the shell. Always bound loops. Specific timeout values belong in the per-skill recon docs, not here.
 > - Prefer `python3 -c '...'` or `python3 - <<'PY' ... PY` with explicit timeouts over chained bash one-liners.
 > - NEVER use `&` to parallelize in bash. Parallelism that goes past sequential probing is exploit territory — hand off.
 > - Always emit a **"Tried, ruled out"** list in the handoff so exploit doesn't repeat work.
