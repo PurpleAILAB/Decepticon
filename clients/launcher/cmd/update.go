@@ -33,8 +33,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	hasUpdate := updater.CompareVersions(version, release.TagName)
-	if !hasUpdate {
+	if !hasUpdate && !forceUpdate {
 		ui.Success(fmt.Sprintf("Already up to date (%s)", version))
+		return nil
 	}
 
 	if hasUpdate {
@@ -53,26 +54,25 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		ref = branch
 	}
 
-	// Sync config files
-	ui.Info("Syncing configuration files...")
-	if err := updater.SyncConfigFiles(ref); err != nil {
-		ui.Warning("Config sync: " + err.Error())
-	}
-
-	// Pull new images
-	c := compose.New()
-	targetVersion := strings.TrimPrefix(release.TagName, "v")
-	ui.Info("Pulling Docker images (" + targetVersion + ")...")
-	if err := c.Pull(targetVersion); err != nil {
-		ui.Warning("Image pull: " + err.Error())
-	}
-
-	// Self-update binary
 	if hasUpdate {
-		if err := updater.SelfUpdate(release); err != nil {
-			ui.Warning("Binary update: " + err.Error())
+		// Full upgrade flow — shared with the launch-time interactive
+		// prompt so behavior stays consistent between the two paths.
+		if err := updater.ApplyUpdate(release, ref); err != nil {
+			ui.Warning(err.Error())
 		}
-		_ = updater.WriteVersion(release.TagName)
+	} else {
+		// --force: re-sync config + re-pull images without bumping the
+		// binary (already on release.TagName).
+		ui.Info("Syncing configuration files...")
+		if err := updater.SyncConfigFiles(ref); err != nil {
+			ui.Warning("Config sync: " + err.Error())
+		}
+		c := compose.New()
+		targetVersion := strings.TrimPrefix(release.TagName, "v")
+		ui.Info("Pulling Docker images (" + targetVersion + ")...")
+		if err := c.Pull(targetVersion); err != nil {
+			ui.Warning("Image pull: " + err.Error())
+		}
 	}
 
 	ui.Success("Update complete")

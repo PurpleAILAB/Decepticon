@@ -115,10 +115,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 		_ = os.Setenv("CODEX_AUTH_VOLUME", "/dev/null")
 	}
 
-	// 2.5. Update notice. Applying updates is intentionally explicit via
-	// `decepticon update` because it can replace the binary, compose files,
-	// LiteLLM config, and Docker images.
-	updater.NotifyIfUpdateAvailable(version)
+	// 2.5. Update prompt. When a newer release is available and stdin is
+	// a TTY, ask the operator interactively whether to apply it. On
+	// confirmation the launcher applies the update (config sync + image
+	// pull + binary replace) and re-execs itself so the rest of this
+	// ``start`` flow runs against the just-installed version — matches
+	// the Claude Code / Codex CLI "update available, restarting" UX.
+	// Non-interactive shells (CI, piped) fall back to the passive notice
+	// path inside ``PromptIfUpdateAvailable``.
+	if _, err := updater.PromptIfUpdateAvailable(version); err != nil {
+		// Non-fatal — surface as a warning and continue with the
+		// current launcher rather than aborting the start.
+		ui.Warning("Update check: " + err.Error())
+	}
 
 	// 3. Engagement picker — must run BEFORE compose Up so the sandbox
 	// container starts with /workspace bound to the chosen engagement

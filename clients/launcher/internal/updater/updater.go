@@ -11,6 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/huh/v2"
+	"golang.org/x/term"
+
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/compose"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 )
@@ -192,6 +196,9 @@ func WriteVersion(version string) error {
 // NotifyIfUpdateAvailable checks GitHub releases and prints a non-blocking
 // update notice. It never mutates the binary, config files, or Docker images;
 // users apply updates explicitly with `decepticon update`.
+//
+// Used as the fallback path when ``PromptIfUpdateAvailable`` cannot present
+// an interactive prompt (e.g. stdin is not a TTY in CI / piped invocation).
 func NotifyIfUpdateAvailable(currentVersion string) bool {
 	release, err := FetchLatestRelease()
 	if err != nil {
@@ -205,6 +212,149 @@ func NotifyIfUpdateAvailable(currentVersion string) bool {
 	ui.Info(fmt.Sprintf("Update available: %s -> %s", displayVersion(currentVersion), release.TagName))
 	ui.DimText("Run `decepticon update` to upgrade.")
 	return true
+}
+
+// ApplyUpdate runs the full upgrade flow: SyncConfigFiles, Docker image
+// pull, SelfUpdate (binary), WriteVersion. Shared between the
+// ``decepticon update`` command and the interactive launch-time prompt.
+//
+// ``ref`` is the git ref used for ``SyncConfigFiles`` — ``release.TagName``
+// for tagged releases, or a branch name for development tracking.
+//
+// Errors from individual steps are surfaced as warnings via ui rather
+// than propagated, so a transient image-pull failure does not abort the
+// otherwise-completed binary update. The caller is responsible for
+// surfacing the final state.
+func ApplyUpdate(release *Release, ref string) error {
+	if release == nil {
+		return fmt.Errorf("nil release")
+	}
+
+	ui.Info("Syncing configuration files...")
+	if err := SyncConfigFiles(ref); err != nil {
+		ui.Warning("Config sync: " + err.Error())
+	}
+
+	c := compose.New()
+	targetVersion := strings.TrimPrefix(release.TagName, "v")
+	ui.Info("Pulling Docker images (" + targetVersion + ")...")
+	if err := c.Pull(targetVersion); err != nil {
+		ui.Warning("Image pull: " + err.Error())
+	}
+
+	if err := SelfUpdate(release); err != nil {
+		return fmt.Errorf("binary update: %w", err)
+	}
+	if err := WriteVersion(release.TagName); err != nil {
+		ui.Warning("Write version stamp: " + err.Error())
+	}
+	return nil
+}
+
+// PromptIfUpdateAvailable presents an interactive y/n confirmation when a
+// newer release exists. On approval, applies the update and re-execs the
+// running launcher with the freshly installed binary so the rest of the
+// caller's flow runs against the new version (matches the Claude Code /
+// Codex CLI behavior of "update applied, restarting").
+//
+// Returns ``true`` only when the user approved AND ApplyUpdate succeeded
+// AND re-exec was issued. On POSIX the re-exec replaces the process via
+// ``syscall.Exec``, so a true return is effectively unreachable; the
+// helper still returns the value for tests and Windows callers, where
+// re-exec spawns a child + ``os.Exit`` from the parent.
+//
+// Skips silently (returns false, nil) when:
+//   - ``currentVersion`` is empty / "dev" — local build, no published release to track.
+//   - ``FetchLatestRelease`` fails — offline or GitHub unavailable.
+//   - the latest release is not newer than ``currentVersion``.
+//   - stdin is not a TTY — CI / piped invocations fall back to
+//     ``NotifyIfUpdateAvailable`` so the user still sees the notice.
+func PromptIfUpdateAvailable(currentVersion string) (bool, error) {
+	if currentVersion == "" || currentVersion == "dev" {
+		return false, nil
+	}
+	if !isInteractiveStdin() {
+		NotifyIfUpdateAvailable(currentVersion)
+		return false, nil
+	}
+
+	release, err := FetchLatestRelease()
+	if err != nil {
+		return false, nil // Silent skip — startup must not depend on GitHub.
+	}
+	if !CompareVersions(currentVersion, release.TagName) {
+		return false, nil
+	}
+
+	ui.Info(fmt.Sprintf(
+		"Update available: %s → %s",
+		displayVersion(currentVersion),
+		release.TagName,
+	))
+
+	var confirmed bool
+	if err := huh.NewConfirm().
+		Title(fmt.Sprintf("Install %s now?", release.TagName)).
+		Description(
+			"Updates the launcher binary, docker-compose config, and pulls\n"+
+				"the matching Docker images. Decepticon will restart with\n"+
+				"the new version once the update finishes.",
+		).
+		Affirmative("Yes, update").
+		Negative("Skip").
+		Value(&confirmed).
+		Run(); err != nil {
+		// Prompt failure (e.g. tty closed mid-render) — fall through to
+		// the passive notice rather than crashing the launch.
+		ui.Warning("Update prompt failed: " + err.Error())
+		return false, nil
+	}
+	if !confirmed {
+		ui.DimText(
+			"Continuing with " + displayVersion(currentVersion) +
+				". Run `decepticon update` later to upgrade.",
+		)
+		return false, nil
+	}
+
+	// Determine the ref — same logic as ``decepticon update``: prefer
+	// the explicit branch override in .env, fall back to the release tag.
+	ref := release.TagName
+	if config.EnvExists() {
+		if env, lerr := config.LoadEnv(config.EnvPath()); lerr == nil {
+			if branch := strings.TrimSpace(env["DECEPTICON_BRANCH"]); branch != "" {
+				ref = branch
+			}
+		}
+	}
+
+	if err := ApplyUpdate(release, ref); err != nil {
+		ui.Warning("Update failed: " + err.Error())
+		ui.DimText("Continuing with " + displayVersion(currentVersion) + ".")
+		return false, nil
+	}
+
+	ui.Success("Update complete — restarting with " + release.TagName + "...")
+	if err := reexecSelf(); err != nil {
+		// Re-exec failed: tell the user to restart manually rather than
+		// silently keep running the old in-memory image.
+		ui.Warning("Re-exec failed: " + err.Error())
+		ui.DimText("Run `decepticon` again to use the new version.")
+		os.Exit(0)
+	}
+	// POSIX exec replaces the process — control never reaches here. The
+	// Windows path inside reexecSelf calls os.Exit after spawning the
+	// child, so this is also unreachable on Windows. Kept for symmetry.
+	return true, nil
+}
+
+// isInteractiveStdin returns true when the launcher's stdin is connected
+// to a real terminal. Piped / redirected stdin (CI, log shippers,
+// supervisor pipelines) returns false so the launch flow falls back to
+// the passive update notice instead of blocking on a prompt that nobody
+// can answer.
+func isInteractiveStdin() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 func displayVersion(version string) string {
