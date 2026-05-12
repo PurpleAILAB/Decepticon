@@ -235,8 +235,17 @@ class AttackPath(BaseModel):
 class ScopeEntry(BaseModel):
     """A single in-scope or out-of-scope target."""
 
-    target: str = Field(description="Domain, IP range (CIDR), or asset identifier")
-    type: str = Field(description="domain, ip-range, cloud-resource, physical, etc.")
+    target: str = Field(
+        description="Domain, IP range (CIDR), local filesystem path, URL, or asset identifier"
+    )
+    type: str = Field(
+        description=(
+            "domain | ip-range | cloud-resource | physical | "
+            "source_code (local filesystem path — launcher stages into /workspace/src) | "
+            "live_service (running HTTP/TCP endpoint) | "
+            "git-repo | file-upload"
+        )
+    )
     notes: str = ""
 
 

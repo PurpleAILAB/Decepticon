@@ -17,6 +17,10 @@ RoE
 ├── testing_window: str (required, must include timezone)
 ├── in_scope: list[ScopeEntry] (at least 1 required)
 │   └── ScopeEntry { target: str, type: str, notes: str }
+│       type values: domain | ip-range | cloud-resource | physical |
+│                    source_code | live_service | git-repo | file-upload
+│       source_code: local filesystem path — launcher auto-stages into /workspace/src
+│       live_service: running HTTP/TCP endpoint (use host.docker.internal for local services)
 ├── out_of_scope: list[ScopeEntry]
 │   └── ScopeEntry { target: str, type: str, notes: str }
 ├── prohibited_actions: list[str] (5 defaults always included)

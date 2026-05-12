@@ -29,7 +29,14 @@ Ask these questions in **two rounds** (batch related questions to minimize back-
 1. Engagement name and client organization
 2. Engagement type: `external` / `internal` / `hybrid` / `assumed-breach` / `physical`
 3. Start date, end date, testing window (with timezone)
-4. In-scope targets (domains, IP ranges, cloud resources, applications)
+4. In-scope targets — use the appropriate `type` for each:
+   - `domain` — hostname or wildcard (e.g. `*.example.com`)
+   - `ip-range` — CIDR notation (e.g. `10.0.0.0/24`)
+   - `cloud-resource` — AWS/GCP/Azure resource identifier
+   - `source_code` — **local filesystem path** (e.g. `/home/user/myapp`). The launcher automatically copies this into the sandbox at `/workspace/src` before the analyst starts — no manual `docker cp` needed.
+   - `live_service` — running HTTP/TCP endpoint (e.g. `http://host.docker.internal:8080`)
+   - `git-repo` — git repository URL
+   - `file-upload` — uploaded binary or archive
 5. Out-of-scope targets (explicit exclusions)
 
 **Round 2 — Boundaries & Escalation:**

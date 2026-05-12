@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
@@ -144,6 +147,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("set engagement workspace env: %w", err)
 	}
 
+	// Stage any source_code targets from the RoE into <workspace>/src/ so the
+	// analyst sandbox can read them at /workspace/src. Soundwave writes the RoE
+	// after the interview (which happens inside the CLI), so we poll in the
+	// background — by the time the operator finishes reviewing and approving the
+	// OPPLAN the copy is already done.
+	go stageSourceTargets(choice.WorkspacePath)
+
 	// 4. Start services
 	c := compose.New()
 
@@ -185,6 +195,119 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	ui.DimText("CLI exited. Services kept running — run 'decepticon stop' to shut down.")
 	return nil
+}
+
+// stageSourceTargets polls for the RoE written by Soundwave during the CLI
+// interview and copies any source_code targets into <workspace>/src/ on the
+// host filesystem. Because /workspace is bind-mounted to the engagement
+// workspace directory, the analyst sandbox sees the source at /workspace/src
+// immediately after the copy without any container restart.
+//
+// The poll runs for up to two hours so it covers slow Soundwave interviews.
+// Failures are surfaced as warnings and never block the engagement.
+func stageSourceTargets(workspacePath string) {
+	roePath := filepath.Join(workspacePath, "plan", "roe.json")
+
+	// Wait for Soundwave to write the RoE (up to 2 hours, 10s polling).
+	const (
+		maxAttempts  = 720
+		pollInterval = 10 * time.Second
+	)
+	for i := range maxAttempts {
+		if _, err := os.Stat(roePath); err == nil {
+			break
+		}
+		if i == maxAttempts-1 {
+			return // timed out — no RoE appeared
+		}
+		time.Sleep(pollInterval)
+	}
+
+	data, err := os.ReadFile(roePath)
+	if err != nil {
+		ui.Warning("source staging: could not read roe.json: " + err.Error())
+		return
+	}
+
+	// The RoE JSON uses in_scope_targets (Soundwave's generated key) or
+	// in_scope (schema field name) — handle both to be forward-compatible.
+	var roe struct {
+		InScopeTargets []struct {
+			Target string `json:"target"`
+			Type   string `json:"type"`
+		} `json:"in_scope_targets"`
+		InScope []struct {
+			Target string `json:"target"`
+			Type   string `json:"type"`
+		} `json:"in_scope"`
+	}
+	if err := json.Unmarshal(data, &roe); err != nil {
+		ui.Warning("source staging: could not parse roe.json: " + err.Error())
+		return
+	}
+
+	entries := append(roe.InScopeTargets, roe.InScope...) //nolint:gocritic
+	for _, entry := range entries {
+		if entry.Type != "source_code" && entry.Type != "local-path" {
+			continue
+		}
+		srcPath := entry.Target
+		if _, err := os.Stat(srcPath); err != nil {
+			ui.Warning(fmt.Sprintf("source staging: path %q not found on host — skipping", srcPath))
+			continue
+		}
+		dstPath := filepath.Join(workspacePath, "src")
+		ui.Info(fmt.Sprintf("Staging source %q → %s/src (white-box analysis)...", srcPath, workspacePath))
+		if err := copyDirTree(srcPath, dstPath); err != nil {
+			ui.Warning(fmt.Sprintf("source staging: copy %q failed: %s", srcPath, err.Error()))
+			continue
+		}
+		ui.DimText(fmt.Sprintf("Source staged at /workspace/src — analyst will find it there."))
+	}
+}
+
+// copyDirTree recursively copies src into dst, creating dst if it does not
+// exist. Symlinks are resolved; unreadable files are skipped with a warning
+// rather than aborting the whole copy.
+func copyDirTree(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Skip unreadable entries (e.g. permission-denied) non-fatally.
+			ui.Warning(fmt.Sprintf("source staging: skipping %q: %s", path, err.Error()))
+			return nil
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		return copyFilePath(path, target)
+	})
+}
+
+// copyFilePath copies a single file from src to dst, creating parent
+// directories as needed.
+func copyFilePath(src, dst string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
 
 // probeOllamaIfSelected does a best-effort GET on /api/tags to verify the
