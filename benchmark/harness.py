@@ -199,7 +199,7 @@ class Harness:
         # Cancel did not dislodge the run within the deadline. Escalate to a
         # langgraph container restart, which kills the threadpool holding the
         # broken socket. Without this, subsequent challenges inherit the
-        # broken state — explains the cycle-5→cycle-6 cascade.
+        # broken state and cascade-fail across the rest of the run.
         log.warning(
             "harness.escalation: run %s did NOT reach terminal status within %ds "
             "(last=%s) — escalating to langgraph container restart",
@@ -209,9 +209,9 @@ class Harness:
         )
         # Snapshot IDs onto a fresh _ActiveRun and capture postmortem
         # BEFORE _force_restart_langgraph zeros active.thread_id /
-        # active.run_id at :270-271. Without this snapshot, every
-        # post-escalation _recover_postmortem_state(active) call early-outs
-        # via `not active.has_run` (cycle-17 observer-2 RC).
+        # active.run_id. Without this snapshot, every post-escalation
+        # _recover_postmortem_state(active) call early-outs via
+        # `not active.has_run` and the FAIL row lands with NULL evidence.
         snapshot = _ActiveRun(
             langgraph_url=active.langgraph_url,
             thread_id=active.thread_id,
@@ -224,11 +224,11 @@ class Harness:
     def _force_restart_langgraph(self, active: _ActiveRun) -> None:
         """Restart the langgraph container to dislodge a wedged run.
 
-        When API-level cancel cannot reach the wedged graph node (cycle-6
-        case), only restarting the container kills the underlying threadpool
-        that was holding the broken socket. Also runs a defensive sandbox
-        cleanup — restarting just langgraph leaves the sandbox tmux state
-        poisoned for the next challenge if the wedge involved tmux.
+        When API-level cancel cannot reach the wedged graph node, only
+        restarting the container kills the underlying threadpool that was
+        holding the broken socket. Also runs a defensive sandbox cleanup —
+        restarting just langgraph leaves the sandbox tmux state poisoned
+        for the next challenge if the wedge involved tmux.
 
         Clears ``active.thread_id`` / ``active.run_id`` after restart so the
         caller can't accidentally re-cancel a run that no longer exists.
@@ -394,11 +394,9 @@ class Harness:
         """Restart the sandbox container so each challenge starts clean.
 
         Without this, tmux sessions / python procs / curl workers leak across
-        cycles, slowing tmux capture-pane until TimeoutExpired kills sub-agents
-        (cycle 6 root cause). Per user policy, always do a full container
-        restart — simpler than trying to enumerate stale sessions.
-
-        Cost: ~5-10s per challenge (container restart + entrypoint).
+        challenges, slowing tmux capture-pane until TimeoutExpired kills
+        sub-agents. Per user policy, always do a full container restart —
+        simpler than trying to enumerate stale sessions.
         """
         log.info("harness.sandbox: restarting sandbox container for fresh state")
         subprocess.run(
@@ -520,12 +518,13 @@ class Harness:
 
         except asyncio.TimeoutError:
             # Cancel + verify-terminal BEFORE teardown so the graph node is
-            # not still hitting the target when we tear it down (cycle-5/6
-            # connection-refused trace pattern). Cancel is best-effort with a
-            # 30s deadline; if the run does not reach terminal in that window,
+            # not still hitting the target when we tear it down (the
+            # connection-refused trace pattern observed when teardown races
+            # an in-flight request). Cancel is best-effort with a 30s
+            # deadline; if the run does not reach terminal in that window,
             # cancel_outcome="failed" tells the next critic loop the cancel
-            # didn't dislodge the run, and the next pre-cycle sandbox restart
-            # is the resolution path.
+            # didn't dislodge the run, and the next pre-challenge sandbox
+            # restart is the resolution path.
             cancel_outcome, terminal_status, postmortem = await self._cancel_and_verify_terminal(
                 active
             )
@@ -737,7 +736,7 @@ class Harness:
                         if status == "pending" and elapsed > 300 and not pending_warning_emitted:
                             log.warning(
                                 "Run %s status=pending for %ds — possible silent "
-                                "stall (cycle-5/6 signature)",
+                                "stall (no status transition since dispatch)",
                                 run_id,
                                 int(elapsed),
                             )
@@ -747,8 +746,8 @@ class Harness:
                         # the wall-clock budget.
                         pass
                     # Heartbeat every 30s so harness logs show progress even
-                    # when status hasn't transitioned. Cycle-5/6 had ~16-17min
-                    # silent stalls invisible from the harness layer.
+                    # when status hasn't transitioned — long silent stalls
+                    # are otherwise invisible from the harness layer.
                     now = time.time()
                     if now - last_heartbeat >= 30:
                         log.info(
