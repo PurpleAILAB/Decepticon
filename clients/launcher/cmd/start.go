@@ -203,6 +203,13 @@ func runStart(cmd *cobra.Command, args []string) error {
 // workspace directory, the analyst sandbox sees the source at /workspace/src
 // immediately after the copy without any container restart.
 //
+// Destination layout:
+//   - 1 source target  → <workspace>/src        (flat; matches analyst prompts)
+//   - N source targets → <workspace>/src/<name> (per-target subdirs; no silent merging)
+//
+// Each destination is replaced atomically via a staging directory so a crashed
+// or re-run engagement never leaves a hybrid tree from two different runs.
+//
 // The poll runs for up to two hours so it covers slow Soundwave interviews.
 // Failures are surfaced as warnings and never block the engagement.
 func stageSourceTargets(workspacePath string) {
@@ -246,34 +253,98 @@ func stageSourceTargets(workspacePath string) {
 		return
 	}
 
-	entries := append(roe.InScopeTargets, roe.InScope...) //nolint:gocritic
-	for _, entry := range entries {
+	// Collect valid source_code / local-path entries, validating each path
+	// exists on the host before committing to any copy work.
+	combined := make([]struct {
+		Target string `json:"target"`
+		Type   string `json:"type"`
+	}, 0, len(roe.InScopeTargets)+len(roe.InScope))
+	combined = append(combined, roe.InScopeTargets...)
+	combined = append(combined, roe.InScope...)
+
+	var sourcePaths []string
+	for _, entry := range combined {
 		if entry.Type != "source_code" && entry.Type != "local-path" {
 			continue
 		}
-		srcPath := entry.Target
-		if _, err := os.Stat(srcPath); err != nil {
-			ui.Warning(fmt.Sprintf("source staging: path %q not found on host — skipping", srcPath))
+		if _, err := os.Stat(entry.Target); err != nil {
+			ui.Warning(fmt.Sprintf("source staging: path %q not found on host — skipping", entry.Target))
 			continue
 		}
-		dstPath := filepath.Join(workspacePath, "src")
-		ui.Info(fmt.Sprintf("Staging source %q → %s/src (white-box analysis)...", srcPath, workspacePath))
-		if err := copyDirTree(srcPath, dstPath); err != nil {
-			ui.Warning(fmt.Sprintf("source staging: copy %q failed: %s", srcPath, err.Error()))
+		sourcePaths = append(sourcePaths, entry.Target)
+	}
+
+	if len(sourcePaths) == 0 {
+		return
+	}
+
+	for i, srcPath := range sourcePaths {
+		// Determine destination: flat for a single target, per-name subdir for many.
+		var dstPath string
+		if len(sourcePaths) == 1 {
+			dstPath = filepath.Join(workspacePath, "src")
+		} else {
+			name := sanitizeDirName(filepath.Base(srcPath))
+			if name == "" {
+				name = fmt.Sprintf("target-%d", i+1)
+			}
+			dstPath = filepath.Join(workspacePath, "src", name)
+		}
+
+		ui.Info(fmt.Sprintf("Staging source %q → workspace/src (white-box analysis)...", srcPath))
+
+		// Atomic replace: copy into <dst>.staging, then rename into place.
+		// Both paths live inside workspacePath so the rename stays on one
+		// filesystem and is atomic on Linux and macOS.
+		stagingPath := dstPath + ".staging"
+		_ = os.RemoveAll(stagingPath) // clean up any prior failed attempt
+
+		if err := copyDirTree(srcPath, stagingPath); err != nil {
+			ui.Warning(fmt.Sprintf("source staging: copy %q failed: %s — cleaning up", srcPath, err.Error()))
+			_ = os.RemoveAll(stagingPath)
 			continue
 		}
-		ui.DimText(fmt.Sprintf("Source staged at /workspace/src — analyst will find it there."))
+
+		_ = os.RemoveAll(dstPath) // remove previous version before the rename
+		if err := os.Rename(stagingPath, dstPath); err != nil {
+			ui.Warning(fmt.Sprintf("source staging: rename failed for %q: %s", srcPath, err.Error()))
+			_ = os.RemoveAll(stagingPath)
+			continue
+		}
+
+		ui.DimText("Source staged at /workspace/src — analyst will find it there.")
 	}
 }
 
+// sanitizeDirName replaces characters that are unsafe in directory names with
+// underscores so per-target subdir names are always valid on all platforms.
+func sanitizeDirName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // copyDirTree recursively copies src into dst, creating dst if it does not
-// exist. Symlinks are resolved; unreadable files are skipped with a warning
-// rather than aborting the whole copy.
+// exist. Symlinks are explicitly skipped — os.Open follows symlinks, so
+// copying them could pull files from outside the intended source tree
+// (e.g. a repo symlink pointing at ~/.ssh/id_rsa would land in the sandbox).
+// Unreadable files are skipped with a warning rather than aborting the copy.
 func copyDirTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Skip unreadable entries (e.g. permission-denied) non-fatally.
 			ui.Warning(fmt.Sprintf("source staging: skipping %q: %s", path, err.Error()))
+			return nil
+		}
+		// Skip symlinks — do not dereference them into the sandbox.
+		if d.Type()&fs.ModeSymlink != 0 {
+			ui.Warning(fmt.Sprintf("source staging: skipping symlink %q", path))
 			return nil
 		}
 		rel, err := filepath.Rel(src, path)
@@ -288,7 +359,7 @@ func copyDirTree(src, dst string) error {
 	})
 }
 
-// copyFilePath copies a single file from src to dst, creating parent
+// copyFilePath copies a single regular file from src to dst, creating parent
 // directories as needed.
 func copyFilePath(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
