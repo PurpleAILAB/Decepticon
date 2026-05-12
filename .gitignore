@@ -108,3 +108,6 @@ benchmark/workspaces/
 .omx/
 .env.bak.*
 benchmark/results/XBEN-*-24/run-loop*.log
+
+# Git worktrees
+.worktrees/
