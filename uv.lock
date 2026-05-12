@@ -394,7 +394,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepagents", specifier = ">=0.4.4" },
+    { name = "deepagents", specifier = ">=0.5.0" },
     { name = "defusedxml", specifier = ">=0.7.0" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "langchain-anthropic", specifier = ">=0.3.0" },
