@@ -63,6 +63,8 @@ export function WebTerminal({
   const reconnectMsgShownRef = useRef(false);
   // Track the onData listener for manual retry so we can dispose it
   const retryListenerRef = useRef<{ dispose: () => void } | null>(null);
+  // Track the main onData listener so we can dispose it on reconnect
+  const onDataDisposableRef = useRef<{ dispose: () => void } | null>(null);
 
   const cleanup = useCallback(() => {
     disposedRef.current = true;
@@ -165,8 +167,9 @@ export function WebTerminal({
       setConnState("reconnecting");
     };
 
-    // Forward input
-    term.onData((data: string) => {
+    // Forward input — dispose previous listener to prevent duplicates on reconnect
+    onDataDisposableRef.current?.dispose();
+    onDataDisposableRef.current = term.onData((data: string) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(data);
       }
