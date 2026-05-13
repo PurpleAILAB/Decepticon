@@ -25,8 +25,20 @@ Source-token resolution order (first match wins):
   5. ``~/.config/github-copilot/hosts.json`` (legacy format used by
      older versions of the Copilot CLI).
 
-Model names: copilot/gpt-4o, copilot/o1, copilot/o3-mini, etc. The
-slug after ``copilot/`` is forwarded verbatim as the upstream model id.
+User-facing model names: ``copilot/gpt-5.5``, ``copilot/claude-sonnet-4-6``,
+``copilot/gpt-5.4-mini``, ``copilot/gpt-5.3-codex``, etc. The exact lineup
+follows GitHub Copilot's model picker (gpt-4o / o1 / o3-mini were retired
+on 2025-10-23 and have been replaced by the GPT-5 family).
+
+Slugs that collide with ``litellm.open_ai_chat_completion_models``
+(currently ``gpt-5.3-codex`` among Copilot's lineup; the default tier
+picks above avoid this set) are aliased in ``litellm_dynamic_config.py``
+to an internal ``copilot/oauth-<slug>`` form. The ``oauth-`` sentinel
+dodges LiteLLM's ``main.py:2561`` short-circuit, which would otherwise
+route the bare slug straight to api.openai.com regardless of provider.
+This handler strips the sentinel via ``_upstream_model_slug`` before
+forwarding to api.githubcopilot.com, so Copilot receives the canonical
+name.
 """
 
 from __future__ import annotations
@@ -228,10 +240,31 @@ def _api_base() -> str:
     return GITHUB_COPILOT_API_BASE
 
 
+def _upstream_model_slug(model: str) -> str:
+    """Translate a LiteLLM-side model id back to the Copilot model slug.
+
+    Routes that reach this handler:
+
+      - ``copilot/<slug>`` — passthrough for slugs that don't collide with
+        LiteLLM's ``open_ai_chat_completion_models``.
+      - ``copilot/oauth-<slug>`` — dynamic-config alias for slugs that
+        would otherwise bypass to api.openai.com via main.py:2561. The
+        ``oauth-`` sentinel is stripped here so api.githubcopilot.com
+        receives the canonical model id.
+    """
+    slug = model.split("/", 1)[-1] if "/" in model else model
+    if slug.startswith("oauth-"):
+        slug = slug.removeprefix("oauth-")
+    return slug
+
+
 class CopilotHandler(CustomLLM):
     """Routes through GitHub Copilot subscription.
 
-    Model names: copilot/gpt-4o, copilot/o1, copilot/o3-mini, etc.
+    Model names: copilot/gpt-5.5, copilot/claude-sonnet-4-6,
+    copilot/gpt-5.4-mini, copilot/gpt-5.3-codex, etc. The slug after
+    ``copilot/`` is forwarded verbatim to api.githubcopilot.com after
+    the ``oauth-`` sentinel (if present) is stripped.
     """
 
     def completion(
@@ -252,7 +285,7 @@ class CopilotHandler(CustomLLM):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        actual_model = model.split("/", 1)[-1] if "/" in model else model
+        actual_model = _upstream_model_slug(model)
 
         opts = optional_params or {}
         request_body: dict[str, Any] = {"model": actual_model, "messages": messages}

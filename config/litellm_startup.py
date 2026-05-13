@@ -105,14 +105,23 @@ from perplexity_handler import perplexity_sub_handler_instance  # noqa: E402
 
 # ── Custom provider registration ─────────────────────────────────────
 # The ``auth/`` namespace dispatches to per-provider OAuth handlers via
-# ``auth_handler.AuthDispatcher`` (currently used for ``claude-*``).
+# ``auth_handler.AuthDispatcher`` (currently used for ``claude-*`` only).
 #
-# ChatGPT/Codex is registered under its own ``codex-oauth`` provider
-# key so the dynamic config can alias ``auth/gpt-*`` (user-facing model
-# name) to ``codex-oauth/gpt-*`` (the internal route). LiteLLM's
-# router otherwise misroutes ``auth/gpt-*`` to its native OpenAI
-# provider because the slug ``gpt-*`` matches an OpenAI model alias —
-# the dedicated provider name avoids that heuristic entirely.
+# Slug-collision rule: whenever a subscription slug matches a name in
+# ``litellm.open_ai_chat_completion_models``, ``litellm_dynamic_config``
+# aliases the internal model id with an ``oauth-`` sentinel and the
+# matching handler strips it before forwarding upstream. Without the
+# sentinel LiteLLM's ``main.py:2561`` short-circuit (``model in
+# open_ai_chat_completion_models``) fires BEFORE the custom-provider
+# dispatch and forwards to api.openai.com regardless of provider name.
+# Currently affected:
+#   - ChatGPT Codex (auth/gpt-5.5/5.4/5.4-mini/5.3-codex) →
+#       codex-oauth/oauth-gpt-<slug>
+#   - Copilot opt-in (copilot/gpt-5.3-codex) → copilot/oauth-gpt-5.3-codex
+# Default Copilot tier picks (gpt-5.5, claude-sonnet-4-6, gpt-5.4-mini)
+# and all other subscription routes (claude-*, gemini-2.5-*, grok-4.*,
+# sonar*) use slugs that do NOT collide with open_ai_chat_completion_models
+# and pass through their providers directly with no aliasing.
 
 litellm.custom_provider_map = [
     {"provider": "auth", "custom_handler": auth_handler_instance},

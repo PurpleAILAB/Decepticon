@@ -4,9 +4,17 @@ Routes incoming requests to the correct subscription handler based on the
 slug after ``auth/``:
 
   - ``auth/claude-*``  → claude_code_handler  (Claude Code OAuth)
-  - ``auth/gpt-*``     → codex_chatgpt_handler (Codex CLI / ChatGPT OAuth)
 
-Adding a new subscription provider is one line in ``_PREFIX_HANDLERS``.
+Adding a new ``auth/<prefix>-*`` subscription is one line in
+``_PREFIX_HANDLERS``.
+
+Note: ChatGPT Codex (user-facing ``auth/gpt-*``) does NOT go through this
+dispatcher. ``litellm_dynamic_config.py`` aliases it to the dedicated
+``codex-oauth/oauth-gpt-*`` route — the ``oauth-`` sentinel is required to
+dodge LiteLLM's ``main.py:2561`` ``open_ai_chat_completion_models``
+short-circuit, which would otherwise route bare ``gpt-*`` slugs to
+api.openai.com. The dispatcher remains the multiplex point for any future
+``auth/<prefix>-*`` namespace whose slugs do not collide.
 
 This module is mounted into the LiteLLM container alongside the per-provider
 handler files. It replaces the inline ``_select_auth_handler`` /
@@ -22,13 +30,11 @@ from typing import Any
 
 import litellm
 from claude_code_handler import claude_code_handler_instance
-from codex_chatgpt_handler import codex_chatgpt_handler_instance
 from litellm import CustomLLM, ModelResponse
 
 # Prefix → handler. Order matters only for documentation; lookup is exact.
 _PREFIX_HANDLERS: list[tuple[str, CustomLLM]] = [
     ("claude-", claude_code_handler_instance),
-    ("gpt-", codex_chatgpt_handler_instance),
 ]
 
 

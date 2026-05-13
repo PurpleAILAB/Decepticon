@@ -397,7 +397,7 @@ class TestLLMModelMapping:
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M2.5",
             "deepseek/deepseek-v4-pro",
-            "xai/grok-3",
+            "xai/grok-4.3",
             "mistral/mistral-large-latest",
             "openrouter/anthropic/claude-opus-4-7",
             "nvidia_nim/meta/llama-3.3-70b-instruct",

@@ -81,8 +81,8 @@ def test_validate_model_name_rejects_other_subscription_prefixes() -> None:
     """
     for slug in (
         "gemini-sub/gemini-2.5-pro",
-        "copilot/gpt-4o",
-        "grok-sub/grok-3",
+        "copilot/gpt-5.5",
+        "grok-sub/grok-4.3",
         "pplx-sub/sonar",
     ):
         with pytest.raises(ValueError, match="not allowed as dynamic API-key model routes"):
@@ -187,6 +187,12 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
         "auth/gpt-5.5": {"model": "codex-oauth/oauth-gpt-5.5"},
         "auth/gpt-5.4": {"model": "codex-oauth/oauth-gpt-5.4"},
         "auth/gpt-5.4-mini": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
+        # Code-heavy override route. Registered alongside the tier
+        # defaults so per-agent env overrides like
+        # ``DECEPTICON_MODEL_PATCHER=auth/gpt-5.3-codex`` work without a
+        # yaml edit. The ``oauth-`` slug sentinel is required because
+        # ``gpt-5.3-codex`` is in ``open_ai_chat_completion_models``.
+        "auth/gpt-5.3-codex": {"model": "codex-oauth/oauth-gpt-5.3-codex"},
     }
     assert "auth/gpt-5-nano" not in entries
     assert merged["litellm_settings"]["fallbacks"] == [

@@ -36,8 +36,18 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "auth/claude-haiku-4-5",
   ],
   // Cloud OpenAI
-  "OpenAI API": ["openai/gpt-5.5", "openai/gpt-5.4", "openai/gpt-5-nano"],
-  "ChatGPT OAuth": ["auth/gpt-5.5", "auth/gpt-5.4"],
+  "OpenAI API": [
+    "openai/gpt-5.5",
+    "openai/gpt-5.4",
+    "openai/gpt-5-nano",
+    "openai/gpt-5.3-codex",
+  ],
+  "ChatGPT OAuth": [
+    "auth/gpt-5.5",
+    "auth/gpt-5.4",
+    "auth/gpt-5.4-mini",
+    "auth/gpt-5.3-codex",
+  ],
   // Cloud Google
   "Google API": [
     "gemini/gemini-2.5-pro",
@@ -51,8 +61,8 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
   // Other vendors
   "MiniMax": ["minimax/MiniMax-M2.5", "minimax/MiniMax-M2.5-lightning"],
   "DeepSeek": ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash"],
-  "xAI Grok API": ["xai/grok-3", "xai/grok-3-mini"],
-  "SuperGrok OAuth": ["grok-sub/grok-3", "grok-sub/grok-3-mini"],
+  "xAI Grok API": ["xai/grok-4.3", "xai/grok-4-1-fast-reasoning"],
+  "SuperGrok OAuth": ["grok-sub/grok-4.3", "grok-sub/grok-4-1-fast-reasoning"],
   "Mistral": ["mistral/mistral-large-latest", "mistral/codestral-latest"],
   "OpenRouter": [
     "openrouter/anthropic/claude-opus-4-7",
@@ -65,7 +75,12 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "nvidia_nim/meta/llama-3.2-3b-instruct",
   ],
   // Subscription OAuth
-  "GitHub Copilot Pro (OAuth)": ["copilot/gpt-4o", "copilot/o1", "copilot/o3-mini"],
+  "GitHub Copilot Pro (OAuth)": [
+    "copilot/gpt-5.5",
+    "copilot/claude-sonnet-4-6",
+    "copilot/gpt-5.4-mini",
+    "copilot/gpt-5.3-codex",
+  ],
   "Perplexity Pro (OAuth)": ["pplx-sub/sonar-pro", "pplx-sub/sonar"],
   // Cloud gateways (added in OpenClaude provider migration)
   "AWS Bedrock": [

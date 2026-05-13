@@ -63,6 +63,16 @@ model_list:
       model: openai/gpt-5-nano
       api_key: os.environ/OPENAI_API_KEY
 
+  # Code-heavy override — opt-in via DECEPTICON_MODEL_<ROLE> for roles
+  # like patcher, exploiter, contract_auditor that benefit from OpenAI's
+  # agentic coding specialization. Not a default tier pick (gpt-5.5 stays
+  # HIGH for general agent balance); this route exists so per-agent env
+  # overrides don't require a yaml edit.
+  - model_name: openai/gpt-5.3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_key: os.environ/OPENAI_API_KEY
+
   # ── Google ───────────────────────────────────────────────────────────
   # HIGH tier
   - model_name: gemini/gemini-2.5-pro
@@ -139,14 +149,18 @@ model_list:
       api_key: os.environ/DEEPSEEK_API_KEY
 
   # ── xAI (Grok) ──────────────────────────────────────────────────────
-  - model_name: xai/grok-3
+  # grok-3 / grok-3-mini retired by xAI on 2026-05-15 (12pm PT). The 4.x
+  # family below is the current production lineup; grok-4.3 is xAI's
+  # general flagship and grok-4-1-fast-reasoning is the cost-efficient
+  # MID tier with comparable tool-call quality.
+  - model_name: xai/grok-4.3
     litellm_params:
-      model: xai/grok-3
+      model: xai/grok-4.3
       api_key: os.environ/XAI_API_KEY
 
-  - model_name: xai/grok-3-mini
+  - model_name: xai/grok-4-1-fast-reasoning
     litellm_params:
-      model: xai/grok-3-mini
+      model: xai/grok-4-1-fast-reasoning
       api_key: os.environ/XAI_API_KEY
 
   # ── Mistral ──────────────────────────────────────────────────────────
@@ -272,7 +286,7 @@ litellm_settings:
     # DeepSeek
     - {"deepseek/deepseek-v4-pro": ["deepseek/deepseek-v4-flash"]}
     # xAI direct API
-    - {"xai/grok-3": ["xai/grok-3-mini"]}
+    - {"xai/grok-4.3": ["xai/grok-4-1-fast-reasoning"]}
     # Mistral (no LOW tier)
     - {"mistral/mistral-large-latest": ["mistral/codestral-latest"]}
     # Nvidia NIM

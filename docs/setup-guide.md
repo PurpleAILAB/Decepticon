@@ -472,17 +472,17 @@ Complete list of all supported LLM providers and their pre-configured models:
 |----------|--------|-----------|------|
 | **Subscriptions (OAuth — no API billing)** | | | |
 | Claude Max/Pro/Team | Opus, Sonnet, Haiku | OAuth | $20–$100/mo |
-| ChatGPT Pro/Plus/Team | `auth/gpt-5.5`, `auth/gpt-5.4` | OAuth | $20–$200/mo |
+| ChatGPT Pro/Plus/Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` (+ `auth/gpt-5.3-codex` for code agents) | OAuth | $20–$200/mo |
 | Gemini Advanced | Gemini 2.5 Pro/Flash | OAuth | $20/mo |
-| Copilot Pro | `copilot/gpt-4o`, `copilot/o1`, `copilot/o3-mini` | OAuth | $20/mo |
-| SuperGrok | Grok-3, Grok-3 Mini | OAuth | X Premium+ |
+| Copilot Pro | `copilot/gpt-5.5`, `copilot/claude-sonnet-4-6`, `copilot/gpt-5.4-mini` (+ `copilot/gpt-5.3-codex`) | OAuth | $20/mo |
+| SuperGrok | Grok 4.3, Grok 4-1 Fast Reasoning | OAuth | X Premium+ |
 | Perplexity Pro | Sonar Pro, Sonar | OAuth | $20/mo |
 | **API Key Providers (pay-per-token)** | | | |
 | Anthropic | Claude Opus 4.7, Sonnet 4.6, Haiku 4.5 | API key | Per token |
-| OpenAI | GPT-5.5, GPT-5.4, GPT-5-nano | API key | Per token |
+| OpenAI | GPT-5.5, GPT-5.4, GPT-5-nano (+ GPT-5.3-Codex for code agents) | API key | Per token |
 | DeepSeek | DeepSeek Chat, DeepSeek Reasoner | API key | Per token |
 | Google | Gemini 2.5 Flash, Gemini 2.5 Pro | API key | Per token |
-| xAI | Grok-3, Grok-3 Mini | API key | Per token |
+| xAI | Grok 4.3, Grok 4-1 Fast Reasoning | API key | Per token |
 | Mistral | Mistral Large, Codestral | API key | Per token |
 | Cohere | Command R+, Command R | API key | Per token |
 | Groq | Llama 3.3 70B, Llama 3.1 8B | API key | Per token |

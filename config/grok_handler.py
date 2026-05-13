@@ -1,14 +1,16 @@
 """LiteLLM custom handler for xAI SuperGrok subscription.
 
-Routes requests through Grok's API using X Premium+ subscription tokens.
-Enables Grok-3/Grok-3-mini access without xAI API billing.
+Routes requests through Grok's API using X Premium+ / SuperGrok
+subscription tokens. Enables Grok 4.x access without xAI API billing.
 
 Token sources (checked in order):
   1. GROK_ACCESS_TOKEN env var
   2. GROK_SESSION_TOKEN env var (X.com auth cookie)
   3. ~/.config/grok/tokens.json
 
-Model names: grok-sub/grok-3, grok-sub/grok-3-mini, etc.
+Model names: grok-sub/grok-4.3, grok-sub/grok-4-1-fast-reasoning, etc.
+The slug after ``grok-sub/`` is forwarded verbatim as the upstream
+model id; xAI retired grok-3 / grok-3-mini on 2026-05-15.
 """
 
 from __future__ import annotations
@@ -126,7 +128,7 @@ def get_grok_access_token(force_refresh: bool = False) -> str:
 class GrokSubHandler(CustomLLM):
     """Routes through xAI SuperGrok subscription.
 
-    Model names: grok-sub/grok-3, grok-sub/grok-3-mini
+    Model names: grok-sub/grok-4.3, grok-sub/grok-4-1-fast-reasoning, etc.
     """
 
     def completion(

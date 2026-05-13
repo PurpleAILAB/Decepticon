@@ -42,6 +42,21 @@ Tier × AuthMethod matrix
   minimax_api      MiniMax-M2.5                  MiniMax-M2.5-lightning         — (falls through)
   openrouter_api   claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
   nvidia_api       llama-3.3-70b-instruct        nemotron-70b-instruct          llama-3.2-3b-instruct
+  xai_api          grok-4.3                      grok-4-1-fast-reasoning        — (falls through)
+  copilot_oauth    copilot/gpt-5.5               copilot/claude-sonnet-4-6      copilot/gpt-5.4-mini
+  grok_oauth       grok-sub/grok-4.3             grok-sub/grok-4-1-fast-reasoning — (falls through)
+  pplx_oauth       pplx-sub/sonar-pro            pplx-sub/sonar                 — (falls through)
+
+Code-heavy override
+-------------------
+For roles that benefit from OpenAI's agentic coding specialization (patcher,
+exploiter, contract_auditor, reverser, verifier), set
+``DECEPTICON_MODEL_<ROLE>`` to one of the registered Codex variant routes:
+  - ``openai/gpt-5.3-codex``       (paid API key)
+  - ``auth/gpt-5.3-codex``         (ChatGPT subscription via Codex backend)
+  - ``copilot/gpt-5.3-codex``      (GitHub Copilot subscription)
+These are NOT default tier picks — gpt-5.5 stays HIGH for general agent
+balance — but are registered so per-role overrides work without yaml edits.
 
 Profiles
 --------
@@ -49,7 +64,7 @@ Profiles
   max   every agent on HIGH (high-value targets)
   test  every agent on LOW (development / CI)
 
-Model identifiers verified against provider docs as of 2026-04-28.
+Model identifiers verified against provider docs as of 2026-05-14.
 """
 
 from __future__ import annotations
@@ -161,8 +176,12 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.LOW: "deepseek/deepseek-v4-flash",
     },
     AuthMethod.XAI_API: {
-        Tier.HIGH: "xai/grok-3",
-        Tier.MID: "xai/grok-3-mini",
+        # grok-3 / grok-3-mini retired by xAI on 2026-05-15 (12pm PT).
+        # grok-4.3 is xAI's current general-purpose flagship; the 4-1-fast
+        # reasoning variant gives a cheaper second-best with comparable
+        # tool-call quality for the MID tier.
+        Tier.HIGH: "xai/grok-4.3",
+        Tier.MID: "xai/grok-4-1-fast-reasoning",
     },
     AuthMethod.MISTRAL_API: {
         Tier.HIGH: "mistral/mistral-large-latest",
@@ -202,13 +221,27 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.LOW: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
     },
     AuthMethod.COPILOT_OAUTH: {
-        Tier.HIGH: "copilot/gpt-4o",
-        Tier.MID: "copilot/o1",
-        Tier.LOW: "copilot/o3-mini",
+        # gpt-4o / o1 / o3-mini retired from GitHub Copilot on 2025-10-23.
+        # Current Copilot OpenAI lineup: gpt-5 mini, gpt-5.2, gpt-5.2-Codex,
+        # gpt-5.3-Codex, gpt-5.4, gpt-5.4 mini, gpt-5.4 nano, gpt-5.5.
+        # Claude lineup: Haiku 4.5, Opus 4.5/4.6/4.7, Sonnet 4.5/4.6.
+        # Picks below avoid the LiteLLM main.py:2561 short-circuit by using
+        # slugs that are NOT in ``open_ai_chat_completion_models``:
+        #   - gpt-5.5            (general HIGH)
+        #   - claude-sonnet-4-6  (cyber MID per Cybench, cross-vendor via Copilot)
+        #   - gpt-5.4-mini       (cost-effective LOW)
+        # For code-heavy roles (patcher, exploiter, contract_auditor), the
+        # ``copilot/gpt-5.3-codex`` route is registered as an alternative in
+        # ``litellm_dynamic_config`` (sentinel-aliased to dodge bypass) and
+        # can be selected per-agent via ``DECEPTICON_MODEL_<ROLE>``.
+        Tier.HIGH: "copilot/gpt-5.5",
+        Tier.MID: "copilot/claude-sonnet-4-6",
+        Tier.LOW: "copilot/gpt-5.4-mini",
     },
     AuthMethod.GROK_OAUTH: {
-        Tier.HIGH: "grok-sub/grok-3",
-        Tier.MID: "grok-sub/grok-3-mini",
+        # grok-3 / grok-3-mini retired by xAI on 2026-05-15.
+        Tier.HIGH: "grok-sub/grok-4.3",
+        Tier.MID: "grok-sub/grok-4-1-fast-reasoning",
     },
     AuthMethod.PERPLEXITY_OAUTH: {
         Tier.HIGH: "pplx-sub/sonar-pro",

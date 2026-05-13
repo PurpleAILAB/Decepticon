@@ -30,12 +30,12 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 | `google_oauth`        | `gemini-sub/gemini-2.5-pro`               | `gemini-sub/gemini-2.5-flash`                 | — *(falls through)*                           |
 | `minimax_api`         | `minimax/MiniMax-M2.5`                    | `minimax/MiniMax-M2.5-lightning`              | — *(falls through)*                           |
 | `deepseek_api`        | `deepseek/deepseek-v4-pro`                | `deepseek/deepseek-v4-flash`                   | `deepseek/deepseek-v4-flash`                   |
-| `xai_api`             | `xai/grok-3`                              | `xai/grok-3-mini`                             | — *(falls through)*                           |
-| `grok_oauth`          | `grok-sub/grok-3`                         | `grok-sub/grok-3-mini`                        | — *(falls through)*                           |
+| `xai_api`             | `xai/grok-4.3`                            | `xai/grok-4-1-fast-reasoning`                 | — *(falls through)*                           |
+| `grok_oauth`          | `grok-sub/grok-4.3`                       | `grok-sub/grok-4-1-fast-reasoning`            | — *(falls through)*                           |
 | `mistral_api`         | `mistral/mistral-large-latest`            | `mistral/codestral-latest`                    | — *(falls through)*                           |
 | `openrouter_api`      | `openrouter/anthropic/claude-opus-4-7`    | `openrouter/anthropic/claude-sonnet-4-6`      | `openrouter/anthropic/claude-haiku-4-5`       |
 | `nvidia_api`          | `nvidia_nim/meta/llama-3.3-70b-instruct`  | `nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct` | `nvidia_nim/meta/llama-3.2-3b-instruct` |
-| `copilot_oauth`       | `copilot/gpt-4o`                          | `copilot/o1`                                  | `copilot/o3-mini`                             |
+| `copilot_oauth`       | `copilot/gpt-5.5`                         | `copilot/claude-sonnet-4-6`                   | `copilot/gpt-5.4-mini`                        |
 | `perplexity_oauth`    | `pplx-sub/sonar-pro`                      | `pplx-sub/sonar`                              | — *(falls through)*                           |
 | `ollama_local`        | `ollama_chat/<OLLAMA_MODEL>`              | `ollama_chat/<OLLAMA_MODEL>`                  | `ollama_chat/<OLLAMA_MODEL>`                  |
 
@@ -297,10 +297,10 @@ Use monthly subscriptions instead of per-token API billing. All providers use cu
 | Subscription | AuthMethod | Models | Handler |
 |---|---|---|---|
 | Claude Max/Pro/Team | `anthropic_oauth` | auth/claude-opus, sonnet, haiku | `claude_code_handler.py` |
-| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4, gpt-5.4-mini | `codex_chatgpt_handler.py` (reads `~/.codex/auth.json`) |
+| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4, gpt-5.4-mini (+ gpt-5.3-codex for code roles) | `codex_chatgpt_handler.py` (reads `~/.codex/auth.json`) |
 | Gemini Advanced | `google_oauth` | gemini-sub/gemini-2.5-pro, flash | `gemini_handler.py` |
-| Copilot Pro | `copilot_oauth` | copilot/gpt-4o, o1, o3-mini | `copilot_handler.py` |
-| SuperGrok | `grok_oauth` | grok-sub/grok-3, grok-3-mini | `grok_handler.py` |
+| Copilot Pro | `copilot_oauth` | copilot/gpt-5.5, claude-sonnet-4-6, gpt-5.4-mini (+ gpt-5.3-codex) | `copilot_handler.py` |
+| SuperGrok | `grok_oauth` | grok-sub/grok-4.3, grok-4-1-fast-reasoning | `grok_handler.py` |
 | Perplexity Pro | `perplexity_oauth` | pplx-sub/sonar-pro, sonar | `perplexity_handler.py` |
 
 Enable in `.env`:

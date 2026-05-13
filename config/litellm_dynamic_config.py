@@ -353,6 +353,16 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
             "model_name": "auth/gpt-5.4-mini",
             "litellm_params": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
         },
+        # Code-heavy override (option α). gpt-5.3-codex is OpenAI's
+        # agentic-coding specialized model (Codex + GPT-5 training
+        # stack); register the route here so per-agent env overrides
+        # like ``DECEPTICON_MODEL_PATCHER=auth/gpt-5.3-codex`` work
+        # without yaml edits. Slug ``gpt-5.3-codex`` IS in
+        # open_ai_chat_completion_models, so the sentinel is required.
+        {
+            "model_name": "auth/gpt-5.3-codex",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.3-codex"},
+        },
     ],
     "DECEPTICON_AUTH_GEMINI": [
         {
@@ -365,12 +375,56 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
         },
     ],
     "DECEPTICON_AUTH_COPILOT": [
-        {"model_name": "copilot/gpt-4o", "litellm_params": {"model": "copilot/gpt-4o"}},
-        {"model_name": "copilot/o1", "litellm_params": {"model": "copilot/o1"}},
+        # GitHub Copilot retired gpt-4o / o1 / o3-mini on 2025-10-23.
+        # Current Copilot model picker exposes (as of 2026-05-14):
+        #   OpenAI:   gpt-5 mini, gpt-5.2, gpt-5.2-Codex, gpt-5.3-Codex,
+        #             gpt-5.4, gpt-5.4 mini, gpt-5.4 nano, gpt-5.5
+        #   Anthropic: Haiku 4.5, Opus 4.5/4.6/4.7, Sonnet 4.5/4.6
+        #   Google:    Gemini 2.5 Pro, Gemini 3 Flash (preview)
+        #   xAI:       Grok Code Fast 1
+        # Default tier picks below avoid the LiteLLM main.py:2561
+        # short-circuit by choosing slugs NOT in
+        # ``open_ai_chat_completion_models`` — no sentinel needed.
+        # ``claude-sonnet-4-6`` is in ``anthropic_models`` but main.py
+        # does not early-check that list (only openai's), so it routes
+        # cleanly through the ``copilot`` custom provider.
+        {
+            "model_name": "copilot/gpt-5.5",
+            "litellm_params": {"model": "copilot/gpt-5.5"},
+        },
+        {
+            "model_name": "copilot/claude-sonnet-4-6",
+            "litellm_params": {"model": "copilot/claude-sonnet-4-6"},
+        },
+        {
+            "model_name": "copilot/gpt-5.4-mini",
+            "litellm_params": {"model": "copilot/gpt-5.4-mini"},
+        },
+        # Code-heavy override (option α). gpt-5.3-codex is in
+        # ``open_ai_chat_completion_models``, so the ``oauth-`` slug
+        # sentinel is required to dodge the main.py:2561 short-circuit.
+        # copilot_handler._upstream_model_slug strips ``oauth-`` before
+        # posting to api.githubcopilot.com. Pick via
+        # ``DECEPTICON_MODEL_<ROLE>=copilot/gpt-5.3-codex`` for
+        # patcher / exploiter / contract_auditor.
+        {
+            "model_name": "copilot/gpt-5.3-codex",
+            "litellm_params": {"model": "copilot/oauth-gpt-5.3-codex"},
+        },
     ],
     "DECEPTICON_AUTH_GROK": [
-        {"model_name": "grok-sub/grok-3", "litellm_params": {"model": "grok-sub/grok-3"}},
-        {"model_name": "grok-sub/grok-3-mini", "litellm_params": {"model": "grok-sub/grok-3-mini"}},
+        # grok-3 / grok-3-mini retired by xAI on 2026-05-15. Replaced
+        # with the current production lineup: grok-4.3 (flagship) and
+        # grok-4-1-fast-reasoning (cost-efficient MID). Both slugs are
+        # NOT in ``open_ai_chat_completion_models`` so no sentinel needed.
+        {
+            "model_name": "grok-sub/grok-4.3",
+            "litellm_params": {"model": "grok-sub/grok-4.3"},
+        },
+        {
+            "model_name": "grok-sub/grok-4-1-fast-reasoning",
+            "litellm_params": {"model": "grok-sub/grok-4-1-fast-reasoning"},
+        },
     ],
     "DECEPTICON_AUTH_PERPLEXITY": [
         {"model_name": "pplx-sub/sonar-pro", "litellm_params": {"model": "pplx-sub/sonar-pro"}},
@@ -388,10 +442,11 @@ _SUBSCRIPTION_FALLBACKS: dict[str, list[dict[str, list[str]]]] = {
         {"gemini-sub/gemini-2.5-pro": ["gemini-sub/gemini-2.5-flash"]},
     ],
     "DECEPTICON_AUTH_COPILOT": [
-        {"copilot/gpt-4o": ["copilot/o1"]},
+        {"copilot/gpt-5.5": ["copilot/claude-sonnet-4-6"]},
+        {"copilot/claude-sonnet-4-6": ["copilot/gpt-5.4-mini"]},
     ],
     "DECEPTICON_AUTH_GROK": [
-        {"grok-sub/grok-3": ["grok-sub/grok-3-mini"]},
+        {"grok-sub/grok-4.3": ["grok-sub/grok-4-1-fast-reasoning"]},
     ],
     "DECEPTICON_AUTH_PERPLEXITY": [
         {"pplx-sub/sonar-pro": ["pplx-sub/sonar"]},
