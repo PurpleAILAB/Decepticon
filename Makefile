@@ -30,10 +30,11 @@ export DECEPTICON_HOME ?= $(HOME)/.decepticon
 
 # Mirror the launcher's start.go credential mount logic so `make dev` (and any
 # other target that calls `docker compose`) populates the litellm container's
-# Claude Code OAuth token without requiring users to run `decepticon onboard`.
-# Existence check at make-time: real file when host has tokens, /dev/null
-# otherwise so docker doesn't synthesize a bind directory.
+# Claude Code + Codex CLI OAuth tokens without requiring users to run
+# `decepticon onboard`. Existence check at make-time: real file when host has
+# tokens, /dev/null otherwise so docker doesn't synthesize a bind directory.
 export CLAUDE_CREDENTIALS_VOLUME ?= $(shell test -f $(HOME)/.claude/.credentials.json && echo $(HOME)/.claude/.credentials.json || echo /dev/null)
+export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(HOME)/.codex/auth.json || echo /dev/null)
 
 .PHONY: help \
         dogfood launcher smoke \
