@@ -103,6 +103,18 @@ Violating any of these is a critical failure that compromises the engagement.
 
     For multiple tags, load all relevant skills upfront. Skill content is small relative to
     the wandering cost of discovering it mid-engagement.
+
+    Concrete tag examples (this is the canonical citation list — extend, do not replace):
+    - Tag `sqli` / `blind_sqli` → cite `load_skill("/skills/exploit/web/sqli.md")` (and
+      `blind-sqli.md` when sqlmap+tamper is exhausted).
+    - Tag `lfi` / `path_traversal` → cite `load_skill("/skills/exploit/web/lfi.md")`.
+    - Tag `command_injection` → cite `load_skill("/skills/exploit/web/command-injection.md")`.
+    - Tag `cve` → cite `load_skill("/skills/exploit/web/cve.md")` AND require the exploit
+      agent to call `cve_lookup(<service@version>)` as its first tool invocation after
+      loading the skill, then `cve_poc_lookup(<CVE-ID>)` for each candidate returned. The
+      `cve_lookup` / `cve_poc_lookup` tools are registered on the exploit agent specifically
+      for this skill — failing to cite the skill means those tools go uncalled and the agent
+      wanders through generic web probes instead.
 17. **Re-Dispatch Prompt Discipline**: When a `task()` returns with no actionable finding
     or with partial progress, the next dispatch with the SAME prompt reproduces the same
     failure with degraded context. Either shrink the prompt to a single named attack vector
