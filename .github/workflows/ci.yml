@@ -126,6 +126,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # The compose files reference a project-local ``.env`` for the
+      # runtime stack. CI doesn't ship one (and shouldn't — keys live
+      # in the user's $DECEPTICON_HOME), so the validator runs against
+      # an empty .env so it only catches YAML/structure drift.
+      - name: Stub empty .env for config-only validation
+        run: touch .env
       - name: Validate base docker-compose.yml
         run: docker compose -f docker-compose.yml config > /dev/null
       - name: Validate base + dev override

@@ -56,12 +56,33 @@ def test_build_model_entry_supports_custom_openai_compatible_endpoint() -> None:
     }
 
 
-def test_build_model_entry_routes_ollama_chat_to_api_base() -> None:
+def test_build_model_entry_routes_ollama_chat_to_api_base(monkeypatch) -> None:
+    """When OLLAMA_API_BASE is set, the route references it via os.environ."""
+    monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
     entry = build_model_entry("ollama_chat/qwen3-coder:30b")
 
     assert entry["litellm_params"] == {
         "model": "ollama_chat/qwen3-coder:30b",
         "api_base": "os.environ/OLLAMA_API_BASE",
+    }
+
+
+def test_build_model_entry_ollama_chat_default_when_env_unset(monkeypatch) -> None:
+    """When OLLAMA_API_BASE is unset, fall back to ``host.docker.internal:11434``.
+
+    LiteLLM's ``os.environ/<NAME>`` syntax resolves an unset env var to
+    an empty string, which would silently 404 every Ollama request. The
+    dynamic config writer pins a sensible default at write time so
+    operators who run ``DECEPTICON_LITELLM_MODELS=ollama_chat/<m>``
+    without going through the launcher onboard wizard still reach the
+    host Ollama instance on macOS, Linux, and WSL2.
+    """
+    monkeypatch.delenv("OLLAMA_API_BASE", raising=False)
+    entry = build_model_entry("ollama_chat/qwen3-coder:30b")
+
+    assert entry["litellm_params"] == {
+        "model": "ollama_chat/qwen3-coder:30b",
+        "api_base": "http://host.docker.internal:11434",
     }
 
 
