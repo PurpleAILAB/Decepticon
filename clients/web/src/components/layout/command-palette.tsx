@@ -61,7 +61,6 @@ export function CommandPalette() {
     : commands;
 
   // Reset selection when filter changes
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setSelectedIndex(0), [query]);
 
   const execute = useCallback((cmd: CommandItem) => {

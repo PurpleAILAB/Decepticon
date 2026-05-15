@@ -38,4 +38,10 @@ ENV NODE_ENV=production
 
 # No HEALTHCHECK — CLI is an interactive TTY app with no HTTP surface.
 
+# Run as root by operator policy. The CLI shells out to bundled offensive
+# tools (apt/curl/wget/git fetches at runtime), so a non-root USER would
+# break the agent's ability to install missing utilities on the fly.
+# Semgrep ``missing-user-entrypoint`` is explicitly dispositioned here.
+USER root
+
 ENTRYPOINT ["node", "--import", "tsx/esm", "src/index.tsx"]

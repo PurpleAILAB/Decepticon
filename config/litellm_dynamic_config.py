@@ -63,6 +63,18 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "lm_studio": "LMSTUDIO_API_KEY",  # LM Studio accepts any string; keep
     # symbolic so validate_model_name() lets the route through.
     "zai": "ZAI_API_KEY",
+    # Cerebras Inference — native LiteLLM ``cerebras/`` provider,
+    # OpenAI-compatible at api.cerebras.ai/v1.
+    "cerebras": "CEREBRAS_API_KEY",
+    # Kimi is the user-facing name for the same Moonshot account.
+    "kimi": "MOONSHOT_API_KEY",
+    # Xiaomi MiMo Open Platform — OpenAI-compatible (/v1/chat/completions).
+    # No native LiteLLM provider yet, so routes are registered under the
+    # ``openai/`` provider with an api_base override; this entry lets
+    # operators set ``DECEPTICON_LITELLM_MODELS=xiaomi_mimo/<id>`` and
+    # have validate_model_name() accept it — the actual route is built
+    # by build_model_entry() below.
+    "xiaomi_mimo": "XIAOMI_MIMO_API_KEY",
 }
 
 ALLOWED_DYNAMIC_PROVIDERS = frozenset(
@@ -304,6 +316,18 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
             "model": f"openai/{actual_model}",
             "api_key": "os.environ/LLAMACPP_API_KEY",
             "api_base": "os.environ/LLAMACPP_API_BASE",
+        }
+    elif provider == "xiaomi_mimo":
+        # Xiaomi MiMo Open Platform — OpenAI-compatible
+        # (``/v1/chat/completions``, Bearer auth). No native LiteLLM
+        # provider yet; remap to ``openai/<id>`` and override api_base
+        # to XIAOMI_MIMO_API_BASE (default points at
+        # ``https://platform.xiaomimimo.com/v1``).
+        actual_model = model_name.split("/", 1)[1]
+        params = {
+            "model": f"openai/{actual_model}",
+            "api_key": "os.environ/XIAOMI_MIMO_API_KEY",
+            "api_base": "os.environ/XIAOMI_MIMO_API_BASE",
         }
     else:
         params = {"model": model_name}

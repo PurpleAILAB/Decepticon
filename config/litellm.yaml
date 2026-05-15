@@ -318,6 +318,40 @@ model_list:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005
 
+  # ── Cerebras Inference ─────────────────────────────────────────────
+  # OpenAI-compatible at https://api.cerebras.ai/v1 with Bearer auth.
+  # Native LiteLLM ``cerebras/`` provider — LiteLLM resolves the base URL
+  # internally. Single production model SKU as of 2026-05-15.
+  - model_name: cerebras/llama3.1-8b
+    litellm_params:
+      model: cerebras/llama3.1-8b
+      api_key: os.environ/CEREBRAS_API_KEY
+
+  # ── Xiaomi MiMo Open Platform ──────────────────────────────────────
+  # OpenAI-compatible at https://platform.xiaomimimo.com/v1 with Bearer
+  # auth. No native LiteLLM provider yet — registered through the
+  # ``openai/`` provider with an explicit api_base override so the
+  # request shape stays standard OpenAI ``/v1/chat/completions``.
+  # Production model IDs: mimo-vl (multimodal), mimo-rl (reasoning),
+  # mimo-7b (lightweight).
+  - model_name: openai/mimo-vl
+    litellm_params:
+      model: openai/mimo-vl
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
+
+  - model_name: openai/mimo-rl
+    litellm_params:
+      model: openai/mimo-rl
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
+
+  - model_name: openai/mimo-7b
+    litellm_params:
+      model: openai/mimo-7b
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
+
   # ── Nvidia NIM ─────────────────────────────────────────────────────
   # NIM is BYO-hardware: the cost is the GPU rental (DGX Cloud, AWS, on-prem),
   # NOT per-token. Pinned to $0 so /spend/logs is honest — token-based cost
@@ -423,8 +457,12 @@ litellm_settings:
     # Gemini Advanced subscription fallbacks (registered dynamically)
     # MiniMax (no LOW tier)
     - {"minimax/MiniMax-M2.5": ["minimax/MiniMax-M2.5-lightning"]}
-    # DeepSeek
+    # DeepSeek — v4-flash falls through to legacy deepseek-chat (non-thinking)
+    # so a thinking-mode 400 caused by missing reasoning_content turn-state
+    # still has a route to keep the agent alive (closes #220, #201).
     - {"deepseek/deepseek-v4-pro": ["deepseek/deepseek-v4-flash"]}
+    - {"deepseek/deepseek-v4-flash": ["deepseek/deepseek-chat"]}
+    - {"deepseek/deepseek-chat": ["deepseek/deepseek-reasoner"]}
     # xAI direct API
     - {"xai/grok-4.3": ["xai/grok-4-1-fast-reasoning"]}
     # Mistral (no LOW tier)
@@ -432,6 +470,9 @@ litellm_settings:
     # Nvidia NIM
     - {"nvidia_nim/meta/llama-3.3-70b-instruct": ["nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct"]}
     - {"nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct": ["nvidia_nim/meta/llama-3.2-3b-instruct"]}
+    # Xiaomi MiMo — routed via openai/ provider with api_base override
+    - {"openai/mimo-vl": ["openai/mimo-rl"]}
+    - {"openai/mimo-rl": ["openai/mimo-7b"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)
   num_retries: 3
   retry_after: 30
