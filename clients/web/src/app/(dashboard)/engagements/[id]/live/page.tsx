@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import type { AgentConfig } from "@/lib/agents";
 import { AgentGraphCanvas } from "@/components/agents/agent-graph-canvas";

@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 from typing import Awaitable, Callable
 
-import pytest
-
 from decepticon.core.env_verifier import EnvironmentVerifier
 from decepticon.schemas.defense_brief import ReAttackOutcome
 from decepticon.schemas.env_verification import (
@@ -20,7 +18,6 @@ from decepticon.schemas.exploit_spec import (
     CommandOutputCheck,
     ExploitSpec,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

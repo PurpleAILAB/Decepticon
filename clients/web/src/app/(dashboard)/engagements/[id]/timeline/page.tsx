@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ClipboardList, FileWarning, FolderOpen, Clock, Loader2, Download } from "lucide-react";
+import { ClipboardList, FileWarning, FolderOpen, Clock, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface TimelineEvent {

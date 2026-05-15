@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileWarning, Network, Play, ArrowRight, ClipboardList, Loader2, Download, Clock } from "lucide-react";
+import { FileWarning, Network, Play, ArrowRight, ClipboardList, Download, Clock } from "lucide-react";
 
 interface Objective {
   id: string;

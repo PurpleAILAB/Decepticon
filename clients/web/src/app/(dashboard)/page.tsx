@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Crosshair, FileWarning, Shield, AlertTriangle, TrendingUp, TrendingDown, ArrowRight } from "lucide-react";
+import { Crosshair, FileWarning, Shield, AlertTriangle, ArrowRight } from "lucide-react";
 
 interface Engagement {
   id: string;
