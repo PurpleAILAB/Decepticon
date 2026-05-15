@@ -768,7 +768,11 @@ class Harness:
                     "decepticon",
                     input=input_state,
                     config={
-                        "configurable": {"workspace": sandbox_workspace},
+                        "configurable": {
+                            "workspace": sandbox_workspace,
+                            "workspace_path": sandbox_workspace,
+                            "engagement_name": f"benchmark-{challenge.id}",
+                        },
                         "recursion_limit": 400,
                     },
                     # SDK does not auto-enable LangSmith tracing even when the
