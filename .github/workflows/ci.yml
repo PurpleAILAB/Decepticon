@@ -37,6 +37,7 @@ jobs:
       cli: ${{ steps.app.outputs.cli }}
       web: ${{ steps.app.outputs.web }}
       launcher: ${{ steps.app.outputs.launcher }}
+      compose: ${{ steps.app.outputs.compose }}
       docker-images: ${{ steps.docker.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
@@ -64,6 +65,9 @@ jobs:
               - '.github/workflows/ci.yml'
             launcher:
               - 'clients/launcher/**'
+              - '.github/workflows/ci.yml'
+            compose:
+              - 'docker-compose*.yml'
               - '.github/workflows/ci.yml'
       # Per-image filter: filter name == image name so the matrix can pull
       # `outputs.changes` directly as the list of images to build.
@@ -108,6 +112,26 @@ jobs:
             c2-sliver:
               - 'containers/c2-sliver.Dockerfile'
               - '.github/workflows/ci.yml'
+
+  # ── Compose validation guardrail ─────────────────────────────────
+  # Closes #215. Catches docker-compose YAML drift early: if a future
+  # PR breaks YAML validity or adds a service to the dev override that
+  # does not exist in base, this job fails fast. Cheap enough to run on
+  # every PR even though the path filter only triggers it on
+  # ``docker-compose*.yml`` edits.
+  compose-validate:
+    name: Compose YAML validate
+    needs: changes
+    if: ${{ needs.changes.outputs.compose == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate base docker-compose.yml
+        run: docker compose -f docker-compose.yml config > /dev/null
+      - name: Validate base + dev override
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml config > /dev/null
+      - name: Validate base + dev + watch
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml config > /dev/null
 
   python:
     name: Python (lint + typecheck + test)

@@ -12,7 +12,14 @@
 #   make help         List all targets
 
 COMPOSE       := docker compose
-COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.watch.yml
+# Dev override is now opt-in via an explicit ``-f`` chain — the file was
+# renamed from ``docker-compose.override.yml`` to ``docker-compose.dev.yml``
+# so it no longer auto-merges into every ``docker compose`` invocation.
+# The launcher-driven OSS stack uses ``$(COMPOSE)`` (base only); local-dev
+# targets that need the skills bind mount + workspace overlays chain
+# ``$(COMPOSE_DEV)``. Closes #214.
+COMPOSE_DEV   := docker compose -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml
 PROFILES_ALL  := --profile cli --profile c2-sliver
 WEB_DIR       := clients/web
 
@@ -160,9 +167,12 @@ web-dev: infra web-db-ensure
 	cd $(WEB_DIR) && npm run dev
 
 # Internal: bring up backend infra (built from local code).
+# Chains the dev override so local-dev workflows (cli-dev, web-dev) pick up
+# the skills bind mount alongside the base stack. The OSS launcher path
+# (smoke + dogfood) keeps ``$(COMPOSE)`` to mirror what end users run.
 infra:
 	@echo "[infra] Ensuring backend services are running..."
-	@$(COMPOSE) up -d --build postgres neo4j litellm langgraph sandbox
+	@$(COMPOSE_DEV) up -d --build postgres neo4j litellm langgraph sandbox
 
 # ── Quality gates ────────────────────────────────────────────────
 
@@ -262,7 +272,7 @@ node-install:
 web-db-ensure:
 	@echo "[web-db-ensure] Waiting for PostgreSQL..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		docker exec decepticon-postgres pg_isready -U decepticon -q 2>/dev/null && break; \
+		docker exec decepticon$${DECEPTICON_STACK_NAME:+-$${DECEPTICON_STACK_NAME}}-postgres pg_isready -U decepticon -q 2>/dev/null && break; \
 		sleep 1; \
 	done
 	@cd $(WEB_DIR) && npx prisma migrate deploy 2>&1 | tail -1
@@ -279,7 +289,7 @@ web-db-ensure:
 ## valid OAuth access token (token TTL ~8h ≫ cycle duration ~30m).
 recreate-litellm:
 	@$(COMPOSE) up -d --no-build --force-recreate litellm
-	@docker exec decepticon-litellm sh -c 'test -s /root/.claude/.credentials.json' \
+	@docker exec decepticon$${DECEPTICON_STACK_NAME:+-$${DECEPTICON_STACK_NAME}}-litellm sh -c 'test -s /root/.claude/.credentials.json' \
 		&& echo "recreate-litellm: creds mount OK" \
 		|| (echo "recreate-litellm: creds mount EMPTY — onboard first" && exit 1)
 
