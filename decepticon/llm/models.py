@@ -127,6 +127,8 @@ class AuthMethod(StrEnum):
     LMSTUDIO_LOCAL = "lmstudio_local"  # Local LM Studio (OpenAI-compatible)
     LLAMACPP_LOCAL = "llamacpp_local"  # Local llama.cpp llama-server (OpenAI-compatible)
     CUSTOM_OPENAI_API = "custom_openai_api"  # Custom OpenAI-compatible endpoint
+    CEREBRAS_API = "cerebras_api"  # Cerebras Inference (OpenAI-compatible)
+    XIAOMI_MIMO_API = "xiaomi_mimo_api"  # Xiaomi MiMo (OpenAI-compatible)
 
 
 # ── Tier × AuthMethod → model_id matrix ─────────────────────────────────
@@ -368,6 +370,26 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "custom/__CUSTOM_OPENAI_MODEL__",
         Tier.MID: "custom/__CUSTOM_OPENAI_MODEL__",
         Tier.LOW: "custom/__CUSTOM_OPENAI_MODEL__",
+    },
+    AuthMethod.CEREBRAS_API: {
+        # Cerebras Inference — OpenAI-compatible at
+        # ``https://api.cerebras.ai/v1``. Single production model SKU
+        # documented as of 2026-05-15.
+        Tier.HIGH: "cerebras/llama3.1-8b",
+        Tier.MID: "cerebras/llama3.1-8b",
+        Tier.LOW: "cerebras/llama3.1-8b",
+    },
+    AuthMethod.XIAOMI_MIMO_API: {
+        # Xiaomi MiMo Open Platform — OpenAI-compatible
+        # (``/v1/chat/completions``, Bearer auth). Production model IDs:
+        # ``mimo-vl`` (multimodal flagship), ``mimo-rl`` (reasoning),
+        # ``mimo-7b`` (lightweight). Routed through LiteLLM's
+        # ``openai/`` provider with api_base override so the request
+        # shape stays standard OpenAI without depending on a native
+        # ``xiaomi_mimo/`` LiteLLM provider that may not exist yet.
+        Tier.HIGH: "openai/mimo-vl",
+        Tier.MID: "openai/mimo-rl",
+        Tier.LOW: "openai/mimo-7b",
     },
 }
 

@@ -392,7 +392,7 @@ Use your Google One AI Premium subscription ($20/mo).
 
 ```bash
 DECEPTICON_AUTH_GEMINI=true
-GEMINI_ACCESS_TOKEN=ya29.a0...your-google-oauth-token
+GEMINI_ACCESS_TOKEN=<your-google-oauth-token>
 ```
 
 Or use session cookies:

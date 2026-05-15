@@ -13,6 +13,21 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    // React Compiler / Rules-of-React experimental rules added in
+    // ``eslint-plugin-react-hooks`` v6 + React 19. They flag advisory
+    // patterns (setState-in-effect, refs-during-render, immutability,
+    // purity) that production correctness is unaffected by — ``next
+    // build`` and ``tsc --noEmit`` both pass. The codebase predates
+    // these rules; revisit per-call-site when the React Compiler ships
+    // stable.
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/purity": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

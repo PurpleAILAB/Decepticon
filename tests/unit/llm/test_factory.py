@@ -1042,12 +1042,18 @@ class TestDeepSeekReasoningContent:
         assert "reasoning_content" not in payload["messages"][2]
 
     def test_model_detection(self):
-        """Factory routes deepseek-v4-pro through the thinking subclass."""
+        """Factory routes DeepSeek V4 (pro + flash) and legacy reasoner.
+
+        Per DeepSeek's API docs ``deepseek-reasoner`` is the deprecated
+        alias for ``deepseek-v4-flash`` thinking mode, so v4-flash also
+        returns ``reasoning_content`` and the API rejects subsequent
+        tool turns when the field is omitted. Closes #201, #220.
+        """
         from decepticon.llm.factory import _model_is_deepseek_thinking
 
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-pro") is True
+        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-reasoner") is True
-        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is False
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
 

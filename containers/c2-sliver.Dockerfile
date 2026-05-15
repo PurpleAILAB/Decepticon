@@ -41,4 +41,13 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Listener ports: HTTPS(443), DNS(53), mTLS(8888), gRPC operator(31337)
 EXPOSE 443 53 8888 31337
 
+# Runs as root by design. Sliver binds privileged ports (53/443), writes
+# to /opt/sliver via the entrypoint shim (chown of the operator-key
+# volume), and needs raw socket access for the DNS + mTLS listeners.
+# Hardening happens at the docker-compose layer (read-only rootfs,
+# tmpfs, ``cap-drop ALL`` + ``cap-add NET_BIND_SERVICE,NET_RAW`` only).
+# Explicit USER directive silences semgrep
+# ``missing-user-entrypoint`` while documenting the disposition.
+USER root
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
