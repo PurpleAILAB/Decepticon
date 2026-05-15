@@ -38,4 +38,8 @@ ENV NODE_ENV=production
 
 # No HEALTHCHECK — CLI is an interactive TTY app with no HTTP surface.
 
+# Drop privileges to the stock node:24-slim ``node`` user before launch.
+# CLI has no fs writes outside /app and never needs root.
+USER node
+
 ENTRYPOINT ["node", "--import", "tsx/esm", "src/index.tsx"]
