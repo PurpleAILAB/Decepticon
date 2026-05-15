@@ -60,8 +60,15 @@ export function CommandPalette() {
     ? commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
     : commands;
 
-  // Reset selection when filter changes
-  useEffect(() => setSelectedIndex(0), [query]);
+  // Reset selection when the filter query changes. Uses the official
+  // React ``Adjusting state while rendering`` pattern (paired state +
+  // setState during render) — preferred over a setState-in-effect, which
+  // the React compiler flags as a cascading render.
+  const [prevQuery, setPrevQuery] = useState(query);
+  if (prevQuery !== query) {
+    setPrevQuery(query);
+    setSelectedIndex(0);
+  }
 
   const execute = useCallback((cmd: CommandItem) => {
     setOpen(false);

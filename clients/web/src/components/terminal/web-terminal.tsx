@@ -322,10 +322,9 @@ export function WebTerminal({
   useEffect(() => {
     const PING_INTERVAL = 15000;
     const PONG_TIMEOUT = 5000;
-    let pingTimer: ReturnType<typeof setInterval>;
     let pongTimer: ReturnType<typeof setTimeout>;
 
-    pingTimer = setInterval(() => {
+    const pingTimer = setInterval(() => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       try {

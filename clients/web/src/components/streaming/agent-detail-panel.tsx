@@ -33,7 +33,7 @@ type AgentStatus = "idle" | "processing" | "completed";
 
 const STALENESS_THRESHOLD_MS = 15_000; // Agent idle if no recent event
 
-function deriveStatus(agentEvents: SubagentCustomEvent[], now: number): AgentStatus {
+function deriveStatus(agentEvents: SubagentCustomEvent[]): AgentStatus {
   if (agentEvents.length === 0) return "idle";
 
   const last = agentEvents[agentEvents.length - 1];
@@ -122,12 +122,10 @@ export function AgentDetailPanel({
     [agentEvents],
   );
 
-  // Elapsed time since last event
   const feedRef = useRef<HTMLDivElement>(null);
-  const now = Date.now();
 
   // Derive status
-  const status = useMemo(() => deriveStatus(agentEvents, now), [agentEvents, now]);
+  const status = useMemo(() => deriveStatus(agentEvents), [agentEvents]);
   const statusMeta = STATUS_META[status];
 
   // Latest subagent_message content
@@ -152,7 +150,14 @@ export function AgentDetailPanel({
     >
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.08]">
-        <span className="text-lg leading-none">{agent.mascotEmoji}</span>
+        {agent.imagePath ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={agent.imagePath}
+            alt=""
+            className="h-5 w-5 shrink-0 rounded-sm object-cover"
+          />
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-white truncate">
@@ -216,10 +221,13 @@ export function AgentDetailPanel({
             ) : (
               recentEvents.map((event, i) => (
                 <ActivityRow
+                  // ``now`` is read implicitly via the parent re-render —
+                  // when it changes, formatElapsed runs against the
+                  // event's own elapsed value. Passing it would be dead
+                  // weight, so the prop is intentionally omitted here.
                   key={`${event.type}-${event.agent}-${i}`}
                   event={event}
                   agentColor={agentColor}
-                  now={now}
                 />
               ))
             )}
@@ -252,11 +260,9 @@ export function AgentDetailPanel({
 function ActivityRow({
   event,
   agentColor,
-  now,
 }: {
   event: SubagentCustomEvent;
   agentColor: string;
-  now: number;
 }) {
   const elapsed = event.elapsed != null ? event.elapsed * 1000 : undefined;
 
