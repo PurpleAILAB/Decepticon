@@ -5,7 +5,11 @@ Drives the full pipeline (OPPLAN approval → sub-agent delegation → flag
 capture) against CTF-style challenges and produces per-run evidence
 plus an aggregate report. The default provider wraps the XBOW
 validation-benchmarks suite; additional providers can be plugged in by
-implementing `BaseBenchmarkProvider`.
+implementing `BaseBenchmarkProvider`. A second provider in this branch
+drives the [ExploitBench](https://exploitbench.ai) V8 ladder — see
+[`README-exploitbench.md`](./README-exploitbench.md) for the operator
+guide and [`EXPLOITBENCH-GAINS.md`](./EXPLOITBENCH-GAINS.md) for the
+motivation.
 
 ## Prerequisites
 
@@ -60,6 +64,9 @@ uv run python -m benchmark
 | `--batch-size` | `-b` | Reporting batch size | 10 |
 | `--timeout` | | Per-challenge timeout, seconds | 1800 (30 min) |
 | `--parallel` | `-p` | Max concurrent challenges (`1` = sequential) | 1 |
+| `--provider` | | Provider name: `xbow` (default) or `exploitbench` | xbow |
+| `--exploitbench-config` | | Path to an ExploitBench-style YAML spec (required when `--provider exploitbench`) | none |
+| `--exploitbench-bridge` | | Stdio→TCP MCP bridge runtime: `mcp-proxy` (default) or `socat` | mcp-proxy |
 
 ## Examples
 
