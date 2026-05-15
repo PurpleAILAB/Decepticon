@@ -1,4 +1,5 @@
 from decepticon.tools.ad.tools import AD_TOOLS
+from decepticon.tools.agentstate import AGENT_STATE_TOOLS
 from decepticon.tools.bash import (
     BASH_TOOLS,
     bash,
@@ -21,8 +22,9 @@ __all__ = [
     "bash_kill",
     "bash_output",
     "bash_status",
-    "BASH_TOOLS",
     "AD_TOOLS",
+    "AGENT_STATE_TOOLS",
+    "BASH_TOOLS",
     "CLOUD_TOOLS",
     "CONTRACT_TOOLS",
     "PATCH_TOOLS",

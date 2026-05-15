@@ -204,4 +204,155 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
     return load_skill
 
 
-__all__ = ["build_load_skill_tool"]
+# ── runtime discovery tools ─────────────────────────────────────────────────
+# Strix-style runtime catalog: ``list_skills`` enumerates skills under an
+# allowed source directory, ``find_skill`` keyword-searches across them. Both
+# bypass the system-prompt-baked catalog so an agent can discover skills it
+# was not pre-loaded with.
+
+
+_SKILL_SCAN_MAX_DEPTH = 5
+_SKILL_SCAN_MAX_DIRS = 256
+
+
+def _scan_skill_index(backend: Any, sources: list[str]) -> list[dict[str, Any]]:
+    """Walk every allowed source dir and return a frontmatter-summary index.
+
+    Each entry: ``{path, name, description, when_to_use, mitre, category}``.
+    Backend errors degrade silently — this is a discovery aid, not a
+    correctness gate. The walk is BFS-bounded by ``_SKILL_SCAN_MAX_DEPTH``
+    + ``_SKILL_SCAN_MAX_DIRS`` to keep cost predictable on hostile inputs.
+    """
+    index: list[dict[str, Any]] = []
+    seen_files: set[str] = set()
+    for src in sources:
+        src = src.rstrip("/")
+        seen_dirs: set[str] = set()
+        # BFS: (path, depth)
+        queue: list[tuple[str, int]] = [(src, 0)]
+        while queue and len(seen_dirs) < _SKILL_SCAN_MAX_DIRS:
+            current, depth = queue.pop(0)
+            if current in seen_dirs:
+                continue
+            seen_dirs.add(current)
+            # 1) Read every .md in this dir
+            for fname in _list_dir_via_backend(backend, current):
+                full = f"{current}/{fname}"
+                if full in seen_files:
+                    continue
+                seen_files.add(full)
+                raw, err = _read_via_backend(backend, full)
+                if raw is None or err:
+                    continue
+                _, fm = _strip_frontmatter(raw)
+                index.append(
+                    {
+                        "path": full,
+                        "name": fm.get("name") or fname.rsplit(".", 1)[0],
+                        "description": fm.get("description", "").strip(),
+                        "when_to_use": fm.get("when_to_use", "").strip(),
+                        "mitre": fm.get("mitre", "").strip(),
+                        "category": (current[len(src) + 1 :] or "_root").strip("/"),
+                    }
+                )
+            # 2) Enqueue immediate subdirectories (skip files via .md filter)
+            if depth >= _SKILL_SCAN_MAX_DEPTH:
+                continue
+            try:
+                top = backend.ls(current)
+            except Exception:
+                continue
+            entries = getattr(top, "entries", None) or getattr(top, "items", None) or []
+            for e in entries:
+                name = str(e)
+                if name.startswith(".") or name.endswith(".md"):
+                    continue
+                queue.append((f"{current}/{name}", depth + 1))
+    return index
+
+
+def build_list_skills_tool(backend: Any, sources: list[str]):  # type: ignore[no-untyped-def]
+    """Construct the ``list_skills`` LangChain tool.
+
+    Lists every skill under the agent's allowed source directories. Useful
+    when the system-prompt catalog is truncated or when the agent wants to
+    discover sibling skills it was not pre-loaded with.
+    """
+    backend = _unwrap_backend(backend)
+
+    @tool
+    def list_skills(category: str = "") -> str:
+        """List Decepticon skills available to this agent.
+
+        Args:
+            category: Optional category prefix to filter on (e.g. ``recon``,
+                ``exploit/web``). Empty string lists every skill.
+
+        Returns:
+            A bullet list ``- /skills/.../SKILL.md — short description``.
+        """
+        index = _scan_skill_index(backend, sources)
+        if category:
+            cat_norm = category.strip("/")
+            index = [e for e in index if e["category"].startswith(cat_norm)]
+        if not index:
+            return f"[list_skills] No skills found (category={category!r})"
+        lines = [f"# Skills available ({len(index)})"]
+        for e in sorted(index, key=lambda x: x["path"]):
+            desc = f" — {e['description']}" if e["description"] else ""
+            lines.append(f"- {e['path']}{desc}")
+        return "\n".join(lines)
+
+    return list_skills
+
+
+def build_find_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-untyped-def]
+    """Construct the ``find_skill`` LangChain tool.
+
+    Keyword search across name + description + when_to_use + mitre fields.
+    Returns ranked matches so the agent can ``load_skill`` the top hit.
+    """
+    backend = _unwrap_backend(backend)
+
+    @tool
+    def find_skill(query: str, max_results: int = 8) -> str:
+        """Search Decepticon skills by keyword.
+
+        Matches are scored across the ``name``, ``description``,
+        ``when_to_use``, and ``mitre`` fields of each skill's frontmatter.
+        Returns up to ``max_results`` ranked matches with their load
+        paths and descriptions — pass the path to ``load_skill`` to read
+        the full body.
+
+        Args:
+            query: One or more keywords (whitespace-separated). Matching
+                is case-insensitive substring against the indexed fields.
+            max_results: Cap on returned matches (default 8).
+        """
+        q = (query or "").strip().lower()
+        if not q:
+            return "[find_skill] query is required"
+        terms = [t for t in q.split() if t]
+        index = _scan_skill_index(backend, sources)
+        scored: list[tuple[int, dict[str, Any]]] = []
+        for e in index:
+            haystack = " ".join(
+                str(e.get(k, "")) for k in ("name", "description", "when_to_use", "mitre")
+            ).lower()
+            score = sum(haystack.count(t) for t in terms)
+            if score:
+                scored.append((score, e))
+        scored.sort(key=lambda p: (-p[0], p[1]["path"]))
+        if not scored:
+            return f"[find_skill] No matches for {query!r}"
+        lines = [f"# Skill matches for {query!r} ({min(len(scored), max_results)})"]
+        for score, e in scored[:max_results]:
+            desc = f" — {e['description']}" if e["description"] else ""
+            mitre = f"  [{e['mitre']}]" if e["mitre"] else ""
+            lines.append(f"- ({score}) {e['path']}{desc}{mitre}")
+        return "\n".join(lines)
+
+    return find_skill
+
+
+__all__ = ["build_load_skill_tool", "build_list_skills_tool", "build_find_skill_tool"]
