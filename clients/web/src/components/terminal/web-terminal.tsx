@@ -24,6 +24,21 @@ const MAX_RECONNECT_ATTEMPTS = 15;
 
 type ConnectionState = "connecting" | "connected" | "reconnecting" | "disconnected" | "error";
 
+/**
+ * Strip parser-hostile bytes before write.
+ *
+ * The PTY occasionally emits a lone ``\x7f`` (DEL) while the parser is in
+ * ground state — xterm.js' VT parser fires "Parsing error code=127" for
+ * every offending byte position, flooding the dev console (issue: thousands
+ * of identical errors after 'Letś go'). DEL has no defined semantic in
+ * modern terminals; dropping it removes the noise without losing real
+ * output. Lone ``\x00`` is also dropped — same reason, same parser path.
+ */
+function sanitizeTermBytes(s: string): string {
+  if (!s) return s;
+  return s.replace(/[\x00\x7f]/g, "");
+}
+
 interface WebTerminalProps {
   engagementId: string;
   engagementSlug: string;
@@ -135,7 +150,7 @@ export function WebTerminal({
           // Not valid JSON — pass through as terminal output
         }
       }
-      term.write(data);
+      term.write(sanitizeTermBytes(data));
     };
 
     ws.onclose = (ev) => {

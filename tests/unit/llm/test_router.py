@@ -34,6 +34,9 @@ class TestModelRouter:
             "deepseek/deepseek-v4-flash",
             "openrouter/anthropic/claude-haiku-4-5",
             "nvidia_nim/meta/llama-3.2-3b-instruct",
+            "cerebras/llama3.1-8b",
+            "moonshot/moonshot-v1-128k",
+            "openai/glm-5v-turbo",
         ]
 
     def test_resolve_with_fallback_high_tier_full_chain(self):
@@ -48,6 +51,9 @@ class TestModelRouter:
             "mistral/mistral-large-latest",
             "openrouter/anthropic/claude-opus-4-7",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
+            "cerebras/llama3.1-8b",
+            "moonshot/kimi-k2.6",
+            "openai/glm-5.1",
         ]
 
     def test_resolve_unknown_role_raises(self):

@@ -154,6 +154,9 @@ class TestCredentials:
             AuthMethod.MISTRAL_API,
             AuthMethod.OPENROUTER_API,
             AuthMethod.NVIDIA_API,
+            AuthMethod.CEREBRAS_API,
+            AuthMethod.MOONSHOT_API,
+            AuthMethod.ZAI_API,
         ]
 
 
@@ -401,6 +404,9 @@ class TestLLMModelMapping:
             "mistral/mistral-large-latest",
             "openrouter/anthropic/claude-opus-4-7",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
+            "cerebras/llama3.1-8b",
+            "moonshot/kimi-k2.6",
+            "openai/glm-5.1",
         ]
 
     def test_from_profile_string_input(self):

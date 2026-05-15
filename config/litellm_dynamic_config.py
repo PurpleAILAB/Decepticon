@@ -47,8 +47,12 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "xai": "XAI_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
     "nvidia": "NVIDIA_API_KEY",
+    "nvidia_nim": "NVIDIA_API_KEY",
     "replicate": "REPLICATE_API_TOKEN",
     "minimax": "MINIMAX_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+    "moonshot": "MOONSHOT_API_KEY",
+    "kimi": "MOONSHOT_API_KEY",
 }
 
 ALLOWED_DYNAMIC_PROVIDERS = frozenset(

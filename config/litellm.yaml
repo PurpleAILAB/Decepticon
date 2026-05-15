@@ -179,6 +179,48 @@ model_list:
       model: openrouter/anthropic/claude-haiku-4-5
       api_key: os.environ/OPENROUTER_API_KEY
 
+  # ── Cerebras Inference ─────────────────────────────────────────────
+  # OpenAI-compatible: https://api.cerebras.ai/v1, Bearer auth.
+  # Single production model SKU as of 2026-05-15.
+  - model_name: cerebras/llama3.1-8b
+    litellm_params:
+      model: cerebras/llama3.1-8b
+      api_key: os.environ/CEREBRAS_API_KEY
+
+  # ── Moonshot AI / Kimi ─────────────────────────────────────────────
+  # OpenAI-compatible: https://api.moonshot.cn/v1 (or platform.kimi.ai).
+  - model_name: moonshot/kimi-k2.6
+    litellm_params:
+      model: moonshot/kimi-k2.6
+      api_key: os.environ/MOONSHOT_API_KEY
+
+  - model_name: moonshot/kimi-k2.5
+    litellm_params:
+      model: moonshot/kimi-k2.5
+      api_key: os.environ/MOONSHOT_API_KEY
+
+  - model_name: moonshot/moonshot-v1-128k
+    litellm_params:
+      model: moonshot/moonshot-v1-128k
+      api_key: os.environ/MOONSHOT_API_KEY
+
+  # ── Z.AI / Zhipu GLM ───────────────────────────────────────────────
+  # OpenAI-compatible: https://api.z.ai/api/paas/v4 with Bearer auth.
+  # Routed through LiteLLM's ``openai/`` provider with api_base override
+  # so we get OpenAI-shape requests without depending on the in-flux
+  # native ``zhipu/`` LiteLLM provider name.
+  - model_name: openai/glm-5.1
+    litellm_params:
+      model: openai/glm-5.1
+      api_base: https://api.z.ai/api/paas/v4
+      api_key: os.environ/ZAI_API_KEY
+
+  - model_name: openai/glm-5v-turbo
+    litellm_params:
+      model: openai/glm-5v-turbo
+      api_base: https://api.z.ai/api/paas/v4
+      api_key: os.environ/ZAI_API_KEY
+
   # ── Nvidia NIM ─────────────────────────────────────────────────────
   - model_name: nvidia_nim/meta/llama-3.3-70b-instruct
     litellm_params:
@@ -268,8 +310,12 @@ litellm_settings:
     # Gemini Advanced subscription fallbacks (registered dynamically)
     # MiniMax (no LOW tier)
     - {"minimax/MiniMax-M2.5": ["minimax/MiniMax-M2.5-lightning"]}
-    # DeepSeek
+    # DeepSeek — v4-flash falls through to legacy deepseek-chat which is
+    # non-thinking, so a v4-flash thinking-mode 400 (caused by missing
+    # reasoning_content turn-state) still has a route to keep the agent alive.
     - {"deepseek/deepseek-v4-pro": ["deepseek/deepseek-v4-flash"]}
+    - {"deepseek/deepseek-v4-flash": ["deepseek/deepseek-chat"]}
+    - {"deepseek/deepseek-chat": ["deepseek/deepseek-reasoner"]}
     # xAI direct API
     - {"xai/grok-3": ["xai/grok-3-mini"]}
     # Mistral (no LOW tier)
@@ -277,6 +323,9 @@ litellm_settings:
     # Nvidia NIM
     - {"nvidia_nim/meta/llama-3.3-70b-instruct": ["nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct"]}
     - {"nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct": ["nvidia_nim/meta/llama-3.2-3b-instruct"]}
+    # Moonshot / Kimi
+    - {"moonshot/kimi-k2.6": ["moonshot/kimi-k2.5"]}
+    - {"moonshot/kimi-k2.5": ["moonshot/moonshot-v1-128k"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)
   num_retries: 3
   retry_after: 30

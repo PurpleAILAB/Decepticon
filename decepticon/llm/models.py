@@ -92,6 +92,9 @@ class AuthMethod(StrEnum):
     MISTRAL_API = "mistral_api"
     OPENROUTER_API = "openrouter_api"
     NVIDIA_API = "nvidia_api"
+    CEREBRAS_API = "cerebras_api"  # Cerebras Inference (OpenAI-compatible)
+    MOONSHOT_API = "moonshot_api"  # Moonshot AI / Kimi (OpenAI-compatible)
+    ZAI_API = "zai_api"  # Z.AI / Zhipu GLM (OpenAI-compatible)
     OLLAMA_LOCAL = "ollama_local"  # Local LLM via Ollama (no API key, OLLAMA_API_BASE)
     OLLAMA_CLOUD = "ollama_cloud"  # Ollama Cloud (API key, OLLAMA_CLOUD_API_BASE)
     COPILOT_OAUTH = "copilot_oauth"  # Microsoft Copilot Pro subscription
@@ -163,6 +166,29 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "nvidia_nim/meta/llama-3.3-70b-instruct",
         Tier.MID: "nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct",
         Tier.LOW: "nvidia_nim/meta/llama-3.2-3b-instruct",
+    },
+    AuthMethod.CEREBRAS_API: {
+        # Cerebras Inference — OpenAI-compatible, single-model SKU
+        # currently. ``llama3.1-8b`` is the one production-listed model
+        # in the public docs as of 2026-05-15.
+        Tier.HIGH: "cerebras/llama3.1-8b",
+        Tier.MID: "cerebras/llama3.1-8b",
+        Tier.LOW: "cerebras/llama3.1-8b",
+    },
+    AuthMethod.MOONSHOT_API: {
+        # Moonshot AI / Kimi — OpenAI-compatible. K2.6 is the current
+        # flagship (multimodal, 256K context). moonshot-v1-128k stays as
+        # the LOW tier so legacy text-only roles still route.
+        Tier.HIGH: "moonshot/kimi-k2.6",
+        Tier.MID: "moonshot/kimi-k2.5",
+        Tier.LOW: "moonshot/moonshot-v1-128k",
+    },
+    AuthMethod.ZAI_API: {
+        # Z.AI / Zhipu — OpenAI-compatible via api.z.ai/api/paas/v4.
+        # GLM-5.1 is the current flagship foundation model.
+        Tier.HIGH: "openai/glm-5.1",
+        Tier.MID: "openai/glm-5.1",
+        Tier.LOW: "openai/glm-5v-turbo",
     },
     AuthMethod.OLLAMA_LOCAL: {
         # Ollama collapses to a single user-chosen model across tiers. The
@@ -302,6 +328,9 @@ class Credentials(BaseModel):
                 AuthMethod.MISTRAL_API,
                 AuthMethod.OPENROUTER_API,
                 AuthMethod.NVIDIA_API,
+                AuthMethod.CEREBRAS_API,
+                AuthMethod.MOONSHOT_API,
+                AuthMethod.ZAI_API,
             ]
         )
 

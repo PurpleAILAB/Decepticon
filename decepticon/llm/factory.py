@@ -61,6 +61,9 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.MISTRAL_API,
     AuthMethod.OPENROUTER_API,
     AuthMethod.NVIDIA_API,
+    AuthMethod.CEREBRAS_API,
+    AuthMethod.MOONSHOT_API,
+    AuthMethod.ZAI_API,
     AuthMethod.OLLAMA_LOCAL,
     AuthMethod.OLLAMA_CLOUD,
 )
@@ -80,6 +83,9 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.MISTRAL_API: "MISTRAL_API_KEY",
     AuthMethod.OPENROUTER_API: "OPENROUTER_API_KEY",
     AuthMethod.NVIDIA_API: "NVIDIA_API_KEY",
+    AuthMethod.CEREBRAS_API: "CEREBRAS_API_KEY",
+    AuthMethod.MOONSHOT_API: "MOONSHOT_API_KEY",
+    AuthMethod.ZAI_API: "ZAI_API_KEY",
 }
 
 _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
@@ -279,15 +285,35 @@ def _model_uses_chatgpt_responses_api(model: str) -> bool:
 
 
 def _model_is_deepseek_thinking(model: str) -> bool:
-    """Return True for DeepSeek V4 Pro and legacy deepseek-reasoner.
+    """Return True for DeepSeek V4 models and legacy deepseek-reasoner.
 
-    These models use thinking mode by default and return ``reasoning_content``
-    in assistant messages. When tool calls are involved, the API **requires**
+    DeepSeek V4 (pro **and** flash) plus legacy deepseek-reasoner use
+    thinking mode by default and return ``reasoning_content`` in assistant
+    messages. When tool calls are involved, the API **requires**
     ``reasoning_content`` to be passed back in subsequent turns — omitting it
-    causes a 400 error. See: https://api-docs.deepseek.com/guides/thinking_mode
+    causes the upstream 400:
+        "The reasoning_content in the thinking mode must be passed back to the API."
+    See: https://api-docs.deepseek.com/guides/thinking_mode
     """
     slug = model.rsplit("/", 1)[-1].lower()
-    return slug in ("deepseek-v4-pro", "deepseek-reasoner")
+    return slug in ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner")
+
+
+def _model_is_nvidia_nim(model: str) -> bool:
+    """Return True for any nvidia_nim/* route.
+
+    NVIDIA NIM's OpenAI-compatible endpoint rejects messages whose
+    ``content`` is a list-of-parts (the OpenAI v1 multimodal shape) with:
+        400 invalid_request_error
+        loc=('body','messages',0,'content')
+        msg="Input should be a valid string"
+    LangChain ChatOpenAI serializes structured content (tool results,
+    multipart system blocks) as that exact list shape, so every Decepticon
+    agent run against an NIM route 400s on first turn. Flattening
+    list-of-text-parts to a single string fixes the contract mismatch
+    without losing any text.
+    """
+    return model.lower().startswith("nvidia_nim/")
 
 
 class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
@@ -441,6 +467,54 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
                 msg.additional_kwargs["reasoning_content"] = rc
 
         return result
+
+
+class _NvidiaNIMChatOpenAI(_ProxiedChatOpenAI):
+    """ChatOpenAI subclass that flattens content to a string for NVIDIA NIM.
+
+    NIM's OpenAI-compat endpoint requires ``messages[].content`` to be a
+    plain string. LangChain ChatOpenAI emits the OpenAI v1 multipart shape
+    (``[{"type":"text","text":"..."}, ...]``) whenever a message has more
+    than one part (tool result + reasoning preamble, multi-block system).
+    NIM 400s on that shape. Re-pack each list into the concatenated text
+    just before the request leaves the proxy. Image/audio parts are
+    preserved unchanged — those are still rejected upstream, but the
+    error becomes the upstream feature gap rather than a contract bug.
+    """
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        for msg in payload.get("messages", []):
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            text_parts: list[str] = []
+            non_text: list[Any] = []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") in (None, "text", "input_text", "output_text"):
+                        text = part.get("text") or part.get("content") or ""
+                        if isinstance(text, str) and text:
+                            text_parts.append(text)
+                        continue
+                    non_text.append(part)
+                elif isinstance(part, str):
+                    if part:
+                        text_parts.append(part)
+                else:
+                    non_text.append(part)
+            if non_text:
+                # Leave multimodal parts to the upstream provider's
+                # rejection — collapsing them would silently drop data.
+                continue
+            msg["content"] = "".join(text_parts)
+        return payload
 
 
 def _reraise_if_connection_error(exc: Exception) -> None:
@@ -658,6 +732,8 @@ class LLMFactory:
             kwargs["output_version"] = "responses/v1"
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
+        if _model_is_nvidia_nim(model):
+            return _NvidiaNIMChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)
 
     async def health_check(self) -> bool:

@@ -57,6 +57,9 @@ class TestLLMFactory:
             "deepseek/deepseek-v4-flash",
             "openrouter/anthropic/claude-haiku-4-5",
             "nvidia_nim/meta/llama-3.2-3b-instruct",
+            "cerebras/llama3.1-8b",
+            "moonshot/moonshot-v1-128k",
+            "openai/glm-5v-turbo",
         ]
 
     def test_get_fallback_models_high_tier_includes_all_methods(self):
@@ -71,6 +74,9 @@ class TestLLMFactory:
             "mistral/mistral-large-latest",
             "openrouter/anthropic/claude-opus-4-7",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
+            "cerebras/llama3.1-8b",
+            "moonshot/kimi-k2.6",
+            "openai/glm-5.1",
         ]
 
     def test_get_fallback_models_without_fallback(self):
@@ -106,6 +112,9 @@ class TestResolveCredentials:
             "MISTRAL_API_KEY",
             "OPENROUTER_API_KEY",
             "NVIDIA_API_KEY",
+            "CEREBRAS_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
         ):
@@ -134,6 +143,9 @@ class TestResolveCredentials:
             "MISTRAL_API_KEY",
             "OPENROUTER_API_KEY",
             "NVIDIA_API_KEY",
+            "CEREBRAS_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
         ):
@@ -164,6 +176,9 @@ class TestResolveCredentials:
             "MISTRAL_API_KEY",
             "OPENROUTER_API_KEY",
             "NVIDIA_API_KEY",
+            "CEREBRAS_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
         ):
@@ -208,6 +223,9 @@ class TestResolveCredentials:
             "MISTRAL_API_KEY",
             "OPENROUTER_API_KEY",
             "NVIDIA_API_KEY",
+            "CEREBRAS_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
             "OLLAMA_API_BASE",
             "OLLAMA_MODEL",
         ):
@@ -225,6 +243,9 @@ class TestResolveCredentials:
             AuthMethod.MISTRAL_API,
             AuthMethod.OPENROUTER_API,
             AuthMethod.NVIDIA_API,
+            AuthMethod.CEREBRAS_API,
+            AuthMethod.MOONSHOT_API,
+            AuthMethod.ZAI_API,
         ]
 
     def test_ollama_local_only_returns_ollama_chain(self, monkeypatch):
@@ -242,6 +263,9 @@ class TestResolveCredentials:
             "MISTRAL_API_KEY",
             "OPENROUTER_API_KEY",
             "NVIDIA_API_KEY",
+            "CEREBRAS_API_KEY",
+            "MOONSHOT_API_KEY",
+            "ZAI_API_KEY",
             "DECEPTICON_AUTH_PRIORITY",
             "DECEPTICON_AUTH_CLAUDE_CODE",
             "DECEPTICON_AUTH_CHATGPT",
@@ -787,11 +811,17 @@ class TestDeepSeekReasoningContent:
         assert "reasoning_content" not in payload["messages"][2]
 
     def test_model_detection(self):
-        """Factory routes deepseek-v4-pro through the thinking subclass."""
+        """Factory routes DeepSeek V4 (pro + flash) and legacy reasoner.
+
+        Per DeepSeek docs: ``deepseek-reasoner`` is the deprecated alias
+        for ``deepseek-v4-flash`` thinking mode, so v4-flash also returns
+        ``reasoning_content`` and the API rejects subsequent turns when
+        the field is omitted.
+        """
         from decepticon.llm.factory import _model_is_deepseek_thinking
 
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-pro") is True
+        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-reasoner") is True
-        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is False
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
