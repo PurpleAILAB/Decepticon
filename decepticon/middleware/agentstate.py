@@ -65,7 +65,6 @@ def _format_status_block(state: dict) -> str:
     todos = _safe_list(state.get("agent_todo"))
     notes = _safe_list(state.get("agent_notes"))
     thoughts = _safe_list(state.get("agent_thinking"))
-    open_todos = [t for t in todos if t.get("status") != "open" or True]  # all
     open_todos = [t for t in todos if t.get("status") != "done"]
     if not (todos or notes or thoughts):
         return ""

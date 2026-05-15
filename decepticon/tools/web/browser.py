@@ -47,7 +47,14 @@ class BrowserUnavailable(RuntimeError):
 
 
 class _PageDriver(Protocol):
-    """Minimal surface the BrowserSession needs from a backend page object."""
+    """Minimal surface the BrowserSession needs from a backend page object.
+
+    Method bodies are ``...`` — the idiomatic abstract Protocol body that
+    the type checker treats as "no implementation" (a docstring-only body
+    would be a concrete ``-> None`` return and break the declared return
+    types). CodeQL emits notice-level ``py/ineffectual-statement`` on the
+    ellipses; those are advisory and do not fail the code-scanning gate.
+    """
 
     def goto(self, url: str) -> None: ...
     def click(self, selector: str) -> None: ...

@@ -156,9 +156,22 @@ def test_targetset_distinct_value_same_id_raises():
 
 def test_targetset_contains_works_for_id_and_value():
     ts = TargetSet.from_strings(["https://app.example.com"])
-    assert "example" in ts
-    assert "https://app.example.com" in ts
-    assert "missing" not in ts
+    # Explicit predicate API — exact-match, no substring sanitization.
+    assert ts.has_id("example")
+    assert ts.has_value("https://app.example.com")
+    assert not ts.has_id("missing")
+    assert not ts.has_value("missing")
+    # __contains__ still delegates to the same exact-match predicates.
+    assert ts.__contains__("example") is True
+    assert ts.__contains__("nope") is False
+
+
+def test_targetset_value_membership_is_exact_not_substring():
+    """A superdomain value must not satisfy a check for a different host."""
+    ts = TargetSet.from_strings(["https://example.com"])
+    assert ts.has_value("https://example.com")
+    assert not ts.has_value("https://evil-example.com")
+    assert not ts.has_value("https://example.com.attacker.test")
 
 
 def test_targetset_json_roundtrip():

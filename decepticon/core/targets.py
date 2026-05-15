@@ -161,8 +161,23 @@ class TargetSet(BaseModel):
 
     def __contains__(self, key: object) -> bool:
         if isinstance(key, str):
-            return any(t.id == key or t.value == key for t in self.targets)
+            return self.has_id(key) or self.has_value(key)
         return False
+
+    def has_id(self, target_id: str) -> bool:
+        """Exact-match membership test against target ids."""
+        return any(t.id == target_id for t in self.targets)
+
+    def has_value(self, value: str) -> bool:
+        """Exact-match membership test against raw target values.
+
+        Uses full-string equality — never substring/prefix matching — so a
+        value like ``https://evil.example.com`` can't satisfy a check for
+        ``https://example.com``. (Exact equality also keeps CodeQL's
+        ``py/incomplete-url-substring-sanitization`` heuristic from
+        misreading callers that pass URL literals.)
+        """
+        return any(t.value == value for t in self.targets)
 
     def get(self, target_id: str) -> Target | None:
         return next((t for t in self.targets if t.id == target_id), None)
