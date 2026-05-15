@@ -93,8 +93,9 @@ def run(
     # Pre-build is XBOW-specific (its provider knows how to drive `make build`
     # against an in-tree benchmark directory). The ExploitBench provider pulls
     # images on-demand inside ``setup`` instead, so we only fire preflight for
-    # the providers that actually implement it.
-    if hasattr(provider, "preflight_build"):
+    # the provider that actually implements it. ``isinstance`` over a
+    # ``hasattr`` probe keeps basedpyright's attribute narrowing accurate.
+    if isinstance(provider, XBOWProvider):
         typer.echo("Pre-building challenge images...")
         build_failures = provider.preflight_build(challenges)
         if build_failures:
