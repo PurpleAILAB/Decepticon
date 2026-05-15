@@ -505,6 +505,14 @@ class Harness:
             ["docker", "exec", "decepticon-sandbox", "rm", "-rf", sandbox_ws],
             capture_output=True,
         )
+        # Clean orphan files at workspace root (top-level, not in a benchmark-* subdir).
+        # Sandbox mounts the entire workspace root as /workspace/ — orphan flag.txt files
+        # at the root contaminate ALL challenge runs by being readable via cat /workspace/flag.txt.
+        ws_root = workspace.parent  # ~/.decepticon/workspace
+        if ws_root.exists():
+            for p in ws_root.iterdir():
+                if p.is_file() and not p.name.startswith("benchmark-"):
+                    p.unlink(missing_ok=True)
         if workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)
         (workspace / "plan").mkdir(parents=True, exist_ok=True)
@@ -760,7 +768,11 @@ class Harness:
                     "decepticon",
                     input=input_state,
                     config={
-                        "configurable": {"workspace": sandbox_workspace},
+                        "configurable": {
+                            "workspace": sandbox_workspace,
+                            "workspace_path": sandbox_workspace,
+                            "engagement_name": f"benchmark-{challenge.id}",
+                        },
                         "recursion_limit": 400,
                     },
                     # SDK does not auto-enable LangSmith tracing even when the

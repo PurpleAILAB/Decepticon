@@ -71,7 +71,9 @@ We're building Decepticon toward an **Offensive Vaccine** for the AI-driven thre
 
 | Benchmark | Difficulty | Pass Rate |
 |-----------|------------|-----------|
-| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Hard (Level 3) | **7 / 8** |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Easy (Level 1)   | **45 / 45** (100 %) |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Medium (Level 2) | **46 / 51** (90.2 %) *in progress* |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Hard (Level 3)   | **8 / 8** (100 %) |
 
 → **[Full benchmark index](benchmark/results/README.md)**
 

@@ -19,7 +19,7 @@ Side-by-side numbers for AI / LLM pentesting agents that have **publicly release
 |  5 | **XBOW** (commercial)                | **≈85 %**               | black-box, proprietary    | [xbow.com/blog/benchmarks](https://xbow.com/blog/benchmarks) |
 |  6 | **Cyber-AutoAgent** (westonbrown)    | **84.62 %** (88 / 104) — v0.1.3 [archived]; 81 % v0.1.1; 45.92 % (45/98) v0.1.0 | black-box, meta-agent | [github](https://github.com/westonbrown/Cyber-AutoAgent) |
 |  7 | **MAPTA**                            | **76.9 %** (80 / 104)   | black-box, multi-agent    | arXiv [2508.20816](https://arxiv.org/abs/2508.20816) |
-|  8 | **Decepticon** *(this repo)*         | **L1+L3: 92.5 %** (49 / 53) · L2 in progress | **black-box**, LangGraph multi-agent | [github](https://github.com/PurpleAILAB/Decepticon) |
+|  8 | **Decepticon** *(this repo)*         | **L1+L3: 100 %** (53 / 53) · L2: 90.2 % (46 / 51) — interim 99 / 104 | **black-box**, LangGraph multi-agent | [github](https://github.com/PurpleAILAB/Decepticon) |
 |  9 | PentestAgent                         | 50.0 % [^retest]        | black-box                 | arXiv 2411.05185; re-tested in Red-MIRROR |
 | 10 | AutoPT                               | 46.0 % [^retest]        | black-box                 | re-tested in Red-MIRROR |
 | 11 | VulnBot                              |  6.0 % [^retest]        | black-box, baseline       | arXiv [2501.13411](https://arxiv.org/abs/2501.13411); re-tested in Red-MIRROR |
@@ -37,7 +37,7 @@ Side-by-side numbers for AI / LLM pentesting agents that have **publicly release
 |---|---|---|---|---|
 | **Strix**       | 45 / 45 — **100 %**  | 49 / 51 — **96 %**           | 6 / 8 — 75 %      | **96.15 %** |
 | **PentestGPT**  | 42 / 46 — 91.1 %     | 43 / 50 — 74.5 %             | 5 / 8 — 62.5 %    | **86.5 %**  |
-| **Decepticon**  | **42 / 45 — 93.3 %** | 9 / 51 — 17.6 % *(in progress)* | **7 / 8 — 87.5 %** | L1+L3: **92.5 %** *(L2 ongoing)* |
+| **Decepticon**  | **45 / 45 — 100 %**  | **46 / 51 — 90.2 %** *(in progress)* | **8 / 8 — 100 %** | L1+L3: **100 %** *(L2 ongoing — interim 99 / 104)* |
 
 PentestGPT per-level avg cost / time: L1 $0.65 / 4.4 min · L2 $1.33 / 6.9 min · L3 $3.03 / 12.9 min (median across all 104: $0.42 / 3.3 min).
 XBOW commercial does not publish a per-difficulty breakdown for its own agent — only the headline 85 % vs the senior pentester's 85 % in 40 hours.
@@ -57,7 +57,7 @@ XBOW commercial does not publish a per-difficulty breakdown for its own agent �
 
 **MAPTA** per-class (overall 76.9 %): SSRF 100 % · Misconfig 100 % · SSTI 85 % · SQLi 83 % · Broken Authz 83 % · Cmd-Inj 75 % · XSS 57 % · Blind SQLi 0 %.
 
-**Decepticon** per-class — see [`benchmark/results/README.md`](../benchmark/results/README.md). 22 classes covered; top: XSS (14), Cmd-Inj (7), Default Creds (7), SSTI (6), IDOR (6).
+**Decepticon** per-class — see [`benchmark/results/README.md`](../benchmark/results/README.md). 23 classes covered; top: XSS (14), Cmd-Inj (8), Default Creds (7), SSTI (6), IDOR (6).
 
 ## Adjacent — Don't Publish XBOW (different benchmark)
 
@@ -78,4 +78,4 @@ XBOW commercial does not publish a per-difficulty breakdown for its own agent �
 - Survey — [*AI Pentesting Agents 2026*](https://appsecsanta.com/research/ai-pentesting-agents-2026)
 - Awesome list — [insidetrust/awesome-ai-pentest](https://github.com/insidetrust/awesome-ai-pentest)
 
-> *Last updated: 2026-05-07.*
+> *Last updated: 2026-05-15.*
