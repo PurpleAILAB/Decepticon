@@ -362,19 +362,29 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv sync --dev --locked
+      # SECURITY: ``github.base_ref`` is attacker-influenced (a fork PR
+      # author controls their branch name). Routing it through ``env:`` and
+      # dereferencing as ``"$BASE_REF"`` keeps it out of the ``run:`` script
+      # body — the CodeQL actions/expression-injection sink. The runner
+      # sets it as a process env var, so ``$(...)``/backtick payloads in a
+      # branch name cannot execute.
       # 1) check-only against the PR base must always exit 0.
       - name: Gate check-only (PR scope)
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           uv run python -m decepticon.cicd.scan \
-            --diff-base "origin/${{ github.base_ref || 'main' }}" \
+            --diff-base "origin/${BASE_REF}" \
             --check-only
       # 2) Contract assertion: a synthetic in-scope HIGH finding must
       #    drive exit code 1; an out-of-scope finding must exit 0.
       - name: Gate exit-code contract
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           set -euo pipefail
           changed="$(git diff --name-only --diff-filter=d \
-            "$(git merge-base "origin/${{ github.base_ref || 'main' }}" HEAD)"..HEAD \
+            "$(git merge-base "origin/${BASE_REF}" HEAD)"..HEAD \
             | head -1 || true)"
           if [ -z "$changed" ]; then changed="README.md"; fi
           printf '[{"id":"S1","severity":"high","title":"selftest","file":"%s"}]' \
@@ -383,11 +393,11 @@ jobs:
             > /tmp/findings_pass.json
           set +e
           uv run python -m decepticon.cicd.scan \
-            --diff-base "origin/${{ github.base_ref || 'main' }}" \
+            --diff-base "origin/${BASE_REF}" \
             --findings /tmp/findings_block.json --fail-on medium
           rc_block=$?
           uv run python -m decepticon.cicd.scan \
-            --diff-base "origin/${{ github.base_ref || 'main' }}" \
+            --diff-base "origin/${BASE_REF}" \
             --findings /tmp/findings_pass.json --fail-on medium
           rc_pass=$?
           set -e

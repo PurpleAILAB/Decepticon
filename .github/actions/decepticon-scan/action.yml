@@ -40,38 +40,57 @@ runs:
     - name: Set up Python
       uses: actions/setup-python@v6
       with:
+        # Static-ish input; setup-python validates it. Still routed through
+        # the action input (not interpolated into a shell ``run:``).
         python-version: ${{ inputs.python-version }}
+
+    # SECURITY: every user-controlled ``inputs.*`` value is passed to the
+    # shell exclusively via ``env:`` and dereferenced as ``"$VAR"``. Never
+    # interpolate ``${{ inputs.* }}`` directly into a ``run:`` body — that
+    # is the GitHub Actions expression-injection sink CodeQL flags
+    # (actions/expression-injection). ``env`` values are set as process
+    # environment by the runner, not string-spliced into the script, so a
+    # crafted input like ``$(...)`` / backticks cannot execute.
 
     # The diff-scope resolver needs the merge-base of the PR branch and
     # its target. A shallow clone (the Actions default) usually lacks it,
     # so we deepen unconditionally — cheap relative to the scan itself.
     - name: Ensure full git history
       shell: bash
+      env:
+        DIFF_BASE: ${{ inputs.diff-base }}
       run: |
         git rev-parse --is-shallow-repository >/dev/null 2>&1 || exit 0
         if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
           git fetch --unshallow --quiet || git fetch --depth=2147483647 --quiet || true
         fi
-        git fetch origin "${{ inputs.diff-base }}" --quiet || true
+        git fetch origin "$DIFF_BASE" --quiet || true
 
     - name: Install Decepticon (gate only)
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         python -m pip install --quiet --upgrade pip
         # The gate module is import-light; install the package without the
         # heavy agent extras so the action stays fast.
-        pip install --quiet -e "${{ github.action_path }}/../../.." \
+        pip install --quiet -e "$ACTION_PATH/../../.." \
           || pip install --quiet "decepticon @ git+https://github.com/PurpleAILAB/Decepticon"
 
     - name: Run Decepticon scan gate
       shell: bash
+      env:
+        DIFF_BASE: ${{ inputs.diff-base }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SCOPE_TO_DIFF: ${{ inputs.scope-to-diff }}
+        FINDINGS: ${{ inputs.findings }}
       run: |
-        ARGS=(--diff-base "${{ inputs.diff-base }}" --fail-on "${{ inputs.fail-on }}")
-        if [ "${{ inputs.scope-to-diff }}" != "true" ]; then
+        ARGS=(--diff-base "$DIFF_BASE" --fail-on "$FAIL_ON")
+        if [ "$SCOPE_TO_DIFF" != "true" ]; then
           ARGS+=(--no-scope)
         fi
-        if [ -n "${{ inputs.findings }}" ]; then
-          ARGS+=(--findings "${{ inputs.findings }}")
+        if [ -n "$FINDINGS" ]; then
+          ARGS+=(--findings "$FINDINGS")
         else
           ARGS+=(--check-only)
         fi
