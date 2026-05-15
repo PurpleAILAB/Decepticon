@@ -219,9 +219,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # OLLAMA_CLOUD_MODEL at chain-build time. Uses the same
         # ollama_chat/ provider prefix (tool-call-capable /api/chat
         # endpoint) but routes through the cloud API base + key.
-        Tier.HIGH: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
-        Tier.MID: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
-        Tier.LOW: "ollama_chat/__OLLAMA_CLOUD_MODEL__",
+        Tier.HIGH: "ollama_cloud/__OLLAMA_CLOUD_MODEL__",
+        Tier.MID: "ollama_cloud/__OLLAMA_CLOUD_MODEL__",
+        Tier.LOW: "ollama_cloud/__OLLAMA_CLOUD_MODEL__",
     },
     AuthMethod.COPILOT_OAUTH: {
         # gpt-4o / o1 / o3-mini retired from GitHub Copilot on 2025-10-23.
@@ -531,18 +531,26 @@ def _resolve_ollama_model() -> str | None:
 def _resolve_ollama_cloud_model() -> str | None:
     """Return the LiteLLM model id for the user's Ollama Cloud, or None.
 
-    Reads ``OLLAMA_CLOUD_API_BASE`` and ``OLLAMA_CLOUD_MODEL`` from the
-    environment. Falls back to ``_OLLAMA_CLOUD_DEFAULT_MODEL`` when the
-    base URL is set but no model is specified. Returns None when no cloud
-    endpoint is configured at all.
+    Reads ``OLLAMA_CLOUD_API_BASE`` / ``OLLAMA_API_KEY`` (per Ollama Cloud
+    docs at https://docs.ollama.com/cloud) and ``OLLAMA_CLOUD_MODEL`` from
+    the environment. Falls back to ``_OLLAMA_CLOUD_DEFAULT_MODEL`` when
+    the base URL is set but no model is specified. Returns None when no
+    cloud endpoint is configured at all.
+
+    Uses a distinct ``ollama_cloud/`` provider prefix (not ``ollama_chat/``)
+    so the dynamic-config builder can route to the cloud's OpenAI-
+    compatible endpoint (``https://ollama.com/v1``) with Bearer auth via
+    ``OLLAMA_API_KEY`` instead of pointing at the local Ollama instance's
+    ``OLLAMA_API_BASE``.
     """
     base = os.getenv("OLLAMA_CLOUD_API_BASE", "").strip()
+    key = os.getenv("OLLAMA_API_KEY", "").strip()
     model = os.getenv("OLLAMA_CLOUD_MODEL", "").strip()
-    if not base and not model:
+    if not base and not key and not model:
         return None
     if not model:
         model = _OLLAMA_CLOUD_DEFAULT_MODEL
-    return f"ollama_chat/{model}"
+    return f"ollama_cloud/{model}"
 
 
 def _resolve_lmstudio_model() -> str | None:

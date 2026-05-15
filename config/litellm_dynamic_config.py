@@ -337,6 +337,20 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
             # ``ollama_chat/`` (which routes to /api/chat with tool support)
             # reaches this branch.
             params["api_base"] = "os.environ/OLLAMA_API_BASE"
+        elif provider == "ollama_cloud":
+            # Ollama Cloud (https://docs.ollama.com/cloud) — OpenAI-compatible
+            # at ``https://ollama.com/v1`` with Bearer auth via OLLAMA_API_KEY.
+            # No native LiteLLM ``ollama_cloud/`` provider yet, so remap the
+            # route to ``openai/<model>`` with explicit api_base override.
+            # ``OLLAMA_CLOUD_API_BASE`` defaults to ``https://ollama.com/v1``
+            # but can point at a self-hosted Ollama endpoint that mirrors
+            # the cloud OpenAI shape.
+            actual_model = model_name.split("/", 1)[1]
+            params = {
+                "model": f"openai/{actual_model}",
+                "api_key": "os.environ/OLLAMA_API_KEY",
+                "api_base": "os.environ/OLLAMA_CLOUD_API_BASE",
+            }
         elif provider == "bedrock":
             # AWS Bedrock — uses AWS SigV4 with three env vars rather
             # than an Authorization header. LiteLLM reads them
