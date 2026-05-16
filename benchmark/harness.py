@@ -107,14 +107,8 @@ class Harness:
 
     @property
     def _litellm_url(self) -> str:
-        """Derive the LiteLLM URL from the configured LangGraph URL.
-
-        Both services are exposed on localhost when the harness runs on
-        the host (default in ``make benchmark``). The :2024 → :4000 swap
-        matches ``_ensure_services_healthy``; keeping the derivation in
-        one place avoids drift if the port mapping changes.
-        """
-        return self.config.langgraph_url.replace(":2024", ":4000")
+        """LiteLLM URL — taken from BenchmarkConfig.litellm_url (env-overridable)."""
+        return self.config.litellm_url
 
     @staticmethod
     def _utc_iso() -> str:
@@ -398,7 +392,7 @@ class Harness:
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
         # Check LiteLLM: verify models are loaded via /v1/models endpoint
-        litellm_url = self.config.langgraph_url.replace(":2024", ":4000")
+        litellm_url = self.config.litellm_url
         litellm_ready = False
         for attempt in range(30):
             try:

@@ -350,27 +350,44 @@ class OPPLANMiddleware(AgentMiddleware):
     def _inject_opplan_context(self, request):
         """Build request with OPPLAN context injected into system message.
 
-        Injects dynamic state — the red team equivalent of a battle tracker —
-        every call, providing real-time situational awareness to the LLM.
+        Splits the injection into TWO content blocks so the Anthropic prompt
+        cache can reuse the static prefix across turns:
+
+          - **Static block** — `OPPLAN_SYSTEM_PROMPT` (identical every turn)
+            tagged with `cache_control: {"type": "ephemeral"}`. This anchors a
+            cache breakpoint after every static system content (base prompt +
+            engagement + skills + subagents + this static OPPLAN block).
+          - **Dynamic block** — formatted objective status table (changes when
+            objectives change status). No cache marker — recomputed every turn.
+
+        AnthropicPromptCachingMiddleware additionally marks the LAST block
+        (this dynamic one) per its own policy; Anthropic supports up to 4
+        cache_control breakpoints so the two coexist without conflict. The
+        static prefix cache hit avoids re-billing ~10K+ tokens of engagement
+        context + skills catalog + subagent descriptions on every turn.
         """
         objectives = request.state.get("objectives", [])
         engagement = request.state.get("engagement_name", "")
         threat = request.state.get("threat_profile", "")
 
-        dynamic_parts = [OPPLAN_SYSTEM_PROMPT]
+        static_block: dict[str, Any] = {
+            "type": "text",
+            "text": f"\n\n{OPPLAN_SYSTEM_PROMPT}",
+            "cache_control": {"type": "ephemeral"},
+        }
+        injected_blocks: list[dict[str, Any]] = [static_block]
 
         if objectives:
-            dynamic_parts.append(_format_opplan_status(objectives, engagement, threat))
-
-        injection = "\n\n".join(dynamic_parts)
+            dynamic_text = _format_opplan_status(objectives, engagement, threat)
+            injected_blocks.append({"type": "text", "text": f"\n\n{dynamic_text}"})
 
         if request.system_message is not None:
             new_content = [
                 *request.system_message.content_blocks,
-                {"type": "text", "text": f"\n\n{injection}"},
+                *injected_blocks,
             ]
         else:
-            new_content = [{"type": "text", "text": injection}]
+            new_content = injected_blocks
 
         new_system = SystemMessage(content=cast("list[str | dict[str, str]]", new_content))
         return request.override(system_message=new_system)

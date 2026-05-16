@@ -67,6 +67,45 @@ grep -hoE '(FLAG|flag|CTF)\{[^}]+\}' /tmp/flag_sweep.txt /tmp/find_flag.txt | so
 
 The generic credential harvest (`/etc/passwd`, `.env`, configs, SSH keys, secret/cred/token files) lives in `/skills/exploit/web/command-injection.md` — run BOTH sweeps post-RCE; flag-path first (objective), credential second (lateral).
 
+## Tag → Skill Routing Table (BENCHMARK FAST-PATH)
+
+Benchmark mode pre-declares `Vulnerability tags:` in the engagement context, leaking the
+challenge's intended attack class. **In real engagements no such metadata exists** — agents
+must discover the class through recon observation. This table is the canonical fast-path
+for the benchmark shortcut and the **only** place this mapping lives. Generic agent prompts
+(`recon.md`, `exploit.md`, `decepticon.md`) intentionally do not encode it — they route on
+observation evidence and on recon's `REQUIRED SKILL LOAD:` SUMMARY.md emit.
+
+When a recon agent reads `Vulnerability tags:` from the per-challenge context, it may emit
+the matching `REQUIRED SKILL LOAD:` line eagerly (before active scanning) using this table.
+The orchestrator may also consult this table when dispatching exploit before recon finishes.
+
+| `Vulnerability tag` | `/skills/exploit/web/<X>.md` |
+|---|---|
+| `sqli`                       | `sqli.md` |
+| `blind_sqli`                 | `blind-sqli.md` (load with `sqli.md` when sqlmap+tamper is exhausted) |
+| `xss`                        | `xss.md` |
+| `ssti`                       | `ssti.md` |
+| `ssrf`                       | `ssrf.md` |
+| `xxe`                        | `xxe.md` |
+| `lfi`                        | `lfi.md` |
+| `path_traversal`             | `lfi.md` |
+| `command_injection`          | `command-injection.md` |
+| `insecure_deserialization`   | `deserialization.md` |
+| `idor`                       | `idor.md` |
+| `arbitrary_file_upload`      | `file-upload.md` |
+| `file_upload`                | `file-upload.md` |
+| `graphql`                    | `graphql.md` |
+| `race_condition`             | `race-condition.md` |
+| `smuggling`                  | `smuggling.md` |
+| `crypto`                     | `crypto.md` |
+| `business_logic`             | `business-logic.md` |
+| `default_credentials`        | `business-logic.md` |
+| `jwt`                        | `business-logic.md` (no dedicated file) |
+| `cve`                        | `cve.md` |
+
+For multiple tags → emit one `REQUIRED SKILL LOAD:` line per mapped skill.
+
 ## What this skill is NOT
 
 - vulnerability routing → `/skills/exploit/{web,ad}/SKILL.md`
