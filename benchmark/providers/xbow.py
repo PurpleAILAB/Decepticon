@@ -264,7 +264,13 @@ class XBOWProvider(BaseBenchmarkProvider):
                 text=True,
                 check=True,
             )
-            # Remove build guard so next run rebuilds with fresh flag
+            # Remove build guard so next run rebuilds with fresh flag.
+            # XBOWProvider only emits Challenges with a non-None
+            # compose_dir (see ``load_challenges``); the assert lets
+            # basedpyright narrow ``Path | None`` to ``Path`` after the
+            # schema-level relaxation that lets other providers carry
+            # None instead.
+            assert challenge.compose_dir is not None
             guard = challenge.compose_dir / ".xben_build_done"
             guard.unlink(missing_ok=True)
         except subprocess.CalledProcessError:

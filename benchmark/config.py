@@ -16,3 +16,9 @@ class BenchmarkConfig(BaseModel):
     docker_network: str = "sandbox-net"
     cleanup_workspaces: bool = True
     provider: str = "xbow"
+    # ExploitBench provider knobs. ``exploitbench_config_path`` points at
+    # an ExploitBench-style YAML (see ``benchmark/configs/exploitbench-*.yaml``);
+    # ``exploitbench_bridge_runtime`` selects the stdio→TCP bridge binary
+    # (``mcp-proxy`` default, ``socat`` fallback for hosts without Node).
+    exploitbench_config_path: Path | None = None
+    exploitbench_bridge_runtime: str = "mcp-proxy"
