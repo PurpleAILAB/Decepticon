@@ -280,7 +280,11 @@ def _format_opplan_for_agent(
             f"(phase: {nxt.get('phase')}, priority: {nxt.get('priority')})"
         )
     else:
-        all_done = all(o.get("status") == "completed" for o in objectives)
+        # Guard against the empty-objectives case: ``all([])`` is vacuously
+        # True, which previously rendered \"ALL OBJECTIVES COMPLETE\" for an
+        # engagement that had zero objectives ever defined. Treat zero as
+        # \"no plan yet\" rather than \"all done\".
+        all_done = bool(objectives) and all(o.get("status") == "completed" for o in objectives)
         if all_done:
             lines.append("ALL OBJECTIVES COMPLETE — Generate final engagement report.")
         else:
