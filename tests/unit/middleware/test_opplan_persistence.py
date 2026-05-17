@@ -408,3 +408,9 @@ def test_format_opplan_status_empty_does_not_say_all_complete() -> None:
     out = opplan_mod._format_opplan_status([], "demo", "apt-x")
     assert "ALL OBJECTIVES COMPLETE" not in out
     assert "No objectives defined" in out
+
+
+def test_format_opplan_for_agent_empty_does_not_say_all_complete() -> None:
+    """Regression: empty objectives list must not report all-done (vacuous all())."""
+    out = _format_opplan_for_agent([], "demo", "apt-x")
+    assert "ALL OBJECTIVES COMPLETE" not in out

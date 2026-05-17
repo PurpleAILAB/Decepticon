@@ -280,7 +280,7 @@ def _format_opplan_for_agent(
             f"(phase: {nxt.get('phase')}, priority: {nxt.get('priority')})"
         )
     else:
-        all_done = all(o.get("status") == "completed" for o in objectives)
+        all_done = bool(objectives) and all(o.get("status") == "completed" for o in objectives)
         if all_done:
             lines.append("ALL OBJECTIVES COMPLETE — Generate final engagement report.")
         else:
