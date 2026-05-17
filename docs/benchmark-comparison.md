@@ -75,11 +75,14 @@ XBOW commercial does not publish a per-difficulty breakdown for its own agent �
 
 ## Sources
 
-- XBOW corp — [top-1 blog](https://xbow.com/blog/top-1-how-xbow-did-it) · [1060 attacks](https://xbow.com/blog/we-ran-1060-autonomous-attacks)
-- Shannon — [`xben-benchmark-results/`](https://github.com/KeygraphHQ/shannon/tree/main/xben-benchmark-results)
-- Cyber-AutoAgent — [v0.1.0 results](https://github.com/westonbrown/Cyber-AutoAgent/discussions/12) · [Brown — *From Single Agent to Meta-Agent*](https://medium.com/data-science-collective/from-single-agent-to-meta-agent-building-the-leading-open-source-autonomous-cyber-agent-e1b704f81707)
-- PentestGPT XBOW suite — [DeepWiki](https://deepwiki.com/GreyDGL/PentestGPT/5.1-xbow-validation-suite)
+- XBOW corp — [top-1 blog](https://xbow.com/blog/top-1-how-xbow-did-it) · [1060 attacks](https://xbow.com/blog/we-ran-1060-autonomous-attacks) · [benchmarks page](https://xbow.com/blog/benchmarks)
+- Shannon — [`xben-benchmark-results/`](https://github.com/KeygraphHQ/xbow-validation-benchmarks/tree/main/xben-benchmark-results) (lives in the project's fork of `xbow-validation-benchmarks`, not in the `KeygraphHQ/shannon` repo)
+- Strix — [`usestrix/benchmarks` XBEN](https://github.com/usestrix/benchmarks/tree/main/XBEN) (v0.4.0 results, `run_infer.py` evaluation script, per-difficulty 45/45 · 49/51 · 6/8 = 100/104, avg ~19 min / ~$337 total)
+- Cyber-AutoAgent — [v0.1.0 results](https://github.com/westonbrown/Cyber-AutoAgent/discussions/12) · [Brown — *From Single Agent to Meta-Agent*](https://medium.com/data-science-collective/from-single-agent-to-meta-agent-building-the-leading-open-source-autonomous-cyber-agent-e1b704f81707) (v0.1.1 ≈81 % on 104; v0.1.0 45.92 % on 98)
+- PentestGPT XBOW suite — [DeepWiki](https://deepwiki.com/GreyDGL/PentestGPT/5.1-xbow-validation-suite) (90/104 = 86.5 %; L1 42/46 · L2 43/50 · L3 5/8)
+- MAPTA — [arXiv 2508.20816](https://arxiv.org/abs/2508.20816) (80/104 = 76.9 %)
+- Red-MIRROR — [arXiv 2603.27127](https://arxiv.org/abs/2603.27127) (86.0 %; PentestAgent 50 %, AutoPT 46 %, VulnBot 6 % numbers also come from this paper's re-test of those systems)
 - Survey — [*AI Pentesting Agents 2026*](https://appsecsanta.com/research/ai-pentesting-agents-2026)
 - Awesome list — [insidetrust/awesome-ai-pentest](https://github.com/insidetrust/awesome-ai-pentest)
 
-> *Last updated: 2026-05-16.*
+> *Last updated: 2026-05-17.*
