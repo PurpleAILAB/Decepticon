@@ -61,7 +61,7 @@ Hosts and orchestrates all agents. Provides:
 Persistent relational storage for:
 - LiteLLM virtual keys, spend logs, user budgets
 - Web dashboard data (engagements, findings, OPPLAN objectives, defense actions)
-- User accounts (EE mode) or the single local user (OSS mode)
+- The single local user record
 
 Two logical databases: `litellm` (managed by LiteLLM) and `decepticon_web` (managed via Prisma in the web dashboard).
 

@@ -76,8 +76,6 @@ CLI tests are part of `make quality-cli`. To run them in isolation: `npm run tes
 | `make web-build` | Build the web dashboard (also generates the Prisma client) |
 | `make web-lint` | Lint the web dashboard (ESLint) |
 | `make web-migrate [NAME=name]` | Run a Prisma dev migration |
-| `make web-ee` | Link the Enterprise Edition package (`@decepticon/ee`) — dev-only, not part of the OSS flow |
-| `make web-oss` | Unlink the EE package — revert to OSS mode |
 
 To regenerate just the Prisma client (without a full build): `cd clients/web && npx prisma generate`.
 

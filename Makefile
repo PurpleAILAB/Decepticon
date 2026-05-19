@@ -47,7 +47,7 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
         dogfood launcher smoke \
         dev cli-dev web-dev infra \
         quality quality-cli test test-local lint lint-fix \
-        web-build web-hotswap web-lint web-migrate web-ee web-oss \
+        web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
         benchmark recreate-litellm
@@ -79,7 +79,6 @@ help:
 	@echo "  make web-hotswap  Build + inject into running container (~15s)"
 	@echo "  make web-lint     ESLint"
 	@echo "  make web-migrate [NAME=]   Prisma migrate dev"
-	@echo "  make web-ee / web-oss      Toggle EE/OSS mode (dev-only)"
 	@echo ""
 	@echo "Ops:"
 	@echo "  make status       docker compose ps"
@@ -228,21 +227,6 @@ web-lint: node-install
 
 web-migrate: node-install
 	cd $(WEB_DIR) && npx prisma migrate dev --name $(or $(NAME),init)
-
-## Link EE package for SaaS development (dev-only; not part of OSS flow).
-web-ee:
-	cd clients/ee && npm link
-	cd $(WEB_DIR) && npm link @decepticon/ee
-	@grep -q 'NEXT_PUBLIC_DECEPTICON_EDITION' $(WEB_DIR)/.env 2>/dev/null \
-		&& sed -i 's/NEXT_PUBLIC_DECEPTICON_EDITION=.*/NEXT_PUBLIC_DECEPTICON_EDITION=ee/' $(WEB_DIR)/.env \
-		|| echo 'NEXT_PUBLIC_DECEPTICON_EDITION=ee' >> $(WEB_DIR)/.env
-	@echo "EE linked — restart web-dev for SaaS mode"
-
-## Unlink EE package (switch to OSS mode).
-web-oss:
-	cd $(WEB_DIR) && npm unlink @decepticon/ee 2>/dev/null; true
-	@sed -i '/NEXT_PUBLIC_DECEPTICON_EDITION/d' $(WEB_DIR)/.env 2>/dev/null; true
-	@echo "EE unlinked — restart web-dev for OSS mode"
 
 # ── Status / Logs / Health / Clean ───────────────────────────────
 

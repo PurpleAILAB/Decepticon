@@ -1,7 +1,7 @@
 /**
- * Auth bridge — single-user OSS mode.
+ * Auth bridge — single-user local deploy.
  *
- * OSS deploys are self-hosted and single-user. There is no authentication
+ * Decepticon is self-hosted and single-user. There is no authentication
  * system; every request resolves to the local user.
  */
 
