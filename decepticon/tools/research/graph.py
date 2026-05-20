@@ -83,6 +83,9 @@ class NodeKind(StrEnum):
     CANDIDATE = "Candidate"
     HYPOTHESIS = "Hypothesis"
     PATCH = "Patch"
+    # EvoGraph cross-session memory (see tools/research/cross_session.py)
+    ENGAGEMENT = "Engagement"
+    ENGAGEMENT_MEMORY = "EngagementMemory"
 
 
 class EdgeKind(StrEnum):
@@ -128,6 +131,9 @@ class EdgeKind(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PATCHES = "PATCHES"
     MAPS_TO = "MAPS_TO"
+    # EvoGraph cross-session memory
+    IN_ENGAGEMENT = "IN_ENGAGEMENT"
+    SUMMARIZES = "SUMMARIZES"
 
 
 class Severity(StrEnum):
