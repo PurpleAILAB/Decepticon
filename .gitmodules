@@ -1,3 +1,6 @@
 [submodule "benchmark/xbow-validation-benchmarks"]
 	path = benchmark/xbow-validation-benchmarks
 	url = https://github.com/PurpleAILAB/xbow-validation-benchmarks
+[submodule "skills/_corpus/payloads"]
+	path = skills/_corpus/payloads
+	url = https://github.com/swisskyrepo/PayloadsAllTheThings.git

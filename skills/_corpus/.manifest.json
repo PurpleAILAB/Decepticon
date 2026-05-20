@@ -1,0 +1,320 @@
+{
+  "classes": {
+    "API Key Leaks": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/API Key Leaks/README.md",
+      "sha256": "380e3a93f463cbd24786b8c6ea2fcbd1620cb3a45ca29c6c80072dffc825b2ec"
+    },
+    "Account Takeover": {
+      "mapped_leaf": "skills/exploit/web/ato-methodology/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Account Takeover/README.md",
+      "sha256": "4cbbbf410977aa3cf3ec0b1b28b2b81cae06791e278a4ac8f1e264394ed30f39"
+    },
+    "Brute Force Rate Limit": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Brute Force Rate Limit/README.md",
+      "sha256": "df39f00ed2aea192992aab3f29ee0a2bec54da871f7f5215bc004e25bc6adcdd"
+    },
+    "Business Logic Errors": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Business Logic Errors/README.md",
+      "sha256": "7a7db6f29968d37cead314573594e58dba91245bfba9e6ae4e4c95a74bed983c"
+    },
+    "CORS Misconfiguration": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/CORS Misconfiguration/README.md",
+      "sha256": "7b16be29ad04036c0846cc440de4ec7b962982b4ef7018bdafd3c0143f68e248"
+    },
+    "CRLF Injection": {
+      "mapped_leaf": "skills/exploit/web/crlf.md",
+      "readme_relpath": "skills/_corpus/payloads/CRLF Injection/README.md",
+      "sha256": "d25e1ccaa40f23ef169da00fe1765971e23d5322875864a26dccdd6d19fc4d93"
+    },
+    "CSS Injection": {
+      "mapped_leaf": "skills/exploit/web/css-injection/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/CSS Injection/README.md",
+      "sha256": "d7082957df7f9de34dd8c68cd1766b630f32fb917ea632ee325290173909b31d"
+    },
+    "CSV Injection": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/CSV Injection/README.md",
+      "sha256": "34c678abf833bcd25ad2a026e8e6d73899ebe7859245681adb32ec4bfd956062"
+    },
+    "CVE Exploits": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/CVE Exploits/README.md",
+      "sha256": "4421ff621ce0e34bd167a991b8c009bb920954445c02fd144dda28f2aecfa067"
+    },
+    "Clickjacking": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Clickjacking/README.md",
+      "sha256": "b200da842d971ca200512cdbe6067dfdad717ea936d72e34f4e7bc7c4f57337a"
+    },
+    "Client Side Path Traversal": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Client Side Path Traversal/README.md",
+      "sha256": "98ed7e265f375a5251e95ba225255697a69c37a533092a820e94ae2d9b4b1e51"
+    },
+    "Command Injection": {
+      "mapped_leaf": "skills/exploit/web/command-injection.md",
+      "readme_relpath": "skills/_corpus/payloads/Command Injection/README.md",
+      "sha256": "90ce8a7d48c390dc897de5e62576de27c9ec049dd588ae85438a932bb556c87c"
+    },
+    "Cross-Site Request Forgery": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Cross-Site Request Forgery/README.md",
+      "sha256": "7b0b71b42e81ca1a22c867e8a0e98cfb8ca312d2af778f27ba711eb2db0c189a"
+    },
+    "DNS Rebinding": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/DNS Rebinding/README.md",
+      "sha256": "da778b0373fb6862a5e2f8fcfb3bde5a179e0022fc635ee00242ce3f422ef111"
+    },
+    "DOM Clobbering": {
+      "mapped_leaf": "skills/exploit/web/dom-clobbering/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/DOM Clobbering/README.md",
+      "sha256": "01c6e092db337007adf9edb029c53687ba16917c1388c16309c0ff3e3c10cb42"
+    },
+    "Denial of Service": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Denial of Service/README.md",
+      "sha256": "b521e8ce23dd6a20c56d860d6c776295aa368cb341a4d89e1ef4d5c51be97abf"
+    },
+    "Dependency Confusion": {
+      "mapped_leaf": "skills/exploit/supplychain/dep-confusion/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Dependency Confusion/README.md",
+      "sha256": "fa5e5f25de9bb031b44aa1b9ab946236a4da89461005fe4764d672abd757a1ac"
+    },
+    "Directory Traversal": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Directory Traversal/README.md",
+      "sha256": "788be4e2bee5e017f000710e8e60674896205b91963f8ebc959644bd7182ba8d"
+    },
+    "Encoding Transformations": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Encoding Transformations/README.md",
+      "sha256": "fbd684e8f8e24819ca35b8d4d2679ba39c2afa33b4980ad626e33e298fdc50d2"
+    },
+    "External Variable Modification": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/External Variable Modification/README.md",
+      "sha256": "d7d1a6cb10ad6185e515825877d081cfcb31b5ac1fa023ee314134a9c4d2b10a"
+    },
+    "File Inclusion": {
+      "mapped_leaf": "skills/exploit/web/lfi.md",
+      "readme_relpath": "skills/_corpus/payloads/File Inclusion/README.md",
+      "sha256": "ef8cf45b3453ecd8baea2413ccb0e400e33fe7ae86cd7bd731af342db2a892b5"
+    },
+    "Google Web Toolkit": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Google Web Toolkit/README.md",
+      "sha256": "7086ba96670836ab0d331c637980fd42ac1174ebd854208360e0df5718e71b10"
+    },
+    "GraphQL Injection": {
+      "mapped_leaf": "skills/exploit/web/graphql.md",
+      "readme_relpath": "skills/_corpus/payloads/GraphQL Injection/README.md",
+      "sha256": "0c1fd369383ad9fbcbcac588b1fffc5e6763a2fb24ad18fc5382e7b2f02e7fbc"
+    },
+    "HTTP Parameter Pollution": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/HTTP Parameter Pollution/README.md",
+      "sha256": "b9ac161c484969cabcd3a181fdad8f999e2cc42009bd6b4c51765c4d687ec18b"
+    },
+    "Headless Browser": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Headless Browser/README.md",
+      "sha256": "095345f4549ed6a340023ea74f55d3bc242a52661b3757cc3e1cebae211cd401"
+    },
+    "Hidden Parameters": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Hidden Parameters/README.md",
+      "sha256": "09a89cf3f7f041757590a113ca95beb9d188e4d63a42c6bfe88c41550f1dbea8"
+    },
+    "Insecure Deserialization": {
+      "mapped_leaf": "skills/exploit/web/deserialization.md",
+      "readme_relpath": "skills/_corpus/payloads/Insecure Deserialization/README.md",
+      "sha256": "77119a904b3d40d5960666e09f1bc34227508611e78f018a11425bf5a9c7ba9b"
+    },
+    "Insecure Direct Object References": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Insecure Direct Object References/README.md",
+      "sha256": "b30662eb9a7a201c2eb15e320e777269c365f37ca793de5a39ecc758f4f01150"
+    },
+    "Insecure Management Interface": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Insecure Management Interface/README.md",
+      "sha256": "ad92fd867e7cc75857b9d4279e31479ed81b3084196122717fd80ba26f8cf90f"
+    },
+    "Insecure Randomness": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Insecure Randomness/README.md",
+      "sha256": "696cd8cb8aaca101009c8ebf2dfb9c4c252336ecfca7e236bbb7fd38c3135c80"
+    },
+    "Insecure Source Code Management": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Insecure Source Code Management/README.md",
+      "sha256": "a795b519d25bb311a0dee5d382246cbfea6ae21838ffc3261281751f15c12b00"
+    },
+    "JSON Web Token": {
+      "mapped_leaf": "skills/exploit/web/jwt/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/JSON Web Token/README.md",
+      "sha256": "88fc4040fd2dc9f8659a6a7987eed42e6587da49df3824186ccad90781f74185"
+    },
+    "Java RMI": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Java RMI/README.md",
+      "sha256": "77b7f2f95bda57a4c52de8c1b411607f15b0efa0c24b85265e60ec3eddc8de00"
+    },
+    "LDAP Injection": {
+      "mapped_leaf": "skills/exploit/web/ldapi/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/LDAP Injection/README.md",
+      "sha256": "225a07254406adc7bfc57d34d9266548a94ecdfc4d58f497d1ee0df32b1a511b"
+    },
+    "LaTeX Injection": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/LaTeX Injection/README.md",
+      "sha256": "fdd8961a70f549e71075b0633c9b2a7c5d827907ac949a751a0ab271723786bd"
+    },
+    "Mass Assignment": {
+      "mapped_leaf": "skills/exploit/web/mass-assignment/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Mass Assignment/README.md",
+      "sha256": "c40d66477dd102f6602faddf44d489f53af994d8adeffae2bb56fdf5b50d9b5f"
+    },
+    "NoSQL Injection": {
+      "mapped_leaf": "skills/exploit/web/nosqli/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/NoSQL Injection/README.md",
+      "sha256": "74f4d5ae8022206c8c6a164a95d1622788e7c5c1f661f6abf25e80e99e1fac7d"
+    },
+    "OAuth Misconfiguration": {
+      "mapped_leaf": "skills/exploit/web/oauth/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/OAuth Misconfiguration/README.md",
+      "sha256": "5f440f52e4d05a3c980c0189c3ecd3b0dd320b79e1fe6fdf14d8d44cb646c827"
+    },
+    "ORM Leak": {
+      "mapped_leaf": "skills/exploit/web/mass-assignment/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/ORM Leak/README.md",
+      "sha256": "40f528cb12e4c0c9e31c334fcc36f9f2a0ce133d2e89494956ac1506c004a001"
+    },
+    "Open Redirect": {
+      "mapped_leaf": "skills/exploit/web/open-redirect/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Open Redirect/README.md",
+      "sha256": "d46052ffaa71ad7b29fd36f22c0bb2f013e36d04b337af9016386e0ba1ae2889"
+    },
+    "Prompt Injection": {
+      "mapped_leaf": "skills/analyst/prompt-injection.md",
+      "readme_relpath": "skills/_corpus/payloads/Prompt Injection/README.md",
+      "sha256": "302c565b6ec62bab727f4bb55f8a5aa054ccac2e6cdc0df8e36728329366ab12"
+    },
+    "Prototype Pollution": {
+      "mapped_leaf": "skills/analyst/prototype-pollution.md",
+      "readme_relpath": "skills/_corpus/payloads/Prototype Pollution/README.md",
+      "sha256": "211e164e576f416025590c1db5dbf68ead9ffca27557e4b24d20f9d4e22a378d"
+    },
+    "Race Condition": {
+      "mapped_leaf": "skills/exploit/web/race-condition.md",
+      "readme_relpath": "skills/_corpus/payloads/Race Condition/README.md",
+      "sha256": "38541defa5c86d0c878e8824861055c4616f756657621781668e1b9c5e9b1e3f"
+    },
+    "Regular Expression": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Regular Expression/README.md",
+      "sha256": "dbae1fb2ee57656b2b11a4d61c7bbd49acfdc6020d63cfcc30265dcbb4bab63c"
+    },
+    "Request Smuggling": {
+      "mapped_leaf": "skills/exploit/web/smuggling.md",
+      "readme_relpath": "skills/_corpus/payloads/Request Smuggling/README.md",
+      "sha256": "93eedac9212197a385d3cc78092d2e7ce8749c8883e600f6eccbadccb14304c5"
+    },
+    "Reverse Proxy Misconfigurations": {
+      "mapped_leaf": "skills/exploit/web/proxy-misconfig/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Reverse Proxy Misconfigurations/README.md",
+      "sha256": "7ebb57bd7399f73922f7205fe708113e12d1c0e2a891ba950468cca5d94b80b7"
+    },
+    "SAML Injection": {
+      "mapped_leaf": "skills/exploit/web/saml/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/SAML Injection/README.md",
+      "sha256": "22b784d03e007a5221a8737d6f176734d22d9915309adf72552b73c7afa3bc00"
+    },
+    "SQL Injection": {
+      "mapped_leaf": "skills/exploit/web/sqli.md",
+      "readme_relpath": "skills/_corpus/payloads/SQL Injection/README.md",
+      "sha256": "e8d6e06be71f46bbdc60a8fb43a6c98c2eb5e3b9c4972c0c8aaa01b34e2b5a2e"
+    },
+    "Server Side Include Injection": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Server Side Include Injection/README.md",
+      "sha256": "5a32cf54b460102f59fc6c0b2cbcd0bc2abc17890b0801b4dd24be8728bf9423"
+    },
+    "Server Side Request Forgery": {
+      "mapped_leaf": "skills/exploit/web/ssrf.md",
+      "readme_relpath": "skills/_corpus/payloads/Server Side Request Forgery/README.md",
+      "sha256": "04073bdaa2d40f9515ee5488362fdde817d24312a6677e3ab76ae6ddbbb774d3"
+    },
+    "Server Side Template Injection": {
+      "mapped_leaf": "skills/exploit/web/ssti.md",
+      "readme_relpath": "skills/_corpus/payloads/Server Side Template Injection/README.md",
+      "sha256": "04f98964df72bd8701e348fd5533985c3e588fa299972c3b7e1008df3d6f3cf0"
+    },
+    "Tabnabbing": {
+      "mapped_leaf": "skills/exploit/web/open-redirect/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Tabnabbing/README.md",
+      "sha256": "465f8693ecc4b10f20fc5cdc2115268e19b3df0783218447ac391eaa79ac4b2f"
+    },
+    "Type Juggling": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Type Juggling/README.md",
+      "sha256": "81bdf03fd579d5455a7bcb3f10352df74dc65464e3580d87d86fa64ab94a9db7"
+    },
+    "Upload Insecure Files": {
+      "mapped_leaf": "skills/exploit/web/file-upload.md",
+      "readme_relpath": "skills/_corpus/payloads/Upload Insecure Files/README.md",
+      "sha256": "c280777ce851edab0c2e39bdbe038fdf47741d456fdf850b79f06535b80a980e"
+    },
+    "Virtual Hosts": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Virtual Hosts/README.md",
+      "sha256": "65a86ba2ec291682100f7d5cf24b0c1697567affda262edb3d57a679ccd23cd3"
+    },
+    "Web Cache Deception": {
+      "mapped_leaf": "skills/exploit/web/cache-deception/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/Web Cache Deception/README.md",
+      "sha256": "c140312d14ec74b56ba45a2c04d86c9cfaba457262b72c0fdc1f8c2bc7bbbec3"
+    },
+    "Web Sockets": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Web Sockets/README.md",
+      "sha256": "1ba3caa102fa5779d7e93d4f4dcf793676e8c22e43345a26fa34399d66de90c7"
+    },
+    "XPATH Injection": {
+      "mapped_leaf": "skills/exploit/web/xpath-xslt/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/XPATH Injection/README.md",
+      "sha256": "ffb4813b1ee0f69fad39b3aadb97029382dc2c916fc282626bac982c5b4ca5b0"
+    },
+    "XS-Leak": {
+      "mapped_leaf": "skills/exploit/web/xs-leaks/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/XS-Leak/README.md",
+      "sha256": "039e482146fabf43a63039a7d542250c58e83da731c9815aa6200b749c1aea7d"
+    },
+    "XSLT Injection": {
+      "mapped_leaf": "skills/exploit/web/xpath-xslt/SKILL.md",
+      "readme_relpath": "skills/_corpus/payloads/XSLT Injection/README.md",
+      "sha256": "dfd3ed5d4b961692758f1fe3a7d84d5e04e0e8ed492cf60e4183e898efe221d9"
+    },
+    "XSS Injection": {
+      "mapped_leaf": "skills/exploit/web/xss.md",
+      "readme_relpath": "skills/_corpus/payloads/XSS Injection/README.md",
+      "sha256": "9b2d9c10c590086118985f528d5f5310d4a18f2a78df28869ef35fb3b0ac4828"
+    },
+    "XXE Injection": {
+      "mapped_leaf": "skills/exploit/web/xxe.md",
+      "readme_relpath": "skills/_corpus/payloads/XXE Injection/README.md",
+      "sha256": "bb2e4cc1c784c56b08aefc5140950669c1700ad531ee58d46033f899b47530fc"
+    },
+    "Zip Slip": {
+      "mapped_leaf": "",
+      "readme_relpath": "skills/_corpus/payloads/Zip Slip/README.md",
+      "sha256": "5eb17ea19e7a5da8762bceedf4957e84d2f1d7feeaf370b3d8d33be7f970a884"
+    }
+  },
+  "submodule_sha": "e961fef231d8327bae83b563fab50aec2e6b77c0"
+}
