@@ -1,0 +1,56 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Agent-handoff topology — who dispatches whom, with what frequency, with what latency. Surfaces orchestrator/sub-agent ratio + bottleneck agents.",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}, "overrides": [{"matcher": {"id": "byName", "options": "dispatches"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 10}, {"color": "red", "value": 50}]}}]}, {"matcher": {"id": "byName", "options": "p95_ms"}, "properties": [{"id": "unit", "value": "ms"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 30000}, {"color": "red", "value": 120000}]}}]}]},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"cellHeight": "sm", "showHeader": true, "sortBy": [{"desc": true, "displayName": "dispatches"}]},
+      "targets": [
+        {"expr": "sum by (parent, agent) (increase(decepticon_agent_dispatches_total{engagement=~\"$engagement\"}[$__range]))", "format": "table", "instant": true, "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, parent, agent) (rate(decepticon_agent_latency_ms_bucket{engagement=~\"$engagement\"}[$__range])))", "format": "table", "instant": true, "refId": "B"}
+      ],
+      "title": "Handoff Edges (parent → agent)",
+      "transformations": [
+        {"id": "joinByField", "options": {"byField": "parent,agent", "mode": "outer"}},
+        {"id": "organize", "options": {"excludeByName": {"Time 1": true, "Time 2": true}, "renameByName": {"Value #A": "dispatches", "Value #B": "p95_ms"}}}
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 30, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "normal"}}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 12},
+      "id": 2,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (agent) (rate(decepticon_agent_dispatches_total{engagement=~\"$engagement\"}[5m]))", "legendFormat": "{{agent}}", "refId": "A"}],
+      "title": "Dispatch Rate by Receiving Agent",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 10, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never"}, "unit": "ms"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 12},
+      "id": 3,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le, agent) (rate(decepticon_agent_latency_ms_bucket{engagement=~\"$engagement\"}[5m])))", "legendFormat": "p50 {{agent}}", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, agent) (rate(decepticon_agent_latency_ms_bucket{engagement=~\"$engagement\"}[5m])))", "legendFormat": "p95 {{agent}}", "refId": "B"}
+      ],
+      "title": "Per-Agent Turn Latency (p50 + p95)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["decepticon", "agents", "handoffs"],
+  "templating": {"list": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(decepticon_agent_dispatches_total, engagement)", "includeAll": true, "label": "Engagement", "name": "engagement", "query": {"query": "label_values(decepticon_agent_dispatches_total, engagement)"}, "refresh": 2, "type": "query"}]},
+  "time": {"from": "now-6h", "to": "now"},
+  "title": "Decepticon — Agent Handoff Topology",
+  "uid": "dec-agent-handoffs",
+  "version": 1
+}

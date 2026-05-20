@@ -1,0 +1,63 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Tool-call-level forensics — which tools are firing, from which agent, against which target, with what success rate. Crucial for benchmark optimization (find slow tools, kill noisy ones).",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 30, "lineInterpolation": "stepAfter", "lineWidth": 1, "showPoints": "never", "stacking": {"group": "A", "mode": "normal"}}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (tool) (rate(decepticon_tool_calls_total{engagement=~\"$engagement\", agent=~\"$agent\"}[1m]))", "legendFormat": "{{tool}}", "refId": "A"}],
+      "title": "Tool Calls by Tool (stacked)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}, "unit": "short"}, "overrides": [{"matcher": {"id": "byName", "options": "p95_ms"}, "properties": [{"id": "unit", "value": "ms"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 5000}, {"color": "red", "value": 30000}]}}]}, {"matcher": {"id": "byName", "options": "error_rate"}, "properties": [{"id": "unit", "value": "percentunit"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}, {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 0.05}, {"color": "red", "value": 0.20}]}}]}]},
+      "gridPos": {"h": 11, "w": 12, "x": 0, "y": 9},
+      "id": 2,
+      "options": {"cellHeight": "sm", "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "calls"}]},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {"expr": "sum by (tool) (increase(decepticon_tool_calls_total{engagement=~\"$engagement\"}[$__range]))", "format": "table", "instant": true, "legendFormat": "calls", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum by (le, tool) (rate(decepticon_tool_latency_ms_bucket{engagement=~\"$engagement\"}[$__range])))", "format": "table", "instant": true, "legendFormat": "p95_ms", "refId": "B"},
+        {"expr": "sum by (tool) (increase(decepticon_tool_calls_total{engagement=~\"$engagement\", status=\"error\"}[$__range])) / clamp_min(sum by (tool) (increase(decepticon_tool_calls_total{engagement=~\"$engagement\"}[$__range])), 1)", "format": "table", "instant": true, "legendFormat": "error_rate", "refId": "C"}
+      ],
+      "title": "Tool Performance Table",
+      "transformations": [
+        {"id": "joinByField", "options": {"byField": "tool", "mode": "outer"}},
+        {"id": "organize", "options": {"excludeByName": {"Time 1": true, "Time 2": true, "Time 3": true}, "renameByName": {"Value #A": "calls", "Value #B": "p95_ms", "Value #C": "error_rate"}}}
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": []}, "overrides": []},
+      "gridPos": {"h": 11, "w": 12, "x": 12, "y": 9},
+      "id": 3,
+      "options": {"displayLabels": ["percent"], "legend": {"displayMode": "list", "placement": "right", "showLegend": true, "values": ["value"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "tooltip": {"mode": "single"}},
+      "pluginVersion": "10.0.0",
+      "targets": [{"expr": "topk(10, sum by (tool) (increase(decepticon_tool_calls_total{engagement=~\"$engagement\"}[$__range])))", "legendFormat": "{{tool}}", "refId": "A"}],
+      "title": "Top 10 Tools by Call Volume",
+      "type": "piechart"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["decepticon", "tools"],
+  "templating": {
+    "list": [
+      {"datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(decepticon_tool_calls_total, engagement)", "includeAll": true, "label": "Engagement", "multi": false, "name": "engagement", "options": [], "query": {"query": "label_values(decepticon_tool_calls_total, engagement)", "refId": "var"}, "refresh": 2, "type": "query"},
+      {"datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(decepticon_tool_calls_total{engagement=~\"$engagement\"}, agent)", "includeAll": true, "label": "Agent", "multi": true, "name": "agent", "options": [], "query": {"query": "label_values(decepticon_tool_calls_total{engagement=~\"$engagement\"}, agent)", "refId": "var"}, "refresh": 2, "type": "query"}
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "",
+  "title": "Decepticon — Tool-Call Forensics",
+  "uid": "dec-tool-forensics",
+  "version": 1
+}
