@@ -1,0 +1,125 @@
+{
+  "_comment": "Hack-with-Github/Awesome-Hacking + canonical sub-lists, distilled. Generated 2026-05-20. License: CC0. Use: recon agent 'where do I learn X' lookups. Source: https://github.com/Hack-with-Github/Awesome-Hacking",
+  "categories": {
+    "android": {
+      "url": "https://github.com/ashishb/android-security-awesome",
+      "topics": ["apk analysis", "frida hooking", "ssl pinning bypass", "root detection bypass", "intent fuzzing", "deeplink abuse"],
+      "decepticon_ref": "skills/_corpus/h4cker_manifest.yaml#mobile-security"
+    },
+    "appsec": {
+      "url": "https://github.com/paragonie/awesome-appsec",
+      "topics": ["secure coding", "language-specific pitfalls", "input validation libraries"],
+      "decepticon_ref": "skills/exploit/web/"
+    },
+    "burp-extensions": {
+      "url": "https://github.com/snoopysecurity/awesome-burp-extensions",
+      "topics": ["SAML Raider", "Param Miner", "Logger++", "Turbo Intruder", "JWT Editor", "Active Scan++"],
+      "decepticon_ref": "skills/exploit/web/jwt/, skills/exploit/web/saml/, skills/exploit/web/cache-deception/"
+    },
+    "ctf": {
+      "url": "https://github.com/apsdehal/awesome-ctf",
+      "topics": ["pwntools", "angr", "Volatility", "z3", "radare2", "Ghidra"],
+      "decepticon_ref": "skills/reverser/"
+    },
+    "exploit-dev": {
+      "url": "https://github.com/FabioBaroni/awesome-exploit-development",
+      "topics": ["heap exploitation", "ROP chains", "kernel exploitation", "browser exploitation", "windows exploitation"],
+      "decepticon_ref": "skills/reverser/rop-chain/"
+    },
+    "fuzzing": {
+      "url": "https://github.com/cpuu/awesome-fuzzing",
+      "topics": ["AFL++", "libFuzzer", "honggfuzz", "syzkaller", "radamsa", "Boofuzz"],
+      "decepticon_ref": "skills/analyst/, skills/contracts/ (foundry-fuzz)"
+    },
+    "hacking-resources": {
+      "url": "https://github.com/vitalysim/Awesome-Hacking-Resources",
+      "topics": ["pentest cheatsheets", "exploit DBs", "wargames", "CTF platforms"]
+    },
+    "honeypots": {
+      "url": "https://github.com/paralax/awesome-honeypots",
+      "topics": ["Cowrie", "Dionaea", "T-Pot"],
+      "decepticon_ref": "docs/offensive-vaccine.md (when implemented)"
+    },
+    "incident-response": {
+      "url": "https://github.com/meirwah/awesome-incident-response",
+      "topics": ["Volatility", "GRR", "TheHive", "MISP", "Sigma rules"],
+      "decepticon_ref": "skills/_corpus/h4cker_manifest.yaml#dfir"
+    },
+    "industrial-control-systems": {
+      "url": "https://github.com/hslatman/awesome-industrial-control-system-security",
+      "topics": ["Modbus", "DNP3", "S7Comm", "ICS protocol fuzzing", "Stuxnet-class attacks"]
+    },
+    "iot": {
+      "url": "https://github.com/V33RU/IoTSecurity101",
+      "topics": ["UART debugging", "JTAG", "firmware extraction", "binwalk", "Ghidra firmware"],
+      "decepticon_ref": "skills/reverser/firmware/"
+    },
+    "lockpicking": {
+      "url": "https://github.com/meitar/awesome-lockpicking",
+      "topics": ["physical security", "covert entry", "RFID cloning"]
+    },
+    "malware-analysis": {
+      "url": "https://github.com/rshipp/awesome-malware-analysis",
+      "topics": ["YARA", "capa", "FLARE", "Cuckoo Sandbox", "PEStudio", "Detect-it-Easy"],
+      "decepticon_ref": "skills/reverser/triage/, skills/reverser/packer-unpacking/"
+    },
+    "osint": {
+      "url": "https://github.com/jivoi/awesome-osint",
+      "topics": ["Maltego", "SpiderFoot", "Recon-ng", "shodan", "censys", "URLscan"],
+      "decepticon_ref": "skills/recon/osint/"
+    },
+    "pentest": {
+      "url": "https://github.com/enaqx/awesome-pentest",
+      "topics": ["nmap", "Metasploit", "Empire", "Cobalt Strike", "BloodHound", "Mimikatz"],
+      "decepticon_ref": "skills/exploit/, skills/ad/, skills/post-exploit/"
+    },
+    "physical-security": {
+      "url": "https://github.com/Wesley-Pang/Awesome-Physical-Security",
+      "topics": ["badge cloning", "social engineering for facility entry", "RFID"]
+    },
+    "reverse-engineering": {
+      "url": "https://github.com/wtsxDev/reverse-engineering",
+      "topics": ["IDA Pro", "Ghidra", "radare2", "x64dbg", "Binary Ninja"],
+      "decepticon_ref": "skills/reverser/"
+    },
+    "social-engineering": {
+      "url": "https://github.com/v2-dev/awesome-social-engineering",
+      "topics": ["pretexting frameworks", "OSINT for SE", "vishing scripts", "phishing infrastructure"],
+      "decepticon_ref": "skills/recon/osint/"
+    },
+    "shodan-queries": {
+      "url": "https://github.com/jakejarvis/awesome-shodan-queries",
+      "topics": ["common shodan dorks", "IoT discovery patterns", "internet-exposed databases"],
+      "decepticon_ref": "skills/recon/passive-recon/"
+    },
+    "static-analysis": {
+      "url": "https://github.com/analysis-tools-dev/static-analysis",
+      "topics": ["semgrep", "bandit", "gitleaks", "trufflehog", "Slither", "Mythril"],
+      "decepticon_ref": "skills/analyst/, skills/contracts/"
+    },
+    "web-hacking": {
+      "url": "https://github.com/infoslack/awesome-web-hacking",
+      "topics": ["Burp Suite plugins", "ffuf", "sqlmap", "wfuzz", "XSStrike"],
+      "decepticon_ref": "skills/exploit/web/, skills/_corpus/payloads/"
+    },
+    "wifi-security": {
+      "url": "https://github.com/0x90/wifi-arsenal",
+      "topics": ["aircrack-ng", "hashcat WPA modes", "evil twin", "PMKID attacks", "WPS attacks"]
+    },
+    "windows-exploitation": {
+      "url": "https://github.com/enddo/awesome-windows-exploitation",
+      "topics": ["UAC bypass", "AppLocker bypass", "AMSI bypass", "ETW patching", "PrintNightmare"]
+    },
+    "yara": {
+      "url": "https://github.com/InQuest/awesome-yara",
+      "topics": ["YARA rule writing", "malware family signatures", "capa rule library"]
+    }
+  },
+  "use_protocol": {
+    "step1": "Agent receives objective from user / orchestrator",
+    "step2": "If objective is 'learn about X' / 'recommend resources for X' / 'where do I find Y', load this index via load_skill('/skills/_corpus/awesome_index.json')",
+    "step3": "Match objective keywords to categories[*].topics — find the best category",
+    "step4": "Return the upstream URL + relevant Decepticon cross-references to the user",
+    "step5": "Do NOT fetch the upstream Awesome list contents during a normal engagement — link only. Fetching is for separate learning/research mode."
+  }
+}
