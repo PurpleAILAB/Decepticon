@@ -52,8 +52,10 @@ from decepticon.llm import LLMFactory
 from decepticon.middleware import (
     EngagementContextMiddleware,
     FilesystemMiddleware,
+    MentorMiddleware,
     OPPLANMiddleware,
     SkillsMiddleware,
+    VaccineMiddleware,
 )
 
 
@@ -199,13 +201,29 @@ def create_decepticon_agent():
         ),
     ]
 
-    # Assemble middleware stack
+    # Assemble middleware stack.
+    #
+    # Stack order matters:
+    #   1-4 (Engagement/Skills/Filesystem/SubAgent) inject base context + tools
+    #   5  MentorMiddleware — loop detector; runs BEFORE OPPLAN so wandering
+    #      advisories appear before OPPLAN bookkeeping decisions
+    #   6  OPPLANMiddleware — objective tracking, state-machine validation
+    #   7  VaccineMiddleware — auto-dispatch next Vaccine pipeline stage
+    #      based on per-finding JSON state; runs AFTER OPPLAN so finding
+    #      writes from sub-agents are visible
+    #   8  ModelFallback — provider fallback chain
+    #   9  Summarization — context compaction (must wrap higher-frequency
+    #      hooks; runs at compaction-trigger boundary)
+    # 10  AnthropicPromptCaching — final pass before LLM call
+    # 11  PatchToolCalls — defensive repair of dangling tool calls
     middleware = [
         EngagementContextMiddleware(),
         SkillsMiddleware(backend=backend, sources=["/skills/decepticon/", "/skills/shared/"]),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
+        MentorMiddleware(),                              # loop detector
         OPPLANMiddleware(),
+        VaccineMiddleware(backend=backend),              # auto-dispatch Vaccine pipeline
     ]
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
