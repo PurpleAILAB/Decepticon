@@ -28,7 +28,6 @@ from __future__ import annotations
 
 from decepticon.core.telemetry import counter, histogram
 
-
 # ── canonical metric instances ────────────────────────────────────────
 #
 # All instances are created lazily on first import — if telemetry isn't
