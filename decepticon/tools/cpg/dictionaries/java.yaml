@@ -1,0 +1,74 @@
+sources:
+  http_param:
+    - request.getParameter
+    - request.getParameterMap
+    - request.getParameterValues
+    - request.getInputStream
+    - request.getReader
+    - request.getQueryString
+    - "@RequestParam"
+    - "@PathVariable"
+    - "@RequestBody"
+    - "@ModelAttribute"
+  http_header:
+    - request.getHeader
+    - request.getHeaders
+    - request.getCookies
+    - "@RequestHeader"
+    - "@CookieValue"
+  env_var:
+    - System.getenv
+    - System.getProperty
+  file_read:
+    - new FileReader
+    - new BufferedReader
+    - Files.readAllBytes
+    - Files.readAllLines
+
+sinks:
+  sql_exec:
+    - Statement.execute
+    - Statement.executeQuery
+    - Statement.executeUpdate
+    - createStatement
+    - prepareStatement
+    - createQuery
+    - createNativeQuery
+    - hibernate.session.createQuery
+  shell_exec:
+    - Runtime.getRuntime().exec
+    - ProcessBuilder
+  eval:
+    - ScriptEngine.eval
+    - GroovyShell.evaluate
+  xxe:
+    - DocumentBuilderFactory.newInstance
+    - SAXParserFactory.newInstance
+    - XMLInputFactory.newInstance
+    - TransformerFactory.newInstance
+  deserialization:
+    - ObjectInputStream.readObject
+    - XStream.fromXML
+    - Yaml.load
+    - Gson.fromJson
+    - ObjectMapper.readValue
+  ssrf:
+    - URL.openConnection
+    - HttpURLConnection
+    - HttpClient.send
+    - RestTemplate
+    - WebClient
+  redirect:
+    - response.sendRedirect
+    - RedirectView
+    - ModelAndView
+  path_traversal:
+    - new File
+    - Files.newInputStream
+
+sanitizers:
+  html:
+    - StringEscapeUtils.escapeHtml
+    - HtmlUtils.htmlEscape
+  shell:
+    - StringEscapeUtils.escapeXml

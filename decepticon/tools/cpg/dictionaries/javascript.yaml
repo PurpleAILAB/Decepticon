@@ -1,0 +1,115 @@
+# Source / sink / sanitizer dictionary for JavaScript + TypeScript.
+
+sources:
+  http_param:
+    - req.query
+    - req.params
+    - req.body
+    - req.cookies
+    - request.query
+    - request.params
+    - request.body
+    - ctx.request.body
+    - useSearchParams
+    - useParams
+    - URLSearchParams
+  http_header:
+    - req.headers
+    - request.headers
+    - request.get
+  env_var:
+    - process.env
+  file_read:
+    - fs.readFile
+    - fs.readFileSync
+    - fs.readSync
+    - readFile
+    - readFileSync
+  dom_input:
+    - document.location
+    - location.search
+    - location.hash
+    - window.name
+    - document.referrer
+    - localStorage.getItem
+    - sessionStorage.getItem
+  network_read:
+    - fetch
+    - axios.get
+    - axios.post
+    - http.get
+    - https.get
+    - XMLHttpRequest
+
+sinks:
+  sql_exec:
+    - db.query
+    - connection.query
+    - pool.query
+    - sequelize.query
+    - knex.raw
+    - prisma.$queryRaw
+    - prisma.$executeRaw
+  shell_exec:
+    - child_process.exec
+    - child_process.execSync
+    - child_process.spawn
+    - exec
+    - execSync
+    - spawn
+  eval:
+    - eval
+    - Function
+    - vm.runInNewContext
+    - vm.runInThisContext
+    - setTimeout
+    - setInterval
+  xss_sink:
+    - innerHTML
+    - outerHTML
+    - document.write
+    - document.writeln
+    - element.insertAdjacentHTML
+    - $.html
+    - dangerouslySetInnerHTML
+  ssrf:
+    - fetch
+    - axios.get
+    - axios.post
+    - http.get
+    - https.get
+    - request
+  open_redirect:
+    - res.redirect
+    - response.redirect
+    - window.location
+    - location.assign
+    - location.replace
+  prototype_pollution:
+    - Object.assign
+    - lodash.merge
+    - lodash.defaultsDeep
+    - jQuery.extend
+  template_render:
+    - ejs.render
+    - handlebars.compile
+    - pug.render
+    - Mustache.render
+  file_write:
+    - fs.writeFile
+    - fs.writeFileSync
+    - fs.appendFile
+    - fs.unlink
+
+sanitizers:
+  html:
+    - DOMPurify.sanitize
+    - he.encode
+    - lodash.escape
+    - validator.escape
+  shell:
+    - shell-quote
+  sql:
+    - mysql.escape
+    - pg.escapeIdentifier
+    - pg.escapeLiteral
