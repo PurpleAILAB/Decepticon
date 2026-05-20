@@ -39,7 +39,6 @@ from typing import Any
 
 from decepticon.middleware.vaccine import _DEFAULT_FINDINGS_DIR
 
-
 # Schema field names — keep aligned w/ VaccineMiddleware._next_stage()
 _STAGE_FLAGS = ("validated", "patched", "defended", "shipped")
 
