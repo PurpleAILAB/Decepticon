@@ -67,6 +67,115 @@ Other WSL caveats:
 - Install Decepticon under your WSL home (`~/.decepticon`), not on a Windows-mounted drive (`/mnt/c/...`) — bind-mounted I/O across the boundary is much slower.
 - WSL2 mirrored networking (Windows 11 22H2+) collapses the *Windows host ↔ WSL distro* split, but Docker bridge networks remain isolated. The `host.docker.internal` requirement still applies.
 
+#### WSL2 + Ollama troubleshooting flowchart
+
+If `OLLAMA_API_BASE=http://host.docker.internal:11434` is failing
+from the litellm container on WSL2, work through these checks in
+order. The `[decepticon ollama]` log lines in `decepticon logs
+litellm` will identify which class of failure you're hitting; this
+section names each class and its fix.
+
+**1. Class: connection refused** — Ollama is up but bound to
+`127.0.0.1` only. The litellm container sees host.docker.internal
+resolve fine, then the TCP handshake gets RST.
+
+Verify from the WSL host (NOT inside the container):
+```bash
+netstat -tlnp 2>/dev/null | grep 11434
+# Expected: tcp 0 0 0.0.0.0:11434 0.0.0.0:* LISTEN <pid>/ollama
+# Wrong:    tcp 0 0 127.0.0.1:11434 0.0.0.0:* LISTEN <pid>/ollama
+```
+
+Fix:
+```bash
+# Foreground / current shell only
+OLLAMA_HOST=0.0.0.0:11434 ollama serve
+
+# Persist across reboots — systemd unit override
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+sudo tee /etc/systemd/system/ollama.service.d/override.conf <<'EOF'
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+EOF
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
+
+**2. Class: DNS not resolved** — `host.docker.internal` doesn't
+resolve inside the container. Common with native Docker in WSL
+when the `extra_hosts` mapping is missing (e.g. a stale compose
+override).
+
+Verify from inside the container:
+```bash
+decepticon exec litellm getent hosts host.docker.internal
+# Expected: 172.x.x.1  host.docker.internal
+# Wrong:    (no output)
+```
+
+Fix: confirm `docker-compose.yml` litellm service has:
+```yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+Workaround (if your override removed it): pin WSL distro IP in `.env`:
+```bash
+WSL_IP=$(ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+echo "OLLAMA_API_BASE=http://$WSL_IP:11434" >> ~/.decepticon/.env
+```
+Note: the WSL IP changes across reboots. Prefer fixing the bridge
+resolution.
+
+**3. Class: request timed out** — Host resolves, port not answering.
+Two sub-cases:
+
+- **Windows Defender Firewall blocks inbound 11434.** Check in
+  Windows admin PowerShell:
+  ```powershell
+  Get-NetFirewallRule -Direction Inbound |
+    Where DisplayName -like '*Ollama*' |
+    Format-Table DisplayName, Enabled, Profile
+  ```
+  Fix:
+  ```powershell
+  New-NetFirewallRule -DisplayName 'Ollama for WSL2' `
+    -Direction Inbound -LocalPort 11434 -Protocol TCP -Action Allow
+  ```
+
+- **WSL2 mirrored networking misconfigured.** On Windows 11 22H2+
+  mirrored mode requires `~/.wslconfig` (Windows-side):
+  ```ini
+  [wsl2]
+  networkingMode=mirrored
+  ```
+  Apply via `wsl --shutdown` then restart your distro. After
+  mirrored mode is active, `OLLAMA_API_BASE=http://localhost:11434`
+  may work directly from the litellm container.
+
+**4. Class: model not pulled** — `/api/show` returns 404 for
+`OLLAMA_MODEL`. Probe surfaces: *"Ollama model X is not pulled on
+this host."* Fix: `ollama pull <model>`.
+
+**5. Class: model doesn't support tools** — `/api/show` capabilities
+don't include `tools`. Pick a tool-capable model: `qwen3-coder`,
+`llama3.3`, `mistral-small3`, `deepseek-r1`.
+
+#### One-shot diagnostic
+
+Run the probe directly inside the litellm container:
+```bash
+docker exec -e OLLAMA_API_BASE=$OLLAMA_API_BASE \
+  -e OLLAMA_MODEL=$OLLAMA_MODEL \
+  $(docker ps -qf name=litellm | head -1) \
+  python3 -c "
+from config.ollama_probe import probe
+for line in probe('$OLLAMA_API_BASE', ['ollama_chat/$OLLAMA_MODEL']):
+    print(line)
+"
+```
+Each line is one operator-actionable hint. The probe now detects
+WSL2 environments (via `/proc/version` and `WSL_*` env vars) and
+emits WSL2-specific guidance for every error class.
+
 ---
 
 ## Installation
