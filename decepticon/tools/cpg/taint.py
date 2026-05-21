@@ -40,11 +40,11 @@ class SourceSinkFinding:
 
     file: str
     line: int
-    kind: str           # source: 'http_param'|'env_var'|... sink: 'sql_exec'|'shell_exec'|...
-    sigil: str          # the matched call/identifier text
+    kind: str  # source: 'http_param'|'env_var'|... sink: 'sql_exec'|'shell_exec'|...
+    sigil: str  # the matched call/identifier text
     confidence: float = 0.6
     function: str = ""
-    role: str = ""      # 'source' | 'sink' | 'sanitizer'
+    role: str = ""  # 'source' | 'sink' | 'sanitizer'
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -81,7 +81,9 @@ def _compile_pattern_list(patterns: list[str]) -> re.Pattern | None:
     return re.compile(rf"\b({escaped})\b")
 
 
-def _scan_calls(parse_result: dict, kind_patterns: dict[str, re.Pattern], role: str) -> list[SourceSinkFinding]:
+def _scan_calls(
+    parse_result: dict, kind_patterns: dict[str, re.Pattern], role: str
+) -> list[SourceSinkFinding]:
     out: list[SourceSinkFinding] = []
     file = parse_result.get("file", "")
     for fn in parse_result.get("functions", []) or []:
@@ -90,15 +92,17 @@ def _scan_calls(parse_result: dict, kind_patterns: dict[str, re.Pattern], role: 
             line = int(call.get("line", 0))
             for kind, pat in kind_patterns.items():
                 if pat.search(head):
-                    out.append(SourceSinkFinding(
-                        file=file,
-                        line=line,
-                        kind=kind,
-                        sigil=head,
-                        confidence=0.65,
-                        function=fn.get("name", ""),
-                        role=role,
-                    ))
+                    out.append(
+                        SourceSinkFinding(
+                            file=file,
+                            line=line,
+                            kind=kind,
+                            sigil=head,
+                            confidence=0.65,
+                            function=fn.get("name", ""),
+                            role=role,
+                        )
+                    )
                     break
     return out
 

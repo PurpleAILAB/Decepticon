@@ -148,9 +148,18 @@ def _finalize_ts_function(current: dict, src: bytes) -> FunctionSummary:
 
 
 _REGEX_FN_PATTERNS: dict[str, re.Pattern] = {
-    "python": re.compile(r"^[ \t]*(async\s+)?def\s+(?P<name>[a-zA-Z_][a-zA-Z_0-9]*)\s*\((?P<params>[^)]*)\)", re.MULTILINE),
-    "javascript": re.compile(r"^[ \t]*(?:async\s+)?function\s+(?P<name>[a-zA-Z_$][\w$]*)\s*\((?P<params>[^)]*)\)", re.MULTILINE),
-    "typescript": re.compile(r"^[ \t]*(?:async\s+)?function\s+(?P<name>[a-zA-Z_$][\w$]*)\s*\((?P<params>[^)]*)\)", re.MULTILINE),
+    "python": re.compile(
+        r"^[ \t]*(async\s+)?def\s+(?P<name>[a-zA-Z_][a-zA-Z_0-9]*)\s*\((?P<params>[^)]*)\)",
+        re.MULTILINE,
+    ),
+    "javascript": re.compile(
+        r"^[ \t]*(?:async\s+)?function\s+(?P<name>[a-zA-Z_$][\w$]*)\s*\((?P<params>[^)]*)\)",
+        re.MULTILINE,
+    ),
+    "typescript": re.compile(
+        r"^[ \t]*(?:async\s+)?function\s+(?P<name>[a-zA-Z_$][\w$]*)\s*\((?P<params>[^)]*)\)",
+        re.MULTILINE,
+    ),
 }
 
 _REGEX_CALL = re.compile(r"\b([a-zA-Z_][\w.]*)\s*\(")
@@ -190,13 +199,15 @@ def _regex_parse(path: Path, language: str) -> FileParse:
                 continue
             line_offset = body.count("\n", 0, cm.start())
             calls.append({"name": call_name, "line": start_line + line_offset})
-        fns.append(FunctionSummary(
-            name=name,
-            start_line=start_line,
-            end_line=end_line,
-            params=params,
-            calls=calls,
-        ))
+        fns.append(
+            FunctionSummary(
+                name=name,
+                start_line=start_line,
+                end_line=end_line,
+                params=params,
+                calls=calls,
+            )
+        )
     return FileParse(
         file=str(path),
         language=language,
@@ -227,6 +238,7 @@ def cpg_parse_tree(
     p = Path(path)
     if language is None:
         from decepticon.tools.cpg.inventory import _EXT_TO_LANG  # type: ignore[reportPrivateUsage]
+
         ext = p.suffix.lower()
         language = _EXT_TO_LANG.get(ext) or ""
     if not language:

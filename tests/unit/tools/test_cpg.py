@@ -21,7 +21,6 @@ from decepticon.tools.cpg import (
     cpg_reaches,
 )
 
-
 # ── Inventory ─────────────────────────────────────────────────────────
 
 
@@ -136,8 +135,24 @@ def test_find_sources_empty_for_unknown_language(tmp_path: Path) -> None:
 
 
 def test_reaches_same_function_returns_reachable() -> None:
-    src = {"file": "/x.py", "line": 10, "kind": "http_param", "sigil": "request.args.get", "function": "handler", "role": "source", "confidence": 0.65}
-    sink = {"file": "/x.py", "line": 12, "kind": "sql_exec", "sigil": "cursor.execute", "function": "handler", "role": "sink", "confidence": 0.65}
+    src = {
+        "file": "/x.py",
+        "line": 10,
+        "kind": "http_param",
+        "sigil": "request.args.get",
+        "function": "handler",
+        "role": "source",
+        "confidence": 0.65,
+    }
+    sink = {
+        "file": "/x.py",
+        "line": 12,
+        "kind": "sql_exec",
+        "sigil": "cursor.execute",
+        "function": "handler",
+        "role": "sink",
+        "confidence": 0.65,
+    }
     r = cpg_reaches(src, sink)
     assert r["reachable"] is True
     assert r["engine"] == "ast"
@@ -145,8 +160,24 @@ def test_reaches_same_function_returns_reachable() -> None:
 
 
 def test_reaches_different_functions_returns_unreachable() -> None:
-    src = {"file": "/x.py", "line": 10, "kind": "http_param", "sigil": "request.args.get", "function": "a", "role": "source", "confidence": 0.65}
-    sink = {"file": "/x.py", "line": 22, "kind": "sql_exec", "sigil": "cursor.execute", "function": "b", "role": "sink", "confidence": 0.65}
+    src = {
+        "file": "/x.py",
+        "line": 10,
+        "kind": "http_param",
+        "sigil": "request.args.get",
+        "function": "a",
+        "role": "source",
+        "confidence": 0.65,
+    }
+    sink = {
+        "file": "/x.py",
+        "line": 22,
+        "kind": "sql_exec",
+        "sigil": "cursor.execute",
+        "function": "b",
+        "role": "sink",
+        "confidence": 0.65,
+    }
     r = cpg_reaches(src, sink)
     assert r["reachable"] is False
 
@@ -175,6 +206,7 @@ def handler(req):
 @pytest.mark.parametrize("lang", ["python", "javascript", "typescript", "go", "java", "c"])
 def test_dictionaries_load(lang: str) -> None:
     from decepticon.tools.cpg.taint import _load_dictionary  # type: ignore[reportPrivateUsage]
+
     d = _load_dictionary(lang)
     assert d is not None
     assert d.sources

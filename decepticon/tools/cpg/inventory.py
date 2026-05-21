@@ -19,25 +19,37 @@ from pathlib import Path
 # matching dictionary file under dictionaries/{lang}.yaml.
 _EXT_TO_LANG: dict[str, str] = {
     # Python
-    ".py": "python", ".pyi": "python",
+    ".py": "python",
+    ".pyi": "python",
     # JavaScript / TypeScript
-    ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
     ".jsx": "javascript",
-    ".ts": "typescript", ".tsx": "typescript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
     # Go
     ".go": "go",
     # Java / Kotlin
     ".java": "java",
-    ".kt": "kotlin", ".kts": "kotlin",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
     # C / C++
-    ".c": "c", ".h": "c",
-    ".cpp": "cpp", ".cc": "cpp", ".cxx": "cpp", ".hpp": "cpp", ".hh": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
     # Rust
     ".rs": "rust",
     # Ruby
-    ".rb": "ruby", ".rake": "ruby",
+    ".rb": "ruby",
+    ".rake": "ruby",
     # PHP
-    ".php": "php", ".phtml": "php",
+    ".php": "php",
+    ".phtml": "php",
     # C#
     ".cs": "csharp",
     # Smart contracts (handed off to contract_auditor — recorded here)
@@ -52,27 +64,29 @@ _EXT_TO_LANG: dict[str, str] = {
 
 # Default vendored directories to skip. Engagement scope decides whether
 # to include these; flip ``skip_vendored=False`` to scan them.
-_VENDORED_DIRS = frozenset({
-    "node_modules",
-    "vendor",
-    ".venv",
-    "venv",
-    "env",
-    "site-packages",
-    "__pycache__",
-    ".git",
-    ".tox",
-    ".pytest_cache",
-    ".mypy_cache",
-    "dist",
-    "build",
-    "target",
-    ".next",
-    ".nuxt",
-    "third_party",
-    "third-party",
-    "external",
-})
+_VENDORED_DIRS = frozenset(
+    {
+        "node_modules",
+        "vendor",
+        ".venv",
+        "venv",
+        "env",
+        "site-packages",
+        "__pycache__",
+        ".git",
+        ".tox",
+        ".pytest_cache",
+        ".mypy_cache",
+        "dist",
+        "build",
+        "target",
+        ".next",
+        ".nuxt",
+        "third_party",
+        "third-party",
+        "external",
+    }
+)
 
 
 @dataclass
