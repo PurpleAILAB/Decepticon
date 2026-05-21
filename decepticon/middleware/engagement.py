@@ -3,10 +3,12 @@
 Two channels feed this middleware:
 
 1. Launcher path (CLI / web): the launcher decides the engagement slug at
-   session start and the client forwards it as state fields on every run
-   (input.engagement_name and input.workspace_path). This middleware reads
-   those fields and prepends a system-prompt addendum so the model knows the
-   active engagement without operator hand-holding or filesystem markers.
+   session start. Clients inject ``engagement_name`` and ``workspace_path``
+   via ``config.configurable`` on every run. ``before_agent`` hydrates these
+   into agent state on the first step of each thread so downstream middleware
+   (OPPLAN, filesystem) and the prompt-injection path see them as ordinary
+   state fields. The checkpointer persists the hydrated state across runs,
+   so subsequent runs read straight from state without re-hydrating.
 
 2. Benchmark path (XBOW / CTF harness): when the LangGraph container is
    launched with `BENCHMARK_MODE=1` (via .env), this middleware additionally
@@ -23,15 +25,16 @@ state-backed context injection via wrap_model_call.
 from __future__ import annotations
 
 import os
-from typing import Annotated, NotRequired, cast
+from typing import Annotated, Any, NotRequired, cast
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import SystemMessage, ToolMessage
+from langgraph.config import get_config
 from langgraph.types import Command
 from typing_extensions import override
 
-from decepticon.middleware.opplan import _reduce_engagement_name
+from decepticon.middleware.opplan import _reduce_engagement_name, _reduce_workspace_path
 from decepticon.tools.bash.bash import bash_workspace
 
 
@@ -41,7 +44,15 @@ class EngagementContextState(AgentState):
     engagement_name: NotRequired[
         Annotated[str, "Workspace slug set by the launcher.", _reduce_engagement_name]
     ]
-    workspace_path: NotRequired[Annotated[str, "Sandbox root for this engagement."]]
+    workspace_path: NotRequired[
+        Annotated[str, "Sandbox root for this engagement.", _reduce_workspace_path]
+    ]
+    # Per-run language override. When set via config.configurable.language,
+    # the middleware appends a LANGUAGE_POLICY SystemMessage that supersedes
+    # the prompt-time DECEPTICON_LANGUAGE env policy. Multi-tenant launchers
+    # (SaaS) need different orgs to receive different language outputs from
+    # the same container, which the env-based path cannot deliver.
+    language: NotRequired[Annotated[str, "Per-run output language (ISO 639-1)."]]
     # Benchmark / CTF challenge context — populated by the benchmark harness.
     target_url: NotRequired[Annotated[str, "CTF challenge target URL."]]
     target_extra_ports: NotRequired[
@@ -65,38 +76,75 @@ def _benchmark_mode_active() -> bool:
     return os.environ.get("BENCHMARK_MODE", "").strip().lower() not in _FALSY_ENV_VALUES
 
 
+def _configurable_from_runnable_config() -> dict[str, Any]:
+    """Read the active run's ``config.configurable`` block, defensively.
+
+    Returns an empty dict outside a LangGraph execution context so callers
+    can treat the result uniformly without try/except boilerplate.
+    """
+    try:
+        cfg = get_config()
+    except RuntimeError:
+        return {}
+    if not isinstance(cfg, dict):
+        return {}
+    configurable = cfg.get("configurable")
+    return configurable if isinstance(configurable, dict) else {}
+
+
+def _hydrate_engagement_state(state: Any) -> dict[str, Any] | None:
+    """Copy ``engagement_name``/``workspace_path`` from runnable config into state.
+
+    Runs in ``before_agent`` so the values are present on state before any
+    downstream middleware (OPPLAN, filesystem) reads them. Idempotent: if the
+    state already carries either field, it is left untouched and the config
+    value is ignored.
+    """
+    get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+    configurable = _configurable_from_runnable_config()
+    updates: dict[str, Any] = {}
+
+    if not get("engagement_name"):
+        cfg_slug = configurable.get("engagement_name")
+        if isinstance(cfg_slug, str) and cfg_slug:
+            updates["engagement_name"] = cfg_slug
+
+    if not get("workspace_path"):
+        cfg_workspace = configurable.get("workspace_path")
+        if isinstance(cfg_workspace, str) and cfg_workspace:
+            updates["workspace_path"] = cfg_workspace
+
+    if not get("language"):
+        cfg_lang = configurable.get("language")
+        if isinstance(cfg_lang, str) and cfg_lang:
+            updates["language"] = cfg_lang
+
+    return updates or None
+
+
+def _resolve_workspace_path(state: Any) -> str:
+    """Pick the live workspace path: state first, then runnable config, then default."""
+    get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+    workspace = get("workspace_path") or ""
+    if not workspace:
+        cfg_workspace = _configurable_from_runnable_config().get("workspace_path")
+        if isinstance(cfg_workspace, str) and cfg_workspace:
+            workspace = cfg_workspace
+    return workspace or "/workspace"
+
+
 def _build_engagement_injection(slug: str, workspace: str) -> str:
     return (
         "\n\n[Engagement context — set by the launcher]\n"
         f"Workspace slug: {slug}\n"
-        f"Workspace root: {workspace}\n"
-        "Treat Workspace root as the only engagement directory for this run. "
+        "Workspace root: /workspace\n"
+        "Treat /workspace as the only engagement directory for this run. "
         "Read and write planning documents directly under "
-        f"{workspace}/plan/. Do NOT re-prompt the operator for a slug or an "
+        "/workspace/plan/. Do NOT re-prompt the operator for a slug or an "
         "engagement directory name; the launcher already chose them. The "
         "human-friendly engagement title belongs in roe.json:engagement_name "
         "and may differ from this slug."
     )
-
-
-_BENCHMARK_RULES_OVERRIDE = (
-    "\n\n[BENCHMARK MODE — engaged]\n"
-    "You are running a CTF benchmark challenge. The following CRITICAL_RULES are SUSPENDED:\n"
-    "  - Rule 8 (Startup Required) — skip the engagement-startup skill\n"
-    "  - Rule 9 (Final Report) — no reports needed\n"
-    "These rules REMAIN ACTIVE:\n"
-    "  - Rule 1 (Plan Before Execute) — build OPPLAN from the challenge context below\n"
-    "  - Rule 2 (RoE Compliance) — attack ONLY the Target URL specified below\n"
-    "  - Rule 3 (No Direct Execution) — delegate to sub-agents (recon, exploit) via task()\n"
-    "  - Rule 6 (Kill Chain Order) — respect blocked_by dependencies\n"
-    "Engagement documents (roe.json, conops.json, deconfliction.json) are NOT required.\n"
-    "Build a minimal OPPLAN: (1) RECON objective (priority 1) to probe the target "
-    "and inspect challenge source for hardcoded keys/secrets, "
-    "(2) INITIAL_ACCESS objective (priority 2, blocked_by=[OBJ-001]) to exploit and capture the flag. "
-    "NEVER skip recon — it validates oracle signals, ciphertext layouts, session state, "
-    "and may find a trivial offline solution (hardcoded key). "
-    "Execute via task(). The flag MUST appear in your final response text.\n"
-)
 
 
 def _format_extra_services(target_url: str, extra_ports: dict[int, int]) -> str:
@@ -120,7 +168,14 @@ def _build_benchmark_injection(
     flag_format: str,
     brief: str,
 ) -> str:
-    sections: list[str] = [_BENCHMARK_RULES_OVERRIDE, "\n## CTF Benchmark Challenge\n"]
+    """Per-challenge context injection for benchmark mode.
+
+    Engagement-mode rules (Rule 8/9 suspension, OPPLAN structure, SHORT-CIRCUIT)
+    live in `/skills/benchmark/SKILL.md` and are loaded explicitly by the
+    orchestrator on its first turn. This middleware injects ONLY the
+    per-challenge state (target URL, tags, flag format, mission brief).
+    """
+    sections: list[str] = ["\n## CTF Benchmark Challenge\n"]
     if target_url:
         sections.append(f"**Target URL:** {target_url}\n")
         sections.append("^^^ Attack ONLY this URL. Do NOT scan other ports or hosts. ^^^\n\n")
@@ -133,17 +188,33 @@ def _build_benchmark_injection(
         sections.append(f"**Flag format:** {flag_format}\n")
     if brief:
         sections.append(f"**Mission brief:** {brief}\n")
-    sections.append(
-        "\nBenchmark skill: `/skills/benchmark/SKILL.md`. "
-        "Per-vulnerability exploit skills: `/skills/exploit/web/<tag>.md`.\n"
-    )
     return "".join(sections)
 
 
 class EngagementContextMiddleware(AgentMiddleware):
-    """Inject launcher and benchmark context into every model call."""
+    """Inject engagement and per-challenge context into every model call.
+
+    Scope is intentionally narrow: engagement metadata (slug, workspace) and
+    per-challenge state (target URL, tags, flag format, mission brief). The
+    benchmark playbook (Rule 8/9 suspension, OPPLAN structure, SHORT-CIRCUIT
+    rule) lives in `/skills/benchmark/SKILL.md` — the orchestrator loads it
+    on its first turn per the harness task prompt. This middleware does NOT
+    inject mode-specific rules; benchmark mode only flips on the per-challenge
+    context block.
+    """
 
     state_schema = EngagementContextState
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @override
+    def before_agent(self, state, runtime) -> dict[str, Any] | None:
+        return _hydrate_engagement_state(state)
+
+    @override
+    async def abefore_agent(self, state, runtime) -> dict[str, Any] | None:
+        return _hydrate_engagement_state(state)
 
     @override
     def wrap_model_call(self, request, handler):
@@ -161,7 +232,7 @@ class EngagementContextMiddleware(AgentMiddleware):
             "bash_kill",
             "bash_status",
         }:
-            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            workspace = _resolve_workspace_path(request.state)
             with bash_workspace(workspace):
                 return handler(request)
         return handler(request)
@@ -174,7 +245,7 @@ class EngagementContextMiddleware(AgentMiddleware):
             "bash_kill",
             "bash_status",
         }:
-            workspace = (request.state or {}).get("workspace_path", "/workspace") or "/workspace"
+            workspace = _resolve_workspace_path(request.state)
             with bash_workspace(workspace):
                 return await handler(request)
         return await handler(request)
@@ -185,6 +256,7 @@ class EngagementContextMiddleware(AgentMiddleware):
 
         slug = get("engagement_name", "") or ""
         workspace = get("workspace_path", "/workspace") or "/workspace"
+        language = get("language", "") or ""
 
         sections: list[str] = []
         if slug:
@@ -199,6 +271,23 @@ class EngagementContextMiddleware(AgentMiddleware):
                     brief=get("mission_brief", "") or "",
                 )
             )
+
+        # Per-run language override. Multi-tenant launchers (SaaS web) inject
+        # the org's selected language via config.configurable.language; we
+        # append the same LANGUAGE_POLICY block the prompt builder would have
+        # produced if DECEPTICON_LANGUAGE were set, but per-run rather than
+        # per-container. Because this is a later SystemMessage, it supersedes
+        # the prompt-time policy without needing to reach into the cached
+        # static prompt.
+        #
+        # Lazy import to avoid a circular: agents.__init__ pulls in agents
+        # which pull in middleware which would otherwise pull back into
+        # agents.prompts before that package is fully initialized.
+        from decepticon.agents.prompts import build_language_policy
+
+        language_policy = build_language_policy(language)
+        if language_policy:
+            sections.append("\n\n" + language_policy)
 
         if not sections:
             return request

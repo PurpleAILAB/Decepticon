@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // HTML pages: no cache so hotswap chunk name changes take effect immediately
+      {
+        source: "/:path((?!_next/static|_next/image|favicon.ico).*)",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
     ];
   },
   // Pin Turbopack workspace root to the monorepo root (where npm workspaces
@@ -37,11 +44,10 @@ const nextConfig: NextConfig = {
   // Packages that must NOT be bundled — left as external Node.js requires.
   // @prisma/client + pg: Turbopack otherwise aliases them with content hashes
   // (e.g. @prisma/client-2c3a…) which the standalone build can't resolve at runtime.
-  // @decepticon/ee: optional private package, absence handled via try/catch.
-  serverExternalPackages: ["@prisma/client", "pg", "@decepticon/ee", "node-pty", "ws"],
+  serverExternalPackages: ["@prisma/client", "pg", "node-pty", "ws"],
   // Do not expose raw LangGraph rewrites from the public web app. Browser
-  // clients should use localhost-only LangGraph URLs in local OSS mode or
-  // authenticated server-side route handlers in hosted deployments.
+  // clients should use localhost-only LangGraph URLs in local deployments
+  // or authenticated server-side route handlers in hosted deployments.
 };
 
 export default nextConfig;

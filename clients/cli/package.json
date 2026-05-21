@@ -3,13 +3,13 @@
   "version": "0.0.0",
   "description": "Decepticon Ink CLI — terminal interface for LangGraph Platform agents",
   "type": "module",
-  "main": "src/index.tsx",
+  "main": "dist/index.js",
   "bin": {
-    "decepticon-ink": "src/index.tsx"
+    "decepticon-ink": "dist/index.js"
   },
   "scripts": {
-    "start": "node --import tsx/esm src/index.tsx",
-    "dev": "node --watch --import tsx/esm src/index.tsx",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -27,9 +27,11 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^25.5.0",
     "@types/react": "^19.0.0",
-    "tsx": "^4.19.0",
+    "jsdom": "^29.1.1",
+    "react-dom": "^19.2.4",
     "typescript": "^5.7.0",
     "vitest": "^2.1.8"
   }

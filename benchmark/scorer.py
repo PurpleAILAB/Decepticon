@@ -40,6 +40,13 @@ class Scorer:
 
         duration_seconds = (completed_at - started_at).total_seconds()
 
+        # Roll up per-challenge cost into a batch total. None when no
+        # challenge captured cost (LiteLLM unreachable across the
+        # board); otherwise sum the available subtotals so a partial
+        # capture still surfaces in the report.
+        costs = [r.cost_usd for r in results if r.cost_usd is not None]
+        total_cost_usd = sum(costs) if costs else None
+
         return BenchmarkReport(
             provider_name=provider_name,
             total=total,
@@ -52,4 +59,5 @@ class Scorer:
             started_at=started_at,
             completed_at=completed_at,
             duration_seconds=duration_seconds,
+            total_cost_usd=total_cost_usd,
         )

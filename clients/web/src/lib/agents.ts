@@ -24,6 +24,7 @@ export interface AgentConfig {
   role: string;
   color: string;
   imagePath?: string;
+  mascotEmoji?: string;
   /** Agent origin — reserved for future marketplace/plugin use */
   source?: "builtin" | "marketplace" | "custom";
   /** Searchable tags — reserved for future filtering */

@@ -4,78 +4,137 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileWarning, Network, Play, ArrowRight, ClipboardList, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { FileWarning, Network, Play, ArrowRight, ClipboardList, Download, Clock } from "lucide-react";
 
-const quickStats = [
-  {
-    label: "Objectives",
-    value: 0,
-    subValue: "0 completed",
-    icon: ClipboardList,
-    href: "plan",
-    color: "text-emerald-400",
-  },
-  {
-    label: "Findings",
-    value: 0,
-    subValue: "0 critical",
-    icon: FileWarning,
-    href: "findings",
-    color: "text-red-400",
-  },
-];
+interface Objective {
+  id: string;
+  title: string;
+  status: string;
+  phase: string;
+}
+
+interface Finding {
+  id: string;
+  title: string;
+  severity: string;
+}
+
+const severityBadge: Record<string, string> = {
+  critical: "bg-red-500/20 text-red-300",
+  high: "bg-orange-500/20 text-orange-300",
+  medium: "bg-yellow-500/20 text-yellow-300",
+  low: "bg-blue-500/20 text-blue-300",
+  informational: "bg-slate-500/20 text-slate-300",
+};
 
 export default function EngagementOverviewPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
   const [loading, setLoading] = useState(true);
+  const [objectives, setObjectives] = useState<Objective[]>([]);
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [graphNodeCount, setGraphNodeCount] = useState(0);
 
-  // Check if engagement has documents — if not, redirect to Live for Soundwave interview
   useEffect(() => {
     let active = true;
-    async function checkDocs() {
+    async function load() {
       try {
-        const res = await fetch(`/api/engagements/${id}/opplan`);
+        // Check if opplan exists first
+        const opplanRes = await fetch(`/api/engagements/${id}/opplan`);
         if (!active) return;
-        if (!res.ok) {
+        if (!opplanRes.ok) {
           router.replace(`/engagements/${id}/live?new=true`);
           return;
         }
-        const data = await res.json();
+        const opplanData = await opplanRes.json();
         if (!active) return;
-        // If opplan has no objectives, documents haven't been created yet
-        if (!data.objectives || data.objectives.length === 0) {
+        const objs: Objective[] = opplanData.objectives ?? [];
+        if (objs.length === 0) {
           router.replace(`/engagements/${id}/live?new=true`);
           return;
+        }
+        setObjectives(objs);
+
+        // Fetch findings and graph in parallel
+        const [findingsRes, graphRes] = await Promise.all([
+          fetch(`/api/engagements/${id}/findings`).catch(() => null),
+          fetch(`/api/engagements/${id}/graph`).catch(() => null),
+        ]);
+
+        if (!active) return;
+
+        if (findingsRes?.ok) {
+          const f: Finding[] = await findingsRes.json();
+          setFindings(f);
+        }
+
+        if (graphRes?.ok) {
+          const g = await graphRes.json();
+          setGraphNodeCount(g.nodes?.length ?? 0);
         }
       } catch {
-        if (!active) return;
-        router.replace(`/engagements/${id}/live?new=true`);
+        if (active) router.replace(`/engagements/${id}/live?new=true`);
         return;
       }
-      if (!active) return;
-      setLoading(false);
+      if (active) setLoading(false);
     }
-    checkDocs();
-    return () => {
-      active = false;
-    };
+    load();
+    return () => { active = false; };
   }, [id, router]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="space-y-6">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}><CardContent className="pt-6"><Skeleton className="h-20 w-full" /></CardContent></Card>
+          ))}
+        </div>
       </div>
     );
   }
+
+  const completedCount = objectives.filter((o) => o.status === "completed").length;
+  const blockedCount = objectives.filter((o) => o.status === "blocked").length;
+  const totalObj = objectives.length;
+  const progress = totalObj > 0 ? Math.round(((completedCount + blockedCount) / totalObj) * 100) : 0;
+  const criticalFindings = findings.filter((f) => f.severity === "critical").length;
+
+  const stats = [
+    {
+      label: "Objectives",
+      value: totalObj,
+      subValue: `${completedCount} completed`,
+      icon: ClipboardList,
+      href: "plan",
+      color: "text-emerald-400",
+    },
+    {
+      label: "Findings",
+      value: findings.length,
+      subValue: `${criticalFindings} critical`,
+      icon: FileWarning,
+      href: "findings",
+      color: "text-red-400",
+    },
+    {
+      label: "Attack Graph",
+      value: graphNodeCount,
+      subValue: "nodes discovered",
+      icon: Network,
+      href: "graph",
+      color: "text-cyan-400",
+    },
+  ];
 
   return (
     <div className="space-y-6">
       {/* Stats grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {quickStats.map((stat) => (
+        {stats.map((stat) => (
           <Link key={stat.label} href={`/engagements/${id}/${stat.href}`}>
             <Card className="group cursor-pointer transition-colors hover:border-primary/30">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -97,26 +156,7 @@ export default function EngagementOverviewPage() {
           </Link>
         ))}
 
-        <Link href={`/engagements/${id}/graph`}>
-          <Card className="group cursor-pointer transition-colors hover:border-primary/30">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Attack Graph
-              </CardTitle>
-              <Network className="h-4 w-4 text-cyan-400" />
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-end justify-between">
-                <div>
-                  <span className="text-3xl font-bold">0</span>
-                  <p className="mt-0.5 text-xs text-muted-foreground">nodes discovered</p>
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-
+        {/* Progress card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -126,25 +166,64 @@ export default function EngagementOverviewPage() {
           </CardHeader>
           <CardContent>
             <div>
-              <span className="text-3xl font-bold">0%</span>
+              <span className="text-3xl font-bold">{progress}%</span>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
-                <div className="h-full rounded-full bg-primary transition-all" style={{ width: "0%" }} />
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Run engagement to see data</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {completedCount}/{totalObj} objectives resolved
+              </p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Recent activity */}
+      {/* Quick actions */}
+      <div className="flex gap-2">
+        <Link href={`/engagements/${id}/timeline`} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent">
+          <Clock className="h-3 w-3" /> Timeline
+        </Link>
+        <a href={`/api/engagements/${id}/export?format=json`} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent">
+          <Download className="h-3 w-3" /> Export JSON
+        </a>
+        <a href={`/api/engagements/${id}/export?format=markdown`} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent">
+          <Download className="h-3 w-3" /> Export Markdown
+        </a>
+      </div>
+
+      {/* Recent findings */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Recent Findings</CardTitle>
+          {findings.length > 0 && (
+            <Link href={`/engagements/${id}/findings`} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+              View all <ArrowRight className="h-3 w-3" />
+            </Link>
+          )}
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-            Run engagement to see data
-          </div>
+          {findings.length === 0 ? (
+            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+              No findings yet — run the engagement to discover vulnerabilities
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {findings.slice(-5).reverse().map((f) => (
+                <div key={f.id} className="flex items-center justify-between rounded-lg border border-border/50 p-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium truncate block">{f.title}</span>
+                    <span className="text-xs text-muted-foreground">{f.id}</span>
+                  </div>
+                  <Badge className={`shrink-0 text-xs ${severityBadge[f.severity] ?? "bg-zinc-500/20"}`}>
+                    {f.severity}
+                  </Badge>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

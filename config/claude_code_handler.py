@@ -11,7 +11,8 @@ auto-refreshes expired tokens, and spoofs Claude Code request headers
 so requests are indistinguishable from the native CLI.
 
 This file is mounted into the LiteLLM container alongside litellm.yaml.
-No dependency on the ``decepticon`` package.
+No dependency on the ``decepticon`` package — it depends only on the
+shared ``oauth_token_store`` helper module mounted alongside it.
 
 Registration in litellm.yaml:
   litellm_settings:
@@ -33,6 +34,15 @@ from urllib.parse import urlparse
 import httpx
 import litellm
 from litellm import CustomLLM, ModelResponse
+from oauth_token_store import (
+    DEFAULT_REFRESH_BUFFER_SECONDS,
+    FileBackedCache,
+    is_timestamp_expired,
+    oauth_refresh_request,
+    read_json_file,
+    with_retry_on_401,
+    write_json_atomic,
+)
 
 # ── Token storage ────────────────────────────────────────────────────
 
@@ -46,14 +56,11 @@ CREDENTIALS_PATH = Path(
 )
 LEGACY_CREDENTIALS_PATH = Path(os.path.expanduser("~/.config/anthropic/q/tokens.json"))
 
-REFRESH_BUFFER_SECONDS = 5 * 60
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 ANTHROPIC_API_BASE = "https://api.anthropic.com"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 OAUTH_TOKEN_PATTERN = "sk-ant-oat01-"
-
-_cached_token: dict[str, Any] | None = None
 
 
 def _is_valid_oauth_token(token: str) -> bool:
@@ -61,15 +68,58 @@ def _is_valid_oauth_token(token: str) -> bool:
     return isinstance(token, str) and token.startswith(OAUTH_TOKEN_PATTERN)
 
 
-def _load_tokens() -> dict[str, Any] | None:
-    """Load tokens following the same resolution order as the reference impl.
+def _normalize_credentials(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """Pull a usable token dict out of Claude Code's on-disk shapes.
 
-    Resolution order (matching not-claude-code-emulator):
-      1. ``ANTHROPIC_OAUTH_TOKEN`` environment variable
-      2. ``~/.claude/.credentials.json`` (Claude Code CLI current format)
-      3. ``~/.config/anthropic/q/tokens.json`` (legacy / emulator format)
+    Resolution order matches the original handler:
+      1. ``claudeAiOauth`` nested object (current Claude Code CLI format).
+      2. Top-level ``accessToken`` (legacy).
+      3. Top-level ``oauthToken`` (emulator format) — copied to
+         ``accessToken`` so downstream code only checks one key.
     """
-    # 1. Environment variable
+    if "claudeAiOauth" in raw:
+        oauth = raw["claudeAiOauth"]
+        if isinstance(oauth, dict) and _is_valid_oauth_token(oauth.get("accessToken", "")):
+            return oauth
+    token = raw.get("accessToken") or raw.get("oauthToken", "")
+    if _is_valid_oauth_token(token):
+        if "oauthToken" in raw and "accessToken" not in raw:
+            raw["accessToken"] = raw["oauthToken"]
+        return raw
+    return None
+
+
+def _load_credentials_from_disk(path: Path) -> dict[str, Any] | None:
+    """FileBackedCache loader — probes the primary path first, then legacy.
+
+    The cache is keyed on ``CREDENTIALS_PATH`` mtime+size. When that file
+    is absent we fall through to ``LEGACY_CREDENTIALS_PATH`` so emulators
+    that still write the legacy format keep working — but the cache key
+    will be ``None`` (no stat tuple), which means each call re-reads the
+    legacy file. That's acceptable: the legacy path is uncommon and the
+    parse cost is trivial.
+    """
+    raw = read_json_file(path)
+    if raw is not None:
+        normalized = _normalize_credentials(raw)
+        if normalized is not None:
+            return normalized
+    if path != LEGACY_CREDENTIALS_PATH and LEGACY_CREDENTIALS_PATH.exists():
+        legacy = read_json_file(LEGACY_CREDENTIALS_PATH)
+        if legacy is not None:
+            return _normalize_credentials(legacy)
+    return None
+
+
+_credentials_cache = FileBackedCache(CREDENTIALS_PATH, _load_credentials_from_disk)
+
+
+def _env_override_tokens() -> dict[str, Any] | None:
+    """Honor ``ANTHROPIC_OAUTH_TOKEN`` as a synthetic credentials dict.
+
+    The synthetic dict carries ``expiresAt: 0`` so ``is_timestamp_expired``
+    returns False and the refresh path never fires for env-provided tokens.
+    """
     env_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN", "").strip()
     if env_token and _is_valid_oauth_token(env_token):
         return {
@@ -78,52 +128,30 @@ def _load_tokens() -> dict[str, Any] | None:
             "expiresAt": 0,  # No expiry info — never auto-refresh
             "scopes": ["user:inference"],
         }
-
-    # 2+3. File-based stores
-    for path in (CREDENTIALS_PATH, LEGACY_CREDENTIALS_PATH):
-        if not path.exists():
-            continue
-        try:
-            raw = json.loads(path.read_text())
-            # Current format: nested under claudeAiOauth
-            if "claudeAiOauth" in raw:
-                oauth = raw["claudeAiOauth"]
-                if _is_valid_oauth_token(oauth.get("accessToken", "")):
-                    return oauth
-            # Legacy format: top-level accessToken or oauthToken
-            token = raw.get("accessToken") or raw.get("oauthToken", "")
-            if _is_valid_oauth_token(token):
-                if "oauthToken" in raw and "accessToken" not in raw:
-                    raw["accessToken"] = raw["oauthToken"]
-                return raw
-        except (json.JSONDecodeError, OSError):
-            continue
     return None
 
 
-def _is_expired(tokens: dict[str, Any]) -> bool:
-    """Check if token is expired or near expiry."""
-    expires_at = tokens.get("expiresAt", 0)
-    # expiresAt may be in milliseconds (Claude Code CLI format) or seconds
-    if expires_at > 1e12:
-        expires_at = expires_at / 1000
-    return time.time() + REFRESH_BUFFER_SECONDS >= expires_at
+def _load_tokens() -> dict[str, Any] | None:
+    """Resolve a tokens dict using env override → cache → legacy fallback."""
+    env_dict = _env_override_tokens()
+    if env_dict is not None:
+        return env_dict
+    return _credentials_cache.get()
 
 
 def _refresh_token(tokens: dict[str, Any]) -> dict[str, Any]:
-    """Synchronously refresh an expired token."""
-    resp = httpx.post(
+    """Synchronously refresh an expired token via the platform OAuth endpoint."""
+    data = oauth_refresh_request(
         TOKEN_URL,
-        json={
+        {
             "grant_type": "refresh_token",
             "refresh_token": tokens["refreshToken"],
             "client_id": CLIENT_ID,
         },
-        headers={"content-type": "application/json"},
+        json_body=True,
         timeout=30,
+        provider_label="auth",
     )
-    resp.raise_for_status()
-    data = resp.json()
 
     new_tokens = {
         "accessToken": data["access_token"],
@@ -133,28 +161,31 @@ def _refresh_token(tokens: dict[str, Any]) -> dict[str, Any]:
         "updatedAt": int(time.time() * 1000),
     }
 
-    # Save refreshed tokens
-    try:
-        CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CREDENTIALS_PATH.write_text(json.dumps(new_tokens, indent=2))
-        os.chmod(CREDENTIALS_PATH, 0o600)
-    except OSError:
-        pass  # Read-only mount — token will be refreshed again next call
-
+    # Persist atomically. The store handles read-only mounts internally;
+    # the cache replace keeps the in-process token current for the rest
+    # of the container session even when the on-disk write fails.
+    write_json_atomic(CREDENTIALS_PATH, new_tokens)
+    _credentials_cache.replace(new_tokens)
     return new_tokens
 
 
-def get_access_token() -> str:
-    """Get a valid access token, refreshing if needed.
+def get_access_token(force_refresh: bool = False) -> str:
+    """Return a valid access token, refreshing on demand.
 
-    When the cached token is expired, re-read from disk first — Claude Code
-    CLI continuously refreshes tokens in ~/.claude/.credentials.json, so a
-    fresh token may already be available without needing to call the refresh
-    endpoint ourselves.
+    Resolution order:
+      1. ``ANTHROPIC_OAUTH_TOKEN`` env override (never refreshed).
+      2. Cached / on-disk tokens; if expired or ``force_refresh`` is True,
+         call the platform refresh endpoint and persist the new tokens.
+
+    ``force_refresh`` is set by the 401 retry wrapper when the upstream
+    rejects a previously-cached token. We bypass the timestamp check in
+    that case because the wallclock TTL may be ahead of the server's
+    revocation state.
     """
-    global _cached_token  # noqa: PLW0603
+    if force_refresh:
+        _credentials_cache.invalidate()
 
-    tokens = _cached_token or _load_tokens()
+    tokens = _load_tokens()
     if tokens is None:
         raise litellm.AuthenticationError(
             message="No Claude Code OAuth tokens found. Run 'decepticon onboard' to authenticate.",
@@ -162,15 +193,22 @@ def get_access_token() -> str:
             llm_provider="auth",
         )
 
-    if _is_expired(tokens):
-        # Re-read from disk — Claude Code may have already refreshed the token
+    # ANTHROPIC_OAUTH_TOKEN override carries expiresAt=0 → never expires.
+    if force_refresh and tokens.get("refreshToken"):
+        tokens = _refresh_token(tokens)
+    elif is_timestamp_expired(
+        tokens.get("expiresAt"), buffer_seconds=DEFAULT_REFRESH_BUFFER_SECONDS
+    ):
+        # Re-read from disk — Claude Code may have already refreshed the token.
+        _credentials_cache.invalidate()
         fresh = _load_tokens()
-        if fresh and not _is_expired(fresh):
+        if fresh is not None and not is_timestamp_expired(
+            fresh.get("expiresAt"), buffer_seconds=DEFAULT_REFRESH_BUFFER_SECONDS
+        ):
             tokens = fresh
-        else:
+        elif tokens.get("refreshToken"):
             tokens = _refresh_token(tokens)
 
-    _cached_token = tokens
     return tokens["accessToken"]
 
 
@@ -263,8 +301,6 @@ class ClaudeCodeCustomHandler(CustomLLM):
         Authorization: Bearer header + Claude Code spoofing headers.
         This makes the request indistinguishable from a real Claude Code session.
         """
-        access_token = get_access_token()
-
         # Extract actual Anthropic model ID
         # "auth/claude-sonnet-4-6" -> "claude-sonnet-4-6"
         actual_model = model.split("/", 1)[-1] if "/" in model else model
@@ -460,18 +496,31 @@ class ClaudeCodeCustomHandler(CustomLLM):
 
         body_str = json.dumps(request_body)
 
-        # Build headers — OAuth Bearer (NOT x-api-key)
-        req_headers = _build_headers(access_token)
-
         # Direct HTTP call to Anthropic Messages API. Never honor arbitrary
         # api_base values here: this request carries an OAuth bearer token.
         api_url = _resolve_anthropic_api_base(api_base)
-        resp = httpx.post(
-            f"{api_url}/v1/messages?beta=true",
-            content=body_str,
-            headers=req_headers,
-            timeout=timeout or 600,
-        )
+
+        def _send(force_refresh: bool) -> httpx.Response:
+            access_token = get_access_token(force_refresh=force_refresh)
+            req_headers = _build_headers(access_token)
+            return httpx.post(
+                f"{api_url}/v1/messages?beta=true",
+                content=body_str,
+                headers=req_headers,
+                timeout=timeout or 600,
+            )
+
+        resp = with_retry_on_401(_send)
+
+        if resp.status_code == 401:
+            raise litellm.AuthenticationError(
+                message=(
+                    "Claude Code authentication was rejected. Run 'claude /login' "
+                    f"and retry. Underlying: {resp.text}"
+                ),
+                model=model,
+                llm_provider="auth",
+            )
 
         if resp.status_code == 429:
             # Parse retry-after header (seconds or milliseconds)

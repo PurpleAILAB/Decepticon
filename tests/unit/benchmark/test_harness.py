@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from benchmark.config import BenchmarkConfig
-from benchmark.harness import AgentResponse, Harness
+from benchmark.harness import AgentResponse, Harness, _ActiveRun
 from benchmark.schemas import Challenge, SetupResult
 
 pytestmark = pytest.mark.slow
@@ -60,7 +60,7 @@ class TestHarness:
         config = BenchmarkConfig(cleanup_workspaces=False)
         harness = Harness(provider=provider, config=config)
         harness._invoke_agent = AsyncMock(
-            return_value=AgentResponse(text="No flag found", thread_id="test-thread")
+            return_value=AgentResponse(text="No flag found", trace_id="test-trace")
         )
         challenge = _make_challenge(tmp_path)
 
@@ -89,7 +89,7 @@ class TestHarness:
         config = BenchmarkConfig(cleanup_workspaces=True)
         harness = Harness(provider=provider, config=config)
         harness._invoke_agent = AsyncMock(
-            return_value=AgentResponse(text="No flag found", thread_id="test-thread")
+            return_value=AgentResponse(text="No flag found", trace_id="test-trace")
         )
         challenge = _make_challenge(tmp_path)
 
@@ -109,7 +109,8 @@ class TestHarness:
         challenge = _make_challenge(tmp_path)
 
         with patch("benchmark.harness.time") as mock_time:
-            mock_time.time.side_effect = [100.0, 100.42]
+            # call order: run_start, agent_start, now (in except handler)
+            mock_time.time.side_effect = [100.0, 100.0, 100.42]
 
             result = await harness.run_challenge(challenge)
 
@@ -128,7 +129,7 @@ class TestHarness:
 
         async def _slow_agent(*args, **kwargs) -> AgentResponse:
             await asyncio.sleep(10)
-            return AgentResponse(text="", thread_id="test-thread")
+            return AgentResponse(text="", trace_id="test-trace")
 
         harness._invoke_agent = _slow_agent
 
@@ -152,12 +153,13 @@ class TestHarness:
         config = BenchmarkConfig(cleanup_workspaces=True)
         harness = Harness(provider=provider, config=config)
         harness._invoke_agent = AsyncMock(
-            return_value=AgentResponse(text="No flag found", thread_id="test-thread")
+            return_value=AgentResponse(text="No flag found", trace_id="test-trace")
         )
         challenge = _make_challenge(tmp_path)
 
         with patch("benchmark.harness.time") as mock_time:
-            mock_time.time.side_effect = [100.0, 100.0, 101.23]
+            # call order: run_start, agent_start, BenchmarkStepResult, now (success path)
+            mock_time.time.side_effect = [100.0, 100.0, 101.23, 101.23]
 
             result = await harness.run_challenge(challenge)
 
@@ -173,7 +175,7 @@ class TestHarness:
 
         flag = "FLAG{abc123def456}"
         harness._invoke_agent = AsyncMock(
-            return_value=AgentResponse(text=f"Found the flag: {flag}", thread_id="test-thread")
+            return_value=AgentResponse(text=f"Found the flag: {flag}", trace_id="test-trace")
         )
 
         # Capture the state passed to evaluate
@@ -294,6 +296,7 @@ class TestHarness:
                 challenge,
                 target_url="http://host.docker.internal:33042",
                 extra_ports={22: 2222},
+                active=_ActiveRun(langgraph_url="http://localhost:2024"),
             )
 
         payload = captured["payload"]

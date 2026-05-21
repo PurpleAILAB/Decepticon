@@ -12,7 +12,14 @@
 #   make help         List all targets
 
 COMPOSE       := docker compose
-COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.watch.yml
+# Dev override is now opt-in via an explicit ``-f`` chain — the file was
+# renamed from ``docker-compose.override.yml`` to ``docker-compose.dev.yml``
+# so it no longer auto-merges into every ``docker compose`` invocation.
+# The launcher-driven OSS stack uses ``$(COMPOSE)`` (base only); local-dev
+# targets that need the skills bind mount + workspace overlays chain
+# ``$(COMPOSE_DEV)``. Closes #214.
+COMPOSE_DEV   := docker compose -f docker-compose.yml -f docker-compose.dev.yml
+COMPOSE_WATCH := docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml
 PROFILES_ALL  := --profile cli --profile c2-sliver
 WEB_DIR       := clients/web
 
@@ -30,16 +37,17 @@ export DECEPTICON_HOME ?= $(HOME)/.decepticon
 
 # Mirror the launcher's start.go credential mount logic so `make dev` (and any
 # other target that calls `docker compose`) populates the litellm container's
-# Claude Code OAuth token without requiring users to run `decepticon onboard`.
-# Existence check at make-time: real file when host has tokens, /dev/null
-# otherwise so docker doesn't synthesize a bind directory.
+# Claude Code + Codex CLI OAuth tokens without requiring users to run
+# `decepticon onboard`. Existence check at make-time: real file when host has
+# tokens, /dev/null otherwise so docker doesn't synthesize a bind directory.
 export CLAUDE_CREDENTIALS_VOLUME ?= $(shell test -f $(HOME)/.claude/.credentials.json && echo $(HOME)/.claude/.credentials.json || echo /dev/null)
+export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(HOME)/.codex/auth.json || echo /dev/null)
 
 .PHONY: help \
         dogfood launcher smoke \
         dev cli-dev web-dev infra \
         quality quality-cli test test-local lint lint-fix \
-        web-build web-lint web-migrate web-ee web-oss \
+        web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
         benchmark recreate-litellm
@@ -68,9 +76,9 @@ help:
 	@echo ""
 	@echo "Web dashboard (single checks):"
 	@echo "  make web-build    Prisma generate + Next build"
+	@echo "  make web-hotswap  Build + inject into running container (~15s)"
 	@echo "  make web-lint     ESLint"
 	@echo "  make web-migrate [NAME=]   Prisma migrate dev"
-	@echo "  make web-ee / web-oss      Toggle EE/OSS mode (dev-only)"
 	@echo ""
 	@echo "Ops:"
 	@echo "  make status       docker compose ps"
@@ -145,9 +153,16 @@ dev:
 	$(COMPOSE_WATCH) watch
 
 ## CLI locally (Node) — backend stays in Docker with hot-reload sync.
+##
+## Build chain: shared/streaming dist → cli dist → run.
+## `npm run dev` only watches tsc; `node --watch` re-execs on dist changes.
+## Both watchers run as background jobs; `wait` keeps the target alive so
+## Ctrl-C tears both down cleanly.
 cli-dev: infra
 	@$(COMPOSE_WATCH) watch --no-up --quiet langgraph &
-	cd clients/cli && DECEPTICON_API_URL=$${DECEPTICON_API_URL:-http://localhost:2024} npm run dev
+	npm run build --workspace=@decepticon/streaming
+	cd clients/cli && npm run build
+	cd clients/cli && (npm run dev & DECEPTICON_API_URL=$${DECEPTICON_API_URL:-http://localhost:2024} node --watch dist/index.js & wait)
 
 ## Next.js dev server locally — infra stays in Docker with hot-reload.
 web-dev: infra web-db-ensure
@@ -158,9 +173,12 @@ web-dev: infra web-db-ensure
 	cd $(WEB_DIR) && npm run dev
 
 # Internal: bring up backend infra (built from local code).
+# Chains the dev override so local-dev workflows (cli-dev, web-dev) pick up
+# the skills bind mount alongside the base stack. The OSS launcher path
+# (smoke + dogfood) keeps ``$(COMPOSE)`` to mirror what end users run.
 infra:
 	@echo "[infra] Ensuring backend services are running..."
-	@$(COMPOSE) up -d --build postgres neo4j litellm langgraph sandbox
+	@$(COMPOSE_DEV) up -d --build postgres neo4j litellm langgraph sandbox
 
 # ── Quality gates ────────────────────────────────────────────────
 
@@ -180,6 +198,9 @@ lint-fix:
 	uv run ruff format .
 
 quality-cli: node-install
+	# streaming workspace must be built first — its package.json main
+	# resolves to dist/, which cli's typecheck + build consume.
+	npm run build --workspace=@decepticon/streaming
 	npm run typecheck --workspace=@decepticon/cli
 	npm run build --workspace=@decepticon/cli
 	npm run test --workspace=@decepticon/cli
@@ -196,26 +217,16 @@ quality: lint test-local quality-cli web-lint web-build
 web-build: node-install
 	cd $(WEB_DIR) && npx prisma generate && npm run build
 
+## Hot-swap web dashboard into running container (~15s vs ~5min docker build).
+## Builds Next.js on host, injects via tar pipe, restarts container.
+web-hotswap: node-install web-build
+	./scripts/web-hotswap.sh --skip-build
+
 web-lint: node-install
 	cd $(WEB_DIR) && npx eslint src/ --max-warnings 0
 
 web-migrate: node-install
 	cd $(WEB_DIR) && npx prisma migrate dev --name $(or $(NAME),init)
-
-## Link EE package for SaaS development (dev-only; not part of OSS flow).
-web-ee:
-	cd clients/ee && npm link
-	cd $(WEB_DIR) && npm link @decepticon/ee
-	@grep -q 'NEXT_PUBLIC_DECEPTICON_EDITION' $(WEB_DIR)/.env 2>/dev/null \
-		&& sed -i 's/NEXT_PUBLIC_DECEPTICON_EDITION=.*/NEXT_PUBLIC_DECEPTICON_EDITION=ee/' $(WEB_DIR)/.env \
-		|| echo 'NEXT_PUBLIC_DECEPTICON_EDITION=ee' >> $(WEB_DIR)/.env
-	@echo "EE linked — restart web-dev for SaaS mode"
-
-## Unlink EE package (switch to OSS mode).
-web-oss:
-	cd $(WEB_DIR) && npm unlink @decepticon/ee 2>/dev/null; true
-	@sed -i '/NEXT_PUBLIC_DECEPTICON_EDITION/d' $(WEB_DIR)/.env 2>/dev/null; true
-	@echo "EE unlinked — restart web-dev for OSS mode"
 
 # ── Status / Logs / Health / Clean ───────────────────────────────
 
@@ -255,7 +266,7 @@ node-install:
 web-db-ensure:
 	@echo "[web-db-ensure] Waiting for PostgreSQL..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		docker exec decepticon-postgres pg_isready -U decepticon -q 2>/dev/null && break; \
+		docker exec decepticon$${DECEPTICON_STACK_NAME:+-$${DECEPTICON_STACK_NAME}}-postgres pg_isready -U decepticon -q 2>/dev/null && break; \
 		sleep 1; \
 	done
 	@cd $(WEB_DIR) && npx prisma migrate deploy 2>&1 | tail -1
@@ -272,7 +283,7 @@ web-db-ensure:
 ## valid OAuth access token (token TTL ~8h ≫ cycle duration ~30m).
 recreate-litellm:
 	@$(COMPOSE) up -d --no-build --force-recreate litellm
-	@docker exec decepticon-litellm sh -c 'test -s /root/.claude/.credentials.json' \
+	@docker exec decepticon$${DECEPTICON_STACK_NAME:+-$${DECEPTICON_STACK_NAME}}-litellm sh -c 'test -s /root/.claude/.credentials.json' \
 		&& echo "recreate-litellm: creds mount OK" \
 		|| (echo "recreate-litellm: creds mount EMPTY — onboard first" && exit 1)
 

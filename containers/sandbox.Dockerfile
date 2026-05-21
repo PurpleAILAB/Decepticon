@@ -48,6 +48,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         exploitdb \
         dirb \
         gobuster \
+        # SSH client + sshpass for lateral movement / multi-host scenarios
+        # (e.g., MHBench OpenStack topologies — attacker pivots through a
+        # jump host via ProxyJump to reach internal ring hosts).
+        openssh-client \
+        sshpass \
         # ── JavaScript runtime (JSFuck payload encoding/validation) ──
         nodejs \
         npm \
@@ -57,27 +62,58 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
 # Configure tmux: 50K line scrollback buffer to prevent output truncation
 RUN echo "set-option -g history-limit 50000" > /root/.tmux.conf
 
+# Optional HTTP sandbox daemon — see decepticon/sandbox_server/.
+#
+# The daemon is OFF by default. The existing dev / local-docker / GCE
+# Spot deployments use this image as before (host docker daemon
+# `docker exec`s into the container; entrypoint just tails forever).
+# When `SANDBOX_DAEMON=1` is set at runtime — Cloud Run multi-container
+# deploys do this — the entrypoint replaces the tail loop with the
+# FastAPI server, and the agent container talks to it over HTTP
+# instead of `docker exec`.
+#
+# Only `fastapi` + `uvicorn` + `deepagents` are pulled in here; the
+# heavier decepticon agent / LLM / langgraph SDKs are deliberately
+# left out so the sandbox image doesn't bloat for the >95% of users
+# who never enable the daemon.
+RUN pip3 install --break-system-packages --no-cache-dir \
+    "fastapi>=0.115.0" \
+    "uvicorn>=0.30.0" \
+    "deepagents>=0.5.0"
+
+# Ship only the modules the daemon actually imports:
+#   - decepticon/__init__.py     — package marker (light-weight, just reads __version__)
+#   - decepticon/sandbox_kernel/ — shared sandbox primitives: TmuxSessionManager,
+#                                  BackgroundJobTracker, SandboxBase, and DaemonSandbox.
+#                                  The daemon instantiates `DaemonSandbox` (exec_prefix=[],
+#                                  pathlib upload/download) — no `docker exec`, no
+#                                  agent-side transport, so the sandbox image stays
+#                                  free of the `backends/` package on purpose.
+#   - decepticon/sandbox_server/ — the FastAPI app + uvicorn entry point.
+# `backends/` (DockerSandbox + HTTPSandbox + factory) is deliberately
+# absent — that's agent-side code, lives in the langgraph image. Other
+# subtrees (agents / llm / middleware / tools / core) are left out too
+# so the sandbox image doesn't bloat for the >95% of users who never
+# enable the daemon and so the dependency surface stays minimal.
+COPY decepticon/__init__.py /opt/decepticon/__init__.py
+COPY decepticon/sandbox_kernel /opt/decepticon/sandbox_kernel
+COPY decepticon/sandbox_server /opt/decepticon/sandbox_server
+ENV PYTHONPATH=/opt
+
 # Working directory for the agent's virtual filesystem.
 # Runs as root — security boundary is the container, not the user.
 # Root access is required for raw sockets (nmap SYN scans), packet capture,
 # and unrestricted filesystem access during red team operations.
 WORKDIR /workspace
 
-# Skill library — baked at /skills/ so every agent (recon, exploit, analyst,
-# detector, soundwave, ...) can resolve `/skills/<category>/<skill>/SKILL.md`
-# via the load_skill tool without depending on a host-side bind mount. The
-# OSS install path doesn't ship skills/ to disk, so without this COPY the
-# sandbox container would expose an empty /skills/ and every agent prompt
-# referencing a skill file would fail.
-#
-# Devs iterating on skill content override this at runtime via the
-# `./skills:/skills:ro` bind mount in docker-compose.override.yml — that
-# file is committed but not downloaded by install.sh, so OSS users
-# automatically get the baked-in skills and devs get hot-edits.
-#
-# Placed after the heavy apt-install layer so a skill-only edit invalidates
-# only this thin trailing layer.
-COPY skills/ /skills/
+# Skills are NO LONGER baked into the sandbox image. They live in the
+# langgraph container (see ``containers/langgraph.Dockerfile``), where
+# they are read in-process by ``FilesystemBackend`` via the
+# ``CompositeBackend`` route declared in
+# ``decepticon/backends/__init__.py:make_agent_backend``. Skills are
+# read-only knowledge — they don't need the sandbox's isolated
+# execution environment, and avoiding the HTTP round-trip per skill
+# read saves agent-init latency.
 
 # Entrypoint: chmod 777 /workspace so host user can access files without sudo.
 # Security boundary is the container, not file permissions.

@@ -15,8 +15,8 @@ WORKDIR /app
 # Install uv for fast dependency resolution
 COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /usr/local/bin/uv
 
-# Copy project files
-COPY pyproject.toml langgraph.json README.md ./
+# Copy project files (uv.lock included so the install is reproducible)
+COPY pyproject.toml langgraph.json README.md uv.lock ./
 COPY decepticon/ decepticon/
 COPY skills/ skills/
 
@@ -26,14 +26,24 @@ COPY skills/ skills/
 ARG VERSION=0.0.0
 RUN sed -i 's/^version = "[^"]*"/version = "'"$VERSION"'"/' pyproject.toml
 
-# Install Python dependencies (editable — synced source changes via docker compose watch
-# are immediately reflected without reinstall)
-RUN uv pip install --system -e "." && \
-    uv pip install --system "langgraph-cli[inmem]>=0.2.0"
+# Install Python dependencies. uv export --frozen derives the exact set from
+# uv.lock (ignoring pyproject.toml's loose constraints), so the container
+# always gets the same versions that were locked at commit time. The editable
+# install uses --no-deps because all dependencies are already installed; source
+# changes via docker compose watch are still reflected without reinstall.
+RUN uv export --no-dev --frozen -o /tmp/requirements.txt && \
+    uv pip install --system -r /tmp/requirements.txt && \
+    uv pip install --system -e "." --no-deps
 
 EXPOSE 2024
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://localhost:2024/ok >/dev/null 2>&1 || exit 1
 
-CMD ["langgraph", "dev", "--host", "0.0.0.0", "--port", "2024", "--no-browser"]
+# --n-jobs-per-worker explicitly set to 10 to match the CLI help's stated
+# default. langgraph_api/cli.py:run_server falls back to N_JOBS_PER_WORKER=1
+# when the flag is omitted (despite `--help` saying "Default: 10"), which
+# caps the in-memory queue at 1 concurrent run and serialises any batch
+# bigger than 1. Without this override our benchmark batches with
+# `--parallel 5` queue 4 runs behind a single worker.
+CMD ["langgraph", "dev", "--host", "0.0.0.0", "--port", "2024", "--no-browser", "--n-jobs-per-worker", "10"]
