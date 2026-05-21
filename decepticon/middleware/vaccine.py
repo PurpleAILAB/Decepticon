@@ -50,7 +50,6 @@ from pathlib import PurePosixPath
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage
 
-
 # Default path inside the sandbox where the verifier/patcher/defender
 # write their per-finding state. Override via constructor.
 _DEFAULT_FINDINGS_DIR = "/workspace/findings"
@@ -97,6 +96,7 @@ class VaccineMiddleware(AgentMiddleware):
         """
         if self._writer is None:
             from decepticon.middleware.vaccine_writer import VaccineWriter
+
             self._writer = VaccineWriter(
                 backend=self._backend,
                 findings_dir=self._findings_dir,
@@ -166,7 +166,7 @@ class VaccineMiddleware(AgentMiddleware):
         if stage == "patcher":
             return [
                 f"VACCINE: finding `{finding_id}` is validated but not patched.",
-                "Next action: dispatch `task(\"patcher\", ...)` with the finding's",
+                'Next action: dispatch `task("patcher", ...)` with the finding\'s',
                 "vuln_id, evidence excerpts from the verifier, and the workspace path.",
                 "Patcher will produce a minimal diff + run `patch_verify` against",
                 "the original PoC. On verified, finding's `patched` flag flips true.",
@@ -174,7 +174,7 @@ class VaccineMiddleware(AgentMiddleware):
         if stage == "defender":
             return [
                 f"VACCINE: finding `{finding_id}` is patched but not defended.",
-                "Next action: dispatch `task(\"defender\", ...)` with the finding's",
+                'Next action: dispatch `task("defender", ...)` with the finding\'s',
                 "vuln_id, PoC command, and bug class.",
                 "Defender writes a sigma / snort / semgrep / falco rule that fires",
                 "on the original PoC + does not fire on legit traffic.",

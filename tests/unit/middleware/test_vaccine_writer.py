@@ -31,7 +31,7 @@ class _FakeBackend:
 
     def ls(self, path: str) -> _FakeResult:
         prefix = path.rstrip("/") + "/"
-        entries = [p[len(prefix):] for p in self._files if p.startswith(prefix)]
+        entries = [p[len(prefix) :] for p in self._files if p.startswith(prefix)]
         return _FakeResult(file_data={"entries": entries})
 
     def read(self, path: str) -> _FakeResult:
