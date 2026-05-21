@@ -131,7 +131,9 @@ WORKDIR /workspace
 # Entrypoint: chmod 777 /workspace so host user can access files without sudo.
 # Security boundary is the container, not file permissions.
 COPY containers/sandbox-entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Strip any CR so the image builds correctly even from a Windows host
+# whose checkout introduced CRLF line endings.
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Healthcheck: verify the sandbox is alive and tmux is usable.
