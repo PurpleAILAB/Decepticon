@@ -358,3 +358,70 @@ jobs:
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Decepticon CI scan gate self-test ────────────────────────────
+  # Smoke-tests the headless gate entrypoint (decepticon.cicd.scan) and
+  # the bundled composite action on the PR itself. The action ships for
+  # downstream users to gate THEIR repos; this job proves the gate's
+  # diff-scope resolution + exit-code contract works on every Decepticon
+  # PR. Runs in --check-only mode (never blocks on findings) plus an
+  # explicit gate-fail assertion against a synthetic findings file.
+  decepticon-scan-selftest:
+    name: Decepticon scan gate (self-test)
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --dev --locked
+      # SECURITY: ``github.base_ref`` is attacker-influenced (a fork PR
+      # author controls their branch name). Routing it through ``env:`` and
+      # dereferencing as ``"$BASE_REF"`` keeps it out of the ``run:`` script
+      # body — the CodeQL actions/expression-injection sink. The runner
+      # sets it as a process env var, so ``$(...)``/backtick payloads in a
+      # branch name cannot execute.
+      # 1) check-only against the PR base must always exit 0.
+      - name: Gate check-only (PR scope)
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          uv run python -m decepticon.cicd.scan \
+            --diff-base "origin/${BASE_REF}" \
+            --check-only
+      # 2) Contract assertion: a synthetic in-scope HIGH finding must
+      #    drive exit code 1; an out-of-scope finding must exit 0.
+      - name: Gate exit-code contract
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only --diff-filter=d \
+            "$(git merge-base "origin/${BASE_REF}" HEAD)"..HEAD \
+            | head -1 || true)"
+          if [ -z "$changed" ]; then changed="README.md"; fi
+          printf '[{"id":"S1","severity":"high","title":"selftest","file":"%s"}]' \
+            "$changed" > /tmp/findings_block.json
+          printf '[{"id":"S2","severity":"high","title":"oos","file":"___not_in_pr___"}]' \
+            > /tmp/findings_pass.json
+          set +e
+          uv run python -m decepticon.cicd.scan \
+            --diff-base "origin/${BASE_REF}" \
+            --findings /tmp/findings_block.json --fail-on medium
+          rc_block=$?
+          uv run python -m decepticon.cicd.scan \
+            --diff-base "origin/${BASE_REF}" \
+            --findings /tmp/findings_pass.json --fail-on medium
+          rc_pass=$?
+          set -e
+          echo "blocking-run rc=$rc_block (expect 1)  passing-run rc=$rc_pass (expect 0)"
+          test "$rc_block" -eq 1
+          test "$rc_pass" -eq 0
