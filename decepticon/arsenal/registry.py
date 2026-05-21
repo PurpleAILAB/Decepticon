@@ -227,6 +227,7 @@ REGISTRY: list[ToolSpec] = [
             ArgSchema("response", bool, flag="-resp"),
             ArgSchema("output", str, flag="-o"),
         ],
+        examples=["dnsx -l subdomains.txt -recon a,aaaa,cname -resp -o resolved.txt"],
         install_hint="go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
     ),
     # ────────── Web exploitation ──────────
