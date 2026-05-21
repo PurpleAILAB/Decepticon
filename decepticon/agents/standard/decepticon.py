@@ -11,12 +11,14 @@ Middleware stack (selected for orchestration):
   2. SkillsMiddleware — progressive disclosure of SKILL.md knowledge
   3. FilesystemMiddleware — file ops for reading/updating engagement docs
   4. SubAgentMiddleware — task() tool for delegating to sub-agents
-  5. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
-  6. ModelOverrideMiddleware — runtime /model switch support
-  7. ModelFallbackMiddleware — primary → fallback on provider failure
-  8. SummarizationMiddleware — auto-compact for long orchestration sessions
-  9. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
-  10. PatchToolCallsMiddleware — repair dangling tool calls
+  5. MentorMiddleware — loop detector; advisory on repeated no-progress tool calls
+  6. OPPLANMiddleware — OPPLAN CRUD tools (create/add/get/list/update objectives)
+  7. VaccineMiddleware — auto-dispatch the next Offensive-Vaccine pipeline stage
+  8. ModelOverrideMiddleware — runtime /model switch support
+  9. ModelFallbackMiddleware — primary → fallback on provider failure
+  10. SummarizationMiddleware — auto-compact for long orchestration sessions
+  11. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
+  12. PatchToolCallsMiddleware — repair dangling tool calls
 
 The orchestrator has tools=[] — all offensive work goes through task()
 delegation to specialist sub-agents. SandboxNotificationMiddleware lives

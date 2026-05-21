@@ -40,8 +40,10 @@ from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.middleware import (
     EngagementContextMiddleware,
     FilesystemMiddleware,
+    MentorMiddleware,
     OPPLANMiddleware,
     SkillsMiddleware,
+    VaccineMiddleware,
 )
 from decepticon.middleware.model_override import ModelOverrideMiddleware
 from decepticon.middleware.notifications import SandboxNotificationMiddleware
@@ -64,7 +66,9 @@ class MiddlewareSlot(StrEnum):
     SKILLS = "skills"
     FILESYSTEM = "filesystem"
     SUBAGENT = "subagent"
+    MENTOR = "mentor"
     OPPLAN = "opplan"
+    VACCINE = "vaccine"
     SANDBOX_NOTIFICATION = "sandbox-notification"
     MODEL_OVERRIDE = "model-override"
     MODEL_FALLBACK = "model-fallback"
@@ -140,7 +144,9 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     | {
         MiddlewareSlot.ENGAGEMENT_CONTEXT,
         MiddlewareSlot.SUBAGENT,
+        MiddlewareSlot.MENTOR,
         MiddlewareSlot.OPPLAN,
+        MiddlewareSlot.VACCINE,
         MiddlewareSlot.MODEL_OVERRIDE,
     },
     # ── Standard non-bash agent (planning + interview) ──
@@ -228,8 +234,16 @@ def _make_subagent(*, backend: Any, subagents: list | None = None, **_: Any):
     return SubAgentMiddleware(backend=backend, subagents=subagents or [])
 
 
+def _make_mentor(**_: Any):
+    return MentorMiddleware()
+
+
 def _make_opplan(*, backend: Any, **_: Any):
     return OPPLANMiddleware(backend=backend)
+
+
+def _make_vaccine(*, backend: Any, **_: Any):
+    return VaccineMiddleware(backend=backend)
 
 
 def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
@@ -277,7 +291,9 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.SKILLS: _make_skills,
     MiddlewareSlot.FILESYSTEM: _make_filesystem,
     MiddlewareSlot.SUBAGENT: _make_subagent,
+    MiddlewareSlot.MENTOR: _make_mentor,
     MiddlewareSlot.OPPLAN: _make_opplan,
+    MiddlewareSlot.VACCINE: _make_vaccine,
     MiddlewareSlot.SANDBOX_NOTIFICATION: _make_sandbox_notification,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,
