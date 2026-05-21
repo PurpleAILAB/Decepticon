@@ -59,8 +59,8 @@ from typing import Any
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents import create_agent
 
-from decepticon.agents.assembly import assemble_middleware, assemble_tools
-from decepticon.agents.prompts import load_prompt_with_overrides
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
@@ -153,12 +153,12 @@ def create_decepticon_agent(
         ]
 
     if tools is None:
-        tools = assemble_tools(
+        tools = build_tools(
             role=_ROLE,
             standard_tools={},  # orchestrator tools=[] — delegation only
         )
     if middleware is None:
-        middleware = assemble_middleware(
+        middleware = build_middleware(
             role=_ROLE,
             backend=backend,
             llm=llm,
@@ -167,7 +167,7 @@ def create_decepticon_agent(
             subagents=subagents,
         )
     if system_prompt is None:
-        system_prompt = load_prompt_with_overrides(_ROLE)
+        system_prompt = load_prompt(_ROLE)
 
     return create_agent(
         llm,

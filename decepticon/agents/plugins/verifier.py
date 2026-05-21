@@ -55,11 +55,11 @@ from typing import Any
 
 from langchain.agents import create_agent
 
-from decepticon.agents.assembly import assemble_middleware, assemble_tools
-from decepticon.agents.prompts import load_prompt_with_overrides
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
-from decepticon.plugin_loader import SubAgentSpec, load_plugin_callbacks
+from decepticon.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.tools import (
@@ -71,9 +71,9 @@ from decepticon.tools.research.tools import (
     validate_finding,
 )
 
-
-def _build_standard_tools() -> dict[str, Any]:
-    bundle: list[Any] = [
+_STANDARD_TOOLS: dict[str, Any] = {
+    t.name: t
+    for t in [
         validate_finding,
         kg_query,
         kg_neighbors,
@@ -82,7 +82,14 @@ def _build_standard_tools() -> dict[str, Any]:
         kg_add_edge,
         *BASH_TOOLS,
     ]
-    return {t.name: t for t in bundle}
+}
+
+
+_SKILL_SOURCES: list[str] = [
+    "/skills/plugins/verifier/",
+    "/skills/standard/analyst/",
+    "/skills/shared/",
+]
 
 
 _ROLE = "verifier"
@@ -146,17 +153,18 @@ def create_verifier_agent(
         backend = make_agent_backend(sandbox)
 
     if tools is None:
-        tools = assemble_tools(role=_ROLE, standard_tools=_build_standard_tools())
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
     if middleware is None:
-        middleware = assemble_middleware(
+        middleware = build_middleware(
             role=_ROLE,
+            skill_sources=_SKILL_SOURCES,
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,
             sandbox=sandbox,
         )
     if system_prompt is None:
-        system_prompt = load_prompt_with_overrides(_ROLE, shared=["bash"])
+        system_prompt = load_prompt(_ROLE, shared=["bash"])
 
     return create_agent(
         llm,
@@ -173,7 +181,8 @@ def create_verifier_agent(
 
 
 # Module-level graph for LangGraph Platform (langgraph serve)
-graph = create_verifier_agent()
+if is_bundle_enabled("plugins"):
+    graph = create_verifier_agent()
 
 
 SUBAGENT_SPEC = SubAgentSpec(

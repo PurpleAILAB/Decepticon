@@ -1,22 +1,25 @@
-"""Agent assembly helpers — the bridge between the slot registry, the
+"""Agent build helpers — the bridge between the slot registry, the
 plugin loader, and the per-agent factory functions.
 
-Two override channels feed into the same assembly pipeline:
+Two override channels feed into the same pipeline:
 
-  1. **Library callers** pass explicit overrides via factory kwargs
-     (``create_soundwave_agent(middleware_overrides={...},
-     tool_overrides={...}, ...)``). This is the Path B / library-first
-     mode — full Python composition, no entry-point magic needed.
+  1. **Library callers** pass langchain-style kwargs directly to the
+     factory (``create_soundwave_agent(tools=[...], middleware=[...],
+     system_prompt="...")``) — when provided, each kwarg fully replaces
+     the OSS baseline for that surface and the plugin overrides below
+     are skipped for it. ``None`` (default) builds the baseline AND
+     applies plugin overrides.
 
   2. **Plugin packages** ship declarative ``PluginBundle`` objects under
      the ``decepticon.bundles`` entry-point group. The bundle carries
-     the same shape (``replaced_middleware``, ``disabled_tools``,
-     ``prompt_overrides``, ...) and the assembler merges them with the
-     library caller's explicit kwargs before applying.
+     fine-grained shape (``replaced_middleware``, ``disabled_tools``,
+     ``prompts``, ``replaced_subagents`` ...) and ``build_middleware`` /
+     ``build_tools`` apply them when the corresponding factory kwarg is
+     unset.
 
-Conflict resolution: explicit kwargs win over plugin entry-points. The
-rationale is library callers usually want to opt out of a plugin's
-override for a specific agent without uninstalling the plugin.
+Conflict resolution: explicit factory kwargs win over plugin
+entry-points. The rationale is library callers usually want to opt out
+of a plugin's override for a specific agent without uninstalling it.
 
 Safety: a small allowlist of slots and tools are flagged
 ``safety_critical``. Disabling or replacing them requires
@@ -169,7 +172,7 @@ def _resolve_overrides(
         mw_disable.update(bundle.disabled_middleware)
         tool_replace.update(bundle.replaced_tools)
         tool_disable.update(bundle.disabled_tools)
-        bundle_prompt = bundle.prompt_overrides.get(role) or {}
+        bundle_prompt = bundle.prompts.get(role) or {}
         for k in ("prepend", "append", "replace"):
             if k in bundle_prompt:
                 prompt[k] = bundle_prompt[k]
@@ -236,7 +239,7 @@ def _check_safety_gate(
 # ─────────────────────────────────────────────────────────────────────
 
 
-def assemble_middleware(
+def build_middleware(
     *,
     role: str,
     backend: Any,
@@ -244,14 +247,16 @@ def assemble_middleware(
     fallback_models: list | None = None,
     sandbox: Any = None,
     subagents: list | None = None,
+    skill_sources: list[str] | None = None,
     overrides: dict[MiddlewareSlot, Callable[..., Any]] | None = None,
     disabled_slots: set[MiddlewareSlot] | None = None,
+    slots: frozenset[MiddlewareSlot] | None = None,
 ) -> list:
     """Build the middleware stack for ``role``.
 
     Args:
-        role: agent role name. Drives slot applicability via
-            ``SLOTS_PER_ROLE`` and is passed to every slot factory.
+        role: agent role name. Used for plugin-override scoping (via
+            ``PluginBundle.roles``) and passed to every slot factory.
         backend: deepagents-style filesystem backend (the result of
             ``make_agent_backend`` — usually ``CompositeBackend``).
         llm: bound language model for summarization + per-slot use.
@@ -261,20 +266,37 @@ def assemble_middleware(
             the SANDBOX_NOTIFICATION slot if the role uses it.
         subagents: list of ``CompiledSubAgent`` instances for the
             SUBAGENT slot (orchestrators only).
+        skill_sources: explicit ``/skills/<bundle>/`` paths for the
+            SKILLS slot. ``None`` (default) falls back to the OSS
+            convention in ``skills_sources_for(role)`` for the 10
+            standard roles. Plugin-shipped specialists and commercial
+            agents pass an explicit list — the previous hardcoded
+            ``_PLUGIN_SPECIALIST_ROLES`` registry is gone.
         overrides: explicit slot-replacement mapping. Wins over plugin
             entry-point bundles on conflict.
         disabled_slots: explicit slots to skip.
+        slots: middleware slots this agent uses, in canonical enum order.
+            ``None`` (default) looks the role up in ``SLOTS_PER_ROLE`` —
+            the 16 OSS roles ship with mappings there. **Plugin-shipped
+            orchestrators with a custom role name MUST pass an explicit
+            ``slots`` set** since ``SLOTS_PER_ROLE`` only knows OSS
+            roles; without this, the assembler refuses rather than
+            silently building an empty stack.
 
     Returns:
         ordered list of middleware instances, ready to pass to
         ``create_agent(..., middleware=...)``.
     """
-    role_slots = SLOTS_PER_ROLE.get(role)
-    if role_slots is None:
+    if slots is None:
+        slots = SLOTS_PER_ROLE.get(role)
+    if slots is None:
         raise KeyError(
-            f"unknown role {role!r}; add it to SLOTS_PER_ROLE in "
-            f"decepticon/agents/middleware_slots.py"
+            f"unknown role {role!r}; pass ``slots=`` explicitly "
+            f"(plugin orchestrators with a custom role) or add the role "
+            f"to SLOTS_PER_ROLE in decepticon/agents/middleware_slots.py "
+            f"(OSS roles)."
         )
+    role_slots = slots
 
     resolved = _resolve_overrides(
         role=role,
@@ -310,6 +332,7 @@ def assemble_middleware(
             fallback_models=fallback_models,
             sandbox=sandbox,
             subagents=subagents,
+            skill_sources=skill_sources,
         )
         # Some slot factories return None when their precondition isn't
         # met (e.g. MODEL_FALLBACK with empty fallback_models). Skip.
@@ -325,7 +348,7 @@ def assemble_middleware(
     return result
 
 
-def assemble_tools(
+def build_tools(
     *,
     role: str,
     standard_tools: dict[str, Any] | list[Any] | None = None,

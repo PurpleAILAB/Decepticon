@@ -873,12 +873,17 @@ class LLMFactory:
     def router(self) -> ModelRouter:
         return self._router
 
-    def get_model(self, role: str) -> BaseChatModel:
-        """Get the primary ChatModel for a role. Cached per role."""
+    def get_model(self, role: str, *, default_role: str | None = None) -> BaseChatModel:
+        """Get the primary ChatModel for a role. Cached per role.
+
+        ``default_role`` lets plugin orchestrators inherit an OSS role's
+        assignment when their custom role is not in ``AGENT_TIERS`` —
+        e.g. ``LLMFactory().get_model("decepticon-pro", default_role="decepticon")``.
+        """
         if role in self._cache:
             return self._cache[role]
 
-        assignment = self._router.get_assignment(role)
+        assignment = self._router.get_assignment(role, default_role=default_role)
         log.info(
             "Creating LLM for role '%s' → model '%s' via %s",
             role,
@@ -890,15 +895,17 @@ class LLMFactory:
         self._cache[role] = model
         return model
 
-    def get_fallback_models(self, role: str) -> list[BaseChatModel]:
+    def get_fallback_models(
+        self, role: str, *, default_role: str | None = None
+    ) -> list[BaseChatModel]:
         """Build the full ordered list of fallback ChatModel instances.
 
         Each entry mirrors one entry from the agent's credentials chain
         beyond the primary. The agent passes the result via
         ``ModelFallbackMiddleware(*models)``, which tries them in order
-        until one succeeds.
+        until one succeeds. ``default_role`` works as in ``get_model``.
         """
-        assignment = self._router.get_assignment(role)
+        assignment = self._router.get_assignment(role, default_role=default_role)
         if not assignment.fallbacks:
             return []
 

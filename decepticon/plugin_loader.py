@@ -49,6 +49,7 @@ MIDDLEWARE_GROUP = "decepticon.middleware"
 AGENTS_GROUP = "decepticon.agents"
 SUBAGENTS_GROUP = "decepticon.subagents"
 CALLBACKS_GROUP = "decepticon.callbacks"
+SKILLS_GROUP = "decepticon.skills"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -226,7 +227,7 @@ class PluginBundle:
 
         PluginBundle(
             bundle="saas",
-            prompt_overrides={
+            prompts={
                 "soundwave": {"append": "<SAAS_AUDIT_POLICY>...</SAAS_AUDIT_POLICY>"},
             },
         )
@@ -245,7 +246,7 @@ class PluginBundle:
         the end of the standard stack. Pre-existing behaviour, unchanged.
     bundle
         Optional grouping label; ``None`` = always-load when installed.
-    applies_to_roles
+    roles
         Empty tuple = applies to whichever role triggered the load
         (existing entry-point group-based scoping). Non-empty tuple
         restricts the override to those role names only — useful when
@@ -266,7 +267,7 @@ class PluginBundle:
         ``f(*, backend, llm, role, fallback_models, sandbox, subagents)``
         — and returns a middleware instance (or None for conditional
         slots).
-    prompt_overrides
+    prompts
         Role name → dict with optional ``prepend`` / ``append`` /
         ``replace`` keys. ``replace`` wholly substitutes the loaded
         prompt; ``prepend`` / ``append`` wrap it. When ``replace`` is
@@ -282,7 +283,7 @@ class PluginBundle:
     bundle: str | None = None
 
     # ── Override scoping ─────────────────────────────────────────────
-    applies_to_roles: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
 
     # ── Tool overrides ───────────────────────────────────────────────
     disabled_tools: tuple[str, ...] = ()
@@ -293,15 +294,15 @@ class PluginBundle:
     replaced_middleware: dict[str, Callable[..., Any]] = field(default_factory=dict)
 
     # ── Prompt overrides ─────────────────────────────────────────────
-    prompt_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
+    prompts: dict[str, dict[str, str]] = field(default_factory=dict)
 
     # ── Sub-agent overrides ──────────────────────────────────────────
     disabled_subagents: tuple[str, ...] = ()
     replaced_subagents: dict[str, Any] = field(default_factory=dict)
 
     def matches_role(self, role: str) -> bool:
-        """``applies_to_roles`` filter — empty tuple = unrestricted."""
-        return not self.applies_to_roles or role in self.applies_to_roles
+        """``roles`` filter — empty tuple = unrestricted."""
+        return not self.roles or role in self.roles
 
 
 @dataclass(frozen=True)
@@ -333,9 +334,6 @@ class SubAgentSpec:
             small explicit values (10, 20, ...) so their order is
             preserved; plugin subagents typically fall back to 100 and
             are appended at the end alphabetically.
-        skill_sources: optional tuple of ``/skills/<x>/`` paths the
-            subagent expects to find inside the sandbox. Reserved for
-            future skill-routing wiring; main agents currently ignore.
     """
 
     name: str
@@ -344,7 +342,6 @@ class SubAgentSpec:
     parent_agents: tuple[str, ...] = ()
     bundle: str | None = None
     priority: int = 100
-    skill_sources: tuple[str, ...] = field(default_factory=tuple)
 
 
 # Attributes that distinguish a Tool/Middleware/Callback INSTANCE from a
@@ -430,6 +427,22 @@ def load_plugin_middleware(role: str | None = None, **deps: Any) -> list[Any]:
 def load_plugin_callbacks(role: str | None = None, **deps: Any) -> list[Any]:
     """Discover LangChain callback handlers contributed by external packages."""
     return _discover(CALLBACKS_GROUP, role=role, **deps)
+
+
+def load_plugin_skill_sources(role: str | None = None) -> list[str]:
+    """Discover ``/skills/<bundle>/`` paths contributed by external packages.
+
+    Plugin packages declare a callable ``f(role: str) -> list[str]`` or a
+    static ``list[str]`` under the ``decepticon.skills`` entry-point group.
+    The result is appended to the OSS-default paths returned by
+    ``skills_sources_for(role)`` so plugin skills layer ON TOP of the
+    baseline without requiring full SKILLS slot replacement.
+
+    Non-string return values are filtered out — plugins should ship POSIX
+    paths matching the convention ``/skills/<bundle>/[<role>/]``.
+    """
+    raw = _discover(SKILLS_GROUP, role=role)
+    return [p for p in raw if isinstance(p, str) and p]
 
 
 def _discover_subagent_specs() -> list[SubAgentSpec]:

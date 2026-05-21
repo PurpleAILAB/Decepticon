@@ -56,8 +56,9 @@ from typing import Any
 from deepagents.middleware.subagents import CompiledSubAgent
 from langchain.agents import create_agent
 
-from decepticon.agents.assembly import assemble_middleware, assemble_tools
-from decepticon.agents.prompts import load_prompt_with_overrides
+from decepticon.agents._benchmark_mode import benchmark_skill_sources
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
@@ -155,10 +156,16 @@ def create_vulnresearch_agent(
         ]
 
     if tools is None:
-        tools = assemble_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
     if middleware is None:
-        middleware = assemble_middleware(
+        skill_sources = [
+            "/skills/plugins/vulnresearch/",
+            "/skills/shared/",
+            *benchmark_skill_sources(),
+        ]
+        middleware = build_middleware(
             role=_ROLE,
+            skill_sources=skill_sources,
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,
@@ -166,7 +173,7 @@ def create_vulnresearch_agent(
             subagents=subagents,
         )
     if system_prompt is None:
-        system_prompt = load_prompt_with_overrides(_ROLE, shared=[])
+        system_prompt = load_prompt(_ROLE, shared=[])
 
     return create_agent(
         llm,

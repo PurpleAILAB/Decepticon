@@ -713,15 +713,23 @@ class LLMModelMapping(BaseModel):
 
     assignments: dict[str, ModelAssignment] = Field(default_factory=dict)
 
-    def get_assignment(self, role: str) -> ModelAssignment:
+    def get_assignment(self, role: str, *, default_role: str | None = None) -> ModelAssignment:
         """Get model assignment for a role.
 
-        Raises KeyError if the role has no assignment (e.g. credentials
-        are empty, or the role isn't in AGENT_TIERS).
+        Plugin orchestrators with a custom role (e.g. ``"decepticon-pro"``)
+        that aren't part of the OSS ``AGENT_TIERS`` registry can pass
+        ``default_role="decepticon"`` (or any OSS role) to inherit that
+        role's assignment as fallback. The plugin can later register its
+        own assignment via entry-point without changing the call site.
+
+        Raises ``KeyError`` if ``role`` has no assignment AND
+        ``default_role`` is either ``None`` or also unassigned.
         """
-        if role not in self.assignments:
-            raise KeyError(f"No model assignment for role: {role}")
-        return self.assignments[role]
+        if role in self.assignments:
+            return self.assignments[role]
+        if default_role is not None and default_role in self.assignments:
+            return self.assignments[default_role]
+        raise KeyError(f"No model assignment for role: {role}")
 
     @classmethod
     def from_credentials_and_profile(

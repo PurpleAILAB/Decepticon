@@ -45,7 +45,7 @@ from decepticon.middleware import (
 )
 from decepticon.middleware.model_override import ModelOverrideMiddleware
 from decepticon.middleware.notifications import SandboxNotificationMiddleware
-
+from decepticon.plugin_loader import load_plugin_skill_sources
 
 # ─────────────────────────────────────────────────────────────────────
 # Slot enum
@@ -95,8 +95,8 @@ SAFETY_CRITICAL_SLOTS: frozenset[MiddlewareSlot] = frozenset(
 """Slots a plugin can only replace/disable when
 ``DECEPTICON_ALLOW_SAFETY_OVERRIDES=1`` is set in the environment.
 
-The gate is enforced by ``assemble_middleware`` in
-``decepticon/agents/assembly.py``. Plugins are expected to honour the
+The gate is enforced by ``build_middleware`` in
+``decepticon/agents/build.py``. Plugins are expected to honour the
 overall contract (e.g. a replacement EngagementContextMiddleware still
 needs to inject scope) — the gate exists so an accidentally-installed
 plugin can't silently subvert the safety story.
@@ -176,37 +176,27 @@ group (handled by ``plugin_loader``)."""
 # ─────────────────────────────────────────────────────────────────────
 
 
-# Plugin specialists share a common pattern: their own plugin skill
-# tree + the analyst standard skills + the shared library. Listing
-# them here keeps the default factory generic; plugins that want a
-# different shape ship a replacement SKILLS slot factory.
-_PLUGIN_SPECIALIST_ROLES: frozenset[str] = frozenset(
-    {"detector", "verifier", "patcher", "scanner", "exploiter"}
-)
-
-
 def skills_sources_for(role: str) -> list[str]:
-    """Per-role SkillsMiddleware ``sources`` list.
+    """Default SkillsMiddleware ``sources`` list for an OSS role.
 
-    Mirrors the role-specific source lists that previously lived
-    inline inside each agent factory. ``benchmark_skill_sources()`` is
-    appended when ``BENCHMARK_MODE`` is active — see
-    ``decepticon/agents/_benchmark_mode.py``.
+    Returns the path list for one of the 10 standard OSS agents
+    (``recon``, ``exploit``, ``soundwave``, ...). ``benchmark_skill_sources()``
+    is appended when ``BENCHMARK_MODE`` is active — see
+    ``decepticon/agents/_benchmark_mode.py``. Plugin-contributed paths
+    (registered under the ``decepticon.skills`` entry-point group) are
+    appended last so commercial / 3rd-party skills can layer on top of
+    the OSS baseline without overriding the whole SKILLS slot factory.
+
+    Plugin specialists (detector, scanner, vulnresearch, …) and any
+    out-of-tree commercial agent should NOT rely on this fallback —
+    they pass an explicit ``skill_sources=`` kwarg to ``build_middleware``
+    instead (see the 6 OSS plugin factories for the canonical pattern).
+    The fallback exists purely so the OSS 10 standard factories don't
+    have to repeat ``[f"/skills/standard/{_ROLE}/", "/skills/shared/"]``
+    each.
     """
-    if role == "vulnresearch":
-        return [
-            "/skills/plugins/vulnresearch/",
-            "/skills/shared/",
-            *benchmark_skill_sources(),
-        ]
-    if role in _PLUGIN_SPECIALIST_ROLES:
-        return [
-            f"/skills/plugins/{role}/",
-            "/skills/standard/analyst/",
-            "/skills/shared/",
-        ]
-    # Standard agents — decepticon, soundwave, recon, exploit, etc.
-    return [f"/skills/standard/{role}/", "/skills/shared/", *benchmark_skill_sources()]
+    base = [f"/skills/standard/{role}/", "/skills/shared/", *benchmark_skill_sources()]
+    return [*base, *load_plugin_skill_sources(role)]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -216,7 +206,7 @@ def skills_sources_for(role: str) -> list[str]:
 # Each factory takes a uniform kwarg set: backend, llm, role,
 # fallback_models, sandbox, subagents. Slots that don't need a
 # particular kwarg ignore it (``**_`` keyword sink). The uniform
-# signature lets ``assemble_middleware`` call every slot factory the
+# signature lets ``build_middleware`` call every slot factory the
 # same way — and lets plugin-supplied replacement factories drop in
 # without surprising arg-shape mismatches.
 
@@ -225,8 +215,9 @@ def _make_engagement_context(**_: Any):
     return EngagementContextMiddleware()
 
 
-def _make_skills(*, backend: Any, role: str, **_: Any):
-    return SkillsMiddleware(backend=backend, sources=skills_sources_for(role))
+def _make_skills(*, backend: Any, role: str, skill_sources: list[str] | None = None, **_: Any):
+    sources = list(skill_sources) if skill_sources is not None else skills_sources_for(role)
+    return SkillsMiddleware(backend=backend, sources=sources)
 
 
 def _make_filesystem(*, backend: Any, **_: Any):
@@ -257,7 +248,7 @@ def _make_model_override(**_: Any):
 def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
     """Conditional slot — returns None when no fallback chain exists.
 
-    ``assemble_middleware`` filters None results out so the absent
+    ``build_middleware`` filters None results out so the absent
     fallback simply skips the slot, mirroring the legacy
     ``if fallback_models: middleware.append(...)`` branch.
     """
@@ -296,4 +287,4 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
 }
 """Slot → factory mapping. Plugin overrides shallow-merge into this
 dict at assembly time (without mutating the module-level constant) —
-see ``decepticon.agents.assembly.assemble_middleware``."""
+see ``decepticon.agents.build.build_middleware``."""

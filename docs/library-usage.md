@@ -65,7 +65,7 @@ Available kwargs on every factory:
 | `subagents` | `load_subagents_for_parent(role)` (orchestrators only) | full subagent list |
 | `tools` | per-role registry | **full tool list** — replaces baseline |
 | `middleware` | per-role slot stack | **full middleware list** — replaces slot assembly |
-| `system_prompt` | `load_prompt_with_overrides(role)` | **full prompt** — replaces baseline |
+| `system_prompt` | `load_prompt(role)` (plugin overrides applied) | **full prompt** — replaces baseline |
 | `recursion_limit` | per-role (60–1000) | `with_config({"recursion_limit": ...})` |
 
 > When `tools` / `middleware` / `system_prompt` is `None` (the
@@ -126,6 +126,65 @@ agent = create_agent(
 This is the canonical path for SaaS / research integrators who want
 to ship their own service on top of Decepticon's agent code.
 
+### 3b. Plugin orchestrator with the OSS slot system (`build_middleware(slots=...)`)
+
+When the commercial product wants to ship a **new orchestrator agent
+type** (not one of the OSS 16) but still wants Decepticon's slot
+system, safety gate, and plugin-override pipeline, pass an explicit
+``slots`` set to ``build_middleware``:
+
+```python
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.middleware_slots import MiddlewareSlot
+from decepticon.agents.prompts import load_prompt
+from decepticon.llm import LLMFactory
+
+PRO_SLOTS = frozenset({
+    MiddlewareSlot.ENGAGEMENT_CONTEXT,
+    MiddlewareSlot.SKILLS,
+    MiddlewareSlot.FILESYSTEM,
+    MiddlewareSlot.SUBAGENT,
+    MiddlewareSlot.OPPLAN,
+    MiddlewareSlot.MODEL_FALLBACK,
+    MiddlewareSlot.SUMMARIZATION,
+    MiddlewareSlot.PROMPT_CACHING,
+    MiddlewareSlot.PATCH_TOOL_CALLS,
+})
+
+PRO_SKILL_SOURCES = [
+    "/skills/saas-pro/orchestrator/",
+    "/skills/shared/",
+]
+
+def create_decepticon_pro_agent(**kwargs):
+    # LLMFactory only knows OSS role assignments; pass default_role=
+    # to inherit one as fallback until the plugin registers its own.
+    llm_factory = LLMFactory()
+    llm = llm_factory.get_model("decepticon-pro", default_role="decepticon")
+    fallbacks = llm_factory.get_fallback_models("decepticon-pro", default_role="decepticon")
+
+    middleware = build_middleware(
+        role="decepticon-pro",         # custom role — NOT in SLOTS_PER_ROLE
+        slots=PRO_SLOTS,               # plugin author declares its slot set
+        skill_sources=PRO_SKILL_SOURCES,  # bypass OSS skills_sources_for() lookup
+        backend=..., llm=llm, fallback_models=fallbacks, subagents=[...],
+    )
+    return create_agent(..., middleware=middleware, ...)
+```
+
+Three plugin-orchestrator escape hatches converge here:
+
+- ``slots=`` — without it, ``build_middleware`` raises ``KeyError`` for
+  unknown roles. Silent fallback to an empty stack would mask real
+  bugs in plugin code.
+- ``skill_sources=`` — without it, the SKILLS slot calls
+  ``skills_sources_for(role)`` which only knows the 10 OSS standard
+  roles. Plugin specialists/orchestrators pass an explicit list.
+- ``default_role=`` on ``LLMFactory.get_model`` /
+  ``LLMFactory.get_fallback_models`` — without it, the factory raises
+  ``KeyError`` for roles not in ``AGENT_TIERS``. Plugin can inherit any
+  OSS role's model assignment until it ships its own.
+
 ---
 
 ## Declarative plugin overrides (`PluginBundle`)
@@ -151,14 +210,14 @@ SAAS_BUNDLE = PluginBundle(
     replaced_middleware={"skills": saas_skills_factory},
     disabled_middleware=("prompt-caching",),
     # Prompt patches per role
-    prompt_overrides={
+    prompts={
         "soundwave": {"append": "<SAAS_AUDIT_POLICY>...</SAAS_AUDIT_POLICY>"},
         "recon": {"prepend": "<SAAS_HEADER>..."},
     },
     # Sub-agents
     replaced_subagents={"recon": saas_pkg.agents.recon.SUBAGENT_SPEC},
     # Optional role scoping (empty tuple = applies to every role)
-    applies_to_roles=("soundwave", "recon"),
+    roles=("soundwave", "recon"),
 )
 ```
 
@@ -171,6 +230,31 @@ saas = "saas_pkg.bundles:SAAS_BUNDLE"
 Activation also honors the existing `DECEPTICON_PLUGINS` env / config
 allowlist via `bundle="saas"`. Set
 `DECEPTICON_PLUGINS=standard,saas` to opt in.
+
+### Adding skills via entry-points
+
+Skill packages (the `/skills/<bundle>/` markdown trees consumed by
+`SkillsMiddleware`) plug in through their own entry-point group so
+plugin authors can layer skills onto OSS without overriding the
+SKILLS slot factory.
+
+```python
+# saas_pkg/skills.py
+def skill_sources(role: str) -> list[str]:
+    if role in ("recon", "exploit"):
+        return ["/skills/saas-pro/", "/skills/saas-shared/"]
+    return []
+```
+
+```toml
+# saas_pkg/pyproject.toml
+[project.entry-points."decepticon.skills"]
+saas = "saas_pkg.skills:skill_sources"
+```
+
+Plugin paths are appended after the OSS baseline returned by
+`decepticon.agents.middleware_slots.skills_sources_for`, so OSS skills
+keep their priority in the progressive-disclosure budget.
 
 ### Override resolution order
 
@@ -216,8 +300,8 @@ to honor the original semantics.
 |--------|---------|
 | `decepticon.agents.standard.*`, `decepticon.agents.plugins.*` | Pre-built per-role agent factories |
 | `decepticon.agents.middleware_slots` | `MiddlewareSlot` enum, `SLOTS_PER_ROLE`, `DEFAULT_SLOT_FACTORIES` |
-| `decepticon.agents.assembly` | `assemble_middleware`, `assemble_tools`, `resolve_prompt_overrides`, `SafetyOverrideViolation` |
-| `decepticon.agents.prompts` | `load_prompt`, `load_prompt_with_overrides`, `PromptBuilder` |
+| `decepticon.agents.build` | `build_middleware`, `build_tools`, `resolve_prompt_overrides`, `SafetyOverrideViolation` |
+| `decepticon.agents.prompts` | `load_prompt`, `PromptBuilder` |
 | `decepticon.middleware` | `SkillsMiddleware`, `FilesystemMiddleware`, `EngagementContextMiddleware`, `OPPLANMiddleware`, `SandboxNotificationMiddleware`, … |
 | `decepticon.tools.bash` | `BASH_TOOLS` (the four bash tools), `set_sandbox` |
 | `decepticon.tools.research`, `decepticon.tools.references` | KG / CVE / payload tools |
@@ -240,8 +324,8 @@ from decepticon.agents.standard.recon import create_recon_agent
 # and the default factory picks it up automatically.
 
 # Or pass explicitly — but you have to include the full tool list:
-from decepticon.agents.standard.recon import _build_standard_tools
-all_tools = list(_build_standard_tools().values()) + [my_tool]
+from decepticon.agents.standard.recon import _STANDARD_TOOLS
+all_tools = [*_STANDARD_TOOLS.values(), my_tool]
 agent = create_recon_agent(tools=all_tools)
 ```
 

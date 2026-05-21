@@ -47,13 +47,12 @@ from typing import Any
 
 from langchain.agents import create_agent
 
-from decepticon.agents.assembly import assemble_middleware, assemble_tools
-from decepticon.agents.prompts import load_prompt_with_overrides
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
-from decepticon.plugin_loader import load_plugin_callbacks
+from decepticon.plugin_loader import is_bundle_enabled, load_plugin_callbacks
 from decepticon.tools.interaction import ask_user_question, complete_engagement_planning
-
 
 # Name-keyed registry of the standard tools. Exposed for library
 # callers who want to splice into the default set (e.g.
@@ -116,16 +115,16 @@ def create_soundwave_agent(
         backend = make_agent_backend(build_sandbox_backend())
 
     if tools is None:
-        tools = assemble_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
     if middleware is None:
-        middleware = assemble_middleware(
+        middleware = build_middleware(
             role=_ROLE,
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,
         )
     if system_prompt is None:
-        system_prompt = load_prompt_with_overrides(_ROLE)
+        system_prompt = load_prompt(_ROLE)
 
     return create_agent(
         llm,
@@ -142,4 +141,5 @@ def create_soundwave_agent(
 
 
 # Module-level graph for LangGraph Platform (langgraph serve).
-graph = create_soundwave_agent()
+if is_bundle_enabled("standard"):
+    graph = create_soundwave_agent()

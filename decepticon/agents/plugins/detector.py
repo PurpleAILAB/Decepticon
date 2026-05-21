@@ -54,11 +54,11 @@ from typing import Any
 
 from langchain.agents import create_agent
 
-from decepticon.agents.assembly import assemble_middleware, assemble_tools
-from decepticon.agents.prompts import load_prompt_with_overrides
+from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
-from decepticon.plugin_loader import SubAgentSpec, load_plugin_callbacks
+from decepticon.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 from decepticon.tools.research.tools import (
     cve_by_package,
     cve_lookup,
@@ -79,6 +79,13 @@ _STANDARD_TOOLS: dict[str, Any] = {
     "cve_lookup": cve_lookup,
     "cve_by_package": cve_by_package,
 }
+
+_SKILL_SOURCES: list[str] = [
+    "/skills/plugins/detector/",
+    "/skills/standard/analyst/",
+    "/skills/shared/",
+]
+
 
 _ROLE = "detector"
 _RECURSION_LIMIT = 120
@@ -145,17 +152,18 @@ def create_detector_agent(
         backend = make_agent_backend(sandbox)
 
     if tools is None:
-        tools = assemble_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
     if middleware is None:
-        middleware = assemble_middleware(
+        middleware = build_middleware(
             role=_ROLE,
+            skill_sources=_SKILL_SOURCES,
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,
             sandbox=None,  # no SandboxNotification for detector
         )
     if system_prompt is None:
-        system_prompt = load_prompt_with_overrides(_ROLE, shared=[])
+        system_prompt = load_prompt(_ROLE, shared=[])
 
     return create_agent(
         llm,
@@ -172,7 +180,8 @@ def create_detector_agent(
 
 
 # Module-level graph for LangGraph Platform (langgraph serve)
-graph = create_detector_agent()
+if is_bundle_enabled("plugins"):
+    graph = create_detector_agent()
 
 
 SUBAGENT_SPEC = SubAgentSpec(

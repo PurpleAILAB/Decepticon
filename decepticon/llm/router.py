@@ -30,6 +30,11 @@ class ModelRouter:
         assignment = self.get_assignment(role)
         return [assignment.primary, *assignment.fallbacks]
 
-    def get_assignment(self, role: str) -> ModelAssignment:
-        """Return full ModelAssignment for a role."""
-        return self.mapping.get_assignment(role)
+    def get_assignment(self, role: str, *, default_role: str | None = None) -> ModelAssignment:
+        """Return full ModelAssignment for a role.
+
+        ``default_role`` lets plugin orchestrators inherit an OSS role's
+        assignment when their own role is not in ``AGENT_TIERS`` —
+        see ``LLMModelMapping.get_assignment`` for the contract.
+        """
+        return self.mapping.get_assignment(role, default_role=default_role)
