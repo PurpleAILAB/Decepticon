@@ -186,12 +186,6 @@ addopts = [
     "-ra",
     "--durations=10",
     "--timeout=60",
-    # Parallelise across all CPU cores (pytest-xdist). Workers are
-    # separate processes, so monkeypatched module globals and the
-    # in-memory KnowledgeGraph stay isolated per test. Override for
-    # serial debugging with ``-n0``.
-    "-n",
-    "auto",
 ]
 
 [tool.coverage.run]

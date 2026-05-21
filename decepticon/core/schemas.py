@@ -91,6 +91,7 @@ class FindingSeverity(StrEnum):
 class FindingConfidence(StrEnum):
     """Confidence level for a finding — drives verification requirements."""
 
+    PROVEN = "proven"  # Instrumented proof (sanitizer report / deterministic differential)
     VERIFIED = "verified"  # Confirmed with 2+ methods (required for CRITICAL/HIGH)
     PROBABLE = "probable"  # Strong indicators, single method
     UNVERIFIED = "unverified"  # Initial observation, needs confirmation
@@ -124,6 +125,83 @@ class Evidence(BaseModel):
     description: str = ""
     sha256: str = Field(default="", description="SHA-256 hash for integrity verification")
     collected_at: str = Field(default="", description="ISO 8601 timestamp of collection")
+
+
+# ── Adversarial debate validation ────────────────────────────────────
+
+
+class DebateVerdict(StrEnum):
+    """Outcome of an adversarial multi-model debate over a finding."""
+
+    UPHELD = "upheld"  # skeptic could not refute — credibility up
+    REFUTED = "refuted"  # skeptic produced a sound refutation — block promotion
+    UNCERTAIN = "uncertain"  # adjudication inconclusive — promote with caution
+    SKIPPED = "skipped"  # debate not run (single provider family / test profile)
+
+
+class DebateRound(BaseModel):
+    """One turn of an adversarial debate — a skeptic or advocate argument."""
+
+    role: str = Field(description="'skeptic' or 'advocate'")
+    model: str = Field(description="LiteLLM model id that produced this turn")
+    family: str = Field(default="", description="Provider family, e.g. 'anthropic'")
+    argument: str = Field(default="", description="The turn's argument text")
+    refuted: bool = Field(
+        default=False, description="Whether this turn argues the finding is a false positive"
+    )
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class DebateRecord(BaseModel):
+    """Record of an adversarial debate that cross-examined a finding.
+
+    A skeptic model from a different provider family argues the finding is
+    a false positive; an advocate rebuts; a deterministic adjudicator
+    assigns a credibility score. Persisted on the finding and the KG.
+    """
+
+    verdict: DebateVerdict
+    credibility: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Posterior credibility after debate (1.0 = skeptic fully refuted)",
+    )
+    primary_model: str = ""
+    skeptic_model: str = ""
+    primary_family: str = ""
+    skeptic_family: str = ""
+    cross_family: bool = Field(
+        default=False, description="True when skeptic and primary are from different families"
+    )
+    rounds: list[DebateRound] = Field(default_factory=list)
+    refutation_summary: str = ""
+    rebuttal_summary: str = ""
+    adjudication: str = ""
+    debated_at: str = Field(default="", description="ISO 8601 timestamp of the debate")
+
+
+# ── Instrumented proof (prove stage) ─────────────────────────────────
+
+
+class ProofArtifact(BaseModel):
+    """Instrumented proof that a hypothesized bug actually triggers.
+
+    Produced by the prove stage — a sanitizer report for native memory
+    corruption, or a deterministic differential for web/logic findings.
+    """
+
+    strategy: str = Field(description="sanitizer / differential / recheck")
+    method: str = Field(description="asan-report / ubsan-report / gdb-crash / differential / ...")
+    proven: bool
+    sanitizer: str = ""
+    crash_kind: str = ""
+    stack_trace: list[str] = Field(default_factory=list)
+    triggering_input: str = Field(default="", description="The input/command that triggers the bug")
+    sanitizer_log: str = ""
+    exit_signal: str = ""
+    proof_hash: str = ""
+    proved_at: str = Field(default="", description="ISO 8601 timestamp of the proof")
 
 
 class Finding(BaseModel):
@@ -192,6 +270,32 @@ class Finding(BaseModel):
     verified_methods: list[str] = Field(
         default_factory=list,
         description="Methods used to verify (e.g. ['nmap', 'manual curl'])",
+    )
+
+    # Adversarial debate validation (MDASH-style cross-model review)
+    credibility: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Posterior credibility after adversarial debate (1.0 when no debate ran)",
+    )
+    debate: DebateRecord | None = Field(
+        default=None, description="Adversarial multi-model debate record, if run"
+    )
+    proof: ProofArtifact | None = Field(
+        default=None, description="Instrumented proof artifact from the prove stage, if run"
+    )
+
+    # Deduplication (findings sharing a cluster are the same underlying bug)
+    cluster_id: str = Field(
+        default="", description="Dedup cluster hash; findings sharing it are equivalent"
+    )
+    canonical_id: str = Field(
+        default="", description="ID of the canonical finding for this cluster (self if canonical)"
+    )
+    duplicate_of: str = Field(
+        default="",
+        description="Canonical finding ID this one was merged into; empty if canonical/unclustered",
     )
 
 

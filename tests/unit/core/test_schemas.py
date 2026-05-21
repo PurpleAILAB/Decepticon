@@ -284,3 +284,77 @@ def test_bundle_save_skips_only_absent_expansion_docs(tmp_path: Path) -> None:
     assert "threat-profile" not in files
     assert not (plan_dir / "threat-profile.json").exists()
     assert (plan_dir / "cleanup.json").exists()
+
+
+# ── Adversarial debate validation ─────────────────────────────────────
+
+
+def test_finding_defaults_have_full_credibility_and_no_debate() -> None:
+    """A finding with no debate run carries credibility 1.0 and debate=None."""
+    from decepticon.core.schemas import Finding
+
+    f = Finding(
+        id="FIND-001",
+        title="[SQLi] in /search allows DB read",
+        severity="critical",
+        affected_target="http://t/search",
+        description="union-based sqli",
+    )
+    assert f.credibility == 1.0
+    assert f.debate is None
+
+
+def test_debate_record_round_trips_through_json() -> None:
+    """DebateRecord with rounds survives a model_dump → model_validate cycle."""
+    from decepticon.core.schemas import DebateRecord, DebateRound, DebateVerdict
+
+    record = DebateRecord(
+        verdict=DebateVerdict.REFUTED,
+        credibility=0.12,
+        primary_model="anthropic/claude-sonnet-4-6",
+        skeptic_model="openai/gpt-5-nano",
+        cross_family=True,
+        rounds=[
+            DebateRound(role="skeptic", model="openai/gpt-5-nano", refuted=True, confidence=0.9),
+            DebateRound(role="advocate", model="anthropic/claude-sonnet-4-6", confidence=0.4),
+        ],
+    )
+    restored = DebateRecord.model_validate(json.loads(json.dumps(record.model_dump(mode="json"))))
+    assert restored.verdict == DebateVerdict.REFUTED
+    assert restored.credibility == 0.12
+    assert len(restored.rounds) == 2
+    assert restored.rounds[0].role == "skeptic"
+
+
+def test_finding_carries_debate_record() -> None:
+    """A Finding can embed a DebateRecord and round-trip it."""
+    from decepticon.core.schemas import DebateRecord, DebateVerdict, Finding
+
+    f = Finding(
+        id="FIND-002",
+        title="[SSTI] in template",
+        severity="high",
+        affected_target="http://t/",
+        description="server side template injection",
+        credibility=0.85,
+        debate=DebateRecord(verdict=DebateVerdict.UPHELD, credibility=0.85),
+    )
+    restored = Finding.model_validate(f.model_dump(mode="json"))
+    assert restored.debate is not None
+    assert restored.debate.verdict == DebateVerdict.UPHELD
+    assert restored.credibility == 0.85
+
+
+def test_finding_credibility_rejects_out_of_range() -> None:
+    """credibility is constrained to [0, 1]."""
+    from decepticon.core.schemas import Finding
+
+    with pytest.raises(ValueError):
+        Finding(
+            id="FIND-003",
+            title="t",
+            severity="low",
+            affected_target="x",
+            description="d",
+            credibility=1.5,
+        )

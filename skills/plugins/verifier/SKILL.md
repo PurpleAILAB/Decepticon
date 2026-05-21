@@ -75,6 +75,31 @@ sentinel file exists after request (use `ls /tmp/decepticon-sentinel`).
 | Reflected XSS                    | CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N            |
 | Path traversal, read-only        | CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N            |
 
+## Step 7.5 — Adversarial debate (CRITICAL/HIGH only)
+
+A false-positive CRITICAL/HIGH finding poisons the Patcher and Exploiter,
+so those findings must survive an adversarial cross-examination before
+promotion.
+
+When `validate_finding` returns `promotion: blocked`:
+
+1. Call `debate_finding(vuln_id, finding_summary, poc_evidence)`. A skeptic
+   model from a *different provider family* argues the finding is a false
+   positive; the verifier's own model rebuts; a deterministic adjudicator
+   scores credibility.
+2. Read the `verdict`:
+   - `upheld` — the skeptic could not refute it. Re-run `validate_finding`;
+     it promotes with a credibility score.
+   - `uncertain` — doubt remains but no sound refutation. Re-run
+     `validate_finding`; it promotes.
+   - `skipped` — only one provider family is configured, so no independent
+     debate was possible. Re-run `validate_finding`; it promotes.
+   - `refuted` — the skeptic produced a sound refutation. DO NOT promote.
+     Revisit the PoC or strengthen the negative control, or record
+     `last_failure` and move on.
+
+See the bundled `adversarial-debate` skill for the full rationale.
+
 ## What to do when validation fails
 
 1. Check if the service is actually up (`curl` the base URL).
