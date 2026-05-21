@@ -15,6 +15,13 @@ CancelOutcome = Literal[
     "failed",  # cancel call failed and verify-terminal also failed
 ]
 
+# ExploitBench capability tiers (T1 = highest, T5 = lowest). Mirrors
+# the grader taxonomy at https://exploitbench.ai/#methodology, where
+# the 16 capability flags collapse into 5 ranked tiers via
+# ``best_tier_for_caps`` in :mod:`benchmark.providers.exploitbench`.
+# ``None`` means the run achieved no capability at all.
+ExploitTier = Literal["T1", "T2", "T3", "T4", "T5"]
+
 
 class Challenge(BaseModel):
     """A single benchmark challenge definition."""
@@ -25,7 +32,24 @@ class Challenge(BaseModel):
     level: int = Field(description="Difficulty: 1=easy, 2=medium, 3=hard")
     tags: list[str]
     win_condition: str = Field(default="flag")
-    compose_dir: Path = Field(description="Directory containing docker-compose.yml")
+    compose_dir: Path | None = Field(
+        default=None,
+        description="Directory containing docker-compose.yml (XBOW provider)",
+    )
+    # ExploitBench-style env metadata. Populated by ``ExploitBenchProvider``;
+    # XBOW provider leaves these unset. ``docker_image`` is the GHCR ref
+    # (e.g. ``ghcr.io/exploitbench/v8-r1:cve-2024-1939``); ``mcp_interface``
+    # is the interface contract advertised by the container's MCP server
+    # (e.g. ``rl.mcp.v8_exploit.v1``); ``seed`` lets one Challenge expand
+    # into N independent seeded runs without breaking the 1-Challenge =
+    # 1-result invariant in the existing harness.
+    docker_image: str | None = None
+    mcp_interface: str | None = None
+    seed: int | None = None
+    # MHBench provider only: name of the topology spec class
+    # (``Chain2Hosts``, ``EquifaxSmall``, …) or a generated topology JSON
+    # file name. Passed verbatim to upstream ``main.py --type``.
+    mhbench_env_type: str | None = None
 
     @property
     def flag_pattern(self) -> re.Pattern[str]:
@@ -57,7 +81,10 @@ class ChallengeResult(BaseModel):
     duration_seconds: float = 0.0
     error: str | None = None
     # Solve evidence metadata (for public reporting)
-    thread_id: str | None = None
+    # trace_id is the LangSmith trace identifier (= the LangGraph run_id from
+    # client.runs.create), giving observer a direct handle to fetch the full
+    # trace tree without needing thread_id-based metadata filtering.
+    trace_id: str | None = None
     token_count: int | None = None
     agent_summary: str | None = None
     # Cancel/teardown introspection: ground truth for whether the LangGraph run
@@ -66,6 +93,36 @@ class ChallengeResult(BaseModel):
     # cancel/teardown order races without scraping LangSmith.
     cancel_outcome: CancelOutcome | None = None
     terminal_status_at_teardown: str | None = None
+    # Setup overhead: time from run_challenge entry to LangGraph submit.
+    # Excludes agent execution — captures docker start + provider.setup() cost
+    # so duration_seconds reflects only agent wall-clock budget.
+    setup_seconds: float | None = None
+    # Per-challenge USD cost from LiteLLM /spend/logs (sum of spend
+    # field for rows whose startTime falls inside this run's agent
+    # window). ``None`` when LiteLLM was unreachable or returned no
+    # rows. For subscription routes (auth/*, gemini-sub/*, copilot/*,
+    # grok-sub/*, pplx-sub/*) this is shadow cost: what the same
+    # request would have cost on the equivalent paid API. Reliable
+    # only for sequential runs (parallel=1) — concurrent challenges
+    # share the time window and cost cannot be cleanly attributed.
+    cost_usd: float | None = None
+    # ExploitBench tiered grading. ``capabilities`` is the merged
+    # ``best_caps`` bitmap returned by the in-container grader across
+    # every ``grade()`` call the agent issued during the episode —
+    # capabilities accumulate, they never regress. ``tier_reached`` is
+    # the highest tier any single capability satisfied; ``score`` is
+    # the bench-v8 weighted sum (one point per capability, double for
+    # ace) so leaderboard ordering matches ``exploitbench.ai`` numbers.
+    # XBOW runs leave all three None and continue to be scored solely
+    # on ``passed`` / ``flag_captured``.
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    tier_reached: ExploitTier | None = None
+    capability_score: float | None = None
+    # Optional environment / bug identifier surfaced for downstream
+    # tooling. For ExploitBench this is the bug ID (e.g.
+    # ``v8-cve-2024-1939``); for XBOW it stays None because
+    # ``challenge_id`` already carries the unique key.
+    bug_id: str | None = None
 
 
 class BenchmarkReport(BaseModel):
@@ -86,6 +143,12 @@ class BenchmarkReport(BaseModel):
     started_at: datetime
     completed_at: datetime
     duration_seconds: float
+    # Sum of ChallengeResult.cost_usd across results with a non-None
+    # value. ``None`` only when EVERY challenge missed cost capture
+    # (LiteLLM unreachable, or the /spend/logs window was empty); a
+    # partial set rolls up to the available subtotal so reports never
+    # silently lose cost data for the runs that did capture it.
+    total_cost_usd: float | None = None
 
 
 class FilterConfig(BaseModel):
@@ -93,5 +156,38 @@ class FilterConfig(BaseModel):
 
     levels: list[int] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    ids: list[str] = Field(default_factory=list)
     range_start: int | None = None
     range_end: int | None = None
+
+
+class ExploitBenchEnv(BaseModel):
+    """One bug environment in an ExploitBench-style YAML config.
+
+    Matches the shape of the ``envs:`` list in
+    ``exploitbench/benchmarks/v8.yaml``. ``id`` is the bug identifier
+    (``v8-cve-2024-1939``); ``image`` is the GHCR tag pulled before
+    the episode starts; ``interface`` selects the MCP contract the
+    container advertises (currently always ``rl.mcp.v8_exploit.v1``).
+    """
+
+    id: str
+    image: str
+    interface: str = "rl.mcp.v8_exploit.v1"
+
+
+class ExploitBenchSpec(BaseModel):
+    """Parsed ExploitBench-style YAML config.
+
+    Only the subset of fields the Decepticon harness actually consumes
+    is modeled — model dispatch and per-provider budget knobs stay
+    inside Decepticon's own config (``BenchmarkConfig`` /
+    ``EngagementContextMiddleware``) so the upstream config can be
+    copy-pasted without diff churn.
+    """
+
+    benchmark_id: str = "exploitbench"
+    envs: list[ExploitBenchEnv]
+    seeds: list[int] = Field(default_factory=lambda: [1])
+    init_prompt: str | None = None
+    init_prompt_hint: str | None = None

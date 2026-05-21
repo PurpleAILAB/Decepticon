@@ -28,68 +28,134 @@ model_list:
   # it's a *request validation* error, not a model-failure signal. Dropping
   # the param at the proxy keeps the request well-formed regardless of which
   # client hit us.
+  # Per-1M USD as of 2026-05-14 (Anthropic API):
+  #   opus-4-7   $5.00 / $25.00
+  #   sonnet-4-6 $3.00 / $15.00
+  #   haiku-4-5  $1.00 /  $5.00
+  # LiteLLM's built-in cost map ships sonnet-4-6 and haiku-4-5 correctly,
+  # but opus-4-7 is missing — explicit ``model_info`` here forces
+  # /spend/logs to populate cost instead of ``None / 0``. Sonnet/Haiku
+  # are pinned too so we own the price source of truth instead of
+  # silently drifting if Anthropic's map updates.
   - model_name: anthropic/claude-opus-4-7
     litellm_params:
       model: anthropic/claude-opus-4-7
       api_key: os.environ/ANTHROPIC_API_KEY
       additional_drop_params: ["temperature"]
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
 
   - model_name: anthropic/claude-sonnet-4-6
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: anthropic/claude-haiku-4-5
     litellm_params:
       model: anthropic/claude-haiku-4-5-20251001
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000005
 
   # ── OpenAI ───────────────────────────────────────────────────────────
+  # Per-1M USD as of 2026-05-14 (OpenAI API):
+  #   gpt-5.5         $5.00 / $30.00   (built-in map missing → set)
+  #   gpt-5.4         $2.50 / $15.00
+  #   gpt-5-nano      $0.05 /  $0.40   (legacy nano, NOT gpt-5.4-nano)
+  #   gpt-5.3-codex   $1.75 / $14.00   (Codex rate card)
   # HIGH tier
   - model_name: openai/gpt-5.5
     litellm_params:
       model: openai/gpt-5.5
       api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000030
 
   # MID tier
   - model_name: openai/gpt-5.4
     litellm_params:
       model: openai/gpt-5.4
       api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000025
+      output_cost_per_token: 0.000015
 
   # LOW tier
   - model_name: openai/gpt-5-nano
     litellm_params:
       model: openai/gpt-5-nano
       api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000005
+      output_cost_per_token: 0.0000004
+
+  # Code-heavy override — opt-in via DECEPTICON_MODEL_<ROLE> for roles
+  # like patcher, exploiter, contract_auditor that benefit from OpenAI's
+  # agentic coding specialization. Not a default tier pick (gpt-5.5 stays
+  # HIGH for general agent balance); this route exists so per-agent env
+  # overrides don't require a yaml edit.
+  - model_name: openai/gpt-5.3-codex
+    litellm_params:
+      model: openai/gpt-5.3-codex
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000175
+      output_cost_per_token: 0.000014
 
   # ── Google ───────────────────────────────────────────────────────────
+  # Per-1M USD as of 2026-05-14 (Gemini Developer API, ≤200K context):
+  #   2.5-pro        $1.25 / $10.00
+  #   2.5-flash      $0.30 /  $2.50
+  #   2.5-flash-lite $0.10 /  $0.40
   # HIGH tier
   - model_name: gemini/gemini-2.5-pro
     litellm_params:
       model: gemini/gemini-2.5-pro
       api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000125
+      output_cost_per_token: 0.00001
 
   # MID tier
   - model_name: gemini/gemini-2.5-flash
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000025
 
   # LOW tier
   - model_name: gemini/gemini-2.5-flash-lite
     litellm_params:
       model: gemini/gemini-2.5-flash-lite
       api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000001
+      output_cost_per_token: 0.0000004
 
   # ── MiniMax ──────────────────────────────────────────────────────────
   # Native LiteLLM minimax/ provider — registry-registered model IDs.
+  # Per-1M USD as of 2026-05-14 (api.minimax.io):
+  #   M2.5            $0.15 / $1.20   (50 tok/s, base rate)
+  #   M2.5-lightning  $0.30 / $2.40   (100 tok/s, ~2× output cost)
+  # LiteLLM's built-in map quotes $0.30 input for M2.5 — out of date
+  # against the M2.5 launch post; override.
   # HIGH tier
   - model_name: minimax/MiniMax-M2.5
     litellm_params:
       model: minimax/MiniMax-M2.5
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000015
+      output_cost_per_token: 0.0000012
 
   # MID tier (throughput-tuned variant of M2.5 — 2x output token cost,
   # higher rate ceiling)
@@ -98,34 +164,67 @@ model_list:
       model: minimax/MiniMax-M2.5-lightning
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000024
 
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
   # ``additional_drop_params: ["temperature"]`` matches the api-key opus entry —
   # Opus 4.7 rejects the param on every route, OAuth path included.
+  #
+  # Shadow pricing: Claude Code Max/Pro/Team is a flat monthly subscription,
+  # so the real cash spend is NOT per-token. We deliberately stamp the
+  # equivalent Anthropic API list price here so /spend/logs reports an
+  # "API-equivalent cost" — useful for comparing benchmark cost across
+  # paid-API and subscription routes apples-to-apples. The OSS user's
+  # actual bill is the subscription fee; this number is opportunity cost.
   - model_name: auth/claude-opus-4-7
     litellm_params:
       model: auth/claude-opus-4-7
       additional_drop_params: ["temperature"]
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
 
   - model_name: auth/claude-sonnet-4-6
     litellm_params:
       model: auth/claude-sonnet-4-6
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: auth/claude-haiku-4-5
     litellm_params:
       model: auth/claude-haiku-4-5
+    model_info:
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000005
 
   # ── DeepSeek ─────────────────────────────────────────────────────────
-  # V4 models (released 2026-04-24, 1M context, thinking + non-thinking)
+  # V4 models (released 2026-04-24, 1M context, thinking + non-thinking).
+  # Per-1M USD as of 2026-05-14 (api.deepseek.com, **LIST PRICE — does
+  # not include the 75 % anniversary discount on V4-Pro that runs
+  # through 2026-05-31; we want post-discount steady-state cost on the
+  # benchmark report**):
+  #   v4-pro    $1.74 / $3.48
+  #   v4-flash  $0.14 / $0.28
+  # Legacy deepseek-chat / deepseek-reasoner aliases keep LiteLLM's
+  # built-in map ($0.28 / $0.42).
   - model_name: deepseek/deepseek-v4-pro
     litellm_params:
       model: deepseek/deepseek-v4-pro
       api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000174
+      output_cost_per_token: 0.00000348
 
   - model_name: deepseek/deepseek-v4-flash
     litellm_params:
       model: deepseek/deepseek-v4-flash
       api_key: os.environ/DEEPSEEK_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
 
   # Legacy names (deprecated 2026-07-24, kept for fallback)
   - model_name: deepseek/deepseek-chat
@@ -139,70 +238,161 @@ model_list:
       api_key: os.environ/DEEPSEEK_API_KEY
 
   # ── xAI (Grok) ──────────────────────────────────────────────────────
-  - model_name: xai/grok-3
+  # grok-3 / grok-3-mini retired by xAI on 2026-05-15 (12pm PT). The 4.x
+  # family below is the current production lineup; grok-4.3 is xAI's
+  # general flagship and grok-4-1-fast-reasoning is the cost-efficient
+  # MID tier with comparable tool-call quality.
+  # Per-1M USD as of 2026-05-14 (api.x.ai, ≤200K input tokens):
+  #   grok-4.3                $1.25 / $2.50
+  #   grok-4-1-fast-reasoning $0.20 / $0.50
+  # >200K context window doubles input + 1.5x output per xAI's pricing
+  # rule; not modeled here (LiteLLM treats this as a flat rate).
+  - model_name: xai/grok-4.3
     litellm_params:
-      model: xai/grok-3
+      model: xai/grok-4.3
       api_key: os.environ/XAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000125
+      output_cost_per_token: 0.0000025
 
-  - model_name: xai/grok-3-mini
+  - model_name: xai/grok-4-1-fast-reasoning
     litellm_params:
-      model: xai/grok-3-mini
+      model: xai/grok-4-1-fast-reasoning
       api_key: os.environ/XAI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000002
+      output_cost_per_token: 0.0000005
 
   # ── Mistral ──────────────────────────────────────────────────────────
+  # Per-1M USD as of 2026-05-14 (api.mistral.ai):
+  #   mistral-large-latest = Mistral Large 3 (mistral-large-2512)
+  #                                $0.50 / $1.50
+  #   codestral-latest             $0.30 / $0.90
+  # LiteLLM's built-in map for codestral is stale ($1.00 / $3.00) —
+  # override here so cost tracking matches the real bill.
   - model_name: mistral/mistral-large-latest
     litellm_params:
       model: mistral/mistral-large-latest
       api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000005
+      output_cost_per_token: 0.0000015
 
   - model_name: mistral/codestral-latest
     litellm_params:
       model: mistral/codestral-latest
       api_key: os.environ/MISTRAL_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000009
 
   # ── OpenRouter ─────────────────────────────────────────────────────
   # OpenRouter forwards opus-4-7 calls to Anthropic, so the same temperature
   # deprecation applies — drop it here too.
+  # OpenRouter charges Anthropic list price per token (no markup; the
+  # 5.5 % fee only applies on credit-purchase deposits). The Claude
+  # pricing block above is the source of truth — we mirror those values
+  # here so /spend/logs captures cost for the OpenRouter routes too.
   - model_name: openrouter/anthropic/claude-opus-4-7
     litellm_params:
       model: openrouter/anthropic/claude-opus-4-7
       api_key: os.environ/OPENROUTER_API_KEY
       additional_drop_params: ["temperature"]
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
 
   - model_name: openrouter/anthropic/claude-sonnet-4-6
     litellm_params:
       model: openrouter/anthropic/claude-sonnet-4-6
       api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
 
   - model_name: openrouter/anthropic/claude-haiku-4-5
     litellm_params:
       model: openrouter/anthropic/claude-haiku-4-5
       api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000005
+
+  # ── Cerebras Inference ─────────────────────────────────────────────
+  # OpenAI-compatible at https://api.cerebras.ai/v1 with Bearer auth.
+  # Native LiteLLM ``cerebras/`` provider — LiteLLM resolves the base URL
+  # internally. Single production model SKU as of 2026-05-15.
+  - model_name: cerebras/llama3.1-8b
+    litellm_params:
+      model: cerebras/llama3.1-8b
+      api_key: os.environ/CEREBRAS_API_KEY
+
+  # ── Xiaomi MiMo Open Platform ──────────────────────────────────────
+  # OpenAI-compatible at https://platform.xiaomimimo.com/v1 with Bearer
+  # auth. No native LiteLLM provider yet — registered through the
+  # ``openai/`` provider with an explicit api_base override so the
+  # request shape stays standard OpenAI ``/v1/chat/completions``.
+  # Production model IDs: mimo-vl (multimodal), mimo-rl (reasoning),
+  # mimo-7b (lightweight).
+  - model_name: openai/mimo-vl
+    litellm_params:
+      model: openai/mimo-vl
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
+
+  - model_name: openai/mimo-rl
+    litellm_params:
+      model: openai/mimo-rl
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
+
+  - model_name: openai/mimo-7b
+    litellm_params:
+      model: openai/mimo-7b
+      api_base: https://platform.xiaomimimo.com/v1
+      api_key: os.environ/XIAOMI_MIMO_API_KEY
 
   # ── Nvidia NIM ─────────────────────────────────────────────────────
+  # NIM is BYO-hardware: the cost is the GPU rental (DGX Cloud, AWS, on-prem),
+  # NOT per-token. Pinned to $0 so /spend/logs is honest — token-based cost
+  # tracking does not apply. Operators who want to amortize GPU spend across
+  # tokens should override these via DECEPTICON_MODEL_<ROLE> + a custom
+  # gateway with their own rate. Explicit ``0`` here also bypasses LiteLLM
+  # budget checks (zero-cost models skip all budget enforcement).
   - model_name: nvidia_nim/meta/llama-3.3-70b-instruct
     litellm_params:
       model: nvidia_nim/meta/llama-3.3-70b-instruct
       api_key: os.environ/NVIDIA_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
 
   - model_name: nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct
     litellm_params:
       model: nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct
       api_key: os.environ/NVIDIA_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
 
   - model_name: nvidia_nim/meta/llama-3.2-3b-instruct
     litellm_params:
       model: nvidia_nim/meta/llama-3.2-3b-instruct
       api_key: os.environ/NVIDIA_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
 
   # ── Subscription OAuth routes ──────────────────────────────────────────
   # ChatGPT (auth/gpt-*), Gemini Advanced (gemini-sub/*), Copilot
   # (copilot/*), SuperGrok (grok-sub/*), and Perplexity Pro (pplx-sub/*)
   # are registered DYNAMICALLY by litellm_dynamic_config.py, gated on
-  # their respective DECEPTICON_AUTH_* flags. Registering them statically
-  # here caused LiteLLM's native providers to attempt OAuth handshakes at
-  # startup even when the user disabled the auth method, blocking the
-  # container health check and making it unhealthy.
+  # their respective DECEPTICON_AUTH_* flags. Each route dispatches to a
+  # Decepticon custom handler defined under config/<provider>_handler.py
+  # (claude_code, codex_chatgpt, gemini, copilot, grok, perplexity) — all
+  # share oauth_token_store.py for atomic token refresh + mtime caching,
+  # so a host-side ``codex login`` / Claude Code rotation is picked up by
+  # the running container without restart.
 
   # ── Local LLM (Ollama) ──────────────────────────────────────────────
   # Ollama routes are registered dynamically at proxy startup by
@@ -226,10 +416,9 @@ litellm_settings:
   # when ``database_url`` is set, and listing handlers here would also
   # create a circular import with the dispatcher defined in startup.
   #
-  # Active custom providers (registered in litellm_startup.py):
-  #   - auth         → dispatches Claude Code OAuth only (auth/claude-*)
-  # Native providers used directly:
-  #   - chatgpt      → Codex/OpenAI OAuth for auth/gpt-* aliases above
+  # Active custom providers (all registered in litellm_startup.py):
+  #   - auth         → dispatches Claude Code (auth/claude-*) +
+  #                    Codex ChatGPT (auth/gpt-*) via auth_handler.AuthDispatcher
   #   - gemini-sub   → gemini_handler.gemini_sub_handler_instance
   #   - copilot      → copilot_handler.copilot_handler_instance
   #   - grok-sub     → grok_handler.grok_sub_handler_instance
@@ -268,15 +457,22 @@ litellm_settings:
     # Gemini Advanced subscription fallbacks (registered dynamically)
     # MiniMax (no LOW tier)
     - {"minimax/MiniMax-M2.5": ["minimax/MiniMax-M2.5-lightning"]}
-    # DeepSeek
+    # DeepSeek — v4-flash falls through to legacy deepseek-chat (non-thinking)
+    # so a thinking-mode 400 caused by missing reasoning_content turn-state
+    # still has a route to keep the agent alive (closes #220, #201).
     - {"deepseek/deepseek-v4-pro": ["deepseek/deepseek-v4-flash"]}
+    - {"deepseek/deepseek-v4-flash": ["deepseek/deepseek-chat"]}
+    - {"deepseek/deepseek-chat": ["deepseek/deepseek-reasoner"]}
     # xAI direct API
-    - {"xai/grok-3": ["xai/grok-3-mini"]}
+    - {"xai/grok-4.3": ["xai/grok-4-1-fast-reasoning"]}
     # Mistral (no LOW tier)
     - {"mistral/mistral-large-latest": ["mistral/codestral-latest"]}
     # Nvidia NIM
     - {"nvidia_nim/meta/llama-3.3-70b-instruct": ["nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct"]}
     - {"nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct": ["nvidia_nim/meta/llama-3.2-3b-instruct"]}
+    # Xiaomi MiMo — routed via openai/ provider with api_base override
+    - {"openai/mimo-vl": ["openai/mimo-rl"]}
+    - {"openai/mimo-rl": ["openai/mimo-7b"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)
   num_retries: 3
   retry_after: 30

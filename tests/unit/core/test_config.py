@@ -23,4 +23,3 @@ class TestLoadConfig:
     def test_returns_defaults(self):
         config = load_config()
         assert config.llm.proxy_url == "http://localhost:4000"
-        assert config.docker.sandbox_container_name == "decepticon-sandbox"

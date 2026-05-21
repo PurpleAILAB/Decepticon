@@ -20,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, GitBranch, Globe, Server } from "lucide-react";
+import { Plus, Globe, Server } from "lucide-react";
 interface Engagement {
   id: string;
   name: string;
@@ -38,8 +38,7 @@ const statusColors: Record<string, string> = {
   failed: "bg-red-500/10 text-red-400 border-red-500/20",
 };
 
-const targetIcons: Record<string, typeof GitBranch> = {
-  github_repo: GitBranch,
+const targetIcons: Record<string, typeof Globe> = {
   web_url: Globe,
   ip_range: Server,
 };

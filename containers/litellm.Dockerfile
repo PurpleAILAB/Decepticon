@@ -3,7 +3,10 @@ FROM ghcr.io/berriai/litellm:main-v1.82.3-stable.patch.2
 # xxhash is required for CCH (Claude Code Hash) request signing
 RUN pip install --no-cache-dir xxhash
 
+COPY config/oauth_token_store.py /app/oauth_token_store.py
 COPY config/claude_code_handler.py /app/claude_code_handler.py
+COPY config/codex_chatgpt_handler.py /app/codex_chatgpt_handler.py
+COPY config/auth_handler.py /app/auth_handler.py
 COPY config/gemini_handler.py /app/gemini_handler.py
 COPY config/copilot_handler.py /app/copilot_handler.py
 COPY config/grok_handler.py /app/grok_handler.py

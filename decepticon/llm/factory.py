@@ -19,8 +19,10 @@ ordering AuthMethods in the fallback chain.
 
 from __future__ import annotations
 
+import json
 import os
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -61,6 +63,22 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.MISTRAL_API,
     AuthMethod.OPENROUTER_API,
     AuthMethod.NVIDIA_API,
+    AuthMethod.GROQ_API,
+    AuthMethod.TOGETHER_API,
+    AuthMethod.FIREWORKS_API,
+    AuthMethod.COHERE_API,
+    AuthMethod.MOONSHOT_API,
+    AuthMethod.ZAI_API,
+    AuthMethod.DASHSCOPE_API,
+    AuthMethod.GITHUB_MODELS_API,
+    AuthMethod.BEDROCK_API,
+    AuthMethod.VERTEX_API,
+    AuthMethod.AZURE_API,
+    AuthMethod.LMSTUDIO_LOCAL,
+    AuthMethod.LLAMACPP_LOCAL,
+    AuthMethod.CUSTOM_OPENAI_API,
+    AuthMethod.CEREBRAS_API,
+    AuthMethod.XIAOMI_MIMO_API,
     AuthMethod.OLLAMA_LOCAL,
     AuthMethod.OLLAMA_CLOUD,
 )
@@ -80,6 +98,24 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.MISTRAL_API: "MISTRAL_API_KEY",
     AuthMethod.OPENROUTER_API: "OPENROUTER_API_KEY",
     AuthMethod.NVIDIA_API: "NVIDIA_API_KEY",
+    # Cloud gateways added in the OpenClaude provider migration. Each
+    # routes through LiteLLM's native provider implementation when the
+    # corresponding API key is present and not a placeholder.
+    AuthMethod.GROQ_API: "GROQ_API_KEY",
+    AuthMethod.TOGETHER_API: "TOGETHER_API_KEY",
+    AuthMethod.FIREWORKS_API: "FIREWORKS_API_KEY",
+    AuthMethod.COHERE_API: "COHERE_API_KEY",
+    AuthMethod.MOONSHOT_API: "MOONSHOT_API_KEY",
+    AuthMethod.ZAI_API: "ZAI_API_KEY",
+    AuthMethod.DASHSCOPE_API: "DASHSCOPE_API_KEY",
+    AuthMethod.GITHUB_MODELS_API: "GITHUB_TOKEN",
+    AuthMethod.BEDROCK_API: "AWS_ACCESS_KEY_ID",
+    # Vertex uses a service-account JSON path; treat the path env var as
+    # the credential signal so onboard's "real key" check works on it.
+    AuthMethod.VERTEX_API: "GOOGLE_APPLICATION_CREDENTIALS",
+    AuthMethod.AZURE_API: "AZURE_API_KEY",
+    AuthMethod.CEREBRAS_API: "CEREBRAS_API_KEY",
+    AuthMethod.XIAOMI_MIMO_API: "XIAOMI_MIMO_API_KEY",
 }
 
 _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
@@ -89,6 +125,64 @@ _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.COPILOT_OAUTH: "DECEPTICON_AUTH_COPILOT",
     AuthMethod.GROK_OAUTH: "DECEPTICON_AUTH_GROK",
     AuthMethod.PERPLEXITY_OAUTH: "DECEPTICON_AUTH_PERPLEXITY",
+}
+
+# Vendor-specific API key prefix hints. When the method has a known
+# canonical prefix, ``_is_real_key`` requires the value to start with one
+# of these strings — protects against placeholder strings the launcher
+# didn't emit (e.g. a user pasting ``sk-ant-not-used`` into .env).
+_KEY_PREFIX_HINTS: dict[AuthMethod, tuple[str, ...]] = {
+    AuthMethod.ANTHROPIC_API: ("sk-ant-",),
+    AuthMethod.OPENAI_API: ("sk-",),
+    AuthMethod.GOOGLE_API: ("AIza",),
+    AuthMethod.XAI_API: ("xai-",),
+    AuthMethod.GROQ_API: ("gsk_",),
+    AuthMethod.OPENROUTER_API: ("sk-or-",),
+    AuthMethod.NVIDIA_API: ("nvapi-",),
+    AuthMethod.DEEPSEEK_API: ("sk-",),
+    AuthMethod.GITHUB_MODELS_API: ("ghp_", "github_pat_", "gho_", "ghs_"),
+}
+
+# Substring tokens that mark a value as obviously not a real key.
+# Catches creative placeholder values that don't match the launcher's
+# ``your-…-key-here`` template.
+_PLACEHOLDER_TOKENS: tuple[str, ...] = (
+    "placeholder",
+    "not-used",
+    "not_used",
+    "dummy",
+    "fake",
+    "example",
+)
+
+# Minimum length for any value that should be treated as a real key. All
+# vendor-issued keys exceed this — Anthropic ``sk-ant-api03-…`` ≈ 100 chars,
+# OpenAI ``sk-…`` ≥ 48 chars, Google ``AIza…`` 39 chars. 24 leaves headroom
+# for vendors with shorter formats (Mistral, etc.) without admitting
+# obviously-junk values.
+_KEY_MIN_LENGTH = 24
+
+# OAuth methods carry a host-side credentials file. Booleans like
+# ``DECEPTICON_AUTH_CLAUDE_CODE=true`` are intent (the user enabled the
+# subscription) — they don't guarantee the actual file exists. The
+# factory verifies file presence + valid JSON before adding a method to
+# the chain so a user who ran ``codex logout`` without flipping the
+# boolean back doesn't generate a noisy 401-fallback storm.
+#
+# Each tuple is ordered: primary path first, legacy paths after. Env-var
+# overrides take precedence over the literal default. The langgraph
+# compose service mounts the Claude + Codex paths read-only so this
+# check sees the same files the LiteLLM handlers will read.
+_OAUTH_CREDENTIAL_PATHS: dict[AuthMethod, tuple[tuple[str, str], ...]] = {
+    AuthMethod.ANTHROPIC_OAUTH: (
+        ("CLAUDE_CODE_CREDENTIALS_PATH", "~/.claude/.credentials.json"),
+        ("", "~/.config/anthropic/q/tokens.json"),  # legacy emulator path
+    ),
+    AuthMethod.OPENAI_OAUTH: (("CODEX_AUTH_PATH", "~/.codex/auth.json"),),
+    AuthMethod.GOOGLE_OAUTH: (("GEMINI_TOKENS_PATH", "~/.config/gemini/tokens.json"),),
+    AuthMethod.COPILOT_OAUTH: (("COPILOT_TOKENS_PATH", "~/.config/copilot/tokens.json"),),
+    AuthMethod.GROK_OAUTH: (("GROK_TOKENS_PATH", "~/.config/grok/tokens.json"),),
+    AuthMethod.PERPLEXITY_OAUTH: (("PERPLEXITY_TOKENS_PATH", "~/.config/perplexity/tokens.json"),),
 }
 
 
@@ -116,24 +210,114 @@ def _ollama_local_configured() -> bool:
     return bool(os.getenv("OLLAMA_API_BASE", "").strip() or os.getenv("OLLAMA_MODEL", "").strip())
 
 
-def _is_real_key(value: str) -> bool:
-    """Reject empty values and the placeholders shipped in .env.example.
+def _lmstudio_local_configured() -> bool:
+    """Return True when the user has wired up local LM Studio."""
+    return bool(
+        os.getenv("LMSTUDIO_API_BASE", "").strip() or os.getenv("LMSTUDIO_MODEL", "").strip()
+    )
 
-    Onboard-written keys pass; values like ``your-anthropic-key-here``
-    or empty strings are treated as "not configured" so the resolved
-    Credentials inventory stays honest.
 
-    Match the launcher's IsPlaceholder check (``-key-here`` suffix) so
-    a real key that happens to contain the substring elsewhere is not
-    accidentally rejected.
+def _llamacpp_local_configured() -> bool:
+    """Return True when the user has wired up local llama.cpp llama-server.
+
+    Either ``LLAMACPP_API_BASE`` (preferred — explicit endpoint, e.g.
+    ``http://localhost:8080/v1``) or ``LLAMACPP_MODEL`` (a logical model
+    name) is enough to opt in. ``LLAMACPP_API_KEY`` is *not* required —
+    llama-server accepts any string by default and an unset key resolves
+    to a literal placeholder via LiteLLM's env interpolation, which the
+    server happily accepts. See issue #151.
+    """
+    return bool(
+        os.getenv("LLAMACPP_API_BASE", "").strip() or os.getenv("LLAMACPP_MODEL", "").strip()
+    )
+
+
+def _custom_openai_configured() -> bool:
+    """Return True when the user has wired up a custom OpenAI-compatible
+    endpoint. Both ``CUSTOM_OPENAI_API_BASE`` (URL) and
+    ``CUSTOM_OPENAI_API_KEY`` (real, non-placeholder) are required —
+    a base URL alone won't authenticate, and a key without a URL has
+    nowhere to point.
+    """
+    base = os.getenv("CUSTOM_OPENAI_API_BASE", "").strip()
+    key = os.getenv("CUSTOM_OPENAI_API_KEY", "")
+    return bool(base) and _is_real_key(key)
+
+
+def _is_real_key(value: str, method: AuthMethod | None = None) -> bool:
+    """Validate that ``value`` looks like a real provider API key.
+
+    Layers, in order:
+      1. Strip whitespace; reject empty.
+      2. Reject anything shorter than ``_KEY_MIN_LENGTH`` (24 chars) —
+         every vendor-issued key exceeds this, while typical placeholders
+         (``sk-ant-test``, ``not-set``) do not.
+      3. Reject the launcher's template strings (``your-…-key-here``).
+      4. Reject values containing obvious placeholder tokens
+         (``placeholder``, ``not-used``, ``dummy``, …) — guards against
+         creative .env values that escape the launcher template.
+      5. When ``method`` is given and ``_KEY_PREFIX_HINTS`` defines a
+         canonical prefix for it, require ``value`` to start with one of
+         the prefixes. Catches mis-pasted keys (e.g. an OpenAI key in
+         the Anthropic slot) before they propagate into the chain.
+
+    ``method=None`` skips the prefix check — kept for callers like
+    ``_custom_openai_configured`` where the vendor's expected prefix is
+    deployment-specific (any OpenAI-compatible gateway).
     """
     v = value.strip()
-    if not v:
+    if not v or len(v) < _KEY_MIN_LENGTH:
         return False
     lower = v.lower()
     if lower.startswith("your-") or lower.endswith("-key-here"):
         return False
+    if any(token in lower for token in _PLACEHOLDER_TOKENS):
+        return False
+    if method is not None:
+        prefixes = _KEY_PREFIX_HINTS.get(method)
+        if prefixes and not any(v.startswith(prefix) for prefix in prefixes):
+            return False
     return True
+
+
+def _oauth_credentials_present(method: AuthMethod) -> bool:
+    """Return True if the host-side credential file for ``method`` exists.
+
+    The factory layer reads this to keep the credentials inventory
+    honest — without it, ``DECEPTICON_AUTH_CLAUDE_CODE=true`` plus a
+    deleted ``~/.claude/.credentials.json`` would still place the OAuth
+    method in every fallback chain, generating one 401 per request.
+
+    Each path is checked in order. ``/dev/null`` (the docker-compose
+    fallback when no credentials volume is wired) parses as empty, so
+    the JSON-validation step fails closed.
+    """
+    candidates = _OAUTH_CREDENTIAL_PATHS.get(method)
+    if not candidates:
+        # Method has no documented file path — fall back to the boolean
+        # flag alone for forward compatibility.
+        return True
+    for env_var, default in candidates:
+        raw = os.environ.get(env_var, "").strip() if env_var else ""
+        path = Path(raw).expanduser() if raw else Path(default).expanduser()
+        try:
+            text = path.read_text()
+        except (FileNotFoundError, NotADirectoryError, IsADirectoryError, PermissionError):
+            continue
+        except OSError:
+            # ``/dev/null`` reads to empty without raising; other transient
+            # I/O errors fall through to the next candidate.
+            text = ""
+        text = text.strip()
+        if not text:
+            continue
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data:
+            return True
+    return False
 
 
 def _is_truthy(value: str) -> bool:
@@ -159,7 +343,8 @@ def _resolve_credentials() -> Credentials:
     surface for that misconfiguration.
     """
     priority_raw = os.getenv("DECEPTICON_AUTH_PRIORITY", "")
-    if priority_raw.strip():
+    priority_explicit = bool(priority_raw.strip())
+    if priority_explicit:
         priority: list[AuthMethod] = []
         for token in priority_raw.split(","):
             token = token.strip().lower()
@@ -175,16 +360,32 @@ def _resolve_credentials() -> Credentials:
     methods: list[AuthMethod] = []
     for method in priority:
         if method in _API_METHOD_ENV:
-            if _is_real_key(os.getenv(_API_METHOD_ENV[method], "")):
+            if _is_real_key(os.getenv(_API_METHOD_ENV[method], ""), method):
                 methods.append(method)
         elif method in _OAUTH_METHOD_ENV:
-            if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")):
+            # OAuth methods need BOTH the boolean intent and the actual
+            # credential file. Without the file check a stale flag (e.g.
+            # ``codex logout`` after onboard) generates a 401-fallback
+            # storm — see ``_oauth_credentials_present`` for the full
+            # rationale.
+            if _is_truthy(os.getenv(_OAUTH_METHOD_ENV[method], "")) and _oauth_credentials_present(
+                method
+            ):
                 methods.append(method)
         elif method == AuthMethod.OLLAMA_LOCAL:
             if _ollama_local_configured():
                 methods.append(method)
         elif method == AuthMethod.OLLAMA_CLOUD:
             if _ollama_cloud_configured():
+                methods.append(method)
+        elif method == AuthMethod.LMSTUDIO_LOCAL:
+            if _lmstudio_local_configured():
+                methods.append(method)
+        elif method == AuthMethod.LLAMACPP_LOCAL:
+            if _llamacpp_local_configured():
+                methods.append(method)
+        elif method == AuthMethod.CUSTOM_OPENAI_API:
+            if _custom_openai_configured():
                 methods.append(method)
 
     if not methods:
@@ -202,10 +403,43 @@ def _resolve_credentials() -> Credentials:
                 "running against Ollama Cloud exclusively"
             )
             return Credentials(methods=[AuthMethod.OLLAMA_CLOUD])
-        log.info(
-            "No credentials detected in environment; using all-API-methods "
-            "fallback so module-level agent constructors stay importable"
-        )
+        if _lmstudio_local_configured():
+            log.info("Only LMSTUDIO_API_BASE/LMSTUDIO_MODEL detected; using LM Studio")
+            return Credentials(methods=[AuthMethod.LMSTUDIO_LOCAL])
+        if _llamacpp_local_configured():
+            log.info("Only LLAMACPP_API_BASE/LLAMACPP_MODEL detected; using llama.cpp")
+            return Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
+        if _custom_openai_configured():
+            log.info("Only CUSTOM_OPENAI_* detected; using custom OpenAI-compatible endpoint")
+            return Credentials(methods=[AuthMethod.CUSTOM_OPENAI_API])
+        if priority_explicit:
+            # User expressed clear intent (set DECEPTICON_AUTH_PRIORITY) but
+            # every listed method failed detection. Surface the root cause
+            # at ERROR level — otherwise the silent fallback to
+            # all_api_methods() runs through providers the user doesn't
+            # have, producing a confusing 401 cascade (often masked as a
+            # downstream "rate limit (429)" once the routed-to provider
+            # cools down). Return behavior preserved so module imports
+            # stay green; real model calls still surface a remediation
+            # hint via _reraise_with_actionable_message.
+            log.error(
+                "DECEPTICON_AUTH_PRIORITY=%r set but no listed method has "
+                "detectable credentials. Verify: (1) API keys are "
+                "non-placeholder (e.g. ANTHROPIC_API_KEY starts with "
+                "'sk-ant-'), (2) OAuth flag matches credential file "
+                "(e.g. DECEPTICON_AUTH_CLAUDE_CODE=true requires "
+                "~/.claude/.credentials.json to exist and contain a valid "
+                "JSON object — a /dev/null mount fails this check). "
+                "Falling back to all-API-methods so module imports "
+                "remain importable; every model call will 401 until "
+                "the priority chain is fixed.",
+                priority_raw,
+            )
+        else:
+            log.info(
+                "No credentials detected in environment; using all-API-methods "
+                "fallback so module-level agent constructors stay importable"
+            )
         return Credentials.all_api_methods()
 
     return Credentials(methods=methods)
@@ -264,30 +498,37 @@ def _model_drops_temperature(model: str) -> bool:
     return slug.startswith("claude-opus-4")
 
 
-def _model_uses_chatgpt_responses_api(model: str) -> bool:
-    """Return True for Codex/OpenAI OAuth models routed via LiteLLM chatgpt.
-
-    LiteLLM's native ChatGPT/Codex OAuth provider is healthy on the Responses
-    API path (``/backend-api/codex/responses``). The Chat Completions path can
-    hang or hit Cloudflare challenges, while the official Codex CLI also uses
-    the Responses-style backend. Force LangChain's ChatOpenAI wrapper onto
-    Responses API for our ``auth/gpt-*`` aliases.
-    """
-
-    lowered = model.lower()
-    return lowered.startswith("auth/gpt-") or lowered.startswith("chatgpt/gpt-")
-
-
 def _model_is_deepseek_thinking(model: str) -> bool:
-    """Return True for DeepSeek V4 Pro and legacy deepseek-reasoner.
+    """Return True for DeepSeek V4 models and legacy deepseek-reasoner.
 
-    These models use thinking mode by default and return ``reasoning_content``
-    in assistant messages. When tool calls are involved, the API **requires**
-    ``reasoning_content`` to be passed back in subsequent turns — omitting it
-    causes a 400 error. See: https://api-docs.deepseek.com/guides/thinking_mode
+    DeepSeek V4 (pro **and** flash) plus legacy deepseek-reasoner use
+    thinking mode by default and return ``reasoning_content`` in assistant
+    messages. The API **requires** ``reasoning_content`` to be passed back
+    in subsequent tool turns — omitting it triggers the upstream 400:
+        "The reasoning_content in the thinking mode must be passed back to the API."
+    DeepSeek's own docs state ``deepseek-reasoner`` is the deprecated alias
+    for ``deepseek-v4-flash`` thinking mode, so flash also needs this
+    treatment. Closes #201, #220.
+    See: https://api-docs.deepseek.com/guides/thinking_mode
     """
     slug = model.rsplit("/", 1)[-1].lower()
-    return slug in ("deepseek-v4-pro", "deepseek-reasoner")
+    return slug in ("deepseek-v4-pro", "deepseek-v4-flash", "deepseek-reasoner")
+
+
+def _model_is_nvidia_nim(model: str) -> bool:
+    """Return True for any nvidia_nim/* route.
+
+    NVIDIA NIM's OpenAI-compatible endpoint rejects ``messages[].content``
+    as a list-of-parts (the OpenAI v1 multimodal shape) with:
+        400 invalid_request_error
+        loc=('body','messages',0,'content')
+        msg="Input should be a valid string"
+    LangChain ChatOpenAI serializes structured content (tool results,
+    multipart system blocks) as that exact list shape, so every agent
+    run on an NIM route 400s on the first turn. Flatten list-of-text
+    parts to a single string before the request leaves the proxy.
+    """
+    return model.lower().startswith("nvidia_nim/")
 
 
 class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
@@ -441,6 +682,55 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
                 msg.additional_kwargs["reasoning_content"] = rc
 
         return result
+
+
+class _NvidiaNIMChatOpenAI(_ProxiedChatOpenAI):
+    """ChatOpenAI subclass that flattens content to a string for NVIDIA NIM.
+
+    NIM's OpenAI-compat endpoint requires ``messages[].content`` to be a
+    plain string. LangChain ChatOpenAI emits the OpenAI v1 multipart shape
+    (``[{"type":"text","text":"..."}, ...]``) whenever a message has more
+    than one part (tool result + reasoning preamble, multi-block system).
+    NIM 400s on that shape. Re-pack each list into the concatenated text
+    just before the request leaves the proxy. Image/audio parts are
+    preserved untouched — those still get rejected upstream, but the
+    error then becomes the upstream feature-gap rather than a contract
+    mismatch.
+    """
+
+    def _get_request_payload(
+        self,
+        input_: Any,
+        *,
+        stop: list[str] | None = None,
+        **kwargs: Any,
+    ) -> dict:
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        for msg in payload.get("messages", []):
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+            text_parts: list[str] = []
+            non_text: list[Any] = []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") in (None, "text", "input_text", "output_text"):
+                        text = part.get("text") or part.get("content") or ""
+                        if isinstance(text, str) and text:
+                            text_parts.append(text)
+                        continue
+                    non_text.append(part)
+                elif isinstance(part, str):
+                    if part:
+                        text_parts.append(part)
+                else:
+                    non_text.append(part)
+            if non_text:
+                # Leave multimodal parts to the upstream provider's
+                # rejection — collapsing them would silently drop data.
+                continue
+            msg["content"] = "".join(text_parts)
+        return payload
 
 
 def _reraise_if_connection_error(exc: Exception) -> None:
@@ -639,7 +929,7 @@ class LLMFactory:
         belt-and-suspenders for any future client that bypasses this
         factory.
         """
-        kwargs: dict[str, object] = {
+        kwargs: dict[str, Any] = {
             "model": model,
             "base_url": self._proxy.url,
             "api_key": SecretStr(self._proxy.api_key),
@@ -653,11 +943,10 @@ class LLMFactory:
             kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
-        if _model_uses_chatgpt_responses_api(model):
-            kwargs["use_responses_api"] = True
-            kwargs["output_version"] = "responses/v1"
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
+        if _model_is_nvidia_nim(model):
+            return _NvidiaNIMChatOpenAI(**kwargs)
         return _ProxiedChatOpenAI(**kwargs)
 
     async def health_check(self) -> bool:

@@ -68,6 +68,10 @@ class XBOWProvider(BaseBenchmarkProvider):
             filter_tags = set(filters.tags)
             challenges = [c for c in challenges if set(c.tags) & filter_tags]
 
+        if filters.ids:
+            wanted = set(filters.ids)
+            challenges = [c for c in challenges if c.id in wanted]
+
         # range is 1-based from the user; convert start to 0-based
         start = (filters.range_start - 1) if filters.range_start is not None else None
         end = filters.range_end if filters.range_end is not None else None
@@ -251,17 +255,23 @@ class XBOWProvider(BaseBenchmarkProvider):
 
     def teardown(self, challenge: Challenge) -> None:
         """Stop and remove challenge containers (best-effort)."""
+        compose_dir = challenge.compose_dir
+        if compose_dir is None:
+            # Defensive: XBOW.load_challenges always populates compose_dir.
+            # This guard exists because the schema field is Optional to
+            # accommodate other providers (e.g. MHBench).
+            return
         try:
             # Use docker compose down -v for thorough cleanup (removes volumes)
             subprocess.run(
                 ["docker", "compose", "down", "-v"],
-                cwd=challenge.compose_dir,
+                cwd=compose_dir,
                 capture_output=True,
                 text=True,
                 check=True,
             )
             # Remove build guard so next run rebuilds with fresh flag
-            guard = challenge.compose_dir / ".xben_build_done"
+            guard = compose_dir / ".xben_build_done"
             guard.unlink(missing_ok=True)
         except subprocess.CalledProcessError:
             pass

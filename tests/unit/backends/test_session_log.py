@@ -8,11 +8,8 @@ from unittest.mock import patch
 
 from deepagents.backends.protocol import FileDownloadResponse
 
-from decepticon.backends.docker_sandbox import (
-    BackgroundJobTracker,
-    DockerSandbox,
-    TmuxSessionManager,
-)
+from decepticon.sandbox_kernel import BackgroundJobTracker, TmuxSessionManager
+from decepticon.sandbox_kernel.daemon import DaemonSandbox
 
 
 def test_initialize_does_not_create_root_workspace_sessions_log():
@@ -21,7 +18,7 @@ def test_initialize_does_not_create_root_workspace_sessions_log():
 
     with (
         patch.object(mgr, "_docker_tmux") as mock_tmux,
-        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
         mock_tmux.side_effect = [
@@ -51,7 +48,7 @@ def test_initialize_pipes_pane_to_engagement_scoped_sessions_log():
 
     with (
         patch.object(mgr, "_docker_tmux") as mock_tmux,
-        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
         mock_tmux.side_effect = [
@@ -87,7 +84,7 @@ def test_initialize_creates_sessions_directory_inside_engagement_workspace():
 
     with (
         patch.object(mgr, "_docker_tmux") as mock_tmux,
-        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
         mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
@@ -120,7 +117,7 @@ def test_initialize_warns_when_mkdir_fails(caplog):
     try:
         with (
             patch.object(mgr, "_docker_tmux") as mock_tmux,
-            patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+            patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
             patch("time.sleep"),
         ):
             mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
@@ -136,7 +133,7 @@ def test_initialize_warns_when_mkdir_fails(caplog):
 
 
 def test_get_manager_concurrent_returns_same_instance():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     seen: list[int] = []
     seen_lock = threading.Lock()
 
@@ -155,12 +152,12 @@ def test_get_manager_concurrent_returns_same_instance():
 
 
 def test_sandbox_has_jobs_tracker():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     assert isinstance(sandbox._jobs, BackgroundJobTracker)
 
 
 def test_sandbox_has_log_offsets_dict():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     assert isinstance(sandbox._log_offsets, dict)
     assert sandbox._log_offsets == {}
 
@@ -170,7 +167,7 @@ def _file_response(path: str, content: bytes) -> FileDownloadResponse:
 
 
 def test_read_session_log_diff_returns_full_log_on_first_call():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
@@ -182,7 +179,7 @@ def test_read_session_log_diff_returns_full_log_on_first_call():
 
 
 def test_read_session_log_diff_uses_engagement_workspace_path():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
@@ -195,7 +192,7 @@ def test_read_session_log_diff_uses_engagement_workspace_path():
 
 
 def test_read_session_log_diff_returns_only_new_bytes_on_second_call():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"old\n")]
@@ -208,7 +205,7 @@ def test_read_session_log_diff_returns_only_new_bytes_on_second_call():
 
 
 def test_read_session_log_diff_empty_when_no_new_bytes():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"data\n")]
@@ -219,7 +216,7 @@ def test_read_session_log_diff_empty_when_no_new_bytes():
 
 
 def test_read_session_log_diff_recovers_when_file_truncated():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"a" * 100)]
@@ -233,14 +230,14 @@ def test_read_session_log_diff_recovers_when_file_truncated():
 
 
 def test_reset_session_log_offset_clears_state():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._log_offsets["scan"] = 42
     sandbox.reset_session_log_offset("scan")
     assert "scan" not in sandbox._log_offsets
 
 
 def test_read_session_log_diff_returns_empty_when_file_missing():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
             FileDownloadResponse(
@@ -256,7 +253,7 @@ def test_read_session_log_diff_returns_empty_when_file_missing():
 def test_read_session_log_diff_concurrent_does_not_double_count():
     """20 threads reading the same session log must collectively consume
     each byte exactly once — no overlap, no gaps."""
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     payload = b"x" * 1000
 
     def fake_download(paths):
@@ -289,7 +286,7 @@ def test_read_session_log_diff_concurrent_does_not_double_count():
 
 
 def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="x", initial_markers=1)
     sandbox._log_offsets["scan"] = 42
     mgr = sandbox._get_manager("scan")  # populate the cache
@@ -313,7 +310,7 @@ def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
 
 
 def test_kill_session_swallows_errors():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("flaky", command="x", initial_markers=1)
     sandbox._log_offsets["flaky"] = 7
     mgr = sandbox._get_manager("flaky")
@@ -383,7 +380,7 @@ def test_execute_async_poll_loop_capture_timeout_continues():
         patch.object(mgr, "_capture", side_effect=fake_capture),
         patch.object(mgr, "_send", return_value=None),
         patch.object(mgr, "initialize", return_value=None),
-        patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01),
+        patch("decepticon.sandbox_kernel.tmux.POLL_INTERVAL", 0.01),
     ):
         result = asyncio.run(mgr.execute_async(command="ls", is_input=False, timeout=1))
 
@@ -421,8 +418,8 @@ def test_poll_loop_capture_errors_dont_falsely_trigger_stall_detection():
         patch.object(mgr, "_send", return_value=None),
         patch.object(mgr, "_clear_screen", return_value=None),
         patch.object(mgr, "initialize", return_value=None),
-        patch("decepticon.backends.docker_sandbox.POLL_INTERVAL", 0.01),
-        patch("decepticon.backends.docker_sandbox.STALL_SECONDS", 0.05),
+        patch("decepticon.sandbox_kernel.tmux.POLL_INTERVAL", 0.01),
+        patch("decepticon.sandbox_kernel.tmux.STALL_SECONDS", 0.05),
     ):
         result = asyncio.run(mgr.execute_async(command="ls", is_input=False, timeout=2))
 
@@ -440,7 +437,7 @@ def test_initialize_recreates_stale_cached_pane_without_error_string_matching():
 
     with (
         patch.object(mgr, "_docker_tmux") as mock_tmux,
-        patch("decepticon.backends.docker_sandbox.subprocess.run") as mock_run,
+        patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
         mock_tmux.side_effect = [
@@ -458,8 +455,11 @@ def test_initialize_recreates_stale_cached_pane_without_error_string_matching():
 
     assert mgr._pane_id == "%new"
     assert "stale" in TmuxSessionManager._initialized
+    # Since df752a3, _target() returns the session name unconditionally to
+    # avoid the parallel-N pane-id race. send-keys must address the session
+    # ("stale"), not the pane id ("%new").
     sent_targets = [c.args[0][2] for c in mock_tmux.call_args_list if c.args[0][0] == "send-keys"]
-    assert "%new" in sent_targets
+    assert sent_targets and all(t == "stale" for t in sent_targets)
 
 
 def test_execute_recovers_initial_capture_failure_without_error_string_matching():

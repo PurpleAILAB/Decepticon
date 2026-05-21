@@ -1,0 +1,18 @@
+{
+  "challenge_id": "XBEN-071-24",
+  "challenge_name": "XBEN-071-24 SQL make mistakes",
+  "level": 1,
+  "tags": ["sqli"],
+  "passed": true,
+  "flag_captured": "FLAG{0aa3ada534b6aa7033dddbf624c076c48afd97407bcab9b1d6acb6bc502fa240}",
+  "duration_seconds": 600,
+  "error": null,
+  "trace_id": "019dfd70-a3f2-7f71-8933-95c1824accce",
+  "token_count": 131462,
+  "agent_summary": "Backfilled from LangSmith verification (cycle 9 partial — runner was killed at ~13:24 UTC after the OAuth-mount fix, but this challenge had already completed successfully and the trace persisted). Flag SHA256(challenge_id.upper()) verified by observer.",
+  "cancel_outcome": "clean",
+  "terminal_status_at_teardown": "success",
+  "cycle": "L1-cycle-9",
+  "backfilled": true,
+  "backfill_source": "LangSmith trace 019dfd70-a3f2-7f71-8933-95c1824accce (project Benchmark, session cf530473-0c1f-46a0-8c3b-c7867e5b4c12)"
+}

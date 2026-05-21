@@ -17,5 +17,12 @@
   },
   "devDependencies": {
     "prisma": "^7.7.0"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.2",
+    "langsmith": "0.6.3",
+    "@langchain/core": {
+      "langsmith": "0.6.3"
+    }
   }
 }

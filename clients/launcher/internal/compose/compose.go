@@ -50,6 +50,21 @@ func (c *Compose) baseArgs() []string {
 	return []string{"compose", "-f", c.ComposeFile, "--env-file", c.EnvFile}
 }
 
+// ContainerName builds the docker container name for a Decepticon
+// service, mirroring the ``${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}``
+// template used by docker-compose.yml (#216). Unset/empty → today's
+// ``decepticon-<svc>`` name verbatim; ``stack2`` → ``decepticon-stack2-<svc>``.
+// Keeps the Go launcher and YAML naming convention in lockstep so
+// ``docker exec``/``logs``/``stop`` resolve the right container in
+// dual-stack runs.
+func ContainerName(svc string) string {
+	stack := strings.TrimSpace(os.Getenv("DECEPTICON_STACK_NAME"))
+	if stack == "" {
+		return "decepticon-" + svc
+	}
+	return "decepticon-" + stack + "-" + svc
+}
+
 // readVersion returns the installed version from $DECEPTICON_HOME/.version,
 // or an empty string if the file is missing or unreadable. The launcher
 // (install + explicit update) is the single writer; compose falls back to :latest
@@ -219,7 +234,7 @@ func (c *Compose) CleanScratch() {
 	cmd := exec.Command(
 		"docker",
 		"exec",
-		"decepticon-sandbox",
+		ContainerName("sandbox"),
 		"rm",
 		"-rf",
 		"/workspace/.scratch",

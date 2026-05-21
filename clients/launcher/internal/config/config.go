@@ -151,6 +151,25 @@ var APIKeyNames = []string{
 	"DEEPSEEK_API_KEY",
 	"XAI_API_KEY",
 	"MISTRAL_API_KEY",
+	// Cloud gateways added in the OpenClaude provider migration.
+	"GROQ_API_KEY",
+	"TOGETHER_API_KEY",
+	"FIREWORKS_API_KEY",
+	"COHERE_API_KEY",
+	"MOONSHOT_API_KEY",
+	"ZAI_API_KEY",
+	"DASHSCOPE_API_KEY",
+	"GITHUB_TOKEN",
+	// AWS Bedrock — IAM access key. Validation accepts the AKIA prefix.
+	"AWS_ACCESS_KEY_ID",
+	// Azure OpenAI deployment key.
+	"AZURE_API_KEY",
+	// Vertex AI uses a service-account JSON path. Treated as the
+	// credential signal so an empty path doesn't pass startup gating.
+	"GOOGLE_APPLICATION_CREDENTIALS",
+	// Custom OpenAI-compatible endpoint key — paired with a base URL,
+	// no fixed shape.
+	"CUSTOM_OPENAI_API_KEY",
 }
 
 // IsPlaceholder checks if a value looks like a placeholder.
@@ -171,15 +190,29 @@ var keyFormatRules = map[string]struct {
 	Prefix string
 	Hint   string
 }{
-	"ANTHROPIC_API_KEY":  {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
-	"OPENAI_API_KEY":     {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
-	"GEMINI_API_KEY":     {Prefix: "AIza", Hint: "Gemini keys start with 'AIza'"},
-	"OPENROUTER_API_KEY": {Prefix: "sk-or-", Hint: "OpenRouter keys start with 'sk-or-'"},
-	"NVIDIA_API_KEY":     {Prefix: "nvapi-", Hint: "NVIDIA keys start with 'nvapi-'"},
-	"DEEPSEEK_API_KEY":   {Prefix: "sk-", Hint: "DeepSeek keys start with 'sk-'"},
-	"XAI_API_KEY":        {Prefix: "xai-", Hint: "xAI keys start with 'xai-'"},
-	"MINIMAX_API_KEY":    {Prefix: "", Hint: ""},
-	"MISTRAL_API_KEY":    {Prefix: "", Hint: ""},
+	"ANTHROPIC_API_KEY":              {Prefix: "sk-", Hint: "Anthropic keys start with 'sk-'"},
+	"OPENAI_API_KEY":                 {Prefix: "sk-", Hint: "OpenAI keys start with 'sk-'"},
+	"GEMINI_API_KEY":                 {Prefix: "AIza", Hint: "Gemini keys start with 'AIza'"},
+	"OPENROUTER_API_KEY":             {Prefix: "sk-or-", Hint: "OpenRouter keys start with 'sk-or-'"},
+	"NVIDIA_API_KEY":                 {Prefix: "nvapi-", Hint: "NVIDIA keys start with 'nvapi-'"},
+	"DEEPSEEK_API_KEY":               {Prefix: "sk-", Hint: "DeepSeek keys start with 'sk-'"},
+	"XAI_API_KEY":                    {Prefix: "xai-", Hint: "xAI keys start with 'xai-'"},
+	"MINIMAX_API_KEY":                {Prefix: "", Hint: ""},
+	"MISTRAL_API_KEY":                {Prefix: "", Hint: ""},
+	"GROQ_API_KEY":                   {Prefix: "gsk_", Hint: "Groq keys start with 'gsk_'"},
+	"TOGETHER_API_KEY":               {Prefix: "", Hint: ""},
+	"FIREWORKS_API_KEY":              {Prefix: "fw_", Hint: "Fireworks keys start with 'fw_'"},
+	"COHERE_API_KEY":                 {Prefix: "", Hint: ""},
+	"MOONSHOT_API_KEY":               {Prefix: "sk-", Hint: "Moonshot keys start with 'sk-'"},
+	"ZAI_API_KEY":                    {Prefix: "", Hint: ""},
+	"DASHSCOPE_API_KEY":              {Prefix: "sk-", Hint: "DashScope keys start with 'sk-'"},
+	// GitHub fine-grained PATs start with github_pat_; classic PATs
+	// start with ghp_. Accept either by skipping the prefix check.
+	"GITHUB_TOKEN":                   {Prefix: "", Hint: ""},
+	"AWS_ACCESS_KEY_ID":              {Prefix: "AKIA", Hint: "AWS access key IDs start with 'AKIA'"},
+	"AZURE_API_KEY":                  {Prefix: "", Hint: ""},
+	"GOOGLE_APPLICATION_CREDENTIALS": {Prefix: "/", Hint: "must be an absolute path to a service-account JSON file"},
+	"CUSTOM_OPENAI_API_KEY":          {Prefix: "", Hint: ""},
 }
 
 // validateKeyFormat returns an empty string if the key looks valid, or a reason if not.
@@ -244,15 +277,21 @@ func ValidateAPIKeys(env map[string]string) error {
 //     instead of a single session token. accept either env name.
 //   - Copilot Pro uses a refresh-token rotation (COPILOT_REFRESH_TOKEN)
 //     instead of a session cookie. Same fall-through, different env name.
-//   - ChatGPT uses LiteLLM's native chatgpt provider. It persists OAuth
-//     credentials as auth.json and can create that file via device-code login,
-//     so the launcher must not require a pasted browser session cookie.
+//   - ChatGPT uses Decepticon's auth/ handler reading the Codex CLI
+//     credential store at ~/.codex/auth.json. The launcher mounts that
+//     file into the container so a host-side `codex login` is visible
+//     to the running proxy without rebuilding.
+//
+// AbsolutePath is set for handlers that store a single credential file
+// at a fixed absolute path (rather than under ~/.config/<dir>/<file>).
+// When set, ConfigDir / TokenFile are ignored.
 type subscriptionMethod struct {
 	Toggle                string   // DECEPTICON_AUTH_<X> boolean enabling this path
 	TokenEnvs             []string // env vars that satisfy the path on their own
 	ConfigDir             string   // ~/.config/<dir>/<token file> fallback
 	TokenFile             string   // token file name; defaults to tokens.json
 	DirEnv                string   // optional host-side token directory env var
+	AbsolutePath          string   // optional fixed-relative-to-$HOME path (e.g. .codex/auth.json)
 	LegacyDir             string   // optional legacy ~/.config/<dir>/<token file> fallback
 	Label                 string   // human name for error messages
 	AllowInteractiveLogin bool     // provider can bootstrap credentials at runtime
@@ -261,9 +300,7 @@ type subscriptionMethod struct {
 var oauthSubscriptions = map[string]subscriptionMethod{
 	"chatgpt": {
 		Toggle:                "DECEPTICON_AUTH_CHATGPT",
-		ConfigDir:             "litellm/chatgpt",
-		TokenFile:             "auth.json",
-		DirEnv:                "LITELLM_CHATGPT_TOKEN_DIR",
+		AbsolutePath:          ".codex/auth.json",
 		Label:                 "ChatGPT",
 		AllowInteractiveLogin: true,
 	},
@@ -480,6 +517,12 @@ func validateSubscriptionCredentials(env map[string]string, sub subscriptionMeth
 
 func subscriptionTokenPaths(env map[string]string, home string, sub subscriptionMethod) []string {
 	var paths []string
+	if sub.AbsolutePath != "" {
+		// Single-file handler (e.g. ChatGPT → ~/.codex/auth.json).
+		// ConfigDir / TokenFile / LegacyDir do not apply.
+		paths = append(paths, filepath.Join(home, sub.AbsolutePath))
+		return dedupeStrings(paths)
+	}
 	tokenFile := sub.TokenFile
 	if tokenFile == "" {
 		tokenFile = "tokens.json"

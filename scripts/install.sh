@@ -17,6 +17,11 @@ set -euo pipefail
 REPO="PurpleAILAB/Decepticon"
 BRANCH="${BRANCH:-main}"
 RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
+# release asset base — same host every install, used for binary +
+# checksum manifests. raw.githubusercontent.com hosts the source-tree
+# copy of compose/litellm; their integrity is verified against
+# config-checksums.txt fetched from RELEASE_BASE.
+RELEASE_BASE="https://github.com/$REPO/releases/download"
 
 # ── Colors ────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -59,6 +64,47 @@ preflight() {
         error "Error: Docker Compose v2 is required."
         echo -e "${DIM}Docker Compose is included with Docker Desktop.${NC}"
         echo -e "${DIM}For Linux: ${NC}https://docs.docker.com/compose/install/linux/"
+        exit 1
+    fi
+
+    # sha256 tool — required for download integrity verification. Linux
+    # ships sha256sum; macOS ships shasum (-a 256). Either is acceptable.
+    if ! command -v sha256sum >/dev/null 2>&1 \
+        && ! command -v shasum     >/dev/null 2>&1; then
+        error "Error: neither sha256sum nor shasum found."
+        echo -e "${DIM}Install coreutils (Linux) or ensure /usr/bin/shasum (macOS) is on PATH.${NC}"
+        exit 1
+    fi
+}
+
+# Compute the sha256 of a file using whichever tool is available.
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+# Verify a single file against an "<expected_hash>  <ignored_filename>"
+# manifest line. Aborts the installer on mismatch.
+assert_sha256() {
+    local file="$1" expected="$2" label="$3"
+    if [[ -z "$expected" ]]; then
+        error "Integrity check failed: no checksum recorded for $label."
+        error "The release at v${DECEPTICON_VERSION} predates checksum verification."
+        error "Either install a newer release (>=1.0.27) or set"
+        error "  DECEPTICON_SKIP_VERIFY=1   to explicitly opt out (NOT recommended)."
+        [[ "${DECEPTICON_SKIP_VERIFY:-}" == "1" ]] || exit 1
+        warn "  → skipping verification because DECEPTICON_SKIP_VERIFY=1."
+        return
+    fi
+    local actual
+    actual=$(sha256_of "$file")
+    if [[ "$actual" != "$expected" ]]; then
+        error "Checksum mismatch for $label — possible tampering or partial download."
+        error "  expected: $expected"
+        error "  got:      $actual"
         exit 1
     fi
 }
@@ -118,8 +164,58 @@ download_files() {
     # Workspace directory (bind-mounted into containers)
     mkdir -p "$install_dir/workspace"
 
+    # Verify the three files we just wrote against the release-pinned
+    # config-checksums.txt manifest before announcing success. raw.* is
+    # served from GitHub's CDN; GitHub Releases assets carry the manifest
+    # for the same tag. Cross-checking closes the "tampered raw download"
+    # vector that previously let an attacker swap docker-compose.yml.
+    verify_config_manifest "$install_dir"
+
     # Version marker
     echo "$DECEPTICON_VERSION" > "$install_dir/.version"
+}
+
+# Download config-checksums.txt for the resolved release tag, then verify
+# every config file we wrote in download_files. The manifest is in
+# sha256sum format ("<hex>  <relative-path>"), produced by the launcher
+# release job (.github/workflows/release.yml).
+verify_config_manifest() {
+    local install_dir="$1"
+    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+        # resolve_version's fallback path. No release tag → no manifest.
+        # We already abort the launcher download in that branch, so this
+        # path is only hit when someone runs the installer with branch-
+        # tracking on a fresh repo; verification stays opt-out.
+        warn "No release tag resolved — skipping config manifest verification."
+        return
+    fi
+    local manifest_url="$RELEASE_BASE/v${DECEPTICON_VERSION}/config-checksums.txt"
+    local manifest="$install_dir/.config-checksums.txt"
+    if ! curl -fsSL "$manifest_url" -o "$manifest" 2>/dev/null; then
+        error "Failed to download config-checksums.txt from release v${DECEPTICON_VERSION}."
+        error "  url: $manifest_url"
+        error "Release predates checksum verification (<1.0.27) — refusing to install."
+        error "Either install a newer release, or opt out with DECEPTICON_SKIP_VERIFY=1."
+        [[ "${DECEPTICON_SKIP_VERIFY:-}" == "1" ]] || exit 1
+        warn "Skipping config manifest verification (DECEPTICON_SKIP_VERIFY=1)."
+        return
+    fi
+    info "Verifying configuration files against release manifest..."
+    while IFS=' ' read -r expected _ path; do
+        [[ -z "$expected" || -z "$path" ]] && continue
+        # path is whatever the release job recorded (e.g. "docker-compose.yml",
+        # "config/litellm.yaml", ".env.example"). Resolve relative to install_dir.
+        local target="$install_dir/$path"
+        if [[ ! -f "$target" ]]; then
+            # .env.example may be absent if download_files skipped it; for now
+            # we always write it. Surface missing files as a hard error so a
+            # silent skip doesn't mask a download failure.
+            error "Manifest lists $path but the file is missing under $install_dir."
+            exit 1
+        fi
+        assert_sha256 "$target" "$expected" "$path"
+    done < "$manifest"
+    rm -f "$manifest"
 }
 
 # ── Download launcher binary ─────────────────────────────────────
@@ -152,7 +248,7 @@ create_launcher() {
         exit 1
     fi
 
-    local download_url="https://github.com/$REPO/releases/download/v${DECEPTICON_VERSION}/${binary_name}"
+    local download_url="$RELEASE_BASE/v${DECEPTICON_VERSION}/${binary_name}"
     info "Downloading launcher binary ($binary_name)..."
     if ! curl -fsSL "$download_url" -o "$bin_dir/decepticon" 2>/dev/null; then
         error "No launcher binary for ${os}/${arch} in v${DECEPTICON_VERSION}."
@@ -161,7 +257,35 @@ create_launcher() {
         exit 1
     fi
 
+    # Verify the downloaded binary against the GoReleaser checksums.txt
+    # asset for the same tag. The OSS launcher executes as the user's
+    # session entry point — pinning its integrity is the highest-value
+    # check in the installer.
+    verify_launcher_binary "$bin_dir/decepticon" "$binary_name"
+
     chmod 755 "$bin_dir/decepticon"
+}
+
+# Download the GoReleaser-produced checksums.txt, extract the line for
+# our binary, and compare. Aborts on mismatch.
+verify_launcher_binary() {
+    local binary_path="$1" binary_name="$2"
+    local checksums_url="$RELEASE_BASE/v${DECEPTICON_VERSION}/checksums.txt"
+    local tmp
+    tmp=$(mktemp)
+    if ! curl -fsSL "$checksums_url" -o "$tmp" 2>/dev/null; then
+        rm -f "$tmp"
+        error "Failed to download checksums.txt from release v${DECEPTICON_VERSION}."
+        error "Release predates checksum verification (<1.0.27) — refusing to install."
+        error "Either install a newer release, or opt out with DECEPTICON_SKIP_VERIFY=1."
+        [[ "${DECEPTICON_SKIP_VERIFY:-}" == "1" ]] || exit 1
+        warn "Skipping launcher binary verification (DECEPTICON_SKIP_VERIFY=1)."
+        return
+    fi
+    local expected
+    expected=$(awk -v name="$binary_name" '$2 == name {print $1; exit}' "$tmp")
+    rm -f "$tmp"
+    assert_sha256 "$binary_path" "$expected" "$binary_name"
 }
 
 # ── Detect stale `decepticon` in PATH ─────────────────────────────

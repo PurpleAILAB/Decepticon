@@ -313,11 +313,11 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
     graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.MAPS_TO))
 
 
-# ── Convenience: build a runner from a DockerSandbox ────────────────────
+# ── Convenience: build a runner from an HTTPSandbox ─────────────────────
 
 
 def sandbox_runner(sandbox: Any) -> PoCRunner:
-    """Adapt a ``DockerSandbox`` into a :data:`PoCRunner` callable.
+    """Adapt an ``HTTPSandbox`` into a :data:`PoCRunner` callable.
 
     The sandbox must expose ``execute_tmux_async`` (or ``execute_tmux``) that
     returns a str output. We split the returned blob on ``[Exit code:`` to

@@ -38,6 +38,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Configuration-file integrity manifest. The OSS installer and
+      # launcher self-update download docker-compose.yml / litellm.yaml /
+      # .env.example from raw.githubusercontent.com and used to apply them
+      # without any integrity check, which made GitHub-CDN tampering a
+      # one-shot RCE vector (the compose file pulls arbitrary images). We
+      # publish a sha256sum-format manifest as a release asset; the
+      # installer/launcher fetches it from the immutable release URL and
+      # verifies every config file against it before writing.
+      - name: Generate config manifest
+        run: |
+          set -euo pipefail
+          sha256sum docker-compose.yml config/litellm.yaml .env.example > config-checksums.txt
+          cat config-checksums.txt
+
+      - name: Upload config manifest to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # GoReleaser created the release in draft mode above. --clobber so
+          # re-runs of the launcher job (e.g. release-recover) refresh the
+          # asset instead of erroring.
+          gh release upload "${GITHUB_REF_NAME}" config-checksums.txt --clobber
+
   # Multi-arch images that build well under QEMU (Python wheels, simple
   # binaries). Web is split out below — its arm64 emulation cost dominated
   # the release (~21 min for web alone). Sandbox + c2-sliver are also split

@@ -121,7 +121,12 @@ def _upsert_bh_object(graph: KnowledgeGraph, obj: dict[str, Any], type_name: str
 
 def _build_bh_index(graph: KnowledgeGraph) -> dict[str, Node]:
     """Build a bh_id → Node lookup for O(1) principal resolution."""
-    return {n.props.get("bh_id"): n for n in graph.nodes.values() if n.props.get("bh_id")}
+    result: dict[str, Node] = {}
+    for n in graph.nodes.values():
+        bh_id = n.props.get("bh_id")
+        if bh_id is not None:
+            result[str(bh_id)] = n
+    return result
 
 
 def _ingest_aces(
