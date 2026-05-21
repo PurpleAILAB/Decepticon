@@ -1,105 +1,145 @@
 """Soundwave Agent — engagement document writer.
 
-Generates RoE, CONOPS, and Deconfliction Plan documents that frame the
-red team engagement. Does NOT generate OPPLAN — the orchestrator owns
-OPPLAN directly via OPPLANMiddleware.
+Generates the eight planning documents (RoE / CONOPS / Deconfliction /
+Threat Profile / Contact / Data Handling / Abort / Cleanup) that frame
+the red team engagement. Does NOT generate OPPLAN — the orchestrator
+owns OPPLAN directly via OPPLANMiddleware.
 
 Named after the Decepticon intelligence officer who intercepts, processes,
 and organizes strategic information for Megatron's operations.
 
-Uses create_agent() directly (not create_deep_agent()) to control the
-middleware stack precisely.
+Library API
+-----------
+Factory shape mirrors ``langchain.agents.create_agent`` /
+``deepagents.create_deep_agent`` — every keyword is optional, and
+explicit values fully replace the OSS baseline:
 
-Middleware stack (selected for document writer):
-  1. SkillsMiddleware — progressive disclosure of planning SKILL.md
-  2. FilesystemMiddleware — ls/read/write/edit/glob/grep tools
-  3. ModelFallbackMiddleware — haiku 4.5 → gemini 2.5 flash fallback on primary failure
-  4. SummarizationMiddleware — auto-compact when context budget exceeded
-  5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
-  6. PatchToolCallsMiddleware — repair dangling tool calls
+  - ``tools=[...]``         full tool list (overrides the standard set)
+  - ``middleware=[...]``    full middleware list (overrides the slot stack)
+  - ``system_prompt="..."`` full prompt (overrides the loaded baseline)
 
-Backend: HTTPSandbox (sandbox daemon talks over HTTP; /skills/ live in the
-sandbox container — see docker-compose.yml).
+When a keyword is ``None`` (default), the factory builds the OSS
+baseline AND applies any plugin overrides discovered via the
+``decepticon.bundles`` entry-point group. Three usage paths converge
+cleanly:
+
+  1. **OSS default**: ``create_soundwave_agent()`` — no args.
+  2. **Plugin override** (Docker / pip-installed plugin): authors ship
+     ``PluginBundle(...)`` under ``decepticon.bundles``; the factory
+     discovers and applies it automatically.
+  3. **Full custom** (library composer): import building blocks from
+     ``decepticon.middleware`` / ``decepticon.tools`` and compose with
+     ``langchain.agents.create_agent`` directly. Decepticon's factory
+     is bypassed entirely.
+
+Middleware slots (per ``SLOTS_PER_ROLE["soundwave"]``):
+
+  ENGAGEMENT_CONTEXT → SKILLS → FILESYSTEM → MODEL_FALLBACK
+    → SUMMARIZATION → PROMPT_CACHING → PATCH_TOOL_CALLS
+
+No SubAgent / OPPLAN (standalone, not an orchestrator).
+No SandboxNotification (document-only, no bash tool).
 """
 
-from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
-from deepagents.middleware.summarization import create_summarization_middleware
-from langchain.agents import create_agent
-from langchain.agents.middleware import ModelFallbackMiddleware
-from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+from __future__ import annotations
 
+from typing import Any
+
+from langchain.agents import create_agent
+
+from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
-from decepticon.middleware import EngagementContextMiddleware, FilesystemMiddleware
-from decepticon.middleware.skills import SkillsMiddleware
-from decepticon.plugin_loader import (
-    load_plugin_callbacks,
-    load_plugin_middleware,
-    load_plugin_tools,
-)
+from decepticon.plugin_loader import is_bundle_enabled, load_plugin_callbacks
 from decepticon.tools.interaction import ask_user_question, complete_engagement_planning
 
+# Name-keyed registry of the standard tools. Exposed for library
+# callers who want to splice into the default set (e.g.
+# ``tools=[*_STANDARD_TOOLS.values(), my_extra_tool]``).
+_STANDARD_TOOLS: dict[str, Any] = {
+    "ask_user_question": ask_user_question,
+    "complete_engagement_planning": complete_engagement_planning,
+}
 
-def create_soundwave_agent():
-    """Initialize the Soundwave Agent using langchain create_agent() directly.
+_ROLE = "soundwave"
+_RECURSION_LIMIT = 200
 
-    Context engineering decisions:
-      - No OPPLANMiddleware: orchestrator owns OPPLAN directly
-      - No SubAgentMiddleware: soundwave is standalone
-      - No bash tool: soundwave is document-generation only
-      - ModelFallbackMiddleware: haiku 4.5 primary → gemini 2.5 flash fallback on failure
+
+def create_soundwave_agent(
+    *,
+    # ── Dependencies (injected for testing / library composition) ────
+    backend: Any = None,
+    llm: Any = None,
+    fallback_models: list | None = None,
+    # ── langchain-style composition (full replace when provided) ─────
+    tools: list[Any] | None = None,
+    middleware: list[Any] | None = None,
+    system_prompt: str | None = None,
+    # ── Tuning ───────────────────────────────────────────────────────
+    recursion_limit: int | None = None,
+):
+    """Build the Soundwave agent.
+
+    Args:
+        backend: deepagents-style filesystem backend. Defaults to
+            ``make_agent_backend(build_sandbox_backend())``.
+        llm: bound chat model. Defaults to
+            ``LLMFactory().get_model("soundwave")``.
+        fallback_models: passed to ``ModelFallbackMiddleware``. Defaults
+            to ``LLMFactory().get_fallback_models("soundwave")``.
+        tools: full tool list — when provided, replaces the standard
+            registry entirely. When ``None`` (default), the OSS
+            baseline is built and plugin overrides (via
+            ``decepticon.bundles``) are applied.
+        middleware: full middleware list — when provided, replaces the
+            OSS slot stack entirely. When ``None``, the baseline is
+            assembled with plugin slot overrides applied.
+        system_prompt: full prompt — when provided, replaces the
+            baseline. When ``None``, the standard prompt is loaded and
+            plugin prompt overrides are applied.
+        recursion_limit: ``with_config({"recursion_limit": ...})``
+            override. Defaults to 200.
+
+    Returns:
+        Compiled LangGraph agent.
     """
+    if llm is None or fallback_models is None:
+        factory = LLMFactory()
+        if llm is None:
+            llm = factory.get_model(_ROLE)
+        if fallback_models is None:
+            fallback_models = factory.get_fallback_models(_ROLE)
 
-    factory = LLMFactory()
-    llm = factory.get_model("soundwave")
-    fallback_models = factory.get_fallback_models("soundwave")
+    if backend is None:
+        backend = make_agent_backend(build_sandbox_backend())
 
-    # Filesystem backend — HTTPSandbox (dev / per-engagement
-    # VM), HTTPSandbox when DECEPTICON_FILESYSTEM_BACKEND=http (Cloud Run
-    # multi-container deploys where there's no host docker daemon). See
-    # decepticon/backends/factory.py for the env contract.
-    sandbox = build_sandbox_backend()
+    if tools is None:
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
+    if middleware is None:
+        middleware = build_middleware(
+            role=_ROLE,
+            backend=backend,
+            llm=llm,
+            fallback_models=fallback_models,
+        )
+    if system_prompt is None:
+        system_prompt = load_prompt(_ROLE)
 
-    system_prompt = load_prompt("soundwave")
-    # Skills + workspace both live inside the sandbox (skills bind-mounted at /skills/).
-    backend = make_agent_backend(sandbox)
-
-    # Assemble middleware stack
-    middleware = [
-        EngagementContextMiddleware(),
-        SkillsMiddleware(backend=backend, sources=["/skills/standard/soundwave/"]),
-        FilesystemMiddleware(backend=backend),
-    ]
-    if fallback_models:
-        middleware.append(ModelFallbackMiddleware(*fallback_models))
-    middleware.extend(
-        [
-            create_summarization_middleware(llm, backend),
-            AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
-            PatchToolCallsMiddleware(),
-        ]
-    )
-
-    tools = [ask_user_question, complete_engagement_planning]
-    tools.extend(load_plugin_tools(role="soundwave"))
-    middleware.extend(load_plugin_middleware(role="soundwave", backend=backend))
-
-    agent = create_agent(
+    return create_agent(
         llm,
         system_prompt=system_prompt,
         tools=tools,
         middleware=middleware,
-        name="soundwave",
+        name=_ROLE,
     ).with_config(
         {
-            "recursion_limit": 200,
-            "callbacks": load_plugin_callbacks(role="soundwave", backend=backend),
+            "recursion_limit": recursion_limit or _RECURSION_LIMIT,
+            "callbacks": load_plugin_callbacks(role=_ROLE, backend=backend),
         }
     )
 
-    return agent
 
-
-# Module-level graph for LangGraph Platform (langgraph serve)
-graph = create_soundwave_agent()
+# Module-level graph for LangGraph Platform (langgraph serve).
+if is_bundle_enabled("standard"):
+    graph = create_soundwave_agent()

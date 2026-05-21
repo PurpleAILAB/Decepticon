@@ -383,21 +383,32 @@ def build_language_policy(language: str) -> str | None:
     )
 
 
-def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
+def load_prompt(
+    name: str,
+    *,
+    shared: list[str] | None = None,
+    override: str | dict[str, str] | None = None,
+) -> str:
     """Load an agent system prompt with structured assembly.
 
-    This is the primary API — backward-compatible with the original signature
-    but now uses PromptBuilder internally for structured assembly.
+    Static identity/rules/environment load from ``<name>.md`` and combine
+    with cross-cutting patterns (faithful reporting, verification gate,
+    output discipline) and tool prompts. The Anthropic prompt-caching
+    boundary separates the cacheable static prefix from per-invocation
+    dynamic content.
 
-    Automatically:
-    - Injects cross-cutting prompt patterns (faithful reporting, output discipline, etc.)
-    - Uses co-located tool prompts instead of shared .md fragments for tools
-    - Separates static/dynamic sections with cache boundary markers
+    Plugin prompt overrides (``PluginBundle(prompts={...})`` under the
+    ``decepticon.bundles`` entry-point group) apply automatically. Library
+    callers can supply an explicit ``override`` — ``str`` for full
+    replace, ``dict`` with ``prepend`` / ``append`` / ``replace`` keys.
+    Explicit overrides win over plugin overrides on conflict.
 
     Args:
         name: Prompt filename without extension (e.g., "recon", "exploit").
-        shared: List of shared fragment names to append (e.g., ["bash", "skills"]).
+        shared: Shared fragment names to append (e.g., ["bash", "skills"]).
             "bash" is special-cased to use the co-located tool prompt module.
+        override: Optional explicit prompt override. ``None`` (default) =
+            only plugin overrides apply.
 
     Returns:
         Assembled system prompt string.
@@ -428,13 +439,13 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     # launchers (SaaS web) override per-run via config.configurable.language
     # which EngagementContextMiddleware injects as a later SystemMessage.
     pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
-    override = build_language_policy(pinned_lang)
-    if override is not None:
+    lang_policy = build_language_policy(pinned_lang)
+    if lang_policy is not None:
         import re
 
         prompt = re.sub(
             r"<LANGUAGE_POLICY>.*?</LANGUAGE_POLICY>",
-            override,
+            lang_policy,
             prompt,
             flags=re.DOTALL,
         )
@@ -448,5 +459,18 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
     except Exception:
         # Fail soft: never break prompt loading because of the compat shim.
         pass
+
+    # Plugin + explicit prompt overrides apply last so prepend/append wrap
+    # the fully-assembled prompt (language policy + compat shim included).
+    # Lazy import avoids a circular dependency between assembly and prompts.
+    from decepticon.agents.build import resolve_prompt_overrides
+
+    merged = resolve_prompt_overrides(name, override=override)
+    if "replace" in merged:
+        prompt = merged["replace"]
+    if merged.get("prepend"):
+        prompt = f"{merged['prepend']}\n\n{prompt}"
+    if merged.get("append"):
+        prompt = f"{prompt}\n\n{merged['append']}"
 
     return prompt
