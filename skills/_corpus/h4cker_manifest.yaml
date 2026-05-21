@@ -1,0 +1,121 @@
+# h4cker reference manifest
+#
+# https://github.com/The-Art-of-Hacking/h4cker (Omar Santos, MIT)
+#
+# 156 MB of mostly PDFs / training decks / pointer lists. Vendoring
+# wholesale wastes 95% of bytes. This manifest lists the ~30 high-value
+# subtrees agents may want to consult on demand.
+#
+# Resolution protocol:
+# 1. Agent reads this file via `load_skill("/skills/_corpus/h4cker_manifest.yaml")`
+# 2. Identifies the relevant subtree by its description
+# 3. Clones shallow via:
+#      git clone --depth 1 --filter=blob:none --no-checkout \
+#        https://github.com/The-Art-of-Hacking/h4cker.git /tmp/h4cker
+#      cd /tmp/h4cker && git sparse-checkout init --cone
+#      git sparse-checkout set <subtree>
+#      git checkout
+# 4. Reads the relevant files locally; the directory is throwaway
+
+version: 1
+upstream: https://github.com/The-Art-of-Hacking/h4cker
+license: MIT
+last_reviewed: 2026-05-20
+
+subtrees:
+  - path: ai
+    description: AI red-teaming + AI security primers, prompt-injection
+      methodologies, LLM red-team curriculum
+    priority: high
+    cross_ref: skills/exploit/llm/, skills/analyst/prompt-injection.md
+
+  - path: cybersecurity-domains/offensive-security
+    description: Offensive operations methodology — recon, exploit, post-exploit,
+      pentest reporting
+    priority: high
+    cross_ref: skills/recon/, skills/exploit/, skills/post-exploit/
+
+  - path: cybersecurity-domains/cloud-container-security
+    description: AWS/Azure/GCP + Docker/K8s attack + defense — overlaps
+      with Decepticon's skills/cloud/ but broader on container escape
+    priority: high
+    cross_ref: skills/cloud/, container-escape skill
+
+  - path: cybersecurity-domains/web-application-security
+    description: Web app hardening + attack surface mapping, complements
+      OWASP WSTG
+    priority: medium
+    cross_ref: skills/exploit/web/, skills/_corpus/payloads/
+
+  - path: dfir
+    description: Digital forensics + incident response — useful as defender
+      perspective for the Offensive Vaccine workstream
+    priority: medium
+    cross_ref: docs/offensive-vaccine.md (when implemented)
+
+  - path: ethical-hacking-tools
+    description: Tool inventory + usage notes — but mostly outdated; check
+      cross-ref tables instead of cargo-culting
+    priority: low
+
+  - path: programming-and-scripting-for-cybersecurity
+    description: Python/Bash/Go for pentest automation, fuzzer harness writing
+    priority: medium
+    cross_ref: skills/analyst/, skills/recon/
+
+  - path: build-your-own-lab
+    description: Vulnerable VM setup — useful for Decepticon's local
+      development benchmark targets
+    priority: low
+
+  - path: malware-analysis
+    description: Static/dynamic malware analysis playbooks, reverse engineering
+      techniques
+    priority: medium
+    cross_ref: skills/reverser/
+
+  - path: threat-hunting
+    description: Threat hunting methodology — useful for Decepticon's
+      detector agent and Vaccine workstream
+    priority: medium
+
+  - path: red-blue-purple-team
+    description: Purple-team integration patterns — directly relevant to
+      the CypherFix double-agent workstream
+    priority: high
+    cross_ref: docs/offensive-vaccine.md
+
+  - path: penetration-testing-and-red-teaming
+    description: Pentest methodology trees, RoE templates, engagement
+      planning
+    priority: high
+    cross_ref: skills/soundwave/, skills/decepticon/
+
+  - path: api-security
+    description: REST + GraphQL + gRPC security — complements
+      skills/exploit/web/ leaves
+    priority: medium
+    cross_ref: skills/exploit/web/graphql.md, skills/exploit/web/mass-assignment/
+
+  - path: mobile-security
+    description: Android + iOS pentest references
+    priority: medium
+
+  - path: iot-security
+    description: IoT attack surface, firmware extraction, hardware hacking
+    priority: medium
+    cross_ref: skills/reverser/firmware/
+
+  - path: post-quantum-cryptography
+    description: Forward-looking cryptography references
+    priority: low
+
+  - path: blockchain-security
+    description: Smart contract + DeFi security references
+    priority: medium
+    cross_ref: skills/contracts/
+
+# Subtrees explicitly NOT in scope (avoid downloading):
+# - Training videos / slide decks (massive, low operational value)
+# - PDF cheat-sheets (use skills/_corpus/payloads/ instead, freshher)
+# - Vendor-specific certification prep (CEH, OSCP, Pentest+) — out of scope
