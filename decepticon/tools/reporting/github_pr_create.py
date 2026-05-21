@@ -79,9 +79,7 @@ def github_pr_create(
 
     # Push the branch to the fork
     push_cmd = ["git", "push", "fork" if fork is None else "fork", head_branch]
-    push = subprocess.run(
-        push_cmd, cwd=work_tree, capture_output=True, text=True
-    )
+    push = subprocess.run(push_cmd, cwd=work_tree, capture_output=True, text=True)
     if push.returncode != 0:
         return PRResult(False, None, None, f"git push failed: {push.stderr.strip()}")
 
@@ -93,12 +91,19 @@ def github_pr_create(
 
     # Build gh pr create command
     cmd: list[str] = [
-        "gh", "pr", "create",
-        "--repo", repo,
-        "--base", base_branch,
-        "--head", head_spec,
-        "--title", title,
-        "--body", body,
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        repo,
+        "--base",
+        base_branch,
+        "--head",
+        head_spec,
+        "--title",
+        title,
+        "--body",
+        body,
     ]
     if draft:
         cmd.append("--draft")
@@ -141,7 +146,9 @@ def github_pr_from_patcher(
     """
     branch = f"fix/decepticon-{vuln_id}"
     # 1. Create branch from current HEAD
-    subprocess.run(["git", "checkout", "-B", branch], cwd=work_tree, check=False, capture_output=True)
+    subprocess.run(
+        ["git", "checkout", "-B", branch], cwd=work_tree, check=False, capture_output=True
+    )
     # 2. Stage + commit
     subprocess.run(["git", "add", file_path], cwd=work_tree, check=False, capture_output=True)
     subprocess.run(
@@ -163,7 +170,7 @@ def github_pr_from_patcher(
         ## Diff
 
         ```diff
-        {diff[:2000]}{'...' if len(diff) > 2000 else ''}
+        {diff[:2000]}{"..." if len(diff) > 2000 else ""}
         ```
 
         ## Provenance
@@ -172,7 +179,7 @@ def github_pr_from_patcher(
         in the engagement KG. See `docs/offensive-vaccine.md` for the
         end-to-end loop.
 
-        cc: @{vuln_id.split('-', 1)[0] if '-' in vuln_id else 'decepticon-bot'}
+        cc: @{vuln_id.split("-", 1)[0] if "-" in vuln_id else "decepticon-bot"}
         """
     )
     return github_pr_create(
@@ -200,7 +207,9 @@ def github_pr_from_defender(
     Defender and open a PR against the org's detection-as-code repo.
     """
     branch = f"detect/decepticon-{vuln_id}"
-    subprocess.run(["git", "checkout", "-B", branch], cwd=work_tree, check=False, capture_output=True)
+    subprocess.run(
+        ["git", "checkout", "-B", branch], cwd=work_tree, check=False, capture_output=True
+    )
     subprocess.run(["git", "add", rule_file], cwd=work_tree, check=False, capture_output=True)
     msg = f"detect({rule_format}): decepticon-{vuln_id} regression rule"
     subprocess.run(["git", "commit", "-m", msg], cwd=work_tree, check=False, capture_output=True)
@@ -219,7 +228,7 @@ def github_pr_from_defender(
         ## Rule
 
         ```{rule_format}
-        {rule_content[:2000]}{'...' if len(rule_content) > 2000 else ''}
+        {rule_content[:2000]}{"..." if len(rule_content) > 2000 else ""}
         ```
 
         ## Use
