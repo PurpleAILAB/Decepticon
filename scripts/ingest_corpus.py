@@ -106,8 +106,7 @@ def scan_corpus() -> dict[str, dict[str, str]]:
     classes: dict[str, dict[str, str]] = {}
     if not CORPUS_ROOT.is_dir():
         print(
-            f"error: corpus root {CORPUS_ROOT} not found; "
-            "run `git submodule update --init` first",
+            f"error: corpus root {CORPUS_ROOT} not found; run `git submodule update --init` first",
             file=sys.stderr,
         )
         sys.exit(2)

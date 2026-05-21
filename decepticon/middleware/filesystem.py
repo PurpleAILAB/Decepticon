@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import posixpath
 from dataclasses import replace
 from typing import Any

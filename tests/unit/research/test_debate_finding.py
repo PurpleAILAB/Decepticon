@@ -95,9 +95,7 @@ class _FakeModel:
 
 
 def _patch_debate_models(monkeypatch, skeptic: SkepticOpinion, advocate: AdvocateRebuttal):
-    monkeypatch.setattr(
-        LLMFactory, "get_model_by_id", lambda self, mid, **k: _FakeModel(skeptic)
-    )
+    monkeypatch.setattr(LLMFactory, "get_model_by_id", lambda self, mid, **k: _FakeModel(skeptic))
     monkeypatch.setattr(LLMFactory, "get_model", lambda self, role, **k: _FakeModel(advocate))
 
 

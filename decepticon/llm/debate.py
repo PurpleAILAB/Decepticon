@@ -238,16 +238,17 @@ async def run_debate(
             objection=skeptic.strongest_objection or "(the finding is not exploitable)",
         )
         rebuttal = await advocate_invoke(advocate_prompt, AdvocateRebuttal)
-        rounds.append(
-            DebateRound(
-                role="advocate",
-                model=primary_model_id,
-                family=family_of(primary_model_id),
-                argument=rebuttal.rebuttal,
-                refuted=rebuttal.objection_holds,
-                confidence=rebuttal.confidence,
+        if rebuttal is not None:
+            rounds.append(
+                DebateRound(
+                    role="advocate",
+                    model=primary_model_id,
+                    family=family_of(primary_model_id),
+                    argument=rebuttal.rebuttal,
+                    refuted=rebuttal.objection_holds,
+                    confidence=rebuttal.confidence,
+                )
             )
-        )
 
     verdict, credibility = adjudicate(skeptic, rebuttal, cross_family=cross_family)
     return DebateRecord(

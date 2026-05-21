@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -88,6 +89,10 @@ def test_pack_repro_renders_steps(tmp_path):
     assert "2. Observe alert" in body
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: Windows does not honor the executable mode bit",
+)
 def test_pack_poc_is_executable(tmp_path):
     pack = write_finding_pack(_basic_finding(), output_root=tmp_path)
     poc = pack.root / "poc.sh"

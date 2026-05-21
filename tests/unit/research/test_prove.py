@@ -152,8 +152,11 @@ class TestProofArtifact:
             description="oob write",
             confidence=FindingConfidence.PROVEN,
             proof=ProofArtifact(
-                strategy="sanitizer", method="asan-report", proven=True,
-                sanitizer="ASan", crash_kind="heap-buffer-overflow",
+                strategy="sanitizer",
+                method="asan-report",
+                proven=True,
+                sanitizer="ASan",
+                crash_kind="heap-buffer-overflow",
             ),
         )
         restored = Finding.model_validate(f.model_dump(mode="json"))
@@ -172,14 +175,21 @@ class TestPersistProof:
         )
         graph.upsert_node(vuln)
         finding = Node.make(
-            NodeKind.FINDING, "validated: heap overflow", key="finding::h1",
-            validated=True, vuln_id=vuln.id,
+            NodeKind.FINDING,
+            "validated: heap overflow",
+            key="finding::h1",
+            validated=True,
+            vuln_id=vuln.id,
         )
         graph.upsert_node(finding)
 
         result = ProofResult(
-            proven=True, proof_admitted=True, strategy="sanitizer",
-            method="asan-report", confidence="proven", proof_hash="ph1",
+            proven=True,
+            proof_admitted=True,
+            strategy="sanitizer",
+            method="asan-report",
+            confidence="proven",
+            proof_hash="ph1",
         )
         _persist_proof(graph, vuln.id, result)
 

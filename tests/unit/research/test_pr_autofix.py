@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -240,6 +241,10 @@ def test_plan_rejects_non_git_directory(tmp_path):
 # ── execute path (uses real git, fakes gh) ──────────────────────
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX-only: fake `gh` is a bash script and PATH uses ':' separator",
+)
 def test_execute_applies_patch_and_pushes_to_local_remote(tmp_path, monkeypatch):
     """End-to-end execution against a local origin + a fake `gh` script.
 

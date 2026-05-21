@@ -172,6 +172,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     """Entrypoint. Returns the process exit code (0 pass, 1 gate fail, 2 error)."""
+    # The report uses box-drawing glyphs; force UTF-8 so it does not crash on
+    # consoles with a legacy code page (e.g. cp1252 on Windows).
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     args = build_parser().parse_args(argv)
     try:
         scope = resolve_diff_scope(

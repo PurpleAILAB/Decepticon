@@ -1291,7 +1291,9 @@ def kg_analyze_cookie_value(
             )
 
     created: list[dict[str, Any]] = []
-    cookie_hash = hashlib.sha1(f"{name}:{value}".encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
+    cookie_hash = hashlib.sha1(
+        f"{name}:{value}".encode("utf-8"), usedforsecurity=False
+    ).hexdigest()[:12]
     for idx, finding in enumerate(analysis.findings, start=1):
         severity = _cookie_finding_severity(finding)
         vuln = graph.upsert_node(
@@ -1869,7 +1871,7 @@ async def validate_finding(
     if result.validated and severity in ("critical", "high") and debate_enabled(severity):
         vuln = graph.nodes.get(vuln_id)
         token = vuln.props.get("debate_token") if vuln else None
-        if not token:
+        if vuln is None or not token:
             return _json(
                 {
                     "validated": True,
@@ -1962,7 +1964,9 @@ async def debate_finding(
     primary_model = ensemble.primary
 
     def _persist(record: Any) -> str:
-        token = _hashlib.sha1(f"{vuln_id}:{record.debated_at}".encode(), usedforsecurity=False).hexdigest()[:16]
+        token = _hashlib.sha1(
+            f"{vuln_id}:{record.debated_at}".encode(), usedforsecurity=False
+        ).hexdigest()[:16]
         vuln.props["debated"] = True
         vuln.props["debate_verdict"] = record.verdict.value
         vuln.props["debate_credibility"] = record.credibility

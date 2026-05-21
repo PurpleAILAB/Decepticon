@@ -167,6 +167,8 @@ extend-exclude = [
     "benchmark/xbow-validation-benchmarks",
     "benchmark/MHBench",
     "benchmark/results",
+    "skills/_corpus/payloads",
+    "skills/_corpus/wstg",
 ]
 
 [tool.ruff.lint]

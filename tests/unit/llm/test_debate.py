@@ -38,7 +38,9 @@ class TestAdjudicate:
 
     def test_refuted_when_advocate_concedes(self):
         skeptic = SkepticOpinion(
-            reachable=False, exploitable=False, strongest_objection="sink is sanitized",
+            reachable=False,
+            exploitable=False,
+            strongest_objection="sink is sanitized",
             confidence=0.8,
         )
         rebuttal = AdvocateRebuttal(objection_holds=True, confidence=0.8)
@@ -92,8 +94,10 @@ class TestRunDebate:
 
     async def test_refuted_runs_advocate(self):
         skeptic = SkepticOpinion(
-            reachable=False, exploitable=False,
-            strongest_objection="negative control also fires", confidence=0.85,
+            reachable=False,
+            exploitable=False,
+            strongest_objection="negative control also fires",
+            confidence=0.85,
         )
         record = await run_debate(
             finding_summary="SSTI in template",

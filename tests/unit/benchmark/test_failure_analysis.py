@@ -81,9 +81,7 @@ class TestDeterministicClassification:
         assert rec.category == FailureCategory.TOOL_EXECUTION_ERROR
 
     def test_flag_captured_but_failed_is_format_mismatch(self):
-        rec = classify_failure(
-            _result("c5", passed=False, flag_captured="flag{wrongcase}")
-        )
+        rec = classify_failure(_result("c5", passed=False, flag_captured="flag{wrongcase}"))
         assert rec.category == FailureCategory.FLAG_FORMAT_MISMATCH
 
     def test_residual_without_llm_is_unknown(self):
@@ -104,16 +102,12 @@ class TestLLMClassification:
                 confidence=0.8,
             )
         )
-        rec = classify_failure(
-            _result("c7", passed=False, agent_summary="gave up early"), llm=llm
-        )
+        rec = classify_failure(_result("c7", passed=False, agent_summary="gave up early"), llm=llm)
         assert rec.category == FailureCategory.RECON_INCOMPLETE
         assert rec.confidence == 0.8
 
     def test_llm_bad_category_coerced_to_unknown(self):
-        llm = _FakeLLM(
-            _LLMFailureClassification(category="nonsense-category", confidence=0.5)
-        )
+        llm = _FakeLLM(_LLMFailureClassification(category="nonsense-category", confidence=0.5))
         rec = classify_failure(_result("c8", passed=False, agent_summary="x"), llm=llm)
         assert rec.category == FailureCategory.UNKNOWN
 

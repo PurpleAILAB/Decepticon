@@ -6,10 +6,23 @@ import threading
 from subprocess import CalledProcessError
 from unittest.mock import patch
 
+import pytest
 from deepagents.backends.protocol import FileDownloadResponse
 
 from decepticon.sandbox_kernel import BackgroundJobTracker, TmuxSessionManager
+from decepticon.sandbox_kernel.base import SandboxBase
 from decepticon.sandbox_kernel.daemon import DaemonSandbox
+
+
+@pytest.fixture(autouse=True)
+def _reset_log_offsets():
+    """``_log_offsets`` is a deliberately shared ``ClassVar`` — reset it between
+    tests so per-test assertions on a pristine dict are order-independent."""
+    for cls in (SandboxBase, DaemonSandbox):
+        cls._log_offsets.clear()
+    yield
+    for cls in (SandboxBase, DaemonSandbox):
+        cls._log_offsets.clear()
 
 
 def test_initialize_does_not_create_root_workspace_sessions_log():

@@ -10,6 +10,26 @@ from langchain_core.tools import tool
 from decepticon.tools.research.attack.routing import route_skills
 from decepticon.tools.research.attack.skill_graph import get_skill_graph
 
+
+def _unwrap_backend(backend: Any) -> Any:
+    """Strip EngagementFilesystemBackend wrapping from a backend.
+
+    EngagementFilesystemBackend._real() maps /workspace paths to
+    /workspace/<slug>/..., which mangles /skills/ paths to
+    /workspace/<slug>/skills/... — a path that does not exist in the
+    sandbox container. Skill reads must bypass this wrapper and go
+    directly to the raw DockerSandbox which can reach /skills/ via
+    docker cp / execute().
+    """
+    # Import here to avoid circular import (filesystem.py imports from skills.py
+    # indirectly via middleware/__init__.py)
+    from decepticon.middleware.filesystem import EngagementFilesystemBackend  # noqa: PLC0415
+
+    while isinstance(backend, EngagementFilesystemBackend):
+        backend = backend._backend
+    return backend
+
+
 # ── load_skill tool ──────────────────────────────────────────────────────────
 # A Decepticon-specific replacement for `load_skill("/skills/...")` that
 # returns the full skill body without the deepagents 100-line limit, plus a
