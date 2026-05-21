@@ -106,8 +106,11 @@ class TestMentorMiddleware:
         m = MentorMiddleware(min_repeat_count=3)
         msgs = []
         for _ in range(3):
+            # model_construct bypasses pydantic validation so the tool_call
+            # carries args as a raw JSON string — the edge case the
+            # middleware's _CallSignature.from_tool_call defends against.
             msgs.append(
-                AIMessage(
+                AIMessage.model_construct(
                     content="",
                     tool_calls=[{"name": "bash", "args": '{"cmd": "ls"}', "id": "x"}],
                 )
