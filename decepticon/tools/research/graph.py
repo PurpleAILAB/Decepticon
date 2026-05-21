@@ -135,6 +135,10 @@ class EdgeKind(StrEnum):
     TEACHES = "TEACHES"
     SUB_TECHNIQUE_OF = "SUB_TECHNIQUE_OF"
     IN_TACTIC = "IN_TACTIC"
+    # Knowledge — skill ↔ skill relations (the skill knowledge graph).
+    REQUIRES = "REQUIRES"
+    CHAINS_TO = "CHAINS_TO"
+    REFINES = "REFINES"
 
 
 class Severity(StrEnum):

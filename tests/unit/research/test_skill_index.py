@@ -7,12 +7,14 @@ from pathlib import Path
 from decepticon.tools.research.attack.seed import technique_node_id
 from decepticon.tools.research.attack.skill_index import (
     SkillRecord,
+    _resolve_slug,
     discover_skills,
     load_skill_index,
     parse_skill_md,
     seed_skills,
     skill_graph_elements,
     skill_node_id,
+    skill_skill_edges,
 )
 from decepticon.tools.research.graph import EdgeKind, KnowledgeGraph, NodeKind
 
@@ -49,6 +51,22 @@ Body.
 _SKILL_MD_NO_NAME = """\
 ---
 description: "no name field"
+---
+Body.
+"""
+
+_SKILL_MD_WITH_EDGES = """\
+---
+name: ssrf-to-rce
+description: "SSRF escalation chain."
+metadata:
+  subdomain: execution
+  requires:
+    - standard/recon/active-recon
+    - /skills/standard/analyst/ssrf
+  chains_to: standard/post-exploit/lateral-movement
+  refines:
+    - standard/analyst/ssrf/SKILL.md
 ---
 Body.
 """
@@ -134,6 +152,103 @@ class TestBundledSkillIndex:
     def test_some_bundled_skills_carry_mitre_ids(self) -> None:
         records = load_skill_index()
         assert any(r.mitre for r in records), "expected mitre-tagged skills in the index"
+
+
+class TestResolveSlug:
+    def test_bare_slug_becomes_canonical_path(self) -> None:
+        assert _resolve_slug("standard/analyst/ssrf") == "/skills/standard/analyst/ssrf/SKILL.md"
+
+    def test_accepts_skills_prefix(self) -> None:
+        assert _resolve_slug("/skills/standard/analyst/ssrf") == (
+            "/skills/standard/analyst/ssrf/SKILL.md"
+        )
+
+    def test_accepts_full_path_with_skill_md(self) -> None:
+        assert _resolve_slug("/skills/standard/analyst/ssrf/SKILL.md") == (
+            "/skills/standard/analyst/ssrf/SKILL.md"
+        )
+
+    def test_strips_surrounding_slashes_and_whitespace(self) -> None:
+        assert _resolve_slug("  /standard/analyst/ssrf/  ") == (
+            "/skills/standard/analyst/ssrf/SKILL.md"
+        )
+
+    def test_empty_or_invalid_returns_none(self) -> None:
+        assert _resolve_slug("") is None
+        assert _resolve_slug("   ") is None
+        assert _resolve_slug("SKILL.md") is None
+
+
+class TestParseSkillMdEdges:
+    def test_parses_requires_list_resolving_slugs(self) -> None:
+        rec = parse_skill_md(_SKILL_MD_WITH_EDGES, "/skills/standard/analyst/ssrf-to-rce/SKILL.md")
+        assert rec is not None
+        assert rec.requires == [
+            "/skills/standard/recon/active-recon/SKILL.md",
+            "/skills/standard/analyst/ssrf/SKILL.md",
+        ]
+
+    def test_parses_chains_to_scalar_string(self) -> None:
+        rec = parse_skill_md(_SKILL_MD_WITH_EDGES, "/skills/x/SKILL.md")
+        assert rec is not None
+        assert rec.chains_to == ["/skills/standard/post-exploit/lateral-movement/SKILL.md"]
+
+    def test_resolves_refines_with_skill_md_suffix(self) -> None:
+        rec = parse_skill_md(_SKILL_MD_WITH_EDGES, "/skills/x/SKILL.md")
+        assert rec is not None
+        assert rec.refines == ["/skills/standard/analyst/ssrf/SKILL.md"]
+
+    def test_edge_fields_default_empty(self) -> None:
+        rec = parse_skill_md(_SKILL_MD, "/skills/standard/recon/passive-recon/SKILL.md")
+        assert rec is not None
+        assert rec.requires == []
+        assert rec.chains_to == []
+        assert rec.refines == []
+
+
+class TestSkillSkillEdges:
+    def test_builds_requires_chains_refines_edges(self) -> None:
+        recs = [
+            SkillRecord(
+                name="a",
+                path="/skills/a/SKILL.md",
+                requires=["/skills/b/SKILL.md"],
+                chains_to=["/skills/c/SKILL.md"],
+                refines=["/skills/b/SKILL.md"],
+            ),
+            SkillRecord(name="b", path="/skills/b/SKILL.md"),
+            SkillRecord(name="c", path="/skills/c/SKILL.md"),
+        ]
+        edges = skill_skill_edges(recs)
+        assert {e.kind for e in edges} == {
+            EdgeKind.REQUIRES,
+            EdgeKind.CHAINS_TO,
+            EdgeKind.REFINES,
+        }
+        req = [e for e in edges if e.kind == EdgeKind.REQUIRES]
+        assert len(req) == 1
+        assert req[0].src == skill_node_id("/skills/a/SKILL.md")
+        assert req[0].dst == skill_node_id("/skills/b/SKILL.md")
+
+    def test_drops_dangling_reference(self) -> None:
+        recs = [
+            SkillRecord(
+                name="a",
+                path="/skills/a/SKILL.md",
+                requires=["/skills/missing/SKILL.md"],
+            ),
+        ]
+        assert skill_skill_edges(recs) == []
+
+    def test_drops_self_reference(self) -> None:
+        recs = [
+            SkillRecord(
+                name="a",
+                path="/skills/a/SKILL.md",
+                chains_to=["/skills/a/SKILL.md"],
+            ),
+        ]
+        assert skill_skill_edges(recs) == []
 
 
 class TestSeedSkills:

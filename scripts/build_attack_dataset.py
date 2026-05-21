@@ -20,8 +20,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from decepticon.tools.research.attack.skill_index import SkillRecord
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DATA_DIR = _REPO_ROOT / "decepticon" / "tools" / "research" / "attack" / "data"
@@ -95,14 +99,13 @@ def flatten_stix(bundle: dict) -> dict:
     return {"version": version, "tactics": tactics, "techniques": techniques}
 
 
-def build_skill_index() -> list[dict]:
+def build_skill_index() -> list[SkillRecord]:
     """Discover the skill→technique map from the repo ``skills/`` tree."""
     # Imported lazily so the script can run before the package is installed.
     sys.path.insert(0, str(_REPO_ROOT))
     from decepticon.tools.research.attack.skill_index import discover_skills
 
-    records = discover_skills(_REPO_ROOT / "skills")
-    return [r.model_dump() for r in records]
+    return discover_skills(_REPO_ROOT / "skills")
 
 
 def main() -> int:
@@ -126,10 +129,35 @@ def main() -> int:
         f"{len(catalog['techniques'])} techniques, {len(catalog['tactics'])} tactics"
     )
 
-    skills = build_skill_index()
+    records = build_skill_index()
+
+    # Gate: a dangling skill reference or a REQUIRES/REFINES cycle breaks the
+    # skill knowledge graph — fail the build rather than ship a broken index.
+    from decepticon.tools.research.attack.catalog import parse_catalog
+    from decepticon.tools.research.attack.validate import validate_skill_graph
+
+    diag = validate_skill_graph(records, parse_catalog(catalog))
+    for warning in diag.warnings:
+        print(f"  warning: {warning}")
+    if diag.errors:
+        for error in diag.errors:
+            print(f"  ERROR: {error}", file=sys.stderr)
+        print(
+            f"Skill graph validation failed with {len(diag.errors)} error(s) — "
+            "skill_techniques.json not written.",
+            file=sys.stderr,
+        )
+        return 1
+
     skills_path = _DATA_DIR / "skill_techniques.json"
-    skills_path.write_text(json.dumps(skills, indent=1, ensure_ascii=False), encoding="utf-8")
-    print(f"Wrote {skills_path.relative_to(_REPO_ROOT)} — {len(skills)} skills")
+    skills_path.write_text(
+        json.dumps([r.model_dump() for r in records], indent=1, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    print(
+        f"Wrote {skills_path.relative_to(_REPO_ROOT)} — {len(records)} skills, "
+        f"{diag.counts['warnings']} warning(s), 0 errors"
+    )
     return 0
 
 

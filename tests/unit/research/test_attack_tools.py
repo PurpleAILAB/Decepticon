@@ -8,7 +8,14 @@ import pytest
 
 from decepticon.tools.research import _state as state
 from decepticon.tools.research import tools as research_tools
+from decepticon.tools.research.attack.catalog import (
+    AttackCatalog,
+    AttackTactic,
+    AttackTechnique,
+)
 from decepticon.tools.research.attack.seed import technique_node_id
+from decepticon.tools.research.attack.skill_graph import build_skill_graph
+from decepticon.tools.research.attack.skill_index import SkillRecord
 from decepticon.tools.research.attack.tools import (
     ATTACK_TOOLS,
     kg_backfill_mitre,
@@ -16,7 +23,13 @@ from decepticon.tools.research.attack.tools import (
     mitre_lookup,
     mitre_skills_for_technique,
 )
-from decepticon.tools.research.graph import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
+from decepticon.tools.research.graph import EdgeKind, KnowledgeGraph, Node, NodeKind
+
+_CATALOG = AttackCatalog(
+    version="test",
+    tactics=[AttackTactic(id="TA0001", name="Initial Access", shortname="initial-access")],
+    techniques=[AttackTechnique(id="T1190", name="Exploit Public-Facing Application")],
+)
 
 
 class _FakeStore:
@@ -58,23 +71,16 @@ class TestMitreLookup:
 
 class TestMitreSkillsForTechnique:
     def test_lists_skills_that_teach_technique(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = _FakeStore()
-        monkeypatch.setattr(state, "_store", fake)
-        tech = fake.graph.upsert_node(
-            Node.make(NodeKind.TECHNIQUE, "Exploit Public-Facing Application", key="T1190")
-        )
-        skill = fake.graph.upsert_node(
-            Node.make(NodeKind.SKILL, "web-exploit", key="/skills/web/SKILL.md")
-        )
-        fake.graph.upsert_edge(Edge.make(skill.id, tech.id, EdgeKind.TEACHES))
-
+        recs = [SkillRecord(name="web-exploit", path="/skills/web/SKILL.md", mitre=["T1190"])]
+        sg = build_skill_graph(recs, _CATALOG)
+        monkeypatch.setattr("decepticon.tools.research.attack.tools.get_skill_graph", lambda: sg)
         payload = json.loads(mitre_skills_for_technique.invoke({"technique_id": "T1190"}))
         assert payload["count"] == 1
         assert payload["skills"][0]["path"] == "/skills/web/SKILL.md"
 
     def test_no_skills_for_technique(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        fake = _FakeStore()
-        monkeypatch.setattr(state, "_store", fake)
+        sg = build_skill_graph([], _CATALOG)
+        monkeypatch.setattr("decepticon.tools.research.attack.tools.get_skill_graph", lambda: sg)
         payload = json.loads(mitre_skills_for_technique.invoke({"technique_id": "T1190"}))
         assert payload["count"] == 0
 

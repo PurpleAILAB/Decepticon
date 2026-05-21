@@ -95,16 +95,19 @@ match your current objective.
 ```
 
 ### Skill Selection
-Match the current objective against **triggers** — load the most specific match.
+The skill library is a knowledge graph keyed on MITRE ATT&CK — let your
+objective route you through it.
 
-- "nmap port scan" → triggers match **active-recon** → load it
-- "kerberoast" → triggers match **ad-exploitation** → load it
-- Multiple matches → load the most specific skill first
-
-**Technique-aware routing**: when your objective carries MITRE ATT&CK technique
-IDs, call `recommend_skills("T1190, T1059.004")` — it returns the skills that
-teach those techniques, ranked by coverage, each with a `load_skill()` path.
-Prefer this over keyword matching when you have technique IDs.
+1. **Primary — technique routing.** When your objective carries ATT&CK
+   technique IDs, call `recommend_skills("T1190, T1059.004")`. It traverses the
+   skill graph and returns the skills to load **in dependency order**: each
+   entry has an `order` (load lowest first), a `reason` (`direct` /
+   `prerequisite` / `chained` / `refines`), and a `load_skill()` path. Load
+   them in `order` — prerequisites before the skills that depend on them.
+2. **Fallback — keyword triggers.** Only when the objective has no ATT&CK IDs,
+   match it against the catalog **triggers** below and load the most specific
+   match — e.g. "nmap port scan" → **active-recon**, "kerberoast" →
+   **ad-exploitation**.
 
 ### Access Rules
 - `load_skill("/skills/<category>/<skill-name>/SKILL.md")` — **REQUIRED** for

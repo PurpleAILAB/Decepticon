@@ -27,6 +27,47 @@ from decepticon.tools.research.graph import Edge, EdgeKind, Node, NodeKind
 
 _SKILL_INDEX_FILE = "data/skill_techniques.json"
 _SKILLS_DIR_ENV = "DECEPTICON_SKILLS_DIR"
+_SKILLS_PREFIX = "/skills/"
+
+
+def _resolve_slug(ref: object) -> str | None:
+    """Resolve a skill reference to its canonical ``/skills/<slug>/SKILL.md`` path.
+
+    Accepts a bare directory slug (``standard/analyst/ssrf``), a ``/skills/``-
+    prefixed path, or an explicit ``.../SKILL.md`` path — with stray
+    surrounding whitespace or slashes. Returns ``None`` for empty/unusable input.
+    """
+    if not isinstance(ref, str):
+        return None
+    slug = ref.strip()
+    if slug.startswith(_SKILLS_PREFIX):
+        slug = slug[len(_SKILLS_PREFIX) :]
+    slug = slug.strip().strip("/")
+    if slug.endswith("/SKILL.md"):
+        slug = slug[: -len("/SKILL.md")]
+    slug = slug.strip("/")
+    if not slug or slug == "SKILL.md":
+        return None
+    return f"{_SKILLS_PREFIX}{slug}/SKILL.md"
+
+
+def _as_str_list(raw: object) -> list[str]:
+    """Coerce a frontmatter field (a YAML list or comma/space string) to a list."""
+    if isinstance(raw, list):
+        return [str(t).strip() for t in raw if str(t).strip()]
+    if raw is None:
+        return []
+    return [t.strip() for t in str(raw).replace(",", " ").split() if t.strip()]
+
+
+def _resolve_refs(raw: object) -> list[str]:
+    """Parse a skill-reference frontmatter field to a deduped list of canonical paths."""
+    out: list[str] = []
+    for ref in _as_str_list(raw):
+        resolved = _resolve_slug(ref)
+        if resolved is not None and resolved not in out:
+            out.append(resolved)
+    return out
 
 
 class SkillRecord(BaseModel):
@@ -38,6 +79,15 @@ class SkillRecord(BaseModel):
     subdomain: str = "general"
     mitre: list[str] = Field(default_factory=list, description="Normalized ATT&CK IDs")
     tags: list[str] = Field(default_factory=list)
+    requires: list[str] = Field(
+        default_factory=list, description="Canonical paths of prerequisite skills"
+    )
+    chains_to: list[str] = Field(
+        default_factory=list, description="Canonical paths of natural follow-on skills"
+    )
+    refines: list[str] = Field(
+        default_factory=list, description="Canonical paths of skills this one specializes"
+    )
 
 
 # ── Frontmatter parsing ──────────────────────────────────────────────────
@@ -71,18 +121,16 @@ def parse_skill_md(text: str, path: str) -> SkillRecord | None:
         return None
     metadata = fm.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
-    tags_raw = metadata.get("tags", "")
-    if isinstance(tags_raw, list):
-        tags = [str(t).strip() for t in tags_raw if str(t).strip()]
-    else:
-        tags = [t.strip() for t in str(tags_raw).replace(",", " ").split() if t.strip()]
     return SkillRecord(
         name=name.strip(),
         path=path,
         description=str(fm.get("description", "")).strip(),
         subdomain=str(metadata.get("subdomain", "general")).strip() or "general",
         mitre=parse_ids(metadata.get("mitre_attack")),
-        tags=tags,
+        tags=_as_str_list(metadata.get("tags")),
+        requires=_resolve_refs(metadata.get("requires")),
+        chains_to=_resolve_refs(metadata.get("chains_to")),
+        refines=_resolve_refs(metadata.get("refines")),
     )
 
 
@@ -143,6 +191,30 @@ def skill_graph_elements(records: list[SkillRecord]) -> tuple[list[Node], list[E
     return nodes, edges
 
 
+def skill_skill_edges(records: list[SkillRecord]) -> list[Edge]:
+    """Build the skill↔skill edges — ``REQUIRES`` / ``CHAINS_TO`` / ``REFINES``.
+
+    Edges whose target is not among ``records`` (dangling references) and
+    self-edges are dropped so the graph stays clean. Use ``validate_skill_graph``
+    to surface those as authoring errors.
+    """
+    known = {rec.path for rec in records}
+    edge_specs = (
+        ("requires", EdgeKind.REQUIRES),
+        ("chains_to", EdgeKind.CHAINS_TO),
+        ("refines", EdgeKind.REFINES),
+    )
+    edges: list[Edge] = []
+    for rec in records:
+        src = skill_node_id(rec.path)
+        for attr, kind in edge_specs:
+            for target in getattr(rec, attr):
+                if target == rec.path or target not in known:
+                    continue
+                edges.append(Edge.make(src, skill_node_id(target), kind))
+    return edges
+
+
 # ── Loading / seeding ────────────────────────────────────────────────────
 
 
@@ -181,4 +253,5 @@ __all__ = [
     "seed_skills",
     "skill_graph_elements",
     "skill_node_id",
+    "skill_skill_edges",
 ]

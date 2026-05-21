@@ -13,6 +13,7 @@ from decepticon.tools.research._state import _json, _load, _save
 from decepticon.tools.research.attack.catalog import load_attack_catalog, normalize
 from decepticon.tools.research.attack.link import backfill_mitre, link_mitre
 from decepticon.tools.research.attack.seed import technique_node_id
+from decepticon.tools.research.attack.skill_graph import get_skill_graph
 from decepticon.tools.research.graph import EdgeKind, NodeKind
 
 
@@ -63,12 +64,18 @@ def mitre_skills_for_technique(technique_id: str) -> str:
         technique_id: ATT&CK technique ID, e.g. ``T1190``.
 
     Returns:
-        JSON with the matching skills (name + ``load_skill`` path).
+        JSON with the matching skills (name + ``load_skill`` path). Reads the
+        in-memory skill knowledge graph — no engagement graph / Neo4j needed.
     """
     norm = normalize(technique_id)
     if norm is None:
         return _json({"error": f"not a valid ATT&CK ID: {technique_id!r}"})
-    graph, _path = _load()
+    try:
+        graph = get_skill_graph().graph
+    except Exception:
+        return _json(
+            {"technique": norm, "skills": [], "count": 0, "note": "skill graph unavailable"}
+        )
     tech_node = technique_node_id(norm)
     skills = [
         {"name": nbr.label, "path": nbr.props.get("key", "")}
