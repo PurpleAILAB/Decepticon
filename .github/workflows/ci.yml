@@ -140,10 +140,21 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml config > /dev/null
 
   python:
-    name: Python (lint + typecheck + test)
+    # Matrix runs the full lint + typecheck + test suite on Linux, macOS and
+    # Windows so OS-specific regressions (path handling, console encoding,
+    # line endings) are caught at PR time. `shell: bash` is forced on every
+    # step so the same script runs identically on the Windows runner.
+    name: Python (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -173,10 +184,10 @@ jobs:
         run: |
           # Fail on errors only — pre-existing warnings on langchain dynamic
           # interfaces are tracked but non-blocking. Ratchet up over time.
-          uv run basedpyright --outputjson > /tmp/bp.json || true
-          python3 -c "
+          uv run basedpyright --outputjson > bp.json || true
+          uv run python -c "
           import json, sys
-          d = json.load(open('/tmp/bp.json'))
+          d = json.load(open('bp.json'))
           s = d['summary']
           print(f\"basedpyright: {s['errorCount']} errors, {s['warningCount']} warnings, {s['informationCount']} info\")
           sys.exit(1 if s['errorCount'] > 0 else 0)
@@ -197,15 +208,22 @@ jobs:
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml
+          name: coverage-xml-${{ matrix.os }}
           path: coverage.xml
           if-no-files-found: ignore
 
   cli:
-    name: CLI (typecheck + test)
+    name: CLI (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.cli == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v6
@@ -252,12 +270,12 @@ jobs:
   # builds the binaries on tag push, so a broken `go test ./...` is caught
   # at PR time instead of blocking the release pipeline.
   launcher:
-    # Matrix exercises both Linux and macOS so OS-specific code paths
+    # Matrix exercises Linux, macOS and Windows so OS-specific code paths
     # (the WSL2 detection in internal/platform, file path handling,
     # /proc/version reads) don't silently regress on one OS while passing
     # on the other. WSL itself isn't a separate runner — IsWSL() returns
-    # false on macOS and on the Linux runner, and unit tests stub the
-    # /proc/version + /etc/resolv.conf inputs to cover the WSL branches
+    # false on macOS/Windows and on the Linux runner, and unit tests stub
+    # the /proc/version + /etc/resolv.conf inputs to cover the WSL branches
     # deterministically on every platform.
     name: Launcher (${{ matrix.os }})
     needs: changes
@@ -266,7 +284,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
