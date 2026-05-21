@@ -477,12 +477,14 @@ def format_bootstrap_for_prompt(memories: list[EngagementMemory]) -> str:
     for m in memories:
         bug_classes = ", ".join(f"{bc}({n})" for bc, n in m.top_bug_classes[:3])
         techs = ", ".join(m.top_techniques[:3])
-        lines.extend([
-            f"  <engagement slug={m.slug!r} target={m.target!r} ended={m.ended_at!r}>",
-            f"    findings: total={m.total_findings} validated={m.validated_findings} shipped={m.shipped_findings}",
-            f"    top_bug_classes: {bug_classes or '(none)'}",
-            f"    top_techniques: {techs or '(none)'}",
-        ])
+        lines.extend(
+            [
+                f"  <engagement slug={m.slug!r} target={m.target!r} ended={m.ended_at!r}>",
+                f"    findings: total={m.total_findings} validated={m.validated_findings} shipped={m.shipped_findings}",
+                f"    top_bug_classes: {bug_classes or '(none)'}",
+                f"    top_techniques: {techs or '(none)'}",
+            ]
+        )
         if m.crown_jewels_reached:
             lines.append(f"    crown_jewels_reached: {', '.join(m.crown_jewels_reached[:3])}")
         if m.note:

@@ -104,9 +104,10 @@ def test_neo4j_unavailable_graceful_degradation(monkeypatch) -> None:
 
     assert cross_session.ensure_evograph_schema() is False
     assert register_engagement("slug-x", "tgt") is False
-    assert cross_session.tag_node_to_engagement(
-        node_key="x", kind="Finding", engagement_slug="slug-x"
-    ) is False
+    assert (
+        cross_session.tag_node_to_engagement(node_key="x", kind="Finding", engagement_slug="slug-x")
+        is False
+    )
     assert commit_engagement_memory("slug-x") is None
     assert bootstrap_from_prior(target_hint="x") == []
     assert find_similar_findings(bug_class="sqli") == []
