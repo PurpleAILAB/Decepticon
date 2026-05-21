@@ -15,6 +15,7 @@
   "env": ".env",
   "python_version": "3.13",
   "http": {
-    "multitask_strategy": "interrupt"
+    "multitask_strategy": "interrupt",
+    "app": "./decepticon/server/plugins_api.py:app"
   }
 }
