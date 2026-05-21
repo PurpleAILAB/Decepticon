@@ -77,27 +77,6 @@ Per-objective progress board:
 
 ---
 
-## OSS vs EE Mode
-
-| Feature | OSS | EE |
-|---------|-----|----|
-| Authentication | None (single local user) | Multi-user + RBAC |
-| Engagement management | Single engagement | Multiple concurrent engagements |
-| User management | — | User roles and permissions |
-| Audit logging | — | Full audit trail |
-
-**OSS mode** (default): No login required. All data belongs to a single `local` user. Suitable for individual operators and self-hosted deployments.
-
-**EE mode** (Enterprise Edition): Links the private `@decepticon/ee` package. Requires a separate license.
-
-```bash
-make web-ee    # Switch to EE mode (links @decepticon/ee)
-make web-oss   # Switch back to OSS mode
-make dev       # Restart after switching
-```
-
----
-
 ## Database
 
 The dashboard uses PostgreSQL with Prisma ORM.

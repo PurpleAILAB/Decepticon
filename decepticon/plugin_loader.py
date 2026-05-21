@@ -49,6 +49,7 @@ MIDDLEWARE_GROUP = "decepticon.middleware"
 AGENTS_GROUP = "decepticon.agents"
 SUBAGENTS_GROUP = "decepticon.subagents"
 CALLBACKS_GROUP = "decepticon.callbacks"
+SKILLS_GROUP = "decepticon.skills"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -172,31 +173,136 @@ def is_bundle_enabled(bundle: str | None) -> bool:
 
 @dataclass(frozen=True)
 class PluginBundle:
-    """Optional wrapper for entry-point contributions to declare bundle membership.
+    """Wrapper for entry-point contributions to declare bundle membership
+    AND override the standard middleware / tools / prompts.
 
-    Plugin authors who want bundle-level activation control wrap their
-    tools / middleware / callbacks in this. Plain list returns (the
-    existing convention) keep working as ``bundle=None`` — always-load
-    when installed, matching Claude Code's MCP-server semantics.
+    The original ``items``-only shape stays the additive escape hatch:
+    plain list returns and ``PluginBundle(items=(...,))`` keep working
+    as before. The expansion fields below let plugins replace, disable,
+    or patch the components an agent factory would otherwise build
+    inline.
 
-    Example::
+    Override mechanics
+    ------------------
+    Tools / middleware / prompts / subagents are name-keyed. A plugin
+    that wants to ship a Slack version of ``ask_user_question`` either
+    drops the standard one (``disabled_tools=("ask_user_question",)``)
+    and adds its own via ``items``, OR uses
+    ``replaced_tools={"ask_user_question": SaaSSlackAskTool}`` which
+    combines the two steps. Middleware slot replacement works the same
+    way — slot names match the ``MiddlewareSlot`` enum values in
+    ``decepticon.agents.middleware_slots``.
 
-        # my_plugin/tools.py
-        from decepticon.plugin_loader import PluginBundle
-        from langchain_core.tools import tool
+    Safety gating
+    -------------
+    A subset of slots and tools are flagged safety-critical (see
+    ``SAFETY_CRITICAL_SLOTS`` / ``SAFETY_CRITICAL_TOOLS`` in
+    ``decepticon.agents``). Plugins attempting to disable or replace
+    those raise ``SafetyOverrideViolation`` at agent-construction time
+    unless ``DECEPTICON_ALLOW_SAFETY_OVERRIDES=1`` is set in the
+    environment. The gate exists so an accidentally-installed plugin
+    can't silently subvert ``EngagementContextMiddleware``,
+    ``SandboxNotificationMiddleware``, ``ask_user_question``, or
+    ``complete_engagement_planning``.
 
-        @tool
-        def my_premium_tool(query: str) -> str:
-            ...
+    Examples
+    --------
 
-        # pyproject.toml entry-point points at this constant:
-        TOOLS = PluginBundle(items=(my_premium_tool,), bundle="premium")
+    Slack version of ask_user_question::
 
-        # Only loaded when DECEPTICON_PLUGINS includes "premium".
+        ASK_USER_VIA_SLACK = PluginBundle(
+            bundle="saas",
+            replaced_tools={"ask_user_question": saas_slack_ask_tool},
+        )
+
+    Drop OSS prompt caching, ship a SaaS one in its place::
+
+        PluginBundle(
+            bundle="saas",
+            disabled_middleware=("prompt-caching",),
+            items=(SaaSCacheMiddleware(),),
+        )
+
+    Append SaaS audit policy to the soundwave prompt::
+
+        PluginBundle(
+            bundle="saas",
+            prompts={
+                "soundwave": {"append": "<SAAS_AUDIT_POLICY>...</SAAS_AUDIT_POLICY>"},
+            },
+        )
+
+    Replace the standard recon sub-agent with a SaaS-licensed version::
+
+        PluginBundle(
+            bundle="saas",
+            replaced_subagents={"recon": saas.recon.SUBAGENT_SPEC},
+        )
+
+    Fields
+    ------
+    items
+        Plain additive shape — middleware / tools / callbacks added to
+        the end of the standard stack. Pre-existing behaviour, unchanged.
+    bundle
+        Optional grouping label; ``None`` = always-load when installed.
+    roles
+        Empty tuple = applies to whichever role triggered the load
+        (existing entry-point group-based scoping). Non-empty tuple
+        restricts the override to those role names only — useful when
+        a plugin ships overrides for several agents but each must scope
+        independently.
+    disabled_tools
+        Tool names (the @tool callable's ``.name`` attribute) to remove
+        from the standard registry for the matching role.
+    replaced_tools
+        Tool name → replacement callable. Removes the standard tool of
+        that name and adds the replacement in its place. The replacement
+        must have a ``.name`` attribute matching the dict key.
+    disabled_middleware
+        Slot names (MiddlewareSlot values) to skip during assembly.
+    replaced_middleware
+        Slot name → factory callable. Factory signature mirrors
+        ``DEFAULT_SLOT_FACTORIES`` entries —
+        ``f(*, backend, llm, role, fallback_models, sandbox, subagents)``
+        — and returns a middleware instance (or None for conditional
+        slots).
+    prompts
+        Role name → dict with optional ``prepend`` / ``append`` /
+        ``replace`` keys. ``replace`` wholly substitutes the loaded
+        prompt; ``prepend`` / ``append`` wrap it. When ``replace`` is
+        set, ``prepend`` / ``append`` are ignored.
+    disabled_subagents
+        Sub-agent names to skip when the orchestrator iterates
+        ``load_subagents_for_parent``.
+    replaced_subagents
+        Sub-agent name → SubAgentSpec replacement.
     """
 
     items: tuple[Any, ...] = ()
     bundle: str | None = None
+
+    # ── Override scoping ─────────────────────────────────────────────
+    roles: tuple[str, ...] = ()
+
+    # ── Tool overrides ───────────────────────────────────────────────
+    disabled_tools: tuple[str, ...] = ()
+    replaced_tools: dict[str, Any] = field(default_factory=dict)
+
+    # ── Middleware overrides ─────────────────────────────────────────
+    disabled_middleware: tuple[str, ...] = ()
+    replaced_middleware: dict[str, Callable[..., Any]] = field(default_factory=dict)
+
+    # ── Prompt overrides ─────────────────────────────────────────────
+    prompts: dict[str, dict[str, str]] = field(default_factory=dict)
+
+    # ── Sub-agent overrides ──────────────────────────────────────────
+    disabled_subagents: tuple[str, ...] = ()
+    replaced_subagents: dict[str, Any] = field(default_factory=dict)
+
+    def matches_role(self, role: str) -> bool:
+        """``roles`` filter — empty tuple = unrestricted."""
+        return not self.roles or role in self.roles
 
 
 @dataclass(frozen=True)
@@ -228,9 +334,6 @@ class SubAgentSpec:
             small explicit values (10, 20, ...) so their order is
             preserved; plugin subagents typically fall back to 100 and
             are appended at the end alphabetically.
-        skill_sources: optional tuple of ``/skills/<x>/`` paths the
-            subagent expects to find inside the sandbox. Reserved for
-            future skill-routing wiring; main agents currently ignore.
     """
 
     name: str
@@ -239,7 +342,6 @@ class SubAgentSpec:
     parent_agents: tuple[str, ...] = ()
     bundle: str | None = None
     priority: int = 100
-    skill_sources: tuple[str, ...] = field(default_factory=tuple)
 
 
 # Attributes that distinguish a Tool/Middleware/Callback INSTANCE from a
@@ -325,6 +427,22 @@ def load_plugin_middleware(role: str | None = None, **deps: Any) -> list[Any]:
 def load_plugin_callbacks(role: str | None = None, **deps: Any) -> list[Any]:
     """Discover LangChain callback handlers contributed by external packages."""
     return _discover(CALLBACKS_GROUP, role=role, **deps)
+
+
+def load_plugin_skill_sources(role: str | None = None) -> list[str]:
+    """Discover ``/skills/<bundle>/`` paths contributed by external packages.
+
+    Plugin packages declare a callable ``f(role: str) -> list[str]`` or a
+    static ``list[str]`` under the ``decepticon.skills`` entry-point group.
+    The result is appended to the OSS-default paths returned by
+    ``skills_sources_for(role)`` so plugin skills layer ON TOP of the
+    baseline without requiring full SKILLS slot replacement.
+
+    Non-string return values are filtered out — plugins should ship POSIX
+    paths matching the convention ``/skills/<bundle>/[<role>/]``.
+    """
+    raw = _discover(SKILLS_GROUP, role=role)
+    return [p for p in raw if isinstance(p, str) and p]
 
 
 def _discover_subagent_specs() -> list[SubAgentSpec]:
