@@ -169,3 +169,25 @@ class TestStats:
         assert s["nodes"] == 3
         assert s["node.Host"] == 2
         assert s["node.Vulnerability"] == 1
+
+
+class TestAttackSpineEnums:
+    """ATT&CK-spine node/edge kinds — Skill graph unified with the attack graph."""
+
+    def test_skill_and_tactic_node_kinds_exist(self) -> None:
+        assert NodeKind.SKILL.value == "Skill"
+        assert NodeKind.TACTIC.value == "Tactic"
+
+    def test_spine_edge_kinds_exist(self) -> None:
+        assert EdgeKind.TEACHES.value == "TEACHES"
+        assert EdgeKind.SUB_TECHNIQUE_OF.value == "SUB_TECHNIQUE_OF"
+        assert EdgeKind.IN_TACTIC.value == "IN_TACTIC"
+
+    def test_skill_node_round_trips_through_graph(self) -> None:
+        g = KnowledgeGraph()
+        skill = g.upsert_node(Node.make(NodeKind.SKILL, "passive-recon", key="/skills/x"))
+        tech = g.upsert_node(Node.make(NodeKind.TECHNIQUE, "Active Scanning", key="T1595"))
+        g.upsert_edge(Edge.make(skill.id, tech.id, EdgeKind.TEACHES))
+        pairs = g.neighbors(skill.id, edge_kind=EdgeKind.TEACHES)
+        assert len(pairs) == 1
+        assert pairs[0][1].label == "Active Scanning"

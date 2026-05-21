@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from langchain_core.tools import tool
+
+from decepticon.tools.research import _state
+from decepticon.tools.research.attack.routing import skills_for_objective
 
 # ── load_skill tool ──────────────────────────────────────────────────────────
 # A Decepticon-specific replacement for `load_skill("/skills/...")` that
@@ -184,4 +188,34 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
     return load_skill
 
 
-__all__ = ["build_load_skill_tool"]
+# ── recommend_skills tool ────────────────────────────────────────────────
+# Technique-aware skill routing — maps an objective's MITRE ATT&CK IDs to
+# the skills that teach them via the knowledge graph's TEACHES edges.
+
+
+@tool
+def recommend_skills(mitre_ids: str) -> str:
+    """Recommend skills for an objective's MITRE ATT&CK techniques.
+
+    Pass the technique IDs from your current objective; this returns the
+    skills that teach them, ranked by coverage, each with a ``load_skill``
+    path. A sub-technique with no direct skill falls back to its parent.
+
+    Args:
+        mitre_ids: Comma-separated ATT&CK technique IDs, e.g.
+            ``"T1190, T1059.004"``.
+
+    Returns:
+        JSON with ranked skills (name, ``load_skill`` path, techniques
+        covered). Degrades to an empty list if the knowledge graph is
+        unavailable — fall back to the static skill catalog in that case.
+    """
+    try:
+        graph, _path = _state._load()
+        results = skills_for_objective(graph, mitre_ids)
+    except Exception:
+        return json.dumps({"skills": [], "count": 0, "note": "skill routing unavailable"})
+    return json.dumps({"skills": results, "count": len(results)})
+
+
+__all__ = ["build_load_skill_tool", "recommend_skills"]

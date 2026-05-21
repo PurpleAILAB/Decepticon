@@ -1,0 +1,897 @@
+[
+ {
+  "name": "benchmark",
+  "path": "/skills/benchmark/SKILL.md",
+  "description": "Benchmark mode marker — engagement objective is flag capture. Generic engagement rules apply unchanged.",
+  "subdomain": "benchmark",
+  "mitre": [],
+  "tags": [
+   "benchmark",
+   "ctf"
+  ]
+ },
+ {
+  "name": "detector-overview",
+  "path": "/skills/plugins/detector/SKILL.md",
+  "description": "Stage 2 vulnerability detector playbook. Reads source around CANDIDATE nodes and promotes real bugs to VULNERABILITY + HYPOTHESIS. Read-only. Load at detector-agent startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "exploiter-overview",
+  "path": "/skills/plugins/exploiter/SKILL.md",
+  "description": "Stage 5 exploit construction playbook. Weaponizes validated primitives into multi-step chains that reach crown jewels. Load at exploiter-agent startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "patcher-overview",
+  "path": "/skills/plugins/patcher/SKILL.md",
+  "description": "Stage 4 patch generation playbook. Minimal diffs for validated findings with mandatory patch_verify. Load at patcher-agent startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "scanner-overview",
+  "path": "/skills/plugins/scanner/SKILL.md",
+  "description": "Stage 1 broad-spectrum scanner playbook. Sharded sweep over very large codebases producing CANDIDATE nodes for the Detector to reason about. Load at scanner-agent startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "bounty-report-formatter",
+  "path": "/skills/plugins/verifier/bounty-report/SKILL.md",
+  "description": "Bug bounty report formatting for HackerOne, Bugcrowd, Immunefi, and GitHub Security Advisories. Load after validate_finding succeeds and the finding needs to be submitted to a bounty program.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "verifier-overview",
+  "path": "/skills/plugins/verifier/SKILL.md",
+  "description": "Stage 3 triage and verification playbook. Crafts minimal PoCs, runs them with ZFP controls, promotes validated bugs to FINDING nodes with CVSS. Load at verifier-agent startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "vulnresearch-orchestrator",
+  "path": "/skills/plugins/vulnresearch/SKILL.md",
+  "description": "Five-stage modular vulnerability pipeline orchestrator. Delegates scan → detect → verify → patch → exploit through OPPLAN objectives. Load at orchestrator startup.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "defense-evasion",
+  "path": "/skills/shared/defense-evasion/SKILL.md",
+  "description": "Endpoint defense bypass — AMSI/ETW patching, ScareCrow framework, custom loaders, direct/indirect syscalls, LOLBAS execution, process injection.",
+  "subdomain": "defense-evasion",
+  "mitre": [
+   "T1562",
+   "T1027",
+   "T1055",
+   "T1218",
+   "T1036",
+   "T1140"
+  ],
+  "tags": [
+   "amsi",
+   "etw",
+   "edr",
+   "scarecrow",
+   "loader",
+   "syscall",
+   "lolbas",
+   "injection",
+   "evasion"
+  ]
+ },
+ {
+  "name": "finding-protocol",
+  "path": "/skills/shared/finding-protocol/SKILL.md",
+  "description": "Operational-tier finding template — minimal fields for sub-agent decision support. Heavyweight deliverable promotion lives in skills/decepticon/final-report.",
+  "subdomain": "reporting",
+  "mitre": [],
+  "tags": [
+   "finding",
+   "protocol",
+   "template",
+   "severity",
+   "reporting",
+   "documentation",
+   "operational"
+  ]
+ },
+ {
+  "name": "opsec",
+  "path": "/skills/shared/opsec/SKILL.md",
+  "description": "Operational security management — traffic shaping, scan rate limiting, source IP management, tool signature avoidance, evidence handling, anti-detection patterns.",
+  "subdomain": "opsec",
+  "mitre": [
+   "T1562",
+   "T1070",
+   "T1036"
+  ],
+  "tags": [
+   "opsec",
+   "stealth",
+   "rate-limit",
+   "user-agent",
+   "scope-check",
+   "evidence-handling",
+   "anti-detection"
+  ]
+ },
+ {
+  "name": "references",
+  "path": "/skills/shared/references/SKILL.md",
+  "description": "External knowledge integration — HackerOne reports, PayloadsAllTheThings, Book of Secret Knowledge, CVE PoC corpora, bug bounty methodologies, and reference pentest agent architectures. Use these to calibrate, look up payloads, and accelerate research.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "stealth-infra",
+  "path": "/skills/shared/stealth-infra/SKILL.md",
+  "description": "Anti-bot evasion, proxy rotation, credential retrieval from password managers, and stealth HTTP tooling for covert web operations.",
+  "subdomain": "opsec",
+  "mitre": [
+   "T1562",
+   "T1036",
+   "T1090"
+  ],
+  "tags": [
+   "stealth",
+   "proxy",
+   "captcha",
+   "anti-bot",
+   "opsec",
+   "cookies",
+   "keyring"
+  ]
+ },
+ {
+  "name": "ad-overview",
+  "path": "/skills/standard/ad/SKILL.md",
+  "description": "Active Directory attack lane — BloodHound ingestion, Kerberoasting, ADCS ESC scanning, DCSync, LAPS extraction.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "auth-bypass",
+  "path": "/skills/standard/analyst/auth-bypass/SKILL.md",
+  "description": "Hunt authentication/authorization bypass in route guards, role checks, tenant boundaries, and state-machine transitions.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "bounty-hunting-methodology",
+  "path": "/skills/standard/analyst/bounty-hunting/SKILL.md",
+  "description": "Bug bounty white-box hunting methodology. Load when the target is an open-source project with a security advisory program, bug bounty, or responsible disclosure policy.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "chain-credential-reuse",
+  "path": "/skills/standard/analyst/chains/cred-reuse/SKILL.md",
+  "description": "Build chains where leaked or weak credentials pivot across services to privileged access.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "chain-idor-to-priv-esc",
+  "path": "/skills/standard/analyst/chains/idor-to-priv-esc/SKILL.md",
+  "description": "Build chains where IDOR enables privilege escalation and high-impact control-plane actions.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "chain-ssrf-to-rce",
+  "path": "/skills/standard/analyst/chains/ssrf-to-rce/SKILL.md",
+  "description": "Build and validate SSRF pivot chains toward metadata/infra control and final code execution impact.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "chain-xss-to-takeover",
+  "path": "/skills/standard/analyst/chains/xss-to-takeover/SKILL.md",
+  "description": "Build chains from XSS into account takeover or privileged action execution.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "command-injection",
+  "path": "/skills/standard/analyst/command-injection/SKILL.md",
+  "description": "Hunt OS command injection (CWE-78) — user input reaching shell, exec, or system calls. Covers argument-array bypasses, path confusion, and template-string injection in modern frameworks.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "deserialization",
+  "path": "/skills/standard/analyst/deserialization/SKILL.md",
+  "description": "Hunt insecure deserialization (CWE-502) across Python pickle, Java ObjectInputStream / Jackson / SnakeYAML, .NET BinaryFormatter / DataContractJson, PHP unserialize, Ruby Marshal/YAML.load, and Node.js vm. Direct path to unauthenticated RCE.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "idor",
+  "path": "/skills/standard/analyst/idor/SKILL.md",
+  "description": "Hunt Insecure Direct Object Reference (CWE-639) — missing authorization checks on object IDs. Covers horizontal vs vertical privilege escalation, UUID vs integer guessing, and GraphQL introspection-driven IDOR discovery.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "path-traversal",
+  "path": "/skills/standard/analyst/path-traversal/SKILL.md",
+  "description": "Hunt directory traversal and archive traversal (ZipSlip/TarSlip) from user input to filesystem operations.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "pattern-exhaustion",
+  "path": "/skills/standard/analyst/pattern-exhaustion/SKILL.md",
+  "description": "Systematic pattern exhaustion methodology. Load after finding any confirmed vulnerability to search for all instances of the same root cause pattern across the codebase.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "prompt-injection",
+  "path": "/skills/standard/analyst/prompt-injection/SKILL.md",
+  "description": "Hunt LLM prompt injection and tool-call hijacking in modern AI-integrated applications (CWE-1427). Covers indirect injection via RAG, tool abuse, exfiltration chains, and jailbreak-to-RCE pivots on agentic systems.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "prototype-pollution",
+  "path": "/skills/standard/analyst/prototype-pollution/SKILL.md",
+  "description": "Hunt JavaScript prototype pollution (CWE-1321) — the 2023-2026 meta-vulnerability that chains into RCE, auth bypass, and SSRF on most Node.js stacks.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "analyst-overview",
+  "path": "/skills/standard/analyst/SKILL.md",
+  "description": "Root pointer for the analyst's vulnerability research playbooks. Load this first at iteration start to see the full catalog of vuln-class and chain-building skills.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "sql-injection",
+  "path": "/skills/standard/analyst/sql-injection/SKILL.md",
+  "description": "Hunt SQL injection (CWE-89) via source-level taint tracking. Covers string concat, format-string, ORM raw queries, second-order injection, and NoSQL injection in MongoDB/DynamoDB.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "ssrf",
+  "path": "/skills/standard/analyst/ssrf/SKILL.md",
+  "description": "Hunt Server-Side Request Forgery (CWE-918) through taint analysis from user-controlled URLs to HTTP client sinks. Covers cloud metadata pivoting, DNS rebinding, gopher smuggling, and the IMDSv1 → IAM role chain that turns SSRF into RCE.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "ssti",
+  "path": "/skills/standard/analyst/ssti/SKILL.md",
+  "description": "Hunt server-side template injection across Jinja2/Twig/Freemarker/Velocity/Handlebars and validate progression from expression injection to code execution.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "trust-boundary-analysis",
+  "path": "/skills/standard/analyst/trust-boundary/SKILL.md",
+  "description": "Trust boundary mapping and startup sequence audit for developer tools, CLI apps, and plugin systems. Load when the target is a developer tool, CLI, IDE extension, or any application that loads config from the current directory.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "xxe",
+  "path": "/skills/standard/analyst/xxe/SKILL.md",
+  "description": "Hunt XML External Entity flaws in parsers and validate file read / SSRF impact with strict negative controls.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "aws-iam-enum",
+  "path": "/skills/standard/cloud/aws-iam-enum/SKILL.md",
+  "description": "Enumerate AWS IAM policies, detect privilege escalation paths per Rhino Security Labs canonical 21 primitives.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "cloud-overview",
+  "path": "/skills/standard/cloud/SKILL.md",
+  "description": "Cloud exploitation lane — AWS IAM privesc, S3 takeover, k8s RBAC abuse, Terraform state leaks, cloud metadata pivoting.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "reentrancy",
+  "path": "/skills/standard/contracts/reentrancy/SKILL.md",
+  "description": "Hunt and validate reentrancy bugs — classic cross-function, same-function, read-only, and cross-contract variants.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "contracts-overview",
+  "path": "/skills/standard/contracts/SKILL.md",
+  "description": "Smart contract audit lane — Solidity/EVM pattern scanner, Slither ingestion, Foundry PoC generation, DeFi attack playbooks.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "engagement-lifecycle",
+  "path": "/skills/standard/decepticon/engagement-lifecycle/SKILL.md",
+  "description": "Red team engagement lifecycle management — initiation, phase transitions, go/no-go gates, deconfliction, emergency procedures, completion.",
+  "subdomain": "orchestration",
+  "mitre": [],
+  "tags": [
+   "engagement",
+   "lifecycle",
+   "planning",
+   "phase-transition",
+   "deconfliction",
+   "emergency",
+   "completion"
+  ]
+ },
+ {
+  "name": "engagement-startup",
+  "path": "/skills/standard/decepticon/engagement-startup/SKILL.md",
+  "description": "Mandatory first-turn startup procedure — checks for existing engagements, resume/new selection, workspace initialization.",
+  "subdomain": "orchestration",
+  "mitre": [],
+  "tags": [
+   "startup",
+   "engagement-selection",
+   "workspace-init",
+   "resume"
+  ]
+ },
+ {
+  "name": "final-report",
+  "path": "/skills/standard/decepticon/final-report/SKILL.md",
+  "description": "Final engagement report generation — executive summary, technical report, findings aggregation, attack path narrative, detection gap matrix, remediation roadmap.",
+  "subdomain": "orchestration",
+  "mitre": [],
+  "tags": [
+   "report",
+   "final",
+   "executive-summary",
+   "technical-report",
+   "remediation",
+   "detection-gap"
+  ]
+ },
+ {
+  "name": "kill-chain-analysis",
+  "path": "/skills/standard/decepticon/kill-chain-analysis/SKILL.md",
+  "description": "Kill chain analysis and attack path decision-making — findings analysis, attack vector selection, target prioritization, phase transitions.",
+  "subdomain": "orchestration",
+  "mitre": [
+   "TA0043",
+   "TA0001",
+   "TA0002",
+   "TA0003",
+   "TA0004",
+   "TA0005",
+   "TA0006",
+   "TA0007",
+   "TA0008"
+  ],
+  "tags": [
+   "kill-chain",
+   "decision-making",
+   "attack-path",
+   "target-prioritization",
+   "technique-selection"
+  ]
+ },
+ {
+  "name": "orchestration",
+  "path": "/skills/standard/decepticon/orchestration/SKILL.md",
+  "description": "Decepticon orchestrator patterns — delegation, state management, adaptive re-planning, context handoff protocols.",
+  "subdomain": "orchestration",
+  "mitre": [],
+  "tags": [
+   "orchestration",
+   "delegation",
+   "state-management",
+   "re-planning",
+   "context-handoff"
+  ]
+ },
+ {
+  "name": "ad",
+  "path": "/skills/standard/exploit/ad/SKILL.md",
+  "description": "Active Directory exploitation — BloodHound analysis, Kerberoasting, AS-REP Roasting, AD CS abuse, DCSync, Golden Ticket, Constrained Delegation.",
+  "subdomain": "credential-access",
+  "mitre": [
+   "T1558.003",
+   "T1558.004",
+   "T1003.006",
+   "T1649",
+   "T1550.003",
+   "T1087.002"
+  ],
+  "tags": [
+   "active-directory",
+   "kerberos",
+   "credential-access",
+   "privilege-escalation",
+   "lateral-movement"
+  ]
+ },
+ {
+  "name": "reporting",
+  "path": "/skills/standard/exploit/reporting/SKILL.md",
+  "description": "Exploitation finding documentation — initial access reports, exploit chain documentation, CVSS v4.0 scoring, shell/credential inventory, detection gap analysis.",
+  "subdomain": "reporting",
+  "mitre": [
+   "TA0001",
+   "TA0002"
+  ],
+  "tags": [
+   "report",
+   "exploit",
+   "findings",
+   "cvss",
+   "shells",
+   "creds",
+   "detection-gap"
+  ]
+ },
+ {
+  "name": "web",
+  "path": "/skills/standard/exploit/web/SKILL.md",
+  "description": "Web application exploitation — the primary category skill for all web-based attacks. This is a routing skill: read this first to identify the attack type, then load the appropriate specialized sub-skill for detailed procedures. Covers 11 technique areas across injection, file access, authentication, and API exploitation.",
+  "subdomain": "execution",
+  "mitre": [
+   "T1190",
+   "T1059",
+   "T1203"
+  ],
+  "tags": [
+   "web-application",
+   "exploitation",
+   "injection"
+  ]
+ },
+ {
+  "name": "c2",
+  "path": "/skills/standard/post-exploit/c2/SKILL.md",
+  "description": "Framework-agnostic C2 orchestration — listener types, implant modes, redirector architecture, malleable profiles, jitter strategy, OPSEC guidance.",
+  "subdomain": "command-and-control",
+  "mitre": [
+   "T1071",
+   "T1573",
+   "T1090",
+   "T1105",
+   "T1572"
+  ],
+  "tags": [
+   "c2",
+   "implant",
+   "beacon",
+   "listener",
+   "redirector",
+   "payload",
+   "orchestration"
+  ]
+ },
+ {
+  "name": "c2-sliver",
+  "path": "/skills/standard/post-exploit/c2-sliver/SKILL.md",
+  "description": "Sliver C2 framework operations — server connection, listener setup, implant generation, BOF/Armory extensions, post-implant operations, HTTP C2 profiles.",
+  "subdomain": "command-and-control",
+  "mitre": [
+   "T1071",
+   "T1573",
+   "T1090",
+   "T1105",
+   "T1572"
+  ],
+  "tags": [
+   "c2",
+   "sliver",
+   "implant",
+   "beacon",
+   "listener",
+   "bof",
+   "armory",
+   "pivot"
+  ]
+ },
+ {
+  "name": "credential-access",
+  "path": "/skills/standard/post-exploit/credential-access/SKILL.md",
+  "description": "Credential extraction and capture — LSASS dumping, SAM/SECURITY hive extraction, DPAPI decryption, NTLM relay, Responder poisoning, password spraying, hash cracking.",
+  "subdomain": "credential-access",
+  "mitre": [
+   "T1003.001",
+   "T1003.002",
+   "T1003.004",
+   "T1557.001",
+   "T1110.003",
+   "T1187"
+  ],
+  "tags": [
+   "credentials",
+   "lsass",
+   "mimikatz",
+   "ntlm",
+   "relay",
+   "spray",
+   "hashcat",
+   "dpapi",
+   "responder"
+  ]
+ },
+ {
+  "name": "lateral-movement",
+  "path": "/skills/standard/post-exploit/lateral-movement/SKILL.md",
+  "description": "Network lateral movement — Pass-the-Hash, Pass-the-Ticket, WMI/WinRM/PsExec/RDP execution, SMB operations, network tunneling with Ligolo-ng and Chisel.",
+  "subdomain": "lateral-movement",
+  "mitre": [
+   "T1021.002",
+   "T1021.006",
+   "T1021.001",
+   "T1550.002",
+   "T1550.003",
+   "T1572"
+  ],
+  "tags": [
+   "lateral",
+   "pth",
+   "ptt",
+   "wmi",
+   "winrm",
+   "psexec",
+   "rdp",
+   "smb",
+   "pivot",
+   "tunnel",
+   "ligolo",
+   "chisel"
+  ]
+ },
+ {
+  "name": "privilege-escalation",
+  "path": "/skills/standard/post-exploit/privilege-escalation/SKILL.md",
+  "description": "Host privilege escalation — Windows token impersonation, UAC bypass, service abuse, DLL hijacking, Linux SUID/sudo/kernel exploits, automated enumeration.",
+  "subdomain": "privilege-escalation",
+  "mitre": [
+   "T1134.001",
+   "T1548.002",
+   "T1574.001",
+   "T1068",
+   "T1053.003"
+  ],
+  "tags": [
+   "privesc",
+   "potato",
+   "uac",
+   "suid",
+   "sudo",
+   "kernel",
+   "service",
+   "dll-hijack",
+   "winpeas",
+   "linpeas"
+  ]
+ },
+ {
+  "name": "reporting",
+  "path": "/skills/standard/post-exploit/reporting/SKILL.md",
+  "description": "Post-exploitation finding documentation — credential access, privilege escalation, lateral movement reports, detection gap analysis, attack path documentation, CVSS v4.0 scoring.",
+  "subdomain": "reporting",
+  "mitre": [
+   "TA0003",
+   "TA0004",
+   "TA0005",
+   "TA0006",
+   "TA0007",
+   "TA0008",
+   "TA0009",
+   "TA0010"
+  ],
+  "tags": [
+   "report",
+   "post-exploit",
+   "findings",
+   "privesc",
+   "lateral",
+   "creds",
+   "detection-gap",
+   "attack-path"
+  ]
+ },
+ {
+  "name": "active-recon",
+  "path": "/skills/standard/recon/active-recon/SKILL.md",
+  "description": "Active target probing — port scanning, service detection, vulnerability scanning, banner grabbing, web directory fuzzing, SSL/TLS analysis.",
+  "subdomain": "reconnaissance",
+  "mitre": [
+   "T1595",
+   "T1595.001",
+   "T1595.002",
+   "T1595.003"
+  ],
+  "tags": [
+   "nmap",
+   "port-scan",
+   "service-detection",
+   "banner-grab",
+   "nuclei",
+   "vulnerability-scan"
+  ]
+ },
+ {
+  "name": "cloud-recon",
+  "path": "/skills/standard/recon/cloud-recon/SKILL.md",
+  "description": "Cloud infrastructure enumeration — AWS S3 buckets, Azure blob storage, GCP buckets, cloud metadata endpoints, IAM misconfigurations, CDN origin detection.",
+  "subdomain": "reconnaissance",
+  "mitre": [
+   "T1580",
+   "T1538"
+  ],
+  "tags": [
+   "cloud",
+   "aws",
+   "azure",
+   "gcp",
+   "s3-bucket",
+   "cdn",
+   "serverless"
+  ]
+ },
+ {
+  "name": "osint",
+  "path": "/skills/standard/recon/osint/SKILL.md",
+  "description": "Open-source intelligence gathering — email harvesting, social media profiling, breach data checking, employee enumeration, GitHub secret scanning, organizational mapping.",
+  "subdomain": "reconnaissance",
+  "mitre": [
+   "T1589",
+   "T1593",
+   "T1597"
+  ],
+  "tags": [
+   "osint",
+   "email-harvest",
+   "employee-enum",
+   "github-secrets",
+   "breach-data",
+   "google-dork"
+  ]
+ },
+ {
+  "name": "passive-recon",
+  "path": "/skills/standard/recon/passive-recon/SKILL.md",
+  "description": "Passive intelligence gathering without touching the target — DNS, WHOIS, subdomain enumeration, Certificate Transparency, technology fingerprinting, ASN mapping.",
+  "subdomain": "reconnaissance",
+  "mitre": [
+   "T1590",
+   "T1591",
+   "T1592",
+   "T1593",
+   "T1596"
+  ],
+  "tags": [
+   "passive",
+   "dns",
+   "subdomain-enum",
+   "whois",
+   "ct-logs",
+   "httpx",
+   "asn"
+  ]
+ },
+ {
+  "name": "reporting",
+  "path": "/skills/standard/recon/reporting/SKILL.md",
+  "description": "Recon output formatting — report structure, CVSS v4.0 scoring (primary), MITRE ATT&CK mapping, finding prioritization, Markdown output, detection gap tracking, handoff checklists.",
+  "subdomain": "reporting",
+  "mitre": [],
+  "tags": [
+   "report",
+   "cvss",
+   "findings",
+   "mitre-mapping",
+   "handoff",
+   "detection-gap",
+   "purple-team"
+  ]
+ },
+ {
+  "name": "web-recon",
+  "path": "/skills/standard/recon/web-recon/SKILL.md",
+  "description": "Web application enumeration hub — directory/file fuzzing, vhost discovery, API enumeration, CMS scanning, WAF detection, auth surface mapping, cookie audit.",
+  "subdomain": "reconnaissance",
+  "mitre": [
+   "T1595.003",
+   "T1592.004"
+  ],
+  "tags": [
+   "web-recon"
+  ]
+ },
+ {
+  "name": "reverser-firmware",
+  "path": "/skills/standard/reverser/firmware/SKILL.md",
+  "description": "Router / IoT firmware extraction pipeline — unpack nested filesystems, locate web server, identify backdoor credentials.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "reverser-overview",
+  "path": "/skills/standard/reverser/SKILL.md",
+  "description": "Root pointer for the binary reversing lane. Covers triage, string extraction, packer unpacking, symbol risk, ROP, Ghidra/r2 recon, and firmware extraction.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "reverser-triage",
+  "path": "/skills/standard/reverser/triage/SKILL.md",
+  "description": "Fast-path binary triage — identify format/arch/mitigations, grab high-signal strings and imports in under a minute.",
+  "subdomain": "general",
+  "mitre": [],
+  "tags": []
+ },
+ {
+  "name": "abort-template",
+  "path": "/skills/standard/soundwave/abort-template/SKILL.md",
+  "description": "Abort / crisis plan generator — halt triggers, response actions, AI-aware safety gates (hallucination threshold, destructive-action gate, output validation).",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "abort",
+   "halt",
+   "crisis",
+   "safety",
+   "ai-safety",
+   "owasp-agentic"
+  ]
+ },
+ {
+  "name": "cleanup-template",
+  "path": "/skills/standard/soundwave/cleanup-template/SKILL.md",
+  "description": "Cleanup & restoration plan generator — artifact inventory, persistence removal commands, pre-engagement baseline, post-engagement verification.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "cleanup",
+   "restoration",
+   "persistence",
+   "post-engagement",
+   "hygiene"
+  ]
+ },
+ {
+  "name": "conops-template",
+  "path": "/skills/standard/soundwave/conops-template/SKILL.md",
+  "description": "Concept of Operations document creation — executive summary, threat actor profiling, attack narrative, kill chain design, communication plan, deconfliction.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "conops",
+   "kill-chain",
+   "threat-model",
+   "operation-design"
+  ]
+ },
+ {
+  "name": "contact-template",
+  "path": "/skills/standard/soundwave/contact-template/SKILL.md",
+  "description": "Contact / communications plan generator — primary operator, escalation chain, abort signal recipient, external SOC endpoint, blackout windows.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "contact",
+   "communications",
+   "escalation",
+   "soc",
+   "deconfliction",
+   "blackout"
+  ]
+ },
+ {
+  "name": "data-handling-template",
+  "path": "/skills/standard/soundwave/data-handling-template/SKILL.md",
+  "description": "Data handling plan generator — evidence retention, encryption, chain-of-custody, compliance frameworks (GDPR / HIPAA / PCI-DSS / SOC2).",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "data-handling",
+   "evidence",
+   "retention",
+   "encryption",
+   "chain-of-custody",
+   "compliance",
+   "gdpr",
+   "hipaa"
+  ]
+ },
+ {
+  "name": "opplan-converter",
+  "path": "/skills/standard/soundwave/opplan-converter/SKILL.md",
+  "description": "Convert engagement documents into machine-readable OPPLAN for the ralph loop — objective decomposition, acceptance criteria, MITRE mapping, priority ordering.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "opplan",
+   "objectives",
+   "ralph-loop",
+   "automation"
+  ]
+ },
+ {
+  "name": "roe-template",
+  "path": "/skills/standard/soundwave/roe-template/SKILL.md",
+  "description": "Rules of Engagement document creation — scope definition, prohibited/permitted actions, testing windows, escalation contacts, incident procedures.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "roe",
+   "scope",
+   "engagement",
+   "authorization",
+   "legal"
+  ]
+ },
+ {
+  "name": "structured-questions",
+  "path": "/skills/standard/soundwave/structured-questions/SKILL.md",
+  "description": "How to use ask_user_question — the single operator-input channel for every interview question, including free-form fields via allow_other=true.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "interview",
+   "ask_user_question",
+   "picker",
+   "multiple-choice"
+  ]
+ },
+ {
+  "name": "threat-profile",
+  "path": "/skills/standard/soundwave/threat-profile/SKILL.md",
+  "description": "Threat actor profiling for adversary emulation — APT group research, sophistication tiers, MITRE ATT&CK mapping, initial access vectors, custom archetypes.",
+  "subdomain": "planning",
+  "mitre": [],
+  "tags": [
+   "threat-modeling",
+   "apt",
+   "adversary-emulation",
+   "mitre-attack"
+  ]
+ }
+]

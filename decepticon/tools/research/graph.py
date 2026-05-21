@@ -83,6 +83,9 @@ class NodeKind(StrEnum):
     CANDIDATE = "Candidate"
     HYPOTHESIS = "Hypothesis"
     PATCH = "Patch"
+    # Knowledge — global reference data joining the skill library to ATT&CK.
+    TACTIC = "Tactic"
+    SKILL = "Skill"
 
 
 class EdgeKind(StrEnum):
@@ -128,6 +131,10 @@ class EdgeKind(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PATCHES = "PATCHES"
     MAPS_TO = "MAPS_TO"
+    # Knowledge — skill ↔ ATT&CK joins.
+    TEACHES = "TEACHES"
+    SUB_TECHNIQUE_OF = "SUB_TECHNIQUE_OF"
+    IN_TACTIC = "IN_TACTIC"
 
 
 class Severity(StrEnum):

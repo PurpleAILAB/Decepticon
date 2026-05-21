@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any
 from deepagents.middleware._utils import append_to_system_message
 from deepagents.middleware.skills import SkillsMiddleware as BaseSkillsMiddleware
 
-from decepticon.tools.skills import build_load_skill_tool
+from decepticon.tools.skills import build_load_skill_tool, recommend_skills
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +101,11 @@ Match the current objective against **triggers** — load the most specific matc
 - "kerberoast" → triggers match **ad-exploitation** → load it
 - Multiple matches → load the most specific skill first
 
+**Technique-aware routing**: when your objective carries MITRE ATT&CK technique
+IDs, call `recommend_skills("T1190, T1059.004")` — it returns the skills that
+teach those techniques, ranked by coverage, each with a `load_skill()` path.
+Prefer this over keyword matching when you have technique IDs.
+
 ### Access Rules
 - `load_skill("/skills/<category>/<skill-name>/SKILL.md")` — **REQUIRED** for
   every /skills/* file. Routes through the same sandbox backend as `read_file`,
@@ -149,7 +154,7 @@ class SkillsMiddleware(BaseSkillsMiddleware):
     def __init__(self, *, backend: Any, sources: list[str]) -> None:
         super().__init__(backend=backend, sources=sources)
         self.system_prompt_template = DECEPTICON_SKILLS_PROMPT
-        self.tools = [build_load_skill_tool(backend, self.sources)]
+        self.tools = [build_load_skill_tool(backend, self.sources), recommend_skills]
 
     # ── workflow.md auto-load ────────────────────────────────────────────────
 

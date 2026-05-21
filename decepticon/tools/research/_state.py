@@ -12,6 +12,7 @@ They load/save through the Neo4j store instead of JSON files.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,13 +23,38 @@ log = get_logger("research.state")
 
 _store: Neo4jStore | None = None
 
+_SEED_FALSY = {"0", "false", "no", "off"}
+
+
+def _seeding_enabled() -> bool:
+    """Whether to seed ATT&CK reference data on store initialization.
+
+    On by default — seeding is idempotent. Set ``DECEPTICON_KG_SEED`` to a
+    falsy value (``0``/``false``/``no``/``off``) to skip it.
+    """
+    return os.environ.get("DECEPTICON_KG_SEED", "").strip().lower() not in _SEED_FALSY
+
 
 def get_store() -> Neo4jStore:
-    """Return the singleton Neo4jStore, creating it on first call."""
+    """Return the singleton Neo4jStore, creating it on first call.
+
+    On creation the global ATT&CK reference layer (techniques, tactics,
+    skills) is seeded — idempotently and best-effort, so a seeding failure
+    never blocks the agent.
+    """
     global _store
     if _store is None:
-        _store = Neo4jStore.from_env()
-        _store.ensure_schema()
+        store = Neo4jStore.from_env()
+        store.ensure_schema()
+        if _seeding_enabled():
+            try:
+                from decepticon.tools.research.attack.seed import seed_reference_data
+
+                counts = seed_reference_data(store)
+                log.info("ATT&CK reference data seeded: %s", counts)
+            except Exception:
+                log.exception("ATT&CK reference-data seeding failed; continuing without it")
+        _store = store
     return _store
 
 

@@ -31,6 +31,8 @@ from decepticon.tools.contracts.patterns import scan_solidity_source
 from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
+from decepticon.tools.research.attack.link import link_mitre
+from decepticon.tools.research.attack.tools import ATTACK_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.graph import (
     SEVERITY_SCORE,
@@ -341,6 +343,10 @@ def kg_add_node(kind: str, label: str, props: str = "{}") -> str:
     parsed = _parse_props(props)
     graph, path = _load()
     node = graph.upsert_node(Node.make(node_kind, label, **parsed))
+    # Resolve ATT&CK technique IDs into MAPS_TO edges so the finding is
+    # queryable through the ATT&CK spine, not just carrying inert tags.
+    if node_kind in (NodeKind.FINDING, NodeKind.VULNERABILITY) and parsed.get("mitre"):
+        link_mitre(graph, node, parsed["mitre"])
     _save(graph, path)
     return _json(
         {"id": node.id, "kind": node.kind.value, "label": node.label, "stats": graph.stats()}
@@ -2383,6 +2389,7 @@ RESEARCH_TOOLS = [
     fuzz_harness,
     fuzz_record_crash,
     validate_finding,
+    *ATTACK_TOOLS,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
 ]

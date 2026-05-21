@@ -62,6 +62,8 @@ from decepticon.plugin_loader import (
     load_plugin_tools,
     load_subagents_for_parent,
 )
+from decepticon.tools.reporting.tools import export_attack_navigator
+from decepticon.tools.research.attack.emulation import suggest_objectives_from_actor
 
 
 def create_decepticon_agent():
@@ -150,7 +152,15 @@ def create_decepticon_agent():
         ]
     )
 
-    tools = list(load_plugin_tools(role="decepticon"))
+    # ATT&CK-spine orchestrator tools:
+    #   suggest_objectives_from_actor — adversary emulation: drafts OPPLAN
+    #     objectives from a threat actor's TTPs (then add_objective each).
+    #   export_attack_navigator — ATT&CK coverage layer for the final report.
+    tools = [
+        suggest_objectives_from_actor,
+        export_attack_navigator,
+        *load_plugin_tools(role="decepticon"),
+    ]
     middleware.extend(load_plugin_middleware(role="decepticon", backend=backend))
 
     agent = create_agent(

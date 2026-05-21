@@ -12,6 +12,7 @@ from decepticon.tools.reporting.executive import render_executive_summary
 from decepticon.tools.reporting.hackerone import render_hackerone_markdown
 from decepticon.tools.reporting.timeline import extract_timeline
 from decepticon.tools.research._state import _load
+from decepticon.tools.research.attack.navigator import build_navigator_layer
 
 
 def _json(data: Any) -> str:
@@ -53,4 +54,31 @@ def report_timeline() -> str:
     return _json({"count": len(events), "events": [e.to_dict() for e in events]})
 
 
-REPORTING_TOOLS = [report_hackerone, report_bugcrowd_csv, report_executive, report_timeline]
+@tool
+def export_attack_navigator(engagement_name: str = "Engagement") -> str:
+    """Export a MITRE ATT&CK Navigator layer of this engagement's coverage.
+
+    Every technique a finding maps to becomes a colored cell — green where
+    the blue team detected the activity, red for a detection gap. Write the
+    returned JSON to ``report/attack-navigator.json`` and open it at
+    https://mitre-attack.github.io/attack-navigator/ to view the heatmap.
+
+    Args:
+        engagement_name: Engagement name, used as the layer title.
+
+    Returns:
+        The ATT&CK Navigator v4.5 layer as JSON — write it verbatim to a
+        ``.json`` file.
+    """
+    graph, _ = _load()
+    layer = build_navigator_layer(graph, engagement_name)
+    return _json(layer)
+
+
+REPORTING_TOOLS = [
+    report_hackerone,
+    report_bugcrowd_csv,
+    report_executive,
+    report_timeline,
+    export_attack_navigator,
+]
