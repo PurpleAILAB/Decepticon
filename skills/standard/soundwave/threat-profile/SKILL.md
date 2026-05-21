@@ -56,14 +56,28 @@ The profile must be consistent with what the RoE allows. There's no point emulat
 
 ### Step 4: Output
 
-Generate a `ThreatActor` JSON object for inclusion in `conops.json`:
+Generate **two** payloads:
+
+**(a) Standalone `plan/threat-profile.json`** — full `ThreatProfile` schema:
 
 ```json
 {
-  "name": "APT29-like (Cozy Bear)",
+  "engagement_name": "...",
+  "actor_name": "APT29-like (Cozy Bear)",
+  "actor_aliases": ["Cozy Bear", "The Dukes"],
+  "group_id": "G0050",
+  "tier": "tier-3",
   "sophistication": "nation-state",
   "motivation": "espionage",
   "initial_access": ["T1195.002", "T1566.001", "T1078"],
-  "ttps": ["T1059.001", "T1053.005", "T1071.001", "T1048.003", "T1550.001"]
+  "key_ttps": ["T1059.001", "T1053.005", "T1071.001", "T1048.003", "T1550.001"],
+  "tools": ["Cobalt Strike", "Mimikatz", "WMI Event Subscription"],
+  "infrastructure": ["Compromised SaaS", "Domain fronting via CDN"],
+  "recent_cti_delta": "Q1 2026 reports show shift toward OAuth abuse and CI/CD supply-chain",
+  "confidence": "probable"
 }
 ```
+
+`tier` is the StrEnum value: `"tier-1"` (opportunistic), `"tier-2"` (targeted cybercrime), `"tier-3"` (APT / nation-state), `"tier-4"` (insider). Map to `sophistication` informally — `tier-3` ↔ "nation-state", `tier-2` ↔ "high", `tier-1` ↔ "low/medium".
+
+**(b) Embedded summary** — one-entry `threat_actors` list inside `conops.json` for backward-compat (the legacy `ThreatActor` shape: `name` + `sophistication` + `motivation` + `initial_access` + `ttps`). Skip `tier`/`group_id`/`tools`/`infrastructure` here — those live only in the standalone profile.
