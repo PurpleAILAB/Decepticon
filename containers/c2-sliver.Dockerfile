@@ -36,7 +36,9 @@ WORKDIR /opt/sliver
 
 # Entrypoint: fixes volume permissions, starts daemon, generates operator config
 COPY containers/c2-sliver-entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Strip any CR so the image builds correctly even from a Windows host
+# whose checkout introduced CRLF line endings.
+RUN sed -i 's/\r$//' /usr/local/bin/entrypoint.sh && chmod +x /usr/local/bin/entrypoint.sh
 
 # Listener ports: HTTPS(443), DNS(53), mTLS(8888), gRPC operator(31337)
 EXPOSE 443 53 8888 31337
