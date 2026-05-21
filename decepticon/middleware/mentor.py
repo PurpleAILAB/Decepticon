@@ -59,9 +59,7 @@ class _CallSignature:
         # (string-equality + type-equality) is enough; we're not solving
         # general structural similarity.
         try:
-            value_repr = json.dumps(
-                {k: args[k] for k in keys}, sort_keys=True, default=str
-            )
+            value_repr = json.dumps({k: args[k] for k in keys}, sort_keys=True, default=str)
         except (TypeError, ValueError):
             value_repr = repr(args)
         return cls(tool=name, arg_keys=keys, arg_value_hash=hash(value_repr))
@@ -164,7 +162,9 @@ class MentorMiddleware(AgentMiddleware):
 
     def before_model(self, state, runtime):  # type: ignore[override]
         self._turn += 1
-        messages = state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
+        messages = (
+            state.get("messages", []) if isinstance(state, dict) else getattr(state, "messages", [])
+        )
         if not messages:
             return None
         signatures = self._collect_signatures(messages)

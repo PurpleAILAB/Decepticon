@@ -87,10 +87,7 @@ class TestMentorMiddleware:
 
     def test_mixed_signatures_dominant_wins(self) -> None:
         m = MentorMiddleware(min_repeat_count=4)
-        msgs = (
-            [_ai_msg("bash", {"cmd": "ls"})] * 5
-            + [_ai_msg("read", {"path": "/tmp/x"})] * 2
-        )
+        msgs = [_ai_msg("bash", {"cmd": "ls"})] * 5 + [_ai_msg("read", {"path": "/tmp/x"})] * 2
         result = m.before_model({"messages": msgs}, runtime=None)
         assert result is not None
         text = result["messages"][0].content
@@ -99,9 +96,7 @@ class TestMentorMiddleware:
 
     def test_non_ai_messages_ignored(self) -> None:
         m = MentorMiddleware(min_repeat_count=3)
-        msgs = [HumanMessage(content="hello") for _ in range(5)] + [
-            _ai_msg("bash", {"cmd": "ls"})
-        ]
+        msgs = [HumanMessage(content="hello") for _ in range(5)] + [_ai_msg("bash", {"cmd": "ls"})]
         result = m.before_model({"messages": msgs}, runtime=None)
         # Only 1 AI message → below threshold
         assert result is None
@@ -114,9 +109,7 @@ class TestMentorMiddleware:
             msgs.append(
                 AIMessage(
                     content="",
-                    tool_calls=[
-                        {"name": "bash", "args": '{"cmd": "ls"}', "id": "x"}
-                    ],
+                    tool_calls=[{"name": "bash", "args": '{"cmd": "ls"}', "id": "x"}],
                 )
             )
         result = m.before_model({"messages": msgs}, runtime=None)
