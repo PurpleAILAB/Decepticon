@@ -8,3 +8,6 @@
 [submodule "skills/_corpus/payloads"]
 	path = skills/_corpus/payloads
 	url = https://github.com/swisskyrepo/PayloadsAllTheThings.git
+[submodule "skills/_corpus/wstg"]
+	path = skills/_corpus/wstg
+	url = https://github.com/OWASP/wstg.git
