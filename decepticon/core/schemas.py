@@ -289,9 +289,7 @@ class RoE(BaseModel):
         default=(
             "Stop immediately, document the incident, notify engagement lead within 15 minutes."
         ),
-        description=(
-            "DEPRECATED one-liner — see plan/abort.json for structured halt-triggers."
-        ),
+        description=("DEPRECATED one-liner — see plan/abort.json for structured halt-triggers."),
     )
 
     # Legal
