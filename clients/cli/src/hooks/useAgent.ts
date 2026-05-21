@@ -25,6 +25,7 @@ import {
   stripResultTags,
 } from "@decepticon/streaming";
 import { getModelOverride } from "../commands/modelOverride.js";
+import { getAssistantOverride } from "../commands/assistantOverride.js";
 
 interface LangChainMessage {
   type: string; // "human", "ai", "tool"
@@ -303,6 +304,18 @@ export function useAgent({
             // message); thread handoff fires from handleStreamComplete.
             // Pure boolean signal — the engagement slug travels independently
             // via config.configurable from the launcher's env.
+            //
+            // When the operator has explicitly picked another orchestrator
+            // via /agent (e.g. "vulnresearch"), skip this auto-handoff —
+            // their explicit choice beats the soundwave→decepticon default.
+            if (getAssistantOverride()) {
+              addEvent({
+                type: "system",
+                content:
+                  "Engagement planning complete — keeping operator-chosen orchestrator (use /agent to switch).",
+              });
+              break;
+            }
             pendingHandoffRef.current = true;
             assistantIdRef.current = "decepticon";
             setAssistantId("decepticon");
@@ -710,7 +723,7 @@ export function useAgent({
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
-            assistantIdRef.current,
+            getAssistantOverride() || assistantIdRef.current,
             {
               input,
               ...(streamConfig ? { config: streamConfig } : {}),
@@ -796,7 +809,7 @@ export function useAgent({
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
-            assistantIdRef.current,
+            getAssistantOverride() || assistantIdRef.current,
             {
               command: { resume: value },
               ...STREAM_OPTIONS,
@@ -858,7 +871,7 @@ export function useAgent({
           try {
             const stream = client.runs.stream(
               threadIdRef.current!,
-              assistantIdRef.current,
+              getAssistantOverride() || assistantIdRef.current,
               {
                 command: { resume: value ?? true },
                 ...STREAM_OPTIONS,
