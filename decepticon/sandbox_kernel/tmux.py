@@ -297,16 +297,14 @@ class TmuxSessionManager:
             log_path = f"{self._workspace_path}/.sessions/{self._log_name}.log"
             try:
                 # Idempotent — the directory is bind-mounted to the host so
-                # operators can tail the same file the agent reads.
+                # operators can tail the same file the agent reads. Use
+                # the configured exec_prefix instead of a hardcoded
+                # ``docker exec`` so this works both when the manager
+                # wraps a sibling docker container AND when it runs
+                # in-process inside the HTTP sandbox daemon (where
+                # exec_prefix is empty and no docker socket is reachable).
                 subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        self._container,
-                        "mkdir",
-                        "-p",
-                        f"{self._workspace_path}/.sessions",
-                    ],
+                    [*self._exec_prefix, "mkdir", "-p", f"{self._workspace_path}/.sessions"],
                     capture_output=True,
                     timeout=5,
                     check=True,
