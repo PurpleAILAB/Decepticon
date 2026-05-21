@@ -110,8 +110,11 @@ services:
 
   # Evasive Red Team Sandbox
   # Isolated container for executing red-team tools (nmap, whois, etc.)
-  # Runs on sandbox-net only — NO access to infra (litellm, postgres, langgraph).
-  # LangGraph reaches sandbox via docker exec (Docker socket), not the network.
+  # Runs on sandbox-net only — NO access to infra (litellm, postgres).
+  # LangGraph reaches sandbox over HTTP at http://sandbox:9999 (FastAPI
+  # daemon baked into the image). The previous ``docker exec`` transport
+  # via ``/var/run/docker.sock`` was removed in the HTTP-only migration —
+  # see decepticon/backends/factory.py for the rationale.
   sandbox:
     image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
     # Multi-arch image — linux/amd64 + linux/arm64. Apple Silicon and
@@ -183,10 +186,6 @@ services:
       # 9999 is the FastAPI daemon baked into the sandbox image (see
       # ``containers/sandbox-entrypoint.sh`` — daemon mode is the default).
       - SAAS_SANDBOX_URL=http://sandbox:9999
-      # Mirrors the parameterized container_name above. Kept for backward
-      # compatibility with code paths that still consult this env (e.g.
-      # legacy ``DockerSandbox`` instantiation in tests).
-      - DECEPTICON_DOCKER__SANDBOX_CONTAINER_NAME=decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-sandbox
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
@@ -195,11 +194,6 @@ services:
       # re-declare it here. Set BENCHMARK_MODE=1 in .env to engage CTF/XBOW
       # benchmark mode (rule overrides + challenge context inject).
     volumes:
-      # The host source path is overridable for non-default Docker runtimes
-      # (colima → ~/.colima/default/docker.sock, Podman → /run/user/$UID/podman/podman.sock,
-      # rootless Docker → ~/.docker/run/docker.sock). The container always
-      # sees /var/run/docker.sock so the agent code stays runtime-agnostic.
-      - ${DECEPTICON_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
       # Mount the OAuth credential files read-only so the LLM factory can
       # check file presence + valid JSON before adding a method to the
       # fallback chain. Without this the factory would trust the
