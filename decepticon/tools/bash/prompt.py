@@ -47,13 +47,13 @@ Returns the diff since the last call PLUS one of:
 - `[DONE exit=N elapsed=Ts]` — completed; details delivered ONCE then marked consumed
 - `[IDLE]` — no background job in this session (also after `bash_kill`)
 
-You ALSO receive automatic `<system-reminder>` notifications at the
-start of the next turn after a background job finishes. Notifications
-fire EXACTLY ONCE per completed session. **When a reminder appears,
-call `bash_output(session=)` to retrieve full results and apply them
-to your work** — ignoring it leaves the lifecycle in a half-state. You
-do NOT need to poll bash_output every turn; it is for explicit fetch
-when you decide to look or after seeing a reminder.
+You receive automatic `<system-reminder>` notifications at the start
+of the next turn after a background job finishes — **with the captured
+output already inlined**. Each completion fires EXACTLY ONCE. You do
+not need to call `bash_output` to retrieve the result; read the
+reminder and apply the output to your work. `bash_output` remains
+available for explicit re-inspection of a session you have already
+seen (it will return `(no new output)` on the consumed completion).
 
 ### bash_status() — list known sessions
 
@@ -86,10 +86,8 @@ bash(..., background=True)            ┐
   poll_completion (each turn) detects → status=done
 
         ↓ (next turn's before_model)
-  <system-reminder> emitted ONCE in agent's message stream
-
-        ↓ (you call bash_output)
-  full results returned, status=consumed
+  <system-reminder> emitted ONCE with output inlined — status=consumed
+  (no need to call bash_output; it is a re-inspect tool from here)
 
         ↓ (you call bash_kill, optional)
   job removed from tracker, session torn down, log preserved

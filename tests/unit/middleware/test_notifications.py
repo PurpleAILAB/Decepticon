@@ -16,10 +16,19 @@ def _state(*messages):
     return {"messages": list(messages)}
 
 
-def _sandbox_with_tracker():
+def _sandbox_with_tracker(diff: str = ""):
+    """Fixture: a sandbox MagicMock whose job tracker is real and whose
+    bash-output / log-path stubs return the given diff (default empty).
+
+    The middleware pulls the session diff on completion, so any test that
+    triggers a completion has to scaffold both ``read_session_log_diff``
+    and ``session_log_path`` — the helper centralizes that.
+    """
     sandbox = MagicMock()
     sandbox._jobs = BackgroundJobTracker()
     sandbox.poll_completion = MagicMock(side_effect=lambda s: sandbox._jobs.get(s))
+    sandbox.read_session_log_diff = MagicMock(return_value=diff)
+    sandbox.session_log_path = MagicMock(return_value="/workspace/.sessions/scan.log")
     return sandbox
 
 
@@ -33,7 +42,7 @@ def test_no_pending_completions_returns_no_update():
 
 
 def test_pending_completion_appends_human_system_reminder():
-    sandbox = _sandbox_with_tracker()
+    sandbox = _sandbox_with_tracker(diff="PORT  STATE SERVICE\n80/tcp open  http\n")
     sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
     sandbox._jobs.mark_complete("scan", exit_code=0)
     mw = SandboxNotificationMiddleware(sandbox=sandbox)
@@ -46,9 +55,16 @@ def test_pending_completion_appends_human_system_reminder():
     new_messages = update["messages"]
     msg = new_messages[0]
     assert isinstance(msg, HumanMessage)
+    # Claude-Code-style bullet header
     assert "<system-reminder>" in msg.content
-    assert "scan" in msg.content
-    assert "exit 0" in msg.content
+    assert "● Background command" in msg.content
+    assert '"nmap target"' in msg.content
+    assert "exit code 0" in msg.content
+    assert "session=scan" in msg.content
+    # Captured diff is inlined — the agent no longer needs bash_output
+    # to retrieve it.
+    assert "80/tcp open" in msg.content
+    sandbox.read_session_log_diff.assert_called()
 
 
 def test_already_notified_completions_are_not_re_emitted():
@@ -209,8 +225,9 @@ def test_command_none_does_not_crash_message_builder() -> None:
 
     assert update is not None
     msg = update["messages"][0]
-    # Empty command renders as ``command=`` (no value); no crash.
-    assert "command=" in msg.content
+    # Empty command renders as ``"..."`` with an empty quoted name; no crash.
+    assert '""' in msg.content
+    assert "exit code 0" in msg.content
 
 
 def test_notified_set_evicts_oldest_when_capped() -> None:

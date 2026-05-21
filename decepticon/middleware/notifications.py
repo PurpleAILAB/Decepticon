@@ -1,18 +1,35 @@
 """Push background-job completion notices into the agent message stream.
 
-When a tmux session's background command finishes, prepend a HumanMessage
-with a <system-reminder> tag describing the completion. Anthropic models
-recognize this tag as a runtime signal (the same pattern Claude Code uses)
-without treating it as a real user turn.
+When a tmux session's background command finishes, this middleware:
 
-Hook: before_model — runs every turn, so the agent learns about completions
-on its very next inference even if it didn't poll bash_output.
+  1. Auto-fetches the diff that accumulated in the sandbox while the
+     command was running — the agent no longer needs to call
+     ``bash_output`` to pull it.
+  2. Injects a HumanMessage tagged ``<system-reminder>`` carrying the
+     completion summary AND the captured output, so the agent has
+     everything it needs on its very next inference turn.
+  3. Emits a ``background_complete`` custom stream event so the CLI can
+     render a Claude-Code-style ``● Background command "..." completed
+     (exit code N)`` line in the activity transcript, with the output
+     attached to that single visual unit instead of being scattered
+     across the message stream.
+
+Hook: ``before_model`` — runs every turn, so completions land on the
+very next inference even if the user did nothing between turns.
+
+Cursor semantics
+----------------
+``sandbox.read_session_log_diff`` ADVANCES the per-session byte offset
+each time it's called. Because this middleware reads the diff, a later
+``bash_output(session=...)`` from the agent on the same session will
+return no new bytes — that's intentional. ``bash_output`` is now a
+fallback for explicit re-fetch (e.g. after the agent decides to
+re-inspect a session it already saw), not the primary delivery path.
 """
-
-from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 from collections import OrderedDict
 
@@ -29,9 +46,66 @@ log = logging.getLogger(__name__)
 # acceptable (the alternative is uncapped growth).
 _NOTIFIED_KEYS_MAX = 4096
 
+# Output budget for the notification body. Anything larger gets sliced
+# to a head+tail preview with a pointer to the on-disk session log so
+# the agent has the option to read the full content if it cares.
+_INLINE_LIMIT = 15_000
+_HEAD_CHARS = 2_000
+_TAIL_CHARS = 1_000
+
+# Strip terminal control sequences — agents waste tokens on bracketed
+# paste markers (``\x1b[?2004l``), OSC application metadata
+# (``\x1b]3008;...\x1b\\``), DEC charset selectors, etc. The pipe-pane
+# log captures the raw stream so these all land in the diff. Patterns:
+#   1. CSI: ESC [ <params with optional ?> <letter>
+#   2. OSC: ESC ] ... terminated by BEL (\x07) or ST (ESC \)
+#   3. G0/G1 charset: ESC ( <c> or ESC ) <c>
+#   4. Application keypad mode: ESC = or ESC >
+_ANSI_ESCAPE = re.compile(
+    r"\x1b\[[?0-9;]*[a-zA-Z~]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|\x1b[()][AB012]"
+    r"|\x1b[=>]"
+)
+
+
+def _sanitize(text: str) -> str:
+    """Surrogate-safe + terminal-control-stripped variant of the captured output."""
+    text = text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
+    return _ANSI_ESCAPE.sub("", text)
+
+
+def _format_output(diff: str, log_path: str | None) -> str:
+    """Return the diff trimmed to ``_INLINE_LIMIT`` with a hint to the
+    session log when content was sliced."""
+    if not diff:
+        return "(no output captured)"
+    if len(diff) <= _INLINE_LIMIT:
+        return diff
+    head = diff[:_HEAD_CHARS].rstrip()
+    tail = diff[-_TAIL_CHARS:].lstrip()
+    chars = len(diff)
+    where = f" — full log at {log_path}" if log_path else ""
+    return f"{head}\n\n[... {chars} chars truncated{where} ...]\n\n{tail}"
+
+
+def _get_stream_writer():
+    """Return ``get_stream_writer()`` or None if no graph context.
+
+    Imported lazily because the LangGraph runtime context isn't available
+    during unit-test instantiation of this middleware; callers fall back
+    to the system-reminder path when no writer is available.
+    """
+    try:
+        from langgraph.config import get_stream_writer  # noqa: PLC0415
+
+        return get_stream_writer()
+    except Exception:  # noqa: BLE001 — writer is optional; degrade gracefully
+        return None
+
 
 class SandboxNotificationMiddleware(AgentMiddleware):
-    """Emit one HumanMessage per turn aggregating new background completions."""
+    """Auto-deliver background-job completions to the agent + CLI."""
 
     def __init__(self, sandbox: HTTPSandbox) -> None:
         super().__init__()
@@ -60,8 +134,62 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         while len(self._notified) > _NOTIFIED_KEYS_MAX:
             self._notified.popitem(last=False)
 
+    def _pull_diff(self, session: str, workspace_path: str | None) -> tuple[str, str | None]:
+        """Read the accumulated diff for ``session`` and return (output, log_path).
+
+        Both calls are wrapped in try/except: a transient sandbox blip
+        cannot crash the agent's model step, and the worst case is that
+        the agent sees a "(no output captured)" stub instead of full
+        results. The job is still marked done so the lifecycle finishes
+        cleanly.
+        """
+        kwargs = {"workspace_path": workspace_path} if workspace_path else {}
+        try:
+            diff = self._sandbox.read_session_log_diff(session, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("read_session_log_diff failed for session=%s: %s", session, exc)
+            diff = ""
+        try:
+            log_path = self._sandbox.session_log_path(session, **kwargs)
+        except Exception:  # noqa: BLE001
+            log_path = None
+        return _sanitize(diff), log_path
+
+    def _emit_stream_event(self, job, output: str) -> None:
+        """Push a custom stream event for the CLI to render the ● bullet."""
+        writer = _get_stream_writer()
+        if writer is None:
+            return
+        try:
+            writer(
+                {
+                    "type": "background_complete",
+                    "agent": "sandbox",
+                    "tool": "bash",
+                    "session": job.session,
+                    "command": job.command or "",
+                    "exit_code": job.exit_code,
+                    "elapsed": float(job.elapsed) if job.elapsed is not None else 0.0,
+                    "content": output,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("failed to emit background_complete stream event: %s", exc)
+
+    def _format_block(self, job, output: str) -> str:
+        """One ``●`` entry for the system-reminder body."""
+        command = job.command or ""
+        return (
+            f'● Background command "{command}" completed '
+            f"(exit code {job.exit_code}) — session={job.session} "
+            f"elapsed={job.elapsed:.1f}s\n"
+            f"```\n{output}\n```"
+        )
+
     def _build_message(self) -> dict | None:
-        """Build the system-reminder message dict, or None if nothing new."""
+        """Inject completions + emit per-job stream events. Returns the
+        state update (HumanMessage) or None when nothing changed.
+        """
         jobs = self._jobs_view()
         if jobs is None:
             return None
@@ -77,16 +205,33 @@ class SandboxNotificationMiddleware(AgentMiddleware):
                 return None
             self._record_notified(j.key for j in new)
 
-        lines = ["<system-reminder>", "Background sandbox session updates:"]
+        blocks: list[str] = []
         for job in new:
-            command = (job.command or "")[:80]
-            lines.append(
-                f"- {job.session}: completed exit {job.exit_code} "
-                f"({job.elapsed:.0f}s) — command={command}"
-            )
-        lines.append("Use bash_output(session) to retrieve full results.")
-        lines.append("</system-reminder>")
-        return {"messages": [HumanMessage(content="\n".join(lines))]}
+            diff, log_path = self._pull_diff(job.session, job.workspace_path)
+            formatted = _format_output(diff, log_path)
+            blocks.append(self._format_block(job, formatted))
+            self._emit_stream_event(job, formatted)
+            # Mark the daemon-side mirror consumed so a later
+            # ``bash_output`` call returns ``(no new output)`` rather
+            # than re-delivering the same diff, and so
+            # ``pending_completions`` skips it on subsequent middleware
+            # ticks. ``self._notified`` is a belt-and-suspenders dedupe
+            # for the case where mark_consumed silently fails.
+            try:
+                jobs.mark_consumed(session=job.session, key=job.key)
+            except Exception:  # noqa: BLE001 — best-effort
+                log.warning("mark_consumed failed for session=%s", job.session, exc_info=True)
+
+        body = "\n\n".join(blocks)
+        reminder = (
+            "<system-reminder>\n"
+            "Background sandbox sessions completed. Output captured below "
+            "(no need to call bash_output unless you want to re-inspect a "
+            "session):\n\n"
+            f"{body}\n"
+            "</system-reminder>"
+        )
+        return {"messages": [HumanMessage(content=reminder)]}
 
     def _refresh_running_jobs(self) -> None:
         """Sync poll for still-running jobs; swallow per-job subprocess errors."""

@@ -322,15 +322,35 @@ class HTTPSandbox(BaseSandbox):
             completed_at=j.get("completed_at"),
             consumed=j.get("consumed", False),
         )
-        # Keep the local mirror coherent enough for
-        # SandboxNotificationMiddleware: once the daemon reports the job
-        # is done, drop the mirror entry so subsequent `all_jobs()` polls
-        # don't keep re-emitting a stale notification. While running,
-        # leave the stub in place — its fields are slightly off (no
-        # initial_markers, stale started_at) but the middleware only
-        # uses it as a "key, please poll this" pointer.
-        if job.status != "running":
-            self._jobs.remove(session=job.session, key=job.key)
+        # Keep the local mirror coherent: refresh status from the
+        # daemon's view so ``BackgroundJobTracker.pending_completions``
+        # surfaces this job to SandboxNotificationMiddleware on its next
+        # tick. Dedupe of already-emitted completions is handled by
+        # ``mark_consumed`` (the middleware calls it post-emit) — not by
+        # removing from the mirror, which would make the done state
+        # invisible to ``pending_completions`` entirely.
+        local = self._jobs.get(session=job.session)
+        if local is None:
+            # Stub entry was never registered (e.g. start_background was
+            # called from a different agent process, or the local mirror
+            # was cleared). Re-register so subsequent polls find it.
+            self._jobs.register(
+                session=job.session,
+                command=job.command,
+                initial_markers=job.initial_markers,
+                workspace_path=job.workspace_path,
+            )
+            local = self._jobs.get(session=job.session)
+        if local is not None and job.status != "running":
+            # The daemon reports exit_code as ``int | None``; if the job
+            # raced past completion before its exit code was captured,
+            # fall back to ``-1`` so the local mirror still flips to
+            # ``done`` and the notification path can fire.
+            self._jobs.mark_complete(
+                session=job.session,
+                exit_code=job.exit_code if job.exit_code is not None else -1,
+                key=local.key,
+            )
         return job
 
     def kill_session(
