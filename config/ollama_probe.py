@@ -14,10 +14,12 @@ startup script's heavy import-time side effects.
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -63,6 +65,31 @@ def _default_opener(url_or_request: Any, timeout: float) -> Any:
     return urllib.request.urlopen(url_or_request, timeout=timeout)
 
 
+def _running_in_wsl2() -> bool:
+    """Detect whether the probe is running in (or talking to) a WSL2 host.
+
+    Multiple signals — Decepticon agents run inside Docker containers,
+    but the LiteLLM container can inspect environment variables passed
+    in from the host. Most reliable signals:
+    - ``/proc/version`` contains 'microsoft' or 'WSL'
+    - ``WSL_DISTRO_NAME`` env var is set (Microsoft documented)
+    - ``WSL_INTEROP`` env var exists
+
+    Returns True on any positive signal. Best-effort — never raises.
+    """
+    if os.getenv("WSL_DISTRO_NAME") or os.getenv("WSL_INTEROP"):
+        return True
+    proc_version = Path("/proc/version")
+    if proc_version.is_file():
+        try:
+            content = proc_version.read_text(errors="ignore").lower()
+        except OSError:
+            return False
+        if "microsoft" in content or "wsl" in content:
+            return True
+    return False
+
+
 def _classify_transport_error(base_url: str, err: BaseException) -> str:
     """Translate a transport error into a one-line operator hint."""
     text = str(err).lower()
@@ -70,11 +97,23 @@ def _classify_transport_error(base_url: str, err: BaseException) -> str:
     combined = f"{text} {reason}"
 
     if "refused" in combined:
+        wsl2_hint = ""
+        if _running_in_wsl2():
+            wsl2_hint = (
+                " (WSL2 detected) On WSL2 the most common cause is "
+                "Ollama bound only to the WSL2 loopback. Verify with "
+                "`netstat -tlnp | grep 11434` on the WSL host — if the "
+                "Local Address shows 127.0.0.1:11434, that's the bug. "
+                "Restart Ollama with `OLLAMA_HOST=0.0.0.0:11434 ollama "
+                "serve` (or set `OLLAMA_HOST=0.0.0.0` in the ollama "
+                "systemd unit / launchd plist) so it binds to all "
+                "interfaces."
+            )
         return (
             f"Cannot reach {base_url}: connection refused. Ollama is most "
             "likely bound to 127.0.0.1 only — relaunch with "
             "OLLAMA_HOST=0.0.0.0:11434 ollama serve so the litellm "
-            "container can reach it."
+            "container can reach it." + wsl2_hint
         )
     dns_signals = (
         "name or service not known",
@@ -84,11 +123,44 @@ def _classify_transport_error(base_url: str, err: BaseException) -> str:
         "no address associated",
     )
     if any(signal in combined for signal in dns_signals):
+        wsl2_hint = ""
+        if _running_in_wsl2():
+            wsl2_hint = (
+                " (WSL2 detected) Docker Desktop registers "
+                "host.docker.internal automatically — if you're using "
+                "native Docker inside WSL (no Docker Desktop), make "
+                "sure `docker-compose.yml`'s litellm service still "
+                "has `extra_hosts: ['host.docker.internal:host-gateway']` "
+                "(it does by default; check you're not running a stale "
+                "compose override). As a workaround, set "
+                "OLLAMA_API_BASE to your WSL distro's IP "
+                "(`ip -4 addr show eth0 | grep inet | awk '{print $2}' "
+                "| cut -d/ -f1`) — but prefer fixing the bridge resolution."
+            )
         return (
             f"Cannot resolve host for {base_url}. The litellm service in "
             "docker-compose.yml needs "
             "extra_hosts: ['host.docker.internal:host-gateway'] for the "
-            "default URL to resolve."
+            "default URL to resolve." + wsl2_hint
+        )
+    if "timed out" in combined or "timeout" in combined:
+        wsl2_hint = ""
+        if _running_in_wsl2():
+            wsl2_hint = (
+                " (WSL2 detected) WSL2's bridged networking can drop "
+                "host-bound traffic when Windows Defender Firewall is "
+                "blocking the inbound port. On Windows admin PowerShell: "
+                "`New-NetFirewallRule -DisplayName 'Ollama for WSL2' "
+                "-Direction Inbound -LocalPort 11434 -Protocol TCP "
+                "-Action Allow`. If you're on WSL2 mirrored networking "
+                "(Win11 22H2+), confirm `[wsl2] networkingMode=mirrored` "
+                "in `%USERPROFILE%/.wslconfig` and restart with "
+                "`wsl --shutdown`."
+            )
+        return (
+            f"Cannot reach {base_url}: request timed out. The host is "
+            "resolvable but not answering on port 11434 within the "
+            "probe window." + wsl2_hint
         )
     return f"Cannot reach {base_url}: {err}"
 
