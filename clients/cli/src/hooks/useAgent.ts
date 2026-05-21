@@ -297,6 +297,31 @@ export function useAgent({
             setPendingTool(null);
             break;
 
+          case "background_complete": {
+            // SandboxNotificationMiddleware fires this when a background
+            // bash session finishes. The middleware also injects the
+            // captured output into the agent's message stream as a
+            // <system-reminder>, so the agent doesn't need to call
+            // bash_output — this event exists purely so the CLI can
+            // render a Claude-Code-style "● Background command ..."
+            // line with the output inline, instead of leaving the
+            // operator with just a tool-call shadow.
+            const exit = data.exit_code;
+            const status: "success" | "error" =
+              exit === 0 || exit === null || exit === undefined ? "success" : "error";
+            addEvent({
+              type: "background_complete",
+              content: data.content ?? "",
+              session: data.session,
+              command: data.command,
+              exitCode: exit ?? null,
+              elapsed: data.elapsed,
+              status,
+              subagent: data.agent,
+            });
+            break;
+          }
+
           case "engagement_ready": {
             // Soundwave finished writing the planning bundle. Flip the
             // active assistant so the next submit() lands on decepticon.

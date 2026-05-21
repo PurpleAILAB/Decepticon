@@ -13,7 +13,8 @@ export type SubagentEventType =
   | "subagent_tool_result"
   | "subagent_message"
   | "ask_user_question"
-  | "engagement_ready";
+  | "engagement_ready"
+  | "background_complete";
 
 /** One choice presented in an ask_user_question picker. */
 export interface AskUserOption {
@@ -43,6 +44,12 @@ export interface SubagentCustomEvent {
   options?: AskUserOption[];
   multi_select?: boolean;
   allow_other?: boolean;
+  // background_complete fields (auto-delivered when a bash background
+  // session finishes). ``content`` carries the captured output (already
+  // truncated to a head+tail preview by the middleware when large).
+  session?: string;
+  command?: string;
+  exit_code?: number | null;
 }
 
 /** Minimal event shape accepted by shared utility functions. */

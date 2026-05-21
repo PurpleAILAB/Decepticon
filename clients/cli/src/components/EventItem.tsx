@@ -7,6 +7,7 @@ import { AIMessage } from "./messages/AIMessage.js";
 import { ToolCallMessage } from "./messages/ToolCallMessage.js";
 import { DelegateMessage } from "./messages/DelegateMessage.js";
 import { SystemMessage } from "./messages/SystemMessage.js";
+import { BackgroundCompleteMessage } from "./messages/BackgroundCompleteMessage.js";
 
 interface EventItemProps {
   event: AgentEvent;
@@ -47,6 +48,17 @@ export const EventItem = React.memo(function EventItem({
 
     case "system":
       return <SystemMessage content={event.content} />;
+
+    case "background_complete":
+      return (
+        <BackgroundCompleteMessage
+          command={event.command}
+          session={event.session}
+          exitCode={event.exitCode}
+          elapsed={event.elapsed}
+          output={event.content}
+        />
+      );
 
     default:
       return null;
