@@ -1,0 +1,58 @@
+# Normalize line endings across every OS so checkouts are byte-identical on
+# macOS, Linux, Windows and Raspberry Pi. Without this, a Windows checkout with
+# core.autocrlf=true rewrites shell scripts to CRLF and breaks them inside the
+# Linux containers.
+
+# Default: detect text, store LF in the repo, check out LF everywhere.
+* text=auto eol=lf
+
+# Files that MUST be LF (executed in Linux containers / by POSIX shells).
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.py        text eol=lf
+*.pyi       text eol=lf
+*.go        text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.cfg       text eol=lf
+*.ini       text eol=lf
+*.env       text eol=lf
+*.patch     text eol=lf
+*.diff      text eol=lf
+Dockerfile  text eol=lf
+*.Dockerfile text eol=lf
+Makefile    text eol=lf
+.gitattributes text eol=lf
+.gitignore  text eol=lf
+
+# Windows-only scripts MUST stay CRLF.
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary assets — never touch.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.webp      binary
+*.pdf       binary
+*.zip       binary
+*.gz        binary
+*.tar       binary
+*.woff      binary
+*.woff2     binary
+*.ttf       binary
+*.otf       binary
+*.so        binary
+*.dylib     binary
+*.dll       binary
+*.exe       binary

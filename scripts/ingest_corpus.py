@@ -188,6 +188,12 @@ def print_drift(rows: list[tuple[str, str, str]]) -> None:
 
 
 def main() -> int:
+    # The drift table uses non-ASCII glyphs; force UTF-8 so it does not crash
+    # on consoles with a legacy code page (e.g. cp1252 on Windows).
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--report", action="store_true", help="print drift only, don't write manifest")
     ap.add_argument(
