@@ -46,7 +46,7 @@ log = get_logger("research.patch")
 
 
 def _hash_diff(diff: str) -> str:
-    return hashlib.sha1(diff.encode("utf-8", errors="replace")).hexdigest()[:16]
+    return hashlib.sha1(diff.encode("utf-8", errors="replace"), usedforsecurity=False).hexdigest()[:16]
 
 
 @tool

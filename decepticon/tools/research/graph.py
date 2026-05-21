@@ -83,6 +83,10 @@ class NodeKind(StrEnum):
     CANDIDATE = "Candidate"
     HYPOTHESIS = "Hypothesis"
     PATCH = "Patch"
+    PROOF = "Proof"
+    # Knowledge — global reference data joining the skill library to ATT&CK.
+    TACTIC = "Tactic"
+    SKILL = "Skill"
     # EvoGraph cross-session memory (see tools/research/cross_session.py)
     ENGAGEMENT = "Engagement"
     ENGAGEMENT_MEMORY = "EngagementMemory"
@@ -131,6 +135,17 @@ class EdgeKind(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PATCHES = "PATCHES"
     MAPS_TO = "MAPS_TO"
+    DEBATED_BY = "DEBATED_BY"
+    DUPLICATE_OF = "DUPLICATE_OF"
+    PROVEN_BY = "PROVEN_BY"
+    # Knowledge — skill ↔ ATT&CK joins.
+    TEACHES = "TEACHES"
+    SUB_TECHNIQUE_OF = "SUB_TECHNIQUE_OF"
+    IN_TACTIC = "IN_TACTIC"
+    # Knowledge — skill ↔ skill relations (the skill knowledge graph).
+    REQUIRES = "REQUIRES"
+    CHAINS_TO = "CHAINS_TO"
+    REFINES = "REFINES"
     # EvoGraph cross-session memory
     IN_ENGAGEMENT = "IN_ENGAGEMENT"
     SUMMARIZES = "SUMMARIZES"
@@ -178,7 +193,7 @@ class Node(BaseModel):
         callers supply an explicit dedup key (e.g. normalized URL).
         """
         key = props.get("key", label)
-        digest = hashlib.sha1(f"{kind.value}::{key}".encode()).hexdigest()[:16]
+        digest = hashlib.sha1(f"{kind.value}::{key}".encode(), usedforsecurity=False).hexdigest()[:16]
         return cls(id=digest, kind=kind, label=label, props=dict(props))
 
 
@@ -207,7 +222,7 @@ class Edge(BaseModel):
         # can coexist (e.g. AD GetChanges + GetChangesAll both mapped
         # to LEAKS but semantically distinct).
         key = props.get("key", "")
-        digest = hashlib.sha1(f"{src}->{kind.value}->{dst}::{key}".encode()).hexdigest()[:16]
+        digest = hashlib.sha1(f"{src}->{kind.value}->{dst}::{key}".encode(), usedforsecurity=False).hexdigest()[:16]
         return cls(id=digest, src=src, dst=dst, kind=kind, weight=weight, props=dict(props))
 
 

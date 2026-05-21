@@ -24,6 +24,14 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: ["-r", "decepticon/", "-ll", "--configfile", "pyproject.toml"]
+        types: [python]
+        pass_filenames: false
+
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:

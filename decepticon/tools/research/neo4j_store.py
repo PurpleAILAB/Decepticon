@@ -51,6 +51,58 @@ def _label_for(kind: NodeKind) -> str:
     return kind.value
 
 
+# ── First-class properties ───────────────────────────────────────────────
+# Node kinds whose Neo4j uniqueness constraint requires a top-level scalar
+# property. The constraint never enforces unless the upsert SETs the
+# property explicitly — writing only the JSON-encoded ``props`` blob leaves
+# it null. The value is always the node's natural key (``props["key"]``).
+
+_FIRST_CLASS_PROPS: dict[NodeKind, str] = {
+    NodeKind.TECHNIQUE: "technique_id",
+    NodeKind.SKILL: "skill_id",
+}
+
+
+def _first_class_set(kind: NodeKind, key_ref: str) -> str:
+    """Extra SET fragment writing the constraint-backed first-class property.
+
+    ``key_ref`` is the Cypher reference for the node's natural key —
+    ``$key`` for single upserts, ``row.key`` for batched UNWIND upserts.
+    Returns an empty string for node kinds with no first-class property.
+    """
+    prop = _FIRST_CLASS_PROPS.get(kind)
+    if not prop:
+        return ""
+    return f",\n            n.{prop} = {key_ref}"
+
+
+def _node_upsert_cypher(label: str, kind: NodeKind) -> str:
+    """Cypher for a single-node MERGE upsert."""
+    return f"""
+        MERGE (n:{label} {{id: $id}})
+        SET n.kind = $kind,
+            n.label = $label,
+            n.props = $props,
+            n.key = $key,
+            n.created_at = coalesce(n.created_at, $created_at),
+            n.updated_at = $updated_at{_first_class_set(kind, "$key")}
+        """
+
+
+def _node_batch_cypher(label: str, kind: NodeKind) -> str:
+    """Cypher for a batched UNWIND node MERGE upsert."""
+    return f"""
+        UNWIND $batch AS row
+        MERGE (n:{label} {{id: row.id}})
+        SET n.kind = row.kind,
+            n.label = row.label,
+            n.props = row.props,
+            n.key = row.key,
+            n.created_at = coalesce(n.created_at, row.created_at),
+            n.updated_at = row.updated_at{_first_class_set(kind, "row.key")}
+        """
+
+
 @dataclass(slots=True)
 class Neo4jConfig:
     uri: str
@@ -155,6 +207,7 @@ class Neo4jStore:
                 "CREATE CONSTRAINT technique_id IF NOT EXISTS"
                 " FOR (t:Technique) REQUIRE t.technique_id IS UNIQUE"
             ),
+            ("CREATE CONSTRAINT skill_id IF NOT EXISTS FOR (s:Skill) REQUIRE s.skill_id IS UNIQUE"),
             (
                 "CREATE CONSTRAINT vuln_key IF NOT EXISTS"
                 " FOR (v:Vulnerability) REQUIRE v.key IS UNIQUE"
@@ -237,15 +290,7 @@ class Neo4jStore:
         """MERGE a node using its NodeKind as the Neo4j label."""
         label = _label_for(node.kind)
         now = time.time()
-        query = f"""
-        MERGE (n:{label} {{id: $id}})
-        SET n.kind = $kind,
-            n.label = $label,
-            n.props = $props,
-            n.key = $key,
-            n.created_at = coalesce(n.created_at, $created_at),
-            n.updated_at = $updated_at
-        """
+        query = _node_upsert_cypher(label, node.kind)
         params = {
             "id": node.id,
             "kind": node.kind.value,
@@ -312,16 +357,7 @@ class Neo4jStore:
         total = 0
         with self._driver.session(database=self._database) as session:
             for label, batch in grouped.items():
-                query = f"""
-                UNWIND $batch AS row
-                MERGE (n:{label} {{id: row.id}})
-                SET n.kind = row.kind,
-                    n.label = row.label,
-                    n.props = row.props,
-                    n.key = row.key,
-                    n.created_at = coalesce(n.created_at, row.created_at),
-                    n.updated_at = row.updated_at
-                """
+                query = _node_batch_cypher(label, NodeKind(label))
                 session.run(query, batch=batch)
                 total += len(batch)
 

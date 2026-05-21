@@ -90,3 +90,52 @@ def test_save_compat_batch_upserts(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_json_helper() -> None:
     result = state._json({"key": "value"})
     assert '"key": "value"' in result
+
+
+class TestSeedingToggle:
+    def test_seeding_on_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_KG_SEED", raising=False)
+        assert state._seeding_enabled() is True
+
+    def test_seeding_off_when_explicitly_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for val in ("0", "false", "no", "off"):
+            monkeypatch.setenv("DECEPTICON_KG_SEED", val)
+            assert state._seeding_enabled() is False
+
+    def test_seeding_on_for_truthy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DECEPTICON_KG_SEED", "1")
+        assert state._seeding_enabled() is True
+
+
+def test_get_store_seeds_reference_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeStore()
+    monkeypatch.setattr(state.Neo4jStore, "from_env", classmethod(lambda cls: fake))
+    monkeypatch.delenv("DECEPTICON_KG_SEED", raising=False)
+    store = state.get_store()
+    assert store is fake
+    assert fake.schema_ensured
+    stats = fake.graph.stats()
+    assert stats.get("node.Technique", 0) > 300
+    assert stats.get("node.Skill", 0) > 0
+
+
+def test_get_store_skips_seeding_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeStore()
+    monkeypatch.setattr(state.Neo4jStore, "from_env", classmethod(lambda cls: fake))
+    monkeypatch.setenv("DECEPTICON_KG_SEED", "0")
+    state.get_store()
+    assert fake.graph.stats()["nodes"] == 0
+
+
+def test_get_store_survives_seeding_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A seeding error must not break store initialization."""
+    fake = _FakeStore()
+
+    def _boom(_nodes: list) -> int:
+        raise RuntimeError("seed blew up")
+
+    fake.batch_upsert_nodes = _boom  # type: ignore[method-assign]
+    monkeypatch.setattr(state.Neo4jStore, "from_env", classmethod(lambda cls: fake))
+    monkeypatch.delenv("DECEPTICON_KG_SEED", raising=False)
+    store = state.get_store()
+    assert store is fake  # initialization succeeded despite the seeding failure

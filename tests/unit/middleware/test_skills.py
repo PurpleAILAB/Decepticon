@@ -285,3 +285,22 @@ class TestModifyRequestTemplateFormatFailures:
             )
         )
         assert "WORKFLOW_BODY" in flattened
+
+
+# ── Technique-aware routing — recommend_skills tool wired in ────────────
+
+
+class TestRecommendSkillsToolWired:
+    """SkillsMiddleware exposes the technique-aware ``recommend_skills``
+    tool alongside ``load_skill``."""
+
+    def test_recommend_skills_tool_present(self) -> None:
+        from decepticon.tools.skills import recommend_skills
+
+        mw = _make_middleware(_DictFileDataBackend("workflow body"))
+        assert recommend_skills in mw.tools
+
+    def test_both_skill_tools_present_by_name(self) -> None:
+        mw = _make_middleware(_DictFileDataBackend("workflow body"))
+        names = {getattr(t, "name", "") for t in mw.tools}
+        assert {"load_skill", "recommend_skills"} <= names

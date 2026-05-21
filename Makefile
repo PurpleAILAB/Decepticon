@@ -46,7 +46,7 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
 .PHONY: help \
         dogfood launcher smoke \
         dev cli-dev web-dev infra \
-        quality quality-cli test test-local lint lint-fix \
+        quality quality-cli test test-local test-all test-slow test-failed lint lint-fix fix \
         web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
@@ -186,16 +186,27 @@ test:
 	$(COMPOSE) exec langgraph python -m pytest $(ARGS)
 
 test-local:
-	uv run pytest $(ARGS)
+	uv run pytest -n auto -m "not slow" $(ARGS)
+
+test-all:
+	uv run pytest -n auto $(ARGS)
+
+test-slow:
+	uv run pytest -n auto -m slow $(ARGS)
+
+test-failed:
+	uv run pytest -n auto --lf $(ARGS)
 
 lint:
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run basedpyright
 
-lint-fix:
+fix:
 	uv run ruff check --fix .
 	uv run ruff format .
+
+lint-fix: fix
 
 quality-cli: node-install
 	# streaming workspace must be built first — its package.json main
@@ -205,10 +216,29 @@ quality-cli: node-install
 	npm run build --workspace=@decepticon/cli
 	npm run test --workspace=@decepticon/cli
 
-## Full PR gate — Python + CLI + Web. Run before opening a PR.
-quality: lint test-local quality-cli web-lint web-build
-	@echo ""
-	@echo "OK — all quality gates passed (python + cli + web)"
+## Full PR gate — Python + CLI + Web, parallel. Each leg runs in the
+## background; all PIDs are collected and waited individually so a
+## failure in any one leg still lets the others finish and print output
+## before the target exits non-zero.
+quality: node-install
+	@echo "Running quality gates in parallel..."
+	@{ uv run ruff check . && uv run ruff format --check . && uv run basedpyright; } & LINT_PID=$$!; \
+	 uv run pytest -n auto -m "not slow" & TEST_PID=$$!; \
+	 { npm run build --workspace=@decepticon/streaming && \
+	   npm run typecheck --workspace=@decepticon/cli && \
+	   npm run build --workspace=@decepticon/cli && \
+	   npm run test --workspace=@decepticon/cli; } & CLI_PID=$$!; \
+	 { cd $(WEB_DIR) && npx prisma generate && npx eslint src/ --max-warnings 0 && npm run build; } & WEB_PID=$$!; \
+	 FAIL=0; \
+	 wait $$LINT_PID || FAIL=1; \
+	 wait $$TEST_PID || FAIL=1; \
+	 wait $$CLI_PID  || FAIL=1; \
+	 wait $$WEB_PID  || FAIL=1; \
+	 if [ $$FAIL -eq 0 ]; then \
+	   echo ""; echo "OK — all quality gates passed (python + cli + web)"; \
+	 else \
+	   echo ""; echo "FAIL — one or more quality gates failed (see output above)"; exit 1; \
+	 fi
 
 # ── Web Dashboard (single checks) ────────────────────────────────
 # All web targets share the root `node-install` so workspace deps hoist

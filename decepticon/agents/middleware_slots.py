@@ -38,6 +38,7 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.middleware import (
+    DebateGateMiddleware,
     EngagementContextMiddleware,
     FilesystemMiddleware,
     MentorMiddleware,
@@ -70,6 +71,7 @@ class MiddlewareSlot(StrEnum):
     OPPLAN = "opplan"
     VACCINE = "vaccine"
     SANDBOX_NOTIFICATION = "sandbox-notification"
+    DEBATE_GATE = "debate-gate"
     MODEL_OVERRIDE = "model-override"
     MODEL_FALLBACK = "model-fallback"
     SUMMARIZATION = "summarization"
@@ -166,7 +168,9 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     # ── Plugin read-only specialist (no bash, no SandboxNotification) ──
     "detector": _BASE_SLOTS,
     # ── Plugin bash-executing specialists ──
-    "verifier": _BASH_AGENT_SLOTS,
+    # verifier additionally carries DEBATE_GATE — it is the quality gate
+    # that runs adversarial debate validation on CRITICAL/HIGH findings.
+    "verifier": _BASH_AGENT_SLOTS | {MiddlewareSlot.DEBATE_GATE},
     "patcher": _BASH_AGENT_SLOTS,
     "scanner": _BASH_AGENT_SLOTS,
     "exploiter": _BASH_AGENT_SLOTS,
@@ -255,6 +259,19 @@ def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
     return SandboxNotificationMiddleware(sandbox=sandbox)
 
 
+def _make_debate_gate(**_: Any):
+    """Conditional slot — returns None when debate is globally disabled.
+
+    ``build_middleware`` filters None results out, so an install with
+    ``DECEPTICON_DEBATE=off`` simply skips the slot.
+    """
+    from decepticon.llm.debate import debate_globally_disabled
+
+    if debate_globally_disabled():
+        return None
+    return DebateGateMiddleware()
+
+
 def _make_model_override(**_: Any):
     return ModelOverrideMiddleware()
 
@@ -295,6 +312,7 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.OPPLAN: _make_opplan,
     MiddlewareSlot.VACCINE: _make_vaccine,
     MiddlewareSlot.SANDBOX_NOTIFICATION: _make_sandbox_notification,
+    MiddlewareSlot.DEBATE_GATE: _make_debate_gate,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,
     MiddlewareSlot.SUMMARIZATION: _make_summarization,

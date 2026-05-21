@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from langchain_core.tools import tool
+
+from decepticon.tools.research.attack.routing import route_skills
+from decepticon.tools.research.attack.skill_graph import get_skill_graph
 
 # ── load_skill tool ──────────────────────────────────────────────────────────
 # A Decepticon-specific replacement for `load_skill("/skills/...")` that
@@ -335,4 +339,54 @@ def build_find_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
     return find_skill
 
 
-__all__ = ["build_load_skill_tool", "build_list_skills_tool", "build_find_skill_tool"]
+# ── recommend_skills tool ────────────────────────────────────────────────
+# Technique-aware skill routing — maps an objective's MITRE ATT&CK IDs to a
+# dependency-ordered set of skills by traversing the in-memory skill
+# knowledge graph. No Neo4j / engagement graph required.
+
+
+@tool
+def recommend_skills(mitre_ids: str) -> str:
+    """Recommend skills for an objective's MITRE ATT&CK techniques.
+
+    Pass the technique IDs from your current objective. Returns the skills to
+    load **in dependency order** — prerequisites first, then the skills that
+    directly teach your techniques, then natural follow-ons. A sub-technique
+    with no direct skill falls back to its parent technique.
+
+    Args:
+        mitre_ids: Comma-separated ATT&CK technique IDs, e.g.
+            ``"T1190, T1059.004"``.
+
+    Returns:
+        JSON with the ordered skills — each entry has ``name``, a
+        ``load_skill`` ``path``, the ``techniques`` it covers, an ``order``
+        (load lower ``order`` first), and a ``reason`` (``direct`` /
+        ``prerequisite`` / ``chained`` / ``refines``). Degrades to an empty
+        list if the skill graph is unavailable — fall back to the static
+        skill catalog in that case.
+    """
+    try:
+        routed = route_skills(get_skill_graph(), mitre_ids)
+    except Exception:
+        return json.dumps({"skills": [], "count": 0, "note": "skill routing unavailable"})
+    skills = [
+        {
+            "name": rs.name,
+            "path": rs.path,
+            "techniques": rs.techniques,
+            "match_count": rs.match_count,
+            "order": rs.order,
+            "reason": rs.reason,
+        }
+        for rs in routed
+    ]
+    return json.dumps({"skills": skills, "count": len(skills)})
+
+
+__all__ = [
+    "build_load_skill_tool",
+    "build_list_skills_tool",
+    "build_find_skill_tool",
+    "recommend_skills",
+]

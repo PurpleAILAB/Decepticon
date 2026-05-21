@@ -22,7 +22,7 @@ from decepticon.sandbox_server.app import app
 
 
 def main() -> None:
-    host = os.environ.get("SANDBOX_DAEMON_HOST", "0.0.0.0")  # noqa: S104 -- binds inside sandbox container only
+    host = os.environ.get("SANDBOX_DAEMON_HOST", "0.0.0.0")  # noqa: S104  # nosec B104 -- binds inside sandbox container only
     port = int(os.environ.get("SANDBOX_DAEMON_PORT", "9999"))
     uvicorn.run(app, host=host, port=port, log_level="info")
 

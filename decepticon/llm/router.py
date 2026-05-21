@@ -1,19 +1,30 @@
 """Model router — resolves role to model name(s).
 
 Thin layer over LLMModelMapping that provides convenience methods
-for primary-only and primary+fallback resolution.
+for primary-only, primary+fallback, and ensemble resolution.
 """
 
 from __future__ import annotations
 
-from decepticon.llm.models import LLMModelMapping, ModelAssignment
+from decepticon.llm.ensemble import EnsembleAssignment, resolve_ensemble
+from decepticon.llm.models import Credentials, LLMModelMapping, ModelAssignment
 
 
 class ModelRouter:
     """Resolves agent roles to model names."""
 
-    def __init__(self, mapping: LLMModelMapping | None = None):
+    def __init__(
+        self,
+        mapping: LLMModelMapping | None = None,
+        *,
+        credentials: Credentials | None = None,
+    ):
         self.mapping = mapping or LLMModelMapping()
+        # Kept so ensemble resolution can resolve a fresh LOW-tier chain
+        # for the debater. ``None`` when the router was built from an
+        # explicit mapping with no credential context — ensemble
+        # resolution then degrades to chain-derived selection only.
+        self.credentials = credentials
 
     def resolve(self, role: str) -> str:
         """Return the primary model name for a role."""
@@ -29,6 +40,20 @@ class ModelRouter:
         """
         assignment = self.get_assignment(role)
         return [assignment.primary, *assignment.fallbacks]
+
+    def resolve_ensemble(self, role: str, *, default_role: str | None = None) -> EnsembleAssignment:
+        """Return the role's :class:`EnsembleAssignment`.
+
+        Carries the primary reasoner plus a family-aware counterpoint and
+        debater. Used by the adversarial-debate validation path to pick an
+        independent cross-family skeptic model.
+        """
+        return resolve_ensemble(
+            role,
+            mapping=self.mapping,
+            credentials=self.credentials,
+            default_role=default_role,
+        )
 
     def get_assignment(self, role: str, *, default_role: str | None = None) -> ModelAssignment:
         """Return full ModelAssignment for a role.

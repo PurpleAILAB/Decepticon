@@ -63,11 +63,13 @@ from decepticon.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugi
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.research.tools import (
+    debate_finding,
     kg_add_edge,
     kg_add_node,
     kg_neighbors,
     kg_query,
     kg_stats,
+    prove_finding,
     validate_finding,
 )
 
@@ -75,6 +77,8 @@ _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
         validate_finding,
+        debate_finding,
+        prove_finding,
         kg_query,
         kg_neighbors,
         kg_stats,

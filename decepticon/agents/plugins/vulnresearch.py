@@ -67,15 +67,18 @@ from decepticon.plugin_loader import (
     load_plugin_callbacks,
     load_subagents_for_parent,
 )
+from decepticon.tools.research.dedup import kg_dedup_findings
 from decepticon.tools.research.tools import kg_query, kg_stats
 
 _ROLE = "vulnresearch"
 _RECURSION_LIMIT = 250
 
-# Name-keyed baseline tools (tiny surface — read the graph only).
+# Name-keyed baseline tools (tiny surface — read the graph + run the
+# deterministic dedup stage between verify and patch).
 _STANDARD_TOOLS: dict[str, Any] = {
     "kg_query": kg_query,
     "kg_stats": kg_stats,
+    "kg_dedup_findings": kg_dedup_findings,
 }
 
 

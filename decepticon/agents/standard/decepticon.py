@@ -20,9 +20,11 @@ Middleware stack (selected for orchestration):
   11. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic models
   12. PatchToolCallsMiddleware — repair dangling tool calls
 
-The orchestrator has tools=[] — all offensive work goes through task()
-delegation to specialist sub-agents. SandboxNotificationMiddleware lives
-on each sub-agent (where bash actually runs), not here.
+All offensive work goes through task() delegation to specialist
+sub-agents; the orchestrator itself carries only the two ATT&CK-spine
+glue tools (objective seeding + Navigator export).
+SandboxNotificationMiddleware lives on each sub-agent (where bash
+actually runs), not here.
 
 Library API
 -----------
@@ -71,9 +73,26 @@ from decepticon.plugin_loader import (
     load_plugin_callbacks,
     load_subagents_for_parent,
 )
+from decepticon.tools.reporting.tools import export_attack_navigator
+from decepticon.tools.research.attack.emulation import suggest_objectives_from_actor
 
 _ROLE = "decepticon"
 _RECURSION_LIMIT = 400
+
+# Name-keyed registry so plugin overrides can target specific tools.
+#
+# The orchestrator delegates all offensive work via task(); these two
+# ATT&CK-spine glue tools are the only first-class tools it carries:
+#   suggest_objectives_from_actor — adversary emulation: drafts OPPLAN
+#     objectives from a threat actor's TTPs (then add_objective each).
+#   export_attack_navigator — ATT&CK coverage layer for the final report.
+_STANDARD_TOOLS: dict[str, Any] = {
+    t.name: t
+    for t in [
+        suggest_objectives_from_actor,
+        export_attack_navigator,
+    ]
+}
 
 
 def create_decepticon_agent(
@@ -104,8 +123,9 @@ def create_decepticon_agent(
             and each wrapped in ``StreamingRunnable``.
         tools: full tool list — when provided, replaces the standard
             registry entirely. When ``None`` (default), the OSS
-            baseline (``{}``) is built and plugin overrides applied.
-            The orchestrator delegates all work; tools=[] by design.
+            baseline (``_STANDARD_TOOLS`` — the two ATT&CK-spine tools)
+            is built and plugin overrides applied. All offensive work
+            still flows through task() delegation.
         middleware: full middleware list — when provided, replaces the
             OSS slot stack entirely. When ``None``, the baseline is
             assembled with plugin slot overrides applied.
@@ -155,10 +175,7 @@ def create_decepticon_agent(
         ]
 
     if tools is None:
-        tools = build_tools(
-            role=_ROLE,
-            standard_tools={},  # orchestrator tools=[] — delegation only
-        )
+        tools = build_tools(role=_ROLE, standard_tools=_STANDARD_TOOLS)
     if middleware is None:
         middleware = build_middleware(
             role=_ROLE,

@@ -81,6 +81,11 @@ def run(
         "--mhbench-config",
         help="Path to MHBench config.json (required when --provider mhbench)",
     ),
+    analyze_failures: bool = typer.Option(
+        False,
+        "--analyze-failures",
+        help="After scoring, classify failed challenges into a failure taxonomy",
+    ),
 ) -> None:
     """Run the benchmark suite against loaded challenges."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -168,8 +173,52 @@ def run(
     typer.echo(f"Markdown report: {md_path}")
     typer.echo(f"Evidence: {evidence_dir}")
 
+    if analyze_failures and report.failed > 0:
+        from benchmark.failure_analysis import analyze_batch, write_failure_analysis
+
+        try:
+            from decepticon.llm import LLMFactory
+
+            classifier_llm = LLMFactory().get_model("scanner")
+        except Exception as exc:  # noqa: BLE001 — analysis is best-effort
+            log.warning("failure-analysis LLM unavailable, deterministic only: %s", exc)
+            classifier_llm = None
+        taxonomy = analyze_batch(report, llm=classifier_llm)
+        _, fa_md = write_failure_analysis(taxonomy, evidence_dir)
+        typer.echo(f"Failure analysis: {fa_md}")
+
     if report.failed > 0:
         raise typer.Exit(code=1)
+
+
+@app.command()
+def analyze(
+    batch_dir: Path = typer.Argument(
+        ..., help="Path to a results/batch-<timestamp>/ directory to analyze"
+    ),
+    no_llm: bool = typer.Option(
+        False, "--no-llm", help="Deterministic classification only — skip the LLM pass"
+    ),
+) -> None:
+    """Classify the failures in a completed benchmark batch into a taxonomy."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    from benchmark.failure_analysis import analyze_batch, write_failure_analysis
+
+    classifier_llm = None
+    if not no_llm:
+        try:
+            from decepticon.llm import LLMFactory
+
+            classifier_llm = LLMFactory().get_model("scanner")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("failure-analysis LLM unavailable, deterministic only: %s", exc)
+
+    taxonomy = analyze_batch(batch_dir, llm=classifier_llm)
+    _, md_path = write_failure_analysis(taxonomy, batch_dir)
+    typer.echo(f"Classified {taxonomy.total_failures} failures")
+    for item in taxonomy.top_remediations:
+        typer.echo(f"  {item}")
+    typer.echo(f"Failure analysis: {md_path}")
 
 
 def _run_sequential(

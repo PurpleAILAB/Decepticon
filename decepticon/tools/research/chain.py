@@ -258,7 +258,7 @@ def promote_chain(chain: Chain) -> str:
     import hashlib
 
     path_key = f"chain::{chain.entrypoint_id}::{chain.crown_jewel_id}"
-    node_id = hashlib.sha1(f"AttackPath::{path_key}".encode()).hexdigest()[:16]
+    node_id = hashlib.sha1(f"AttackPath::{path_key}".encode(), usedforsecurity=False).hexdigest()[:16]
 
     query = """
     MERGE (ap:AttackPath {id: $id})

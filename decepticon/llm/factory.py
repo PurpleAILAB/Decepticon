@@ -32,6 +32,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from decepticon.core.logging import get_logger
+from decepticon.llm.ensemble import DEBATER_TEMPERATURE
 from decepticon.llm.models import (
     AuthMethod,
     Credentials,
@@ -838,11 +839,16 @@ class LLMFactory:
         self._proxy = proxy or self._resolve_proxy_config()
         if mapping is not None:
             self._mapping = mapping
+            # Credentials may be unknown when an explicit mapping is
+            # injected — ensemble resolution degrades to chain-derived
+            # selection in that case.
+            self._credentials = credentials
         else:
             creds = credentials if credentials is not None else _resolve_credentials()
             resolved_profile = profile if profile is not None else self._resolve_profile()
             self._mapping = LLMModelMapping.from_credentials_and_profile(creds, resolved_profile)
-        self._router = ModelRouter(self._mapping)
+            self._credentials = creds
+        self._router = ModelRouter(self._mapping, credentials=self._credentials)
         self._cache: dict[str, BaseChatModel] = {}
 
     @staticmethod
@@ -872,6 +878,12 @@ class LLMFactory:
     @property
     def router(self) -> ModelRouter:
         return self._router
+
+    @property
+    def credentials(self) -> Credentials | None:
+        """The resolved credentials inventory, or ``None`` when the factory
+        was built from an explicit mapping with no credential context."""
+        return self._credentials
 
     def get_model(self, role: str, *, default_role: str | None = None) -> BaseChatModel:
         """Get the primary ChatModel for a role. Cached per role.
@@ -918,6 +930,46 @@ class LLMFactory:
         return [
             self._create_chat_model(model, assignment.temperature) for model in assignment.fallbacks
         ]
+
+    def get_model_by_id(self, model_id: str, *, temperature: float = 0.2) -> BaseChatModel:
+        """Create (and cache) a ChatModel for an explicit LiteLLM model id.
+
+        Bypasses role→assignment resolution. The adversarial-debate path
+        uses this to instantiate an arbitrary cross-family skeptic model
+        chosen by :func:`decepticon.llm.ensemble.select_cross_family`.
+        """
+        cache_key = f"__byid__:{model_id}:{temperature}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+        model = self._create_chat_model(model_id, temperature)
+        self._cache[cache_key] = model
+        return model
+
+    def get_counterpoint_model(
+        self, role: str, *, default_role: str | None = None
+    ) -> BaseChatModel | None:
+        """Return a same-tier, different-family ChatModel for a role.
+
+        ``None`` when the user has only one provider family configured.
+        """
+        ensemble = self._router.resolve_ensemble(role, default_role=default_role)
+        if ensemble.counterpoint is None:
+            return None
+        return self.get_model_by_id(ensemble.counterpoint, temperature=DEBATER_TEMPERATURE)
+
+    def get_debater_model(
+        self, role: str, *, default_role: str | None = None
+    ) -> BaseChatModel | None:
+        """Return a cheap LOW-tier, cross-family ChatModel for a role.
+
+        ``None`` when no genuinely independent (cross-family) model can be
+        resolved — callers must skip debate rather than fail.
+        """
+        ensemble = self._router.resolve_ensemble(role, default_role=default_role)
+        if ensemble.debater is None:
+            return None
+        return self.get_model_by_id(ensemble.debater, temperature=DEBATER_TEMPERATURE)
 
     def _create_chat_model(self, model: str, temperature: float) -> BaseChatModel:
         """Create a proxied ChatOpenAI instance routed through LiteLLM proxy.

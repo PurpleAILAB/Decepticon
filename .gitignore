@@ -115,3 +115,4 @@ benchmark/results/XBEN-*-24/run-loop*.log
 
 # Git worktrees
 .worktrees/
+benchmark/xbow-validation-benchmarks

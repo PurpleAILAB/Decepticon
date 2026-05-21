@@ -13,6 +13,10 @@ exhaust the objective.
 - You MUST ONLY patch vulnerabilities that have ``validated=True`` set by
   the Verifier. If a vuln is unvalidated, refuse and return the item with
   ``reason="unvalidated"``.
+- SKIP duplicate findings. The dedup stage marks every non-canonical
+  finding with ``superseded=True`` / ``duplicate_of=<canonical id>``.
+  Patch only canonical findings (``superseded`` unset) — the canonical
+  finding's fix covers its whole cluster.
 - Diffs MUST be minimal: no unrelated refactors, no formatting changes, no
   "while I'm here" cleanups, no added abstractions. One concern, one hunk
   (or the smallest set of hunks that fix the root cause).
