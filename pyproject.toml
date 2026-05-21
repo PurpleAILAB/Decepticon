@@ -47,7 +47,16 @@ dependencies = [
     "langgraph-sdk>=0.1.0",
     # HTTP
     "httpx>=0.27.0",
-    "deepagents>=0.4.4",
+    "deepagents>=0.5.0",
+    # Sandbox HTTP daemon — the FastAPI app that ships inside the
+    # sandbox container and that `HTTPSandbox` (decepticon/backends/
+    # http_sandbox.py) talks to. Carried in the main install set
+    # because the sandbox container mounts decepticon as
+    # /deps/decepticon and runs `python -m decepticon.sandbox_server`
+    # as its entrypoint; the agent process imports nothing from these
+    # at runtime.
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
     # CLI
     "typer[all]>=0.9.0",
     "xxhash>=3.0.0",
@@ -70,6 +79,69 @@ dev = [
 [project.scripts]
 decepticon-kg-health = "decepticon.tools.research.health:main"
 
+# Plugin entry-point groups consumed by ``decepticon.plugin_loader``.
+# External packages (SaaS or community plugins) declare their
+# contributions under these groups. See ``decepticon/plugin_loader.py``
+# for the loader contract (shapes, factory kwargs, error isolation).
+#
+#   [project.entry-points."decepticon.tools"]
+#   my-tools = "my_pkg.tools:get_tools"
+#
+#   [project.entry-points."decepticon.middleware"]
+#   my-mw = "my_pkg.middleware:get_middleware"
+#
+#   [project.entry-points."decepticon.agents"]
+#   my-agent = "my_pkg.agents.my_agent"
+#
+#   [project.entry-points."decepticon.subagents"]
+#   my-subagent = "my_pkg.agents.my_subagent:SUBAGENT_SPEC"
+#
+#   [project.entry-points."decepticon.callbacks"]
+#   my-cb = "my_pkg.callbacks:get_callbacks"
+
+# OSS-shipped subagents — registered here so the plugin loader picks
+# them up uniformly with external plugins. Each entry resolves to a
+# ``SubAgentSpec`` module constant declaring (name, description,
+# factory, parent_agents, bundle, priority). The main agents iterate
+# ``load_subagents_for_parent(<their-name>)`` at construction time;
+# adding a new subagent — OSS or plugin — is a pure entry-point
+# registration with no main-agent edits required.
+#
+# Bundle activation — controlled by a 4-tier hierarchy (highest wins):
+#   1. DECEPTICON_PLUGINS env var (e.g. "standard,plugins,saas" or "*")
+#   2. .decepticon.toml: [plugins] enabled = [...]
+#   3. pyproject.toml: [tool.decepticon.plugins] enabled = [...]
+#   4. Default: ["standard"]
+# Default keeps OSS lean. The ``plugins`` bundle (vulnresearch family)
+# is opt-in. See decepticon/plugin_loader.py for the loader contract.
+
+# Default Decepticon project config — kept in OSS so this checkout's
+# native dev workflow (e.g. ``make benchmark``, ``langgraph dev``)
+# automatically activates both bundles instead of forcing every
+# developer to remember the env var. End-user OSS installs that DON'T
+# clone this repo see the hardcoded ``["standard"]`` default; SaaS
+# images override via ``ENV DECEPTICON_PLUGINS=standard,saas``.
+
+[tool.decepticon.plugins]
+enabled = ["standard", "plugins"]
+
+[project.entry-points."decepticon.subagents"]
+# Standard bundle — attached to the ``decepticon`` main agent.
+recon = "decepticon.agents.standard.recon:SUBAGENT_SPEC"
+exploit = "decepticon.agents.standard.exploit:SUBAGENT_SPEC"
+analyst = "decepticon.agents.standard.analyst:SUBAGENT_SPEC"
+reverser = "decepticon.agents.standard.reverser:SUBAGENT_SPEC"
+contract_auditor = "decepticon.agents.standard.contract_auditor:SUBAGENT_SPEC"
+cloud_hunter = "decepticon.agents.standard.cloud_hunter:SUBAGENT_SPEC"
+ad_operator = "decepticon.agents.standard.ad_operator:SUBAGENT_SPEC"
+postexploit = "decepticon.agents.standard.postexploit:SUBAGENT_SPEC"
+# Plugins bundle — vulnresearch family, attached to the ``vulnresearch`` main agent.
+scanner = "decepticon.agents.plugins.scanner:SUBAGENT_SPEC"
+detector = "decepticon.agents.plugins.detector:SUBAGENT_SPEC"
+verifier = "decepticon.agents.plugins.verifier:SUBAGENT_SPEC"
+patcher = "decepticon.agents.plugins.patcher:SUBAGENT_SPEC"
+exploiter = "decepticon.agents.plugins.exploiter:SUBAGENT_SPEC"
+
 [project.urls]
 Homepage = "https://github.com/PurpleAILAB/Decepticon"
 Repository = "https://github.com/PurpleAILAB/Decepticon"
@@ -86,6 +158,7 @@ line-length = 100
 target-version = "py313"
 extend-exclude = [
     "benchmark/xbow-validation-benchmarks",
+    "benchmark/MHBench",
     "benchmark/results",
 ]
 
@@ -137,6 +210,7 @@ exclude = [
     "reference",
     "decepticon/auth/providers",
     "benchmark/xbow-validation-benchmarks",
+    "benchmark/MHBench",
     "benchmark/results",
 ]
 # Use pyright "standard" semantics rather than the basedpyright "all" default —

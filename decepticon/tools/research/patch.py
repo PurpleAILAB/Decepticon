@@ -181,7 +181,7 @@ async def patch_verify(
 
     sandbox = get_sandbox()
     if sandbox is None:
-        return _json({"error": "DockerSandbox not initialized"})
+        return _json({"error": "HTTPSandbox not initialized"})
 
     graph, db_path = _load()
     patch = graph.nodes.get(patch_id)

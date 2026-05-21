@@ -44,7 +44,8 @@ export type AgentEventType =
   | "subagent_start"
   | "subagent_end"
   | "ask_user_question"
-  | "ask_user_answer";
+  | "ask_user_answer"
+  | "background_complete";
 
 /** One choice in an ask_user_question picker. */
 export interface AskUserOption {
@@ -71,6 +72,15 @@ export interface AgentEvent {
   options?: AskUserOption[];
   multiSelect?: boolean;
   allowOther?: boolean;
+  // background_complete payload — emitted by SandboxNotificationMiddleware
+  // when a background bash session finishes. The CLI renders this as a
+  // Claude-Code-style ``● Background command "..." completed`` line so
+  // the operator sees the result without the agent having to call
+  // bash_output explicitly.
+  session?: string;
+  command?: string;
+  exitCode?: number | null;
+  elapsed?: number;
 }
 
 /** A pending operator question — present while a picker is awaiting input. */

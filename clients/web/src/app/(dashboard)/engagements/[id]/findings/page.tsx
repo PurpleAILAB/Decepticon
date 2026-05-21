@@ -30,6 +30,11 @@ interface Finding {
   evidence: string;
   attackVector: string;
   affectedAssets: string[];
+  cvssScore?: number;
+  cvssVector?: string;
+  cwe?: string[];
+  mitre?: string[];
+  remediation?: string;
 }
 
 const severityColors: Record<string, string> = {
@@ -105,7 +110,7 @@ export default function FindingsPage() {
           <h1 className="text-2xl font-bold tracking-tight">
             {selectedFinding.title}
           </h1>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="text-xs">
               {selectedFinding.id}
             </Badge>
@@ -115,8 +120,26 @@ export default function FindingsPage() {
             >
               {selectedFinding.severity}
             </Badge>
+            {selectedFinding.cvssScore != null && (
+              <Badge variant="outline" className="font-mono text-xs">
+                CVSS {selectedFinding.cvssScore.toFixed(1)}
+              </Badge>
+            )}
+            {selectedFinding.cwe?.map((c) => (
+              <Badge key={c} variant="secondary" className="text-[10px] font-mono">{c}</Badge>
+            ))}
+            {selectedFinding.mitre?.map((m) => (
+              <Badge key={m} variant="secondary" className="text-[10px] font-mono">{m}</Badge>
+            ))}
           </div>
         </div>
+
+        {selectedFinding.cvssVector && (
+          <div className="rounded-lg border border-border/50 bg-muted/30 px-4 py-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">CVSS Vector</span>
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">{selectedFinding.cvssVector}</p>
+          </div>
+        )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <Card>
@@ -171,6 +194,19 @@ export default function FindingsPage() {
               </CardContent>
             </Card>
           )}
+
+          {selectedFinding.remediation && (
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-base">Remediation</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  {selectedFinding.remediation}
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     );
@@ -222,6 +258,7 @@ export default function FindingsPage() {
                   <TableHead>ID</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Severity</TableHead>
+                  <TableHead>CVSS</TableHead>
                   <TableHead>Assets</TableHead>
                 </TableRow>
               </TableHeader>
@@ -245,6 +282,9 @@ export default function FindingsPage() {
                       >
                         {finding.severity}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      {finding.cvssScore != null ? finding.cvssScore.toFixed(1) : "—"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {finding.affectedAssets.length > 0

@@ -11,9 +11,9 @@ export async function GET(
   }
 
   await params; // consume params to satisfy Next.js
-  const neo4jUri = process.env.NEO4J_URI;
+  const neo4jUri = process.env.NEO4J_URI ?? "bolt://neo4j:7687";
   const neo4jUser = process.env.NEO4J_USER ?? "neo4j";
-  const neo4jPassword = process.env.NEO4J_PASSWORD;
+  const neo4jPassword = process.env.NEO4J_PASSWORD ?? "decepticon-graph";
 
   if (!neo4jUri || !neo4jPassword) {
     return NextResponse.json({ nodes: [], edges: [] });

@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const validTypes = [
-      "local_path", "git_url", "file_upload", "web_url", "ip_range", "github_repo",
+      "local_path", "git_url", "file_upload", "web_url", "ip_range",
     ];
     if (!validTypes.includes(targetType)) {
       return NextResponse.json(

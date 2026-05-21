@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // HTML pages: no cache so hotswap chunk name changes take effect immediately
+      {
+        source: "/:path((?!_next/static|_next/image|favicon.ico).*)",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+        ],
+      },
     ];
   },
   // Pin Turbopack workspace root to the monorepo root (where npm workspaces

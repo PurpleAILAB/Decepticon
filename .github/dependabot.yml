@@ -1,5 +1,0 @@
-# Security updates only — version bumps disabled to avoid breaking changes.
-# GitHub automatically creates PRs for known vulnerabilities (GHSA advisories).
-# Manual dependency updates should be done intentionally with testing.
-version: 2
-updates: []

@@ -6,7 +6,7 @@
  * useSubAgentSessions hook for cross-platform reuse.
  */
 
-import type { StreamEvent } from "./types";
+import type { StreamEvent } from "./types.js";
 
 /** A sub-agent execution session derived from the event stream. */
 export interface SubAgentSession {

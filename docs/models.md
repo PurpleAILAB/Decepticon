@@ -25,17 +25,17 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 | `anthropic_api`       | `anthropic/claude-opus-4-7`               | `anthropic/claude-sonnet-4-6`                 | `anthropic/claude-haiku-4-5`                  |
 | `anthropic_oauth`     | `auth/claude-opus-4-7`                    | `auth/claude-sonnet-4-6`                      | `auth/claude-haiku-4-5`                       |
 | `openai_api`          | `openai/gpt-5.5`                          | `openai/gpt-5.4`                              | `openai/gpt-5-nano`                           |
-| `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5.4`                                |
+| `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5.4-mini`                           |
 | `google_api`          | `gemini/gemini-2.5-pro`                   | `gemini/gemini-2.5-flash`                     | `gemini/gemini-2.5-flash-lite`                |
 | `google_oauth`        | `gemini-sub/gemini-2.5-pro`               | `gemini-sub/gemini-2.5-flash`                 | — *(falls through)*                           |
 | `minimax_api`         | `minimax/MiniMax-M2.5`                    | `minimax/MiniMax-M2.5-lightning`              | — *(falls through)*                           |
 | `deepseek_api`        | `deepseek/deepseek-v4-pro`                | `deepseek/deepseek-v4-flash`                   | `deepseek/deepseek-v4-flash`                   |
-| `xai_api`             | `xai/grok-3`                              | `xai/grok-3-mini`                             | — *(falls through)*                           |
-| `grok_oauth`          | `grok-sub/grok-3`                         | `grok-sub/grok-3-mini`                        | — *(falls through)*                           |
+| `xai_api`             | `xai/grok-4.3`                            | `xai/grok-4-1-fast-reasoning`                 | — *(falls through)*                           |
+| `grok_oauth`          | `grok-sub/grok-4.3`                       | `grok-sub/grok-4-1-fast-reasoning`            | — *(falls through)*                           |
 | `mistral_api`         | `mistral/mistral-large-latest`            | `mistral/codestral-latest`                    | — *(falls through)*                           |
 | `openrouter_api`      | `openrouter/anthropic/claude-opus-4-7`    | `openrouter/anthropic/claude-sonnet-4-6`      | `openrouter/anthropic/claude-haiku-4-5`       |
 | `nvidia_api`          | `nvidia_nim/meta/llama-3.3-70b-instruct`  | `nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct` | `nvidia_nim/meta/llama-3.2-3b-instruct` |
-| `copilot_oauth`       | `copilot/gpt-4o`                          | `copilot/o1`                                  | `copilot/o3-mini`                             |
+| `copilot_oauth`       | `copilot/gpt-5.5`                         | `copilot/claude-sonnet-4-6`                   | `copilot/gpt-5.4-mini`                        |
 | `perplexity_oauth`    | `pplx-sub/sonar-pro`                      | `pplx-sub/sonar`                              | — *(falls through)*                           |
 | `ollama_local`        | `ollama_chat/<OLLAMA_MODEL>`              | `ollama_chat/<OLLAMA_MODEL>`                  | `ollama_chat/<OLLAMA_MODEL>`                  |
 
@@ -223,6 +223,42 @@ Local model handles routine work; when the local model fails (OOM,
 context overflow, hardware fault), Anthropic takes over for that
 request only.
 
+
+### Local llama.cpp (GGUF) only
+
+```
+DECEPTICON_AUTH_PRIORITY=llamacpp_local
+LLAMACPP_API_BASE=http://host.docker.internal:8080/v1
+LLAMACPP_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
+```
+
+| Agent (tier)     | Primary                                                  | Fallback |
+|------------------|----------------------------------------------------------|----------|
+| decepticon (HIGH)| `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| exploit (MID)    | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| recon (LOW)      | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+
+Run a GGUF model with llama.cpp's OpenAI-compatible server:
+
+```bash
+llama-server -m /path/to/qwen2.5-coder-7b-instruct-q4_k_m.gguf --port 8080
+# server listens on http://localhost:8080/v1
+```
+
+Like Ollama, the model collapses across tiers — `llama-server` runs one
+GGUF at a time. The `llamacpp/<model>` route remaps to LiteLLM's
+`openai/` provider (since llama.cpp does not have a dedicated LiteLLM
+provider) plus a custom `api_base` pointed at `LLAMACPP_API_BASE`. This
+is the integration the maintainer recommended on issue #151 — it reuses
+the existing LiteLLM provider machinery and avoids vendoring
+`llama-cpp-python` as a runtime dependency.
+
+Tool calling works as long as the GGUF was trained or fine-tuned with
+function-calling support (Qwen 2.5 Coder, Llama 3.1 Instruct, Mistral
+Small Instruct all qualify). The `llama-server` request format is
+identical to OpenAI's; LiteLLM translates the agent's tool calls
+through unchanged.
+
 ### MiniMax-only (LOW gap)
 
 ```
@@ -292,15 +328,15 @@ startup so you can confirm what got picked up.
 
 ## Subscription OAuth Providers
 
-Use monthly subscriptions instead of per-token API billing. ChatGPT uses LiteLLM's native ChatGPT provider; the others use custom LiteLLM handlers that authenticate via OAuth/session tokens.
+Use monthly subscriptions instead of per-token API billing. All providers use custom LiteLLM handlers that authenticate via OAuth/session tokens. ChatGPT in particular reads from the Codex CLI credential store (`~/.codex/auth.json`), so a host-side `codex login` flows into the running container without a rebuild.
 
 | Subscription | AuthMethod | Models | Handler |
 |---|---|---|---|
 | Claude Max/Pro/Team | `anthropic_oauth` | auth/claude-opus, sonnet, haiku | `claude_code_handler.py` |
-| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4 | LiteLLM native `chatgpt` provider |
+| ChatGPT Pro/Plus/Team | `openai_oauth` | auth/gpt-5.5, gpt-5.4, gpt-5.4-mini (+ gpt-5.3-codex for code roles) | `codex_chatgpt_handler.py` (reads `~/.codex/auth.json`) |
 | Gemini Advanced | `google_oauth` | gemini-sub/gemini-2.5-pro, flash | `gemini_handler.py` |
-| Copilot Pro | `copilot_oauth` | copilot/gpt-4o, o1, o3-mini | `copilot_handler.py` |
-| SuperGrok | `grok_oauth` | grok-sub/grok-3, grok-3-mini | `grok_handler.py` |
+| Copilot Pro | `copilot_oauth` | copilot/gpt-5.5, claude-sonnet-4-6, gpt-5.4-mini (+ gpt-5.3-codex) | `copilot_handler.py` |
+| SuperGrok | `grok_oauth` | grok-sub/grok-4.3, grok-4-1-fast-reasoning | `grok_handler.py` |
 | Perplexity Pro | `perplexity_oauth` | pplx-sub/sonar-pro, sonar | `perplexity_handler.py` |
 
 Enable in `.env`:

@@ -1,3 +1,7 @@
 [submodule "benchmark/xbow-validation-benchmarks"]
 	path = benchmark/xbow-validation-benchmarks
 	url = https://github.com/PurpleAILAB/xbow-validation-benchmarks
+[submodule "benchmark/MHBench"]
+	path = benchmark/MHBench
+	url = https://github.com/PurpleAILAB/MHBench
+	branch = decepticon

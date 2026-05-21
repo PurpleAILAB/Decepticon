@@ -47,7 +47,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const ALLOWED_FIELDS = ["name", "status", "targetType", "targetValue"] as const;
+    const ALLOWED_FIELDS = ["name", "status", "targetType", "targetValue", "threadId"] as const;
     const data: Record<string, unknown> = {};
     for (const field of ALLOWED_FIELDS) {
       if (field in body) data[field] = body[field];

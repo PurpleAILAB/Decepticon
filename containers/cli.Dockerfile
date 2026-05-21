@@ -15,27 +15,41 @@ RUN sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/cli/package
 
 RUN npm ci --workspace=@decepticon/cli
 
-# Copy CLI and shared source and build
+# Copy CLI and shared source and build. Build the shared workspace first
+# so the CLI's tsc compile + runtime both resolve `@decepticon/streaming`
+# to its emitted dist/ (its package.json main points at dist/index.js).
 COPY clients/shared/ clients/shared/
 COPY clients/cli/ clients/cli/
+RUN npm run build --workspace=@decepticon/streaming
 RUN npm run build --workspace=@decepticon/cli
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────
 FROM node:24-slim
 WORKDIR /app
 
-# Copy compiled output + runtime dependencies
+# Copy compiled output + runtime dependencies. We run plain `node` on the
+# tsc-emitted dist/ — no tsx runtime loader. tsx 4.20+ registers a JSON
+# transform on the module loader that rewrites `*.json` into ESM JS, which
+# breaks any CJS dependency doing `require('./*.json')` (notably
+# `cli-boxes` via `boxen` via `ink`). Compiling ahead of time and dropping
+# tsx at runtime removes that hazard entirely.
 COPY --from=builder /app/clients/cli/package.json ./
 COPY --from=builder /app/node_modules ./node_modules
-# Shared workspace packages are symlinked from node_modules — copy the
-# actual source so the symlinks resolve at runtime.
-COPY --from=builder /app/clients/shared ./clients/shared
-# tsx runs src/ directly — dist/ is not used at runtime
-COPY --from=builder /app/clients/cli/src ./src
+# Shared workspace package is symlinked from node_modules; copy its
+# package.json + dist so the symlink resolves to a real ESM build.
+COPY --from=builder /app/clients/shared/streaming/package.json ./clients/shared/streaming/package.json
+COPY --from=builder /app/clients/shared/streaming/dist ./clients/shared/streaming/dist
+COPY --from=builder /app/clients/cli/dist ./dist
 
 ENV DECEPTICON_API_URL=http://langgraph:2024
 ENV NODE_ENV=production
 
 # No HEALTHCHECK — CLI is an interactive TTY app with no HTTP surface.
 
-ENTRYPOINT ["node", "--import", "tsx/esm", "src/index.tsx"]
+# Run as root by operator policy. The CLI shells out to bundled offensive
+# tools (apt/curl/wget/git fetches at runtime), so a non-root USER would
+# break the agent's ability to install missing utilities on the fly.
+# Semgrep ``missing-user-entrypoint`` is explicitly dispositioned here.
+USER root
+
+ENTRYPOINT ["node", "dist/index.js"]

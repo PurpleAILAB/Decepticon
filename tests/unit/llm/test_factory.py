@@ -1,10 +1,17 @@
 """Unit tests for decepticon.llm.factory."""
 
 import asyncio
+import logging
 
 import pytest
 
-from decepticon.llm.factory import LLMFactory, _resolve_credentials
+from decepticon.llm.factory import (
+    LLMFactory,
+    _is_real_key,
+    _llamacpp_local_configured,
+    _oauth_credentials_present,
+    _resolve_credentials,
+)
 from decepticon.llm.models import (
     AuthMethod,
     Credentials,
@@ -12,6 +19,94 @@ from decepticon.llm.models import (
     ModelProfile,
     ProxyConfig,
 )
+
+
+class TestIsRealKey:
+    """Vendor-aware API key validation.
+
+    The launcher writes ``your-…-key-here`` placeholders into .env so the
+    user can later swap in a real key. The factory needs to reject those
+    plus any obvious junk (short strings, ``placeholder``/``not-used``
+    markers, vendor-prefix mismatches) so the credentials inventory
+    reflects what actually works at request time.
+    """
+
+    def test_rejects_empty_and_placeholder_template(self) -> None:
+        assert _is_real_key("") is False
+        assert _is_real_key("   ") is False
+        assert _is_real_key("your-anthropic-key-here") is False
+        assert _is_real_key("YOUR-OPENAI-KEY-HERE") is False  # case-insensitive
+
+    def test_rejects_short_strings(self) -> None:
+        # Under 24 chars — every vendor-issued key exceeds this.
+        assert _is_real_key("sk-tooshort") is False
+
+    def test_rejects_placeholder_tokens_in_value(self) -> None:
+        long_enough = "x" * 30
+        for token in ("placeholder", "not-used", "dummy", "fake", "example"):
+            assert _is_real_key(f"sk-{token}-{long_enough}") is False, token
+
+    def test_accepts_realistic_keys_without_method(self) -> None:
+        # Without method context, prefix check is skipped.
+        assert _is_real_key("sk-ant-api03-realtokenfortestingauthrouting12345") is True
+        assert _is_real_key("AIzaSyDeadBeefDeadBeefDeadBeefDeadBeef0") is True
+
+    def test_rejects_wrong_vendor_prefix(self) -> None:
+        # An OpenAI-shaped key in the Anthropic slot must be caught.
+        openai_key = "sk-proj-realopenaitokenfortestingauthrouting12345"
+        assert _is_real_key(openai_key, AuthMethod.ANTHROPIC_API) is False
+        # …and vice versa.
+        anthropic_key = "sk-ant-api03-realtokenfortestingauthrouting12345"
+        assert _is_real_key(anthropic_key, AuthMethod.GOOGLE_API) is False
+
+    def test_accepts_correct_vendor_prefix(self) -> None:
+        anthropic_key = "sk-ant-api03-realtokenfortestingauthrouting12345"
+        assert _is_real_key(anthropic_key, AuthMethod.ANTHROPIC_API) is True
+        google_key = "AIzaSyDeadBeefDeadBeefDeadBeefDeadBeef0"
+        assert _is_real_key(google_key, AuthMethod.GOOGLE_API) is True
+
+
+class TestOAuthCredentialsPresent:
+    """OAuth detection requires the credential file alongside the boolean.
+
+    Without the file check, ``DECEPTICON_AUTH_CLAUDE_CODE=true`` plus a
+    deleted ``~/.claude/.credentials.json`` would still place OAuth in
+    every fallback chain and generate one 401 per request.
+    """
+
+    def test_returns_false_when_file_missing(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(tmp_path / "absent.json"))
+        assert _oauth_credentials_present(AuthMethod.ANTHROPIC_OAUTH) is False
+
+    def test_returns_false_when_file_is_empty(self, monkeypatch, tmp_path) -> None:
+        # ``/dev/null``-style mounts read as empty — must fail closed.
+        empty = tmp_path / "empty.json"
+        empty.write_text("")
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(empty))
+        assert _oauth_credentials_present(AuthMethod.ANTHROPIC_OAUTH) is False
+
+    def test_returns_false_on_invalid_json(self, monkeypatch, tmp_path) -> None:
+        bad = tmp_path / "bad.json"
+        bad.write_text("{not-json")
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(bad))
+        assert _oauth_credentials_present(AuthMethod.ANTHROPIC_OAUTH) is False
+
+    def test_returns_true_when_file_is_well_formed(self, monkeypatch, tmp_path) -> None:
+        good = tmp_path / "credentials.json"
+        good.write_text('{"claudeAiOauth": {"accessToken": "sk-ant-oat01-deadbeef"}}')
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(good))
+        assert _oauth_credentials_present(AuthMethod.ANTHROPIC_OAUTH) is True
+
+    def test_codex_path_via_env_override(self, monkeypatch, tmp_path) -> None:
+        good = tmp_path / "auth.json"
+        good.write_text('{"tokens": {"access_token": "ABC"}}')
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CODEX_AUTH_PATH", str(good))
+        assert _oauth_credentials_present(AuthMethod.OPENAI_OAUTH) is True
 
 
 class TestLLMFactory:
@@ -67,7 +162,7 @@ class TestLLMFactory:
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M2.5",
             "deepseek/deepseek-v4-pro",
-            "xai/grok-3",
+            "xai/grok-4.3",
             "mistral/mistral-large-latest",
             "openrouter/anthropic/claude-opus-4-7",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
@@ -96,7 +191,7 @@ class TestLLMFactoryHealthCheck:
 
 class TestResolveCredentials:
     def test_real_keys_only(self, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
         monkeypatch.setenv("OPENAI_API_KEY", "your-openai-key-here")  # placeholder
         for k in (
             "GEMINI_API_KEY",
@@ -123,7 +218,13 @@ class TestResolveCredentials:
         creds = _resolve_credentials()
         assert creds.methods == [AuthMethod.ANTHROPIC_API]
 
-    def test_oauth_only(self, monkeypatch):
+    def test_oauth_only(self, monkeypatch, tmp_path):
+        # OAuth detection requires the credential FILE alongside the
+        # boolean — point Claude Code at a temp credentials file so the
+        # test runs deterministically regardless of host state.
+        cred_file = tmp_path / "credentials.json"
+        cred_file.write_text('{"claudeAiOauth": {"accessToken": "sk-ant-oat01-deadbeefdeadbeef"}}')
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(cred_file))
         for k in (
             "ANTHROPIC_API_KEY",
             "OPENAI_API_KEY",
@@ -151,11 +252,49 @@ class TestResolveCredentials:
         creds = _resolve_credentials()
         assert creds.methods == [AuthMethod.ANTHROPIC_OAUTH]
 
-    def test_oauth_plus_api_priority_default(self, monkeypatch):
-        # Default priority is anthropic_oauth > anthropic_api > openai_api ...
+    def test_oauth_flag_without_credential_file_is_dropped(self, monkeypatch, tmp_path):
+        """Stale ``DECEPTICON_AUTH_CLAUDE_CODE=true`` after ``codex logout``
+        (or after the user deleted ``~/.claude/.credentials.json``) must
+        not place the OAuth method into the chain — otherwise every
+        request 401s before falling back to the next provider.
+        """
+        # Point both the primary and legacy fallback paths at tmp_path so
+        # any ``~/.claude/.credentials.json`` or
+        # ``~/.config/anthropic/q/tokens.json`` on the dev host doesn't
+        # accidentally satisfy the file-presence check.
+        monkeypatch.setenv("HOME", str(tmp_path))
+        missing = tmp_path / "missing.json"  # never created
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(missing))
         monkeypatch.setenv("DECEPTICON_AUTH_CLAUDE_CODE", "true")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-12345")
+        for k in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        for flag in (
+            "DECEPTICON_AUTH_CHATGPT",
+            "DECEPTICON_AUTH_COPILOT",
+            "DECEPTICON_AUTH_GEMINI",
+            "DECEPTICON_AUTH_GROK",
+            "DECEPTICON_AUTH_PERPLEXITY",
+        ):
+            monkeypatch.delenv(flag, raising=False)
+        monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
+        creds = _resolve_credentials()
+        assert AuthMethod.ANTHROPIC_OAUTH not in creds.methods
+
+    def test_oauth_plus_api_priority_default(self, monkeypatch, tmp_path):
+        # Default priority is anthropic_oauth > anthropic_api > openai_api ...
+        cred_file = tmp_path / "credentials.json"
+        cred_file.write_text('{"claudeAiOauth": {"accessToken": "sk-ant-oat01-deadbeefdeadbeef"}}')
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(cred_file))
+        monkeypatch.setenv("DECEPTICON_AUTH_CLAUDE_CODE", "true")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-realopenaitokenfortestingauthrouting12345")
         for k in (
             "GEMINI_API_KEY",
             "MINIMAX_API_KEY",
@@ -186,8 +325,8 @@ class TestResolveCredentials:
 
     def test_explicit_priority_override(self, monkeypatch):
         monkeypatch.setenv("DECEPTICON_AUTH_PRIORITY", "openai_api,anthropic_api")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-real-openai-12345")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-proj-realopenaitokenfortestingauthrouting12345")
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
         monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
@@ -227,6 +366,122 @@ class TestResolveCredentials:
             AuthMethod.NVIDIA_API,
         ]
 
+    def test_explicit_priority_no_creds_logs_error(self, monkeypatch, tmp_path, caplog):
+        """An explicit ``DECEPTICON_AUTH_PRIORITY`` whose every listed
+        method fails detection (typical of a broken OAuth credentials
+        mount — e.g. ``CLAUDE_CREDENTIALS_VOLUME`` unset and the
+        compose file bound ``/dev/null`` into the container) must
+        surface the root cause at ERROR level.
+
+        Otherwise the silent fallback to ``all_api_methods()`` runs
+        through nine unrelated providers and the operator only sees a
+        downstream 401-cascade — confusingly masked as a 429 once the
+        routed-to provider (e.g. NVIDIA NIM) cools down. Backward
+        compat is preserved: the resolver still returns
+        ``all_api_methods()`` so module imports remain green; the
+        real model call surfaces a separate, actionable error via
+        ``_reraise_with_actionable_message``.
+        """
+        # Point the OAuth credential path at a file we never create so
+        # detection fails the same way ``/dev/null`` does at runtime.
+        missing = tmp_path / "missing.json"
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("CLAUDE_CODE_CREDENTIALS_PATH", str(missing))
+        monkeypatch.setenv("DECEPTICON_AUTH_PRIORITY", "anthropic_oauth")
+        monkeypatch.setenv("DECEPTICON_AUTH_CLAUDE_CODE", "true")
+        for k in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+            "OLLAMA_CLOUD_API_BASE",
+            "OLLAMA_CLOUD_MODEL",
+            "LMSTUDIO_API_BASE",
+            "LMSTUDIO_MODEL",
+            "CUSTOM_OPENAI_API_BASE",
+            "CUSTOM_OPENAI_API_KEY",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        for flag in (
+            "DECEPTICON_AUTH_CHATGPT",
+            "DECEPTICON_AUTH_COPILOT",
+            "DECEPTICON_AUTH_GEMINI",
+            "DECEPTICON_AUTH_GROK",
+            "DECEPTICON_AUTH_PERPLEXITY",
+        ):
+            monkeypatch.delenv(flag, raising=False)
+
+        # ``decepticon.core.logging`` sets the parent decepticon logger
+        # to ``propagate=False`` so library output doesn't double up in
+        # apps that own their root handler. caplog hooks the root logger,
+        # so without re-enabling propagation our ERROR record never
+        # reaches pytest's capture buffer. Re-enable for the duration of
+        # the call and let monkeypatch restore on teardown.
+        decepticon_log = logging.getLogger("decepticon")
+        monkeypatch.setattr(decepticon_log, "propagate", True)
+
+        with caplog.at_level(logging.ERROR):
+            creds = _resolve_credentials()
+
+        # Backward compat: still returns the all-API-methods fallback.
+        assert creds.methods == Credentials.all_api_methods().methods
+
+        # ERROR diagnostic must mention the env var name so an operator
+        # scanning ``decepticon logs langgraph`` knows where to look.
+        error_records = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert any("DECEPTICON_AUTH_PRIORITY" in r.getMessage() for r in error_records), (
+            f"No ERROR log mentioned DECEPTICON_AUTH_PRIORITY. "
+            f"Got: {[r.getMessage() for r in error_records]}"
+        )
+
+    def test_implicit_priority_no_creds_stays_info_level(self, monkeypatch, caplog):
+        """Implicit priority (no DECEPTICON_AUTH_PRIORITY set) with no
+        detectable credentials is the import-friendly CI/test path:
+        we keep the existing INFO log and ``all_api_methods()`` return
+        so module imports work without keys present. Only **explicit**
+        priority with no matches gets escalated to ERROR.
+        """
+        for k in (
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "MINIMAX_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "XAI_API_KEY",
+            "MISTRAL_API_KEY",
+            "OPENROUTER_API_KEY",
+            "NVIDIA_API_KEY",
+            "OLLAMA_API_BASE",
+            "OLLAMA_MODEL",
+        ):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.delenv("DECEPTICON_AUTH_PRIORITY", raising=False)
+        monkeypatch.delenv("DECEPTICON_AUTH_CLAUDE_CODE", raising=False)
+
+        # Match the explicit-priority test's pattern so caplog sees the
+        # records — the decepticon parent logger defaults to
+        # ``propagate=False`` per ``decepticon.core.logging``.
+        decepticon_log = logging.getLogger("decepticon")
+        monkeypatch.setattr(decepticon_log, "propagate", True)
+
+        with caplog.at_level(logging.DEBUG):
+            creds = _resolve_credentials()
+
+        assert creds.methods == Credentials.all_api_methods().methods
+        # No ERROR records — this case stays informational.
+        error_records = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert not error_records, (
+            f"Unexpected ERROR logs in implicit-priority path: "
+            f"{[r.getMessage() for r in error_records]}"
+        )
+
     def test_ollama_local_only_returns_ollama_chain(self, monkeypatch):
         """Issue #106: a user with only OLLAMA_API_BASE / OLLAMA_MODEL set
         (no API keys, no OAuth) must get a chain of one — Ollama only.
@@ -258,7 +513,7 @@ class TestResolveCredentials:
         monkeypatch.setenv("DECEPTICON_AUTH_PRIORITY", "ollama_local,anthropic_api")
         monkeypatch.setenv("OLLAMA_API_BASE", "http://host.docker.internal:11434")
         monkeypatch.setenv("OLLAMA_MODEL", "qwen3-coder:30b")
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-real-12345")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
         for k in (
             "OPENAI_API_KEY",
             "GEMINI_API_KEY",
@@ -787,11 +1042,137 @@ class TestDeepSeekReasoningContent:
         assert "reasoning_content" not in payload["messages"][2]
 
     def test_model_detection(self):
-        """Factory routes deepseek-v4-pro through the thinking subclass."""
+        """Factory routes DeepSeek V4 (pro + flash) and legacy reasoner.
+
+        Per DeepSeek's API docs ``deepseek-reasoner`` is the deprecated
+        alias for ``deepseek-v4-flash`` thinking mode, so v4-flash also
+        returns ``reasoning_content`` and the API rejects subsequent
+        tool turns when the field is omitted. Closes #201, #220.
+        """
         from decepticon.llm.factory import _model_is_deepseek_thinking
 
         assert _model_is_deepseek_thinking("deepseek/deepseek-v4-pro") is True
+        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is True
         assert _model_is_deepseek_thinking("deepseek/deepseek-reasoner") is True
-        assert _model_is_deepseek_thinking("deepseek/deepseek-v4-flash") is False
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
+
+
+# ── LLAMACPP_LOCAL credential detection (issue #151) ────────────────────
+
+
+_LLAMACPP_RELATED_ENV = (
+    "LLAMACPP_API_BASE",
+    "LLAMACPP_MODEL",
+    "LLAMACPP_API_KEY",
+)
+
+
+def _scrub_other_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delete any env that would be detected as another credential.
+
+    The credential-detection tests below need to assert "only LLAMACPP
+    is detected"; without this scrub, a developer's exported
+    ``ANTHROPIC_API_KEY`` would creep in and the assertion would fail
+    locally only.
+    """
+    for var in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "MINIMAX_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "XAI_API_KEY",
+        "MISTRAL_API_KEY",
+        "OPENROUTER_API_KEY",
+        "NVIDIA_API_KEY",
+        "GROQ_API_KEY",
+        "TOGETHER_API_KEY",
+        "FIREWORKS_API_KEY",
+        "COHERE_API_KEY",
+        "MOONSHOT_API_KEY",
+        "ZAI_API_KEY",
+        "DASHSCOPE_API_KEY",
+        "GITHUB_API_KEY",
+        "OLLAMA_API_BASE",
+        "OLLAMA_MODEL",
+        "OLLAMA_CLOUD_API_BASE",
+        "OLLAMA_CLOUD_MODEL",
+        "LMSTUDIO_API_BASE",
+        "LMSTUDIO_MODEL",
+        "CUSTOM_OPENAI_API_BASE",
+        "CUSTOM_OPENAI_API_KEY",
+        "DECEPTICON_AUTH_PRIORITY",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    for flag in (
+        "DECEPTICON_AUTH_CLAUDE_CODE",
+        "DECEPTICON_AUTH_CHATGPT",
+        "DECEPTICON_AUTH_COPILOT",
+        "DECEPTICON_AUTH_GEMINI",
+        "DECEPTICON_AUTH_GROK",
+        "DECEPTICON_AUTH_PERPLEXITY",
+    ):
+        monkeypatch.delenv(flag, raising=False)
+
+
+class TestLlamacppLocalConfigured:
+    """``_llamacpp_local_configured`` is the gate for adding
+    ``LLAMACPP_LOCAL`` to the credentials chain. Either env var being
+    set is enough — neither requires the other, mirroring the
+    LM Studio / Ollama detection contract.
+    """
+
+    def test_returns_false_when_neither_env_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        assert _llamacpp_local_configured() is False
+
+    def test_returns_true_when_only_base_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        assert _llamacpp_local_configured() is True
+
+    def test_returns_true_when_only_model_set(self, monkeypatch):
+        for var in _LLAMACPP_RELATED_ENV:
+            monkeypatch.delenv(var, raising=False)
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+        assert _llamacpp_local_configured() is True
+
+    def test_whitespace_does_not_count_as_set(self, monkeypatch):
+        """Stray ``LLAMACPP_API_BASE=`` lines in .env must not silently
+        opt the user in — same fail-soft as the Ollama detector."""
+        monkeypatch.setenv("LLAMACPP_API_BASE", "   ")
+        monkeypatch.setenv("LLAMACPP_MODEL", "")
+        assert _llamacpp_local_configured() is False
+
+
+class TestResolveCredentialsForLlamacpp:
+    """End-to-end check that ``_resolve_credentials`` picks up the
+    user's llama.cpp config — both the explicit-priority path and the
+    "only LLAMACPP_* detected" auto-fallback at the bottom of
+    ``_resolve_credentials``.
+    """
+
+    def test_only_llamacpp_detected_returns_llamacpp_only_chain(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _scrub_other_credentials(monkeypatch)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen2.5-coder-7b-instruct-q4_k_m")
+
+        creds = _resolve_credentials()
+        assert creds.methods == [AuthMethod.LLAMACPP_LOCAL]
+
+    def test_priority_list_with_llamacpp_picks_it_up(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """User wrote an explicit DECEPTICON_AUTH_PRIORITY listing
+        llamacpp_local — the resolver must respect that ordering."""
+        _scrub_other_credentials(monkeypatch)
+        monkeypatch.setenv("LLAMACPP_API_BASE", "http://localhost:8080/v1")
+        monkeypatch.setenv("LLAMACPP_MODEL", "qwen-coder")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-realtokenfortestingauthrouting12345")
+        monkeypatch.setenv("DECEPTICON_AUTH_PRIORITY", "llamacpp_local,anthropic_api")
+
+        creds = _resolve_credentials()
+        assert creds.methods == [AuthMethod.LLAMACPP_LOCAL, AuthMethod.ANTHROPIC_API]
