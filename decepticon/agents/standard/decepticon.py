@@ -52,8 +52,10 @@ from decepticon.llm import LLMFactory
 from decepticon.middleware import (
     EngagementContextMiddleware,
     FilesystemMiddleware,
+    MentorMiddleware,
     OPPLANMiddleware,
     SkillsMiddleware,
+    VaccineMiddleware,
 )
 from decepticon.plugin_loader import (
     is_bundle_enabled,
@@ -137,7 +139,13 @@ def create_decepticon_agent():
         ),
         FilesystemMiddleware(backend=backend),
         SubAgentMiddleware(backend=backend, subagents=subagents),
+        # MentorMiddleware — loop detector; before OPPLAN so wandering
+        # advisories land before OPPLAN bookkeeping decisions.
+        MentorMiddleware(),
         OPPLANMiddleware(backend=backend),
+        # VaccineMiddleware — auto-dispatch the next Vaccine pipeline stage;
+        # after OPPLAN so sub-agent finding writes are already visible.
+        VaccineMiddleware(backend=backend),
         ModelOverrideMiddleware(),
     ]
     if fallback_models:

@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage
-
 
 # ── Fakes ──────────────────────────────────────────────────────────
 
@@ -51,9 +49,7 @@ class FakeFindingsBackend:
     def read(self, path: str) -> FakeBackendResult:
         name = path.rsplit("/", 1)[-1]
         if name in self._findings:
-            return FakeBackendResult(
-                file_data={"content": json.dumps(self._findings[name])}
-            )
+            return FakeBackendResult(file_data={"content": json.dumps(self._findings[name])})
         return FakeBackendResult(error=f"not found: {path}")
 
 
@@ -73,6 +69,7 @@ class TestVaccineMiddleware:
 
     def test_validated_findings_dispatch_patcher(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-001.json": {
@@ -91,6 +88,7 @@ class TestVaccineMiddleware:
 
     def test_patched_findings_dispatch_defender(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-002.json": {
@@ -110,6 +108,7 @@ class TestVaccineMiddleware:
 
     def test_defended_findings_dispatch_ship(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-003.json": {
@@ -130,6 +129,7 @@ class TestVaccineMiddleware:
 
     def test_terminal_finding_no_advisory(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-004.json": {
@@ -146,6 +146,7 @@ class TestVaccineMiddleware:
 
     def test_unvalidated_finding_no_advisory(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-005.json": {
@@ -159,6 +160,7 @@ class TestVaccineMiddleware:
 
     def test_cooldown_suppresses_repeat(self) -> None:
         from decepticon.middleware.vaccine import VaccineMiddleware
+
         backend = FakeFindingsBackend(
             {
                 "FIND-006.json": {
