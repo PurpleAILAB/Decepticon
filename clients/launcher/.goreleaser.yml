@@ -13,9 +13,12 @@ builds:
     binary: decepticon
     env:
       - CGO_ENABLED=0
+    # One artifact per OS/arch: Linux, macOS and Windows on amd64 + arm64.
+    # arm64 covers Apple Silicon and 64-bit Raspberry Pi OS (Pi 3/4/5).
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
