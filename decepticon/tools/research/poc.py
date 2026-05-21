@@ -190,7 +190,7 @@ PoCRunner = Callable[[str], Awaitable[tuple[str, str, int]]]
 
 
 def _hash_output(stdout: str, stderr: str, exit_code: int) -> str:
-    h = hashlib.sha1()
+    h = hashlib.sha1(usedforsecurity=False)
     h.update(stdout.encode("utf-8", errors="replace"))
     h.update(b"||")
     h.update(stderr.encode("utf-8", errors="replace"))
@@ -278,8 +278,20 @@ async def validate_poc(
     return result
 
 
-def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
-    """Write validation outcome into the graph."""
+def _persist_result(
+    graph: KnowledgeGraph,
+    result: PoCResult,
+    *,
+    credibility: float | None = None,
+    debate_verdict: str | None = None,
+) -> None:
+    """Write validation outcome into the graph.
+
+    ``credibility`` / ``debate_verdict`` carry the adversarial-debate
+    outcome onto the FINDING node when promotion ran through the debate
+    gate (see ``debate_finding`` / ``validate_finding`` in
+    ``decepticon/tools/research/tools.py``).
+    """
     vuln = graph.nodes.get(result.vuln_id)
     if vuln is None:
         log.warning("validate_poc: vuln node %s not found in graph", result.vuln_id)
@@ -292,7 +304,22 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
     if result.cvss_score is not None:
         vuln.props["cvss_score"] = result.cvss_score
         vuln.props["cvss_vector"] = result.cvss
+    if credibility is not None:
+        vuln.props["credibility"] = credibility
     vuln.updated_at = time.time()
+
+    finding_props: dict[str, Any] = {
+        "validated": result.validated,
+        "vuln_id": result.vuln_id,
+        "summary": result.summary,
+        "stdout_excerpt": result.stdout_excerpt[:400],
+        "exit_code": result.exit_code,
+        "cvss_score": result.cvss_score,
+    }
+    if credibility is not None:
+        finding_props["credibility"] = credibility
+    if debate_verdict:
+        finding_props["debate_verdict"] = debate_verdict
 
     finding_label = (
         f"validated: {vuln.label[:80]}" if result.validated else f"rejected: {vuln.label[:80]}"
@@ -301,12 +328,7 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
         NodeKind.FINDING,
         finding_label,
         key=f"finding::{result.output_hash}",
-        validated=result.validated,
-        vuln_id=result.vuln_id,
-        summary=result.summary,
-        stdout_excerpt=result.stdout_excerpt[:400],
-        exit_code=result.exit_code,
-        cvss_score=result.cvss_score,
+        **finding_props,
     )
     graph.upsert_node(finding)
     graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.VALIDATES))

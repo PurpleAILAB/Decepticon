@@ -278,7 +278,7 @@ async def _offload_large_output(
 
     # Generate unique filename
     ts = int(time.time())
-    cmd_hash = hashlib.md5(command.encode()).hexdigest()[:6]
+    cmd_hash = hashlib.md5(command.encode(), usedforsecurity=False).hexdigest()[:6]
     filename = f"{workspace_path}/.scratch/{session}_{ts}_{cmd_hash}.txt"
 
     # Write via upload_files (docker cp) to avoid shell injection from output content

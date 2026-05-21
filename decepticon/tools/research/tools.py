@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -34,6 +35,7 @@ from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.attack.link import link_mitre
 from decepticon.tools.research.attack.tools import ATTACK_TOOLS
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
+from decepticon.tools.research.dedup import DEDUP_TOOLS
 from decepticon.tools.research.graph import (
     SEVERITY_SCORE,
     Edge,
@@ -1115,7 +1117,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
 def kg_analyze_jwt(token: str, source: str = "") -> str:
     """Parse a JWT and lift suspicious indicators into graph vulnerabilities."""
     parsed = parse_token(token)
-    token_hash = hashlib.sha1(token.encode("utf-8")).hexdigest()[:12]
+    token_hash = hashlib.sha1(token.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
 
     graph, out_path = _load()
     entrypoint: Node | None = None
@@ -1289,7 +1291,7 @@ def kg_analyze_cookie_value(
             )
 
     created: list[dict[str, Any]] = []
-    cookie_hash = hashlib.sha1(f"{name}:{value}".encode("utf-8")).hexdigest()[:12]
+    cookie_hash = hashlib.sha1(f"{name}:{value}".encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
     for idx, finding in enumerate(analysis.findings, start=1):
         severity = _cookie_finding_severity(finding)
         vuln = graph.upsert_node(
@@ -1838,8 +1840,13 @@ async def validate_finding(
         except (ValueError, KeyError, IndexError) as e:
             return _json({"error": f"bad CVSS vector: {e}"})
 
+    from decepticon.llm.debate import CREDIBILITY_FLOOR, debate_enabled
+    from decepticon.tools.research.poc import _persist_result
+
     graph, path = _load()
     runner = sandbox_runner(sandbox)
+    # Run the PoC but defer graph persistence — the adversarial-debate
+    # gate decides whether a CRITICAL/HIGH finding may be promoted.
     result = await validate_poc(
         vuln_id=vuln_id,
         poc_command=poc_command,
@@ -1848,10 +1855,311 @@ async def validate_finding(
         negative_command=negative_command or None,
         negative_patterns=_split(negative_patterns) if negative_patterns else None,
         cvss=cvss,
-        graph=graph,
+        graph=None,
     )
+
+    severity = (result.severity or "").strip().lower()
+    credibility: float | None = None
+    debate_verdict: str | None = None
+
+    # Debate gate — CRITICAL/HIGH findings must clear an adversarial debate
+    # before a FINDING node is created. Skipped when debate is disabled
+    # (test profile / DECEPTICON_DEBATE=off) so single-credential and CI
+    # users are never blocked.
+    if result.validated and severity in ("critical", "high") and debate_enabled(severity):
+        vuln = graph.nodes.get(vuln_id)
+        token = vuln.props.get("debate_token") if vuln else None
+        if not token:
+            return _json(
+                {
+                    "validated": True,
+                    "promotion": "blocked",
+                    "vuln_id": vuln_id,
+                    "severity": severity,
+                    "reason": (
+                        "CRITICAL/HIGH findings require an adversarial debate before "
+                        "promotion. Call debate_finding(vuln_id, finding_summary, "
+                        "poc_evidence) first, then re-run validate_finding."
+                    ),
+                }
+            )
+        verdict = str(vuln.props.get("debate_verdict") or "")
+        cred = vuln.props.get("debate_credibility")
+        cred_num = cred if isinstance(cred, (int, float)) else None
+        if verdict == "refuted" or (cred_num is not None and cred_num < CREDIBILITY_FLOOR):
+            return _json(
+                {
+                    "validated": True,
+                    "promotion": "blocked",
+                    "vuln_id": vuln_id,
+                    "severity": severity,
+                    "debate_verdict": verdict,
+                    "credibility": cred_num,
+                    "reason": (
+                        "finding was refuted in adversarial debate — not promoted. "
+                        "Revisit the PoC or strengthen the negative control."
+                    ),
+                }
+            )
+        credibility = cred_num
+        debate_verdict = verdict or None
+
+    _persist_result(graph, result, credibility=credibility, debate_verdict=debate_verdict)
     _save(graph, path)
-    return _json(result.to_dict())
+    out = result.to_dict()
+    out["promotion"] = "promoted" if result.validated else "rejected"
+    if credibility is not None:
+        out["credibility"] = credibility
+        out["debate_verdict"] = debate_verdict
+    return _json(out)
+
+
+@tool
+async def debate_finding(
+    vuln_id: str,
+    finding_summary: str,
+    poc_evidence: str,
+    cvss_vector: str = "",
+) -> str:
+    """Cross-examine a candidate finding with an independent skeptic model.
+
+    WHEN TO USE: after ``validate_finding`` reports a CRITICAL or HIGH
+    finding as ``validated`` but ``promotion: blocked``, call this before
+    re-running validation. A skeptic model from a *different provider
+    family* argues the finding is a false positive; the verifier's own
+    model rebuts; a deterministic adjudicator scores credibility.
+
+    The outcome is written onto the vulnerability node as a debate token
+    that ``validate_finding`` then requires for promotion. A finding the
+    skeptic refutes is blocked; one it cannot refute is promoted with a
+    credibility score.
+
+    When no cross-family model is configured (single-provider install),
+    the debate is SKIPPED — a token is still issued so promotion proceeds.
+
+    Args:
+        vuln_id: Graph id of the vulnerability node under debate.
+        finding_summary: What the finding is — type, location, impact.
+        poc_evidence: The proof-of-concept command and its observed output.
+        cvss_vector: Optional CVSS vector string, for context.
+
+    Returns:
+        JSON debate record: verdict (upheld/refuted/uncertain/skipped),
+        credibility score, the per-turn arguments, and the debate_token.
+    """
+    import hashlib as _hashlib
+
+    from decepticon.llm import LLMFactory
+    from decepticon.llm.debate import run_debate, skipped_record, structured_invoker
+
+    graph, path = _load()
+    vuln = graph.nodes.get(vuln_id)
+    if vuln is None:
+        return _json({"error": f"vuln node not found: {vuln_id}"})
+
+    factory = LLMFactory()
+    ensemble = factory.router.resolve_ensemble("verifier")
+    primary_model = ensemble.primary
+
+    def _persist(record: Any) -> str:
+        token = _hashlib.sha1(f"{vuln_id}:{record.debated_at}".encode(), usedforsecurity=False).hexdigest()[:16]
+        vuln.props["debated"] = True
+        vuln.props["debate_verdict"] = record.verdict.value
+        vuln.props["debate_credibility"] = record.credibility
+        vuln.props["debate_token"] = token
+        vuln.updated_at = time.time()
+        hyp = Node.make(
+            NodeKind.HYPOTHESIS,
+            f"debate: {vuln.label[:70]}",
+            key=f"debate::{vuln_id}::{token}",
+            **record.model_dump(mode="json"),
+        )
+        graph.upsert_node(hyp)
+        graph.upsert_edge(Edge.make(hyp.id, vuln.id, EdgeKind.DEBATED_BY))
+        _save(graph, path)
+        return token
+
+    if ensemble.debater is None or not ensemble.cross_family_available:
+        record = skipped_record(primary_model, "no cross-family model configured")
+        token = _persist(record)
+        out = record.model_dump(mode="json")
+        out["debate_token"] = token
+        out["vuln_id"] = vuln_id
+        return _json(out)
+
+    skeptic_model = factory.get_model_by_id(ensemble.debater)
+    advocate_model = factory.get_model("verifier")
+    record = await run_debate(
+        finding_summary=finding_summary,
+        poc_evidence=poc_evidence,
+        cvss_vector=cvss_vector,
+        primary_model_id=primary_model,
+        skeptic_model_id=ensemble.debater,
+        cross_family=True,
+        skeptic_invoke=structured_invoker(skeptic_model),
+        advocate_invoke=structured_invoker(advocate_model),
+    )
+    token = _persist(record)
+    out = record.model_dump(mode="json")
+    out["debate_token"] = token
+    out["vuln_id"] = vuln_id
+    return _json(out)
+
+
+# ── Prove stage (instrumented proof) ───────────────────────────────────
+
+
+def _persist_proof(graph: KnowledgeGraph, vuln_id: str, result: Any) -> str:
+    """Write an instrumented proof into the graph.
+
+    Creates a ``PROOF`` node, links it to the vuln and every validated
+    FINDING for that vuln with a ``PROVEN_BY`` edge, and bumps their
+    confidence. A sanitizer/differential proof earns ``proven``; the
+    weaker debugger-crash fallback stays ``verified``.
+    """
+    proof_node = Node.make(
+        NodeKind.PROOF,
+        f"proof: {result.method}",
+        key=f"proof::{result.proof_hash or vuln_id}",
+        **result.to_dict(),
+    )
+    graph.upsert_node(proof_node)
+
+    confidence = "proven" if result.method != "gdb-crash" else "verified"
+    vuln = graph.nodes.get(vuln_id)
+    if vuln is not None:
+        vuln.props["proven"] = result.proven
+        vuln.props["proof_strategy"] = result.strategy
+        vuln.props["proof_method"] = result.method
+        vuln.updated_at = time.time()
+        graph.upsert_edge(Edge.make(vuln.id, proof_node.id, EdgeKind.PROVEN_BY))
+
+    for finding in graph.by_kind(NodeKind.FINDING):
+        if finding.props.get("vuln_id") == vuln_id and finding.props.get("validated") is True:
+            finding.props["proven"] = result.proven
+            finding.props["proof_method"] = result.method
+            finding.props["confidence"] = confidence
+            graph.upsert_edge(Edge.make(finding.id, proof_node.id, EdgeKind.PROVEN_BY))
+    return proof_node.id
+
+
+@tool
+async def prove_finding(
+    vuln_id: str,
+    triggering_command: str,
+    cwe: str = "",
+    triggering_input_ref: str = "",
+    source_dir: str = "",
+    build_command: str = "",
+    instrumented_binary: str = "",
+    success_patterns: str = "",
+    negative_command: str = "",
+    negative_patterns: str = "",
+) -> str:
+    """Construct a triggering input and confirm the bug with instrumentation.
+
+    WHEN TO USE: after a finding is validated, harden it into a *proof*
+    where the bug class admits one:
+      - native memory corruption → rebuild with AddressSanitizer/UBSan
+        (pass ``source_dir`` + ``build_command``, or ``instrumented_binary``)
+        and confirm a sanitizer report; falls back to a debugger crash.
+      - web injection → a deterministic differential (``triggering_command``
+        vs ``negative_command``, with ``success_patterns``).
+      - logic/authz → negative-control re-execution under a different
+        principal.
+    Bug classes that admit no instrumented proof return
+    ``proof_admitted: false`` and leave the finding untouched.
+
+    Args:
+        vuln_id: Graph id of the vulnerability node.
+        triggering_command: Bash command that triggers the bug (the
+            instrumented binary invocation, or the web PoC request).
+        cwe: Comma-separated CWE ids — drives strategy routing.
+        triggering_input_ref: Path/reference to the triggering input file.
+        source_dir: Source tree to rebuild with sanitizers (native only).
+        build_command: Build command to wrap with sanitizer flags.
+        instrumented_binary: Path to a prebuilt sanitizer binary.
+        success_patterns: Comma-separated regexes (differential proofs).
+        negative_command: Negative-control command (differential proofs).
+        negative_patterns: Comma-separated baseline regexes.
+
+    Returns:
+        JSON proof record: strategy, method, proven, confidence, and the
+        sanitizer/stack evidence.
+    """
+    from decepticon.tools.bash.bash import get_sandbox
+    from decepticon.tools.research.poc import sandbox_runner
+    from decepticon.tools.research.prove import (
+        ProofStrategy,
+        prove_logic,
+        prove_native,
+        prove_web,
+        route_proof_strategy,
+        unprovable_result,
+    )
+
+    sandbox = get_sandbox()
+    if sandbox is None:
+        return _json({"error": "HTTPSandbox not initialized"})
+
+    def _split(s: str) -> list[str]:
+        return [p.strip() for p in s.split(",") if p.strip()]
+
+    graph, path = _load()
+    vuln = graph.nodes.get(vuln_id)
+    if vuln is None:
+        return _json({"error": f"vuln node not found: {vuln_id}"})
+
+    cwes = _split(cwe)
+    raw_cwe = vuln.props.get("cwe")
+    if isinstance(raw_cwe, list):
+        cwes.extend(str(c) for c in raw_cwe)
+    elif isinstance(raw_cwe, str) and raw_cwe:
+        cwes.extend(_split(raw_cwe))
+
+    strategy = route_proof_strategy(
+        cwes=cwes,
+        crash_kind=str(vuln.props.get("crash_kind") or ""),
+        sanitizer=str(vuln.props.get("sanitizer") or ""),
+        scanner=str(vuln.props.get("scanner") or ""),
+    )
+
+    if strategy == ProofStrategy.UNPROVABLE:
+        return _json(unprovable_result("bug class admits no instrumented proof").to_dict())
+
+    runner = sandbox_runner(sandbox)
+    if strategy == ProofStrategy.SANITIZER:
+        result = await prove_native(
+            runner=runner,
+            target_command=triggering_command,
+            triggering_input_ref=triggering_input_ref,
+            source_dir=source_dir,
+            build_command=build_command,
+            instrumented_binary=instrumented_binary,
+        )
+    elif strategy == ProofStrategy.DIFFERENTIAL:
+        result = await prove_web(
+            runner=runner,
+            poc_command=triggering_command,
+            success_patterns=_split(success_patterns),
+            negative_command=negative_command,
+            negative_patterns=_split(negative_patterns),
+        )
+    else:  # RECHECK
+        result = await prove_logic(
+            runner=runner,
+            poc_command=triggering_command,
+            negative_command=negative_command,
+            success_patterns=_split(success_patterns),
+        )
+
+    if result.proven:
+        _persist_proof(graph, vuln_id, result)
+        _save(graph, path)
+
+    out = result.to_dict()
+    out["vuln_id"] = vuln_id
+    return _json(out)
 
 
 # ── Tier 2 ingesters (Kali tool output → knowledge graph) ─────────────
@@ -2389,7 +2697,10 @@ RESEARCH_TOOLS = [
     fuzz_harness,
     fuzz_record_crash,
     validate_finding,
+    debate_finding,
+    prove_finding,
     *ATTACK_TOOLS,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
+    *DEDUP_TOOLS,
 ]

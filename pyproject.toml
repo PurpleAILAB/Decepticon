@@ -72,6 +72,9 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.0.0",
     "pytest-xdist>=3.6.0",
+    "pytest-timeout>=2.3.0",
+    "pytest-randomly>=3.15.0",
+    "bandit[toml]>=1.8.0",
     "ruff>=0.4.0",
     "basedpyright>=1.37.0",
 ]
@@ -181,6 +184,14 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "-ra",
+    "--durations=10",
+    "--timeout=60",
+    # Parallelise across all CPU cores (pytest-xdist). Workers are
+    # separate processes, so monkeypatched module globals and the
+    # in-memory KnowledgeGraph stay isolated per test. Override for
+    # serial debugging with ``-n0``.
+    "-n",
+    "auto",
 ]
 
 [tool.coverage.run]
@@ -204,6 +215,12 @@ exclude_lines = [
 ]
 show_missing = true
 skip_covered = false
+
+[tool.bandit]
+targets = ["decepticon"]
+severity = "medium"
+confidence = "medium"
+skips = ["B101"]
 
 [tool.basedpyright]
 pythonVersion = "3.13"

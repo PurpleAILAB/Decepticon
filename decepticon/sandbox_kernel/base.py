@@ -99,7 +99,7 @@ class SandboxBase(BaseSandbox):
         path = SandboxBase._normalize_workspace_path(workspace_path)
         if path == "/workspace":
             return "root"
-        digest = hashlib.sha1(path.encode("utf-8")).hexdigest()[:8]
+        digest = hashlib.sha1(path.encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
         slug = path.rsplit("/", 1)[-1] or "workspace"
         safe_slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", slug).strip("-") or "workspace"
         return f"{safe_slug}-{digest}"
