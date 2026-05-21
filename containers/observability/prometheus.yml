@@ -1,0 +1,27 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: decepticon
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: [prometheus:9090]
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: [otel-collector:8889]
+
+  - job_name: langfuse
+    metrics_path: /api/public/metrics
+    static_configs:
+      - targets: [langfuse:3000]
+
+  # Decepticon services expose Prometheus metrics if implemented
+  # (currently agents export via OTel; this is a hook for future
+  # direct-Prometheus instrumentation in LiteLLM / sandbox kernel).
+  - job_name: litellm
+    static_configs:
+      - targets: [litellm:4000]
+    metrics_path: /metrics

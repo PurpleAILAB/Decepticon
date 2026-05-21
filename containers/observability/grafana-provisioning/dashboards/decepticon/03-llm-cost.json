@@ -1,0 +1,94 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Per-engagement LLM cost ledger — tokens, USD, model breakdown. Sources: Prometheus counters emitted by decepticon.core.telemetry + Langfuse Postgres for full per-trace cost.",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "currencyUSD", "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 5}, {"color": "red", "value": 25}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_llm_cost_usd_total{engagement=~\"$engagement\"})", "refId": "A"}],
+      "title": "Total Cost (USD)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "blue"}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_llm_tokens_total{engagement=~\"$engagement\", type=\"in\"})", "refId": "A"}],
+      "title": "Input Tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "purple"}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_llm_tokens_total{engagement=~\"$engagement\", type=\"out\"})", "refId": "A"}],
+      "title": "Output Tokens",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "unit": "currencyUSD", "decimals": 4, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "red", "value": 0.5}]}}, "overrides": []},
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "center", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_llm_cost_usd_total{engagement=~\"$engagement\"}) / clamp_min(sum(decepticon_finding_outcomes_total{engagement=~\"$engagement\", status=\"passed\"}), 1)", "refId": "A"}],
+      "title": "Cost per Validated Finding",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 30, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never", "stacking": {"group": "A", "mode": "normal"}}, "unit": "currencyUSD"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 5},
+      "id": 5,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "sum by (model) (rate(decepticon_llm_cost_usd_total{engagement=~\"$engagement\"}[5m]))", "legendFormat": "{{model}}", "refId": "A"}],
+      "title": "Cost Rate by Model",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "bars", "fillOpacity": 80, "lineWidth": 0, "showPoints": "never", "stacking": {"group": "A", "mode": "normal"}}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 5},
+      "id": 6,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (agent) (rate(decepticon_llm_tokens_total{engagement=~\"$engagement\"}[5m]))", "legendFormat": "{{agent}}", "refId": "A"}],
+      "title": "Token Rate by Agent",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"align": "auto", "cellOptions": {"type": "auto"}, "inspect": false}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}]}}, "overrides": [{"matcher": {"id": "byName", "options": "cost_usd"}, "properties": [{"id": "unit", "value": "currencyUSD"}, {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}}]}, {"matcher": {"id": "byName", "options": "tokens_in"}, "properties": [{"id": "unit", "value": "short"}]}, {"matcher": {"id": "byName", "options": "tokens_out"}, "properties": [{"id": "unit", "value": "short"}]}]},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 14},
+      "id": 7,
+      "options": {"cellHeight": "sm", "footer": {"show": false}, "showHeader": true, "sortBy": [{"desc": true, "displayName": "cost_usd"}]},
+      "targets": [
+        {"expr": "sum by (model) (increase(decepticon_llm_cost_usd_total{engagement=~\"$engagement\"}[$__range]))", "format": "table", "instant": true, "refId": "A"},
+        {"expr": "sum by (model) (increase(decepticon_llm_tokens_total{engagement=~\"$engagement\", type=\"in\"}[$__range]))", "format": "table", "instant": true, "refId": "B"},
+        {"expr": "sum by (model) (increase(decepticon_llm_tokens_total{engagement=~\"$engagement\", type=\"out\"}[$__range]))", "format": "table", "instant": true, "refId": "C"}
+      ],
+      "title": "Per-Model Breakdown",
+      "transformations": [
+        {"id": "joinByField", "options": {"byField": "model", "mode": "outer"}},
+        {"id": "organize", "options": {"excludeByName": {"Time 1": true, "Time 2": true, "Time 3": true}, "renameByName": {"Value #A": "cost_usd", "Value #B": "tokens_in", "Value #C": "tokens_out"}}}
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["decepticon", "cost", "llm"],
+  "templating": {"list": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(decepticon_llm_cost_usd_total, engagement)", "includeAll": true, "label": "Engagement", "name": "engagement", "query": {"query": "label_values(decepticon_llm_cost_usd_total, engagement)"}, "refresh": 2, "type": "query"}]},
+  "time": {"from": "now-24h", "to": "now"},
+  "title": "Decepticon — LLM Cost Ledger",
+  "uid": "dec-llm-cost",
+  "version": 1
+}

@@ -1,0 +1,201 @@
+# Decepticon observability stack — opt-in supplement to docker-compose.yml.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f containers/observability/docker-compose.observability.yml up -d
+#
+# Or via Makefile shortcut:
+#   make obs-up
+#
+# Services:
+#   - langfuse        — LLM observability (traces, evals, prompts)
+#   - langfuse-db     — Postgres for Langfuse metadata
+#   - clickhouse      — analytics column store for Langfuse v3+
+#   - prometheus      — metrics scraper
+#   - grafana         — dashboards
+#   - jaeger-all-in-one — distributed traces (OTel/OpenTelemetry)
+#
+# Networks: attaches to existing decepticon-net so the langgraph + sub-agent
+# containers can reach the OTel collector at otel-collector:4318 and the
+# Langfuse API at langfuse:3000.
+#
+# Storage: all stateful services use named volumes prefixed obs-* so they
+# can be wiped independently of the main Decepticon stack via:
+#   docker volume rm $(docker volume ls -q | grep '^decepticon_obs-')
+#
+# Resource footprint: ~2.5 GB RAM idle, ~5 GB RAM under engagement load.
+# If running on a constrained host, comment out clickhouse + jaeger and
+# keep only langfuse + prometheus + grafana (drops to ~1 GB RAM).
+
+services:
+  # ── Langfuse — LLM-specific observability ─────────────────────────
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: decepticon-langfuse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse-dev-changeme}
+      POSTGRES_DB: langfuse
+    volumes:
+      - obs-langfuse-db:/var/lib/postgresql/data
+    networks:
+      - decepticon-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: decepticon-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: langfuse
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse-dev-changeme}
+    volumes:
+      - obs-clickhouse-data:/var/lib/clickhouse
+      - obs-clickhouse-logs:/var/log/clickhouse-server
+    ulimits:
+      nofile: 262144
+    networks:
+      - decepticon-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:8123/ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  langfuse:
+    # v3 has Postgres + ClickHouse split. Pin to a specific minor for
+    # deterministic Decepticon deployments — bump when validated.
+    image: langfuse/langfuse:3
+    container_name: decepticon-langfuse
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      # Required
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse-dev-changeme}@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-decepticon-langfuse-nextauth-dev}
+      NEXTAUTH_URL: ${LANGFUSE_PUBLIC_URL:-http://localhost:3700}
+      SALT: ${LANGFUSE_SALT:-decepticon-langfuse-salt-dev}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      # ClickHouse analytics backend (v3)
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: langfuse
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse-dev-changeme}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      # Optional — disable telemetry to upstream Langfuse
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-Decepticon}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-decepticon-default}
+      # Init user (created on first boot if env vars present)
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-admin@decepticon.local}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-changeme-on-first-login}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-Decepticon Admin}
+    ports:
+      - "${LANGFUSE_PORT:-3700}:3000"
+    networks:
+      - decepticon-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--spider", "http://localhost:3000/api/public/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+  # ── OpenTelemetry collector ───────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.107.0
+    container_name: decepticon-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      # OTLP gRPC
+      - "${OTEL_GRPC_PORT:-4317}:4317"
+      # OTLP HTTP
+      - "${OTEL_HTTP_PORT:-4318}:4318"
+      # Prometheus exporter
+      - "${OTEL_PROMETHEUS_PORT:-8889}:8889"
+    networks:
+      - decepticon-net
+
+  # ── Prometheus + Grafana ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: decepticon-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - obs-prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=14d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    networks:
+      - decepticon-net
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: decepticon-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-decepticon-grafana-dev}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - obs-grafana-data:/var/lib/grafana
+      - ./grafana-provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "${GRAFANA_PORT:-3701}:3000"
+    networks:
+      - decepticon-net
+
+  # ── Jaeger — distributed traces ───────────────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: decepticon-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+    volumes:
+      - obs-jaeger-badger:/badger
+    ports:
+      # Jaeger UI
+      - "${JAEGER_UI_PORT:-3702}:16686"
+      # OTLP HTTP — agents can ship traces here directly (alt to otel-collector)
+      - "4318:4318"
+    networks:
+      - decepticon-net
+
+volumes:
+  obs-langfuse-db:
+  obs-clickhouse-data:
+  obs-clickhouse-logs:
+  obs-prometheus-data:
+  obs-grafana-data:
+  obs-jaeger-badger:
+
+networks:
+  decepticon-net:
+    external: true
+    name: decepticon_decepticon-net

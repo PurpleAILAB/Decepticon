@@ -1,0 +1,100 @@
+{
+  "annotations": {"list": [{"builtIn": 1, "datasource": {"type": "grafana", "uid": "-- Grafana --"}, "enable": true, "hide": true, "name": "Annotations & Alerts", "type": "dashboard"}]},
+  "description": "Offensive Vaccine pipeline funnel — Scanner→Detector→Verifier→Patcher→Defender→Shipped. Highlights pipeline bottlenecks + drop-off rate at each stage.",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue"}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"validated\"})", "refId": "A"}],
+      "title": "Validated",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "yellow"}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"patched\"})", "refId": "A"}],
+      "title": "Patched",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "orange"}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"defended\"})", "refId": "A"}],
+      "title": "Defended",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "fixed", "fixedColor": "green"}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "background", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"shipped\"})", "refId": "A"}],
+      "title": "Shipped",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "yellow", "value": 0.5}, {"color": "green", "value": 0.8}]}, "unit": "percentunit", "min": 0, "max": 1}, "overrides": []},
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 0},
+      "id": 5,
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}, "textMode": "auto"},
+      "targets": [{"expr": "sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"shipped\"}) / clamp_min(sum(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"validated\"}), 1)", "refId": "A"}],
+      "title": "End-to-End Conversion (validated → shipped)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 30, "lineInterpolation": "smooth", "lineWidth": 2, "showPoints": "never"}, "unit": "short"}, "overrides": [{"matcher": {"id": "byName", "options": "validated"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "blue"}}]}, {"matcher": {"id": "byName", "options": "patched"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "yellow"}}]}, {"matcher": {"id": "byName", "options": "defended"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]}, {"matcher": {"id": "byName", "options": "shipped"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]}]},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 5},
+      "id": 6,
+      "options": {"legend": {"calcs": ["sum"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"expr": "sum by (stage) (increase(decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\"}[5m]))", "legendFormat": "{{stage}}", "refId": "A"}],
+      "title": "Stage Transitions Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "yellow", "value": 60}, {"color": "red", "value": 600}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 15},
+      "id": 7,
+      "options": {"legend": {"calcs": ["mean"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(decepticon_vaccine_dwell_time_seconds_bucket{engagement=~\"$engagement\", stage=\"validated\"}[$__range])))", "legendFormat": "validated→patched p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(decepticon_vaccine_dwell_time_seconds_bucket{engagement=~\"$engagement\", stage=\"patched\"}[$__range])))", "legendFormat": "patched→defended p50", "refId": "B"},
+        {"expr": "histogram_quantile(0.50, sum by (le) (rate(decepticon_vaccine_dwell_time_seconds_bucket{engagement=~\"$engagement\", stage=\"defended\"}[$__range])))", "legendFormat": "defended→shipped p50", "refId": "C"}
+      ],
+      "title": "Stage Dwell Time (p50)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "mappings": []}, "overrides": []},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 15},
+      "id": 8,
+      "options": {"legend": {"displayMode": "table", "placement": "right", "showLegend": true, "values": ["value", "percent"]}, "pieType": "donut", "reduceOptions": {"calcs": ["lastNotNull"]}, "tooltip": {"mode": "single"}},
+      "targets": [{"expr": "sum by (bug_class) (decepticon_vaccine_stage_transitions_total{engagement=~\"$engagement\", stage=\"shipped\"})", "legendFormat": "{{bug_class}}", "refId": "A"}],
+      "title": "Shipped Findings by Bug Class",
+      "type": "piechart"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["decepticon", "vaccine", "pipeline"],
+  "templating": {"list": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "definition": "label_values(decepticon_vaccine_stage_transitions_total, engagement)", "includeAll": true, "label": "Engagement", "name": "engagement", "query": {"query": "label_values(decepticon_vaccine_stage_transitions_total, engagement)"}, "refresh": 2, "type": "query"}]},
+  "time": {"from": "now-24h", "to": "now"},
+  "title": "Decepticon — Vaccine Pipeline Flow",
+  "uid": "dec-vaccine-flow",
+  "version": 1
+}

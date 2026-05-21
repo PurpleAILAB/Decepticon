@@ -1,0 +1,72 @@
+# OpenTelemetry collector config for Decepticon observability.
+#
+# Pipeline:
+#   * Receives OTLP traces + metrics + logs from langgraph + sub-agent containers
+#   * Adds resource attributes (service.name, deployment.environment)
+#   * Exports traces to Jaeger
+#   * Exports metrics to Prometheus (via /metrics scrape endpoint)
+#   * Optionally forwards traces + spans to Langfuse (when LANGFUSE_PUBLIC_KEY is set)
+#
+# Decepticon agents (langgraph container, sub-agent containers) emit via:
+#   export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#   export OTEL_SERVICE_NAME=decepticon-<agent-name>
+#   export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=engagement,decepticon.engagement=<slug>"
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: decepticon
+        action: insert
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Trace export to Jaeger
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Prometheus exporter — scraped from outside on :8889
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: decepticon
+    const_labels:
+      stack: decepticon
+
+  # Debug fallback (off by default — uncomment when wiring agents)
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [debug]
+  extensions: []
+  telemetry:
+    logs:
+      level: info
