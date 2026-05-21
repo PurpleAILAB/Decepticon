@@ -1,22 +1,25 @@
 ---
 name: structured-questions
-description: "When and how to use ask_user_question — structured multiple-choice prompts vs. free-text prose during the engagement interview."
+description: "How to use ask_user_question — the single operator-input channel for every interview question, including free-form fields via allow_other=true."
 allowed-tools: Read Write
 metadata:
   subdomain: planning
-  when_to_use: "interview the operator, ask a yes/no, pick engagement type, choose attack class, scope window, posture choice, multi-select kill-chain phases"
+  when_to_use: "interview the operator, ask a yes/no, pick engagement type, choose attack class, scope window, posture choice, multi-select kill-chain phases, free-form name / IP / contact"
   tags: interview, ask_user_question, picker, multiple-choice
   mitre_attack: []
 ---
 
 # Structured Operator Questions (`ask_user_question`)
 
-The Soundwave interview has two question channels:
+The Soundwave interview has exactly **one** question channel:
 
-- `ask_user_question` — structured multiple-choice picker rendered in the CLI
-- Plain prose — free-form question asked in chat, the operator types a reply
+- `ask_user_question` — structured picker rendered in the CLI. For
+  free-form dimensions (organization name, IP ranges, contact addresses)
+  set `allow_other=true` and the picker appends a free-text fallback the
+  operator can type into.
 
-Pick the right channel for each round.
+There is no prose-question path. Every operator-facing question goes
+through this tool.
 
 ## When to call `ask_user_question`
 
@@ -94,9 +97,17 @@ ask_user_question(
 
 ## Anti-patterns
 
-- Asking `ask_user_question("What is the client organization name?", ...)` —
-  this is a free-form name; use prose instead
+- Asking via prose (chat message) instead of `ask_user_question` — even
+  free-form fields go through the tool. Provide 2–4 best-guess options
+  + `allow_other=true` so the operator can type a custom answer if your
+  guesses miss. The tool is the ONLY operator-input channel.
 - Adding an `"Other"` entry to `options` manually — set `allow_other=true`
+  and the picker appends the free-text fallback for you
 - Header longer than 12 chars (`"Engagement Type"` → use `"Eng. type"`)
 - Re-asking the same dimension after the operator already answered — the
   returned value is authoritative; record it and move to the next dimension
+- Pausing for per-document approval after writing RoE / CONOPS /
+  Deconfliction — there is no approval gate between documents. The
+  approval moments are (a) each `ask_user_question` picker during the
+  interview, and (b) the final bundle summary right before
+  `complete_engagement_planning`.

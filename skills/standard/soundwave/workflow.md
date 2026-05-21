@@ -1,8 +1,8 @@
 ---
 name: soundwave-workflow
-description: "Soundwave planning agent workflow — interview, generate RoE / threat profile / CONOPS / OPPLAN, hand off to decepticon."
+description: "Soundwave planning agent workflow — interview via ask_user_question, then write RoE / CONOPS / Deconfliction in one continuous pass, hand off to decepticon."
 metadata:
-  when_to_use: "soundwave, planning, RoE, rules of engagement, threat profile, CONOPS, OPPLAN, engagement plan, deconfliction"
+  when_to_use: "soundwave, planning, RoE, rules of engagement, threat profile, CONOPS, engagement plan, deconfliction"
   subdomain: workflow
 ---
 
@@ -10,11 +10,11 @@ metadata:
 
 ## Role
 
-Generate the engagement's planning artifacts — RoE, threat profile, CONOPS, deconfliction document, and OPPLAN — through a structured interview with the operator, then hand off to decepticon for execution. Soundwave does NOT execute offensive actions; it produces the documents that bound and direct everything else.
+Generate the engagement's planning artifacts — RoE, CONOPS, and Deconfliction Plan — through a structured interview with the operator, then hand off to decepticon for execution. Soundwave does NOT execute offensive actions, and it does NOT generate the OPPLAN; the orchestrator (Decepticon) builds the OPPLAN from these three documents via its own `add_objective` tool.
 
 ## The Loop
 
-### Phase 1 — Intake (Structured Interview)
+### Phase 1 — Intake (Structured Interview, ask_user_question only)
 
 Load `load_skill("/skills/standard/soundwave/structured-questions/SKILL.md")` and run the interview to extract:
 
@@ -24,33 +24,33 @@ Load `load_skill("/skills/standard/soundwave/structured-questions/SKILL.md")` an
 - Engagement goals (compromise objectives, evidence required, success criteria).
 - Threat-actor emulation target (which adversary, which TTPs, which sophistication tier).
 
-Write each answer back to the operator for confirmation before moving on.
+**Every question is one `ask_user_question` tool call** — including free-form fields (organization name, IP ranges, contacts). For those, supply 2–4 best-guess options + `allow_other=true` and let the operator type a custom answer via the Other fallback. Never solicit input via plain prose. The picker's return value is the operator's confirmation for that dimension — no separate "write the answer back and ask again" round-trip.
 
-### Phase 2 — Generate Planning Artifacts
+### Phase 2 — Generate Planning Artifacts (continuous, no approval gates)
 
-Sequential — each step depends on the previous output:
+Once Phase 1 has resolved every dimension (see SOCRATIC_INTERVIEW → Stop Condition in the system prompt), write all three documents back-to-back without pausing for operator approval between them. Sequential because each depends on the previous output, but there is no human checkpoint in between:
 
-1. **RoE** (`load_skill("/skills/standard/soundwave/roe-template/SKILL.md")`) — produce `plan/roe.json`. Wait for client confirmation.
-2. **Threat profile** (`load_skill("/skills/standard/soundwave/threat-profile/SKILL.md")`) — produce a `ThreatActor` JSON validated against the RoE.
-3. **CONOPS** (`load_skill("/skills/standard/soundwave/conops-template/SKILL.md")`) — produce `plan/conops.json` and `plan/deconfliction.json`. Kill chain phases must be scoped to the RoE.
-4. **OPPLAN** (`load_skill("/skills/standard/soundwave/opplan-converter/SKILL.md")`) — convert RoE + CONOPS into `plan/opplan.json` with sequenced objectives that pass the validation checklist.
+1. **RoE** (`load_skill("/skills/standard/soundwave/roe-template/SKILL.md")`) — produce `plan/roe.json`.
+2. **CONOPS** (`load_skill("/skills/standard/soundwave/conops-template/SKILL.md")` + `threat-profile`) — produce `plan/conops.json` with kill chain phases scoped to the RoE.
+3. **Deconfliction** — produce `plan/deconfliction.json` covering every active phase in the CONOPS kill chain.
+
+If a validation failure is detected mid-bundle, fix the failing document in place and continue — do NOT bounce back to the operator for re-confirmation.
 
 ### Phase 3 — Verify
 
 Before handing off to decepticon, confirm:
 
-- [ ] `plan/roe.json` exists, validated against operator confirmation.
-- [ ] `plan/conops.json` exists, with kill-chain phases that reference RoE-in-scope assets only.
-- [ ] `plan/deconfliction.json` exists, with deconfliction identifiers and procedures.
-- [ ] `plan/opplan.json` exists, with sequenced objectives and `blocked_by` dependencies that respect kill-chain order.
-- [ ] All four documents cross-reference each other consistently (target IDs, scope language, threat profile).
+- [ ] `plan/roe.json` exists and validates against `decepticon.core.schemas.RoE`.
+- [ ] `plan/conops.json` exists, validates against `decepticon.core.schemas.CONOPS`, kill-chain phases reference RoE-in-scope assets only.
+- [ ] `plan/deconfliction.json` exists, validates against `decepticon.core.schemas.DeconflictionPlan`, covers every active CONOPS phase.
+- [ ] All three documents cross-reference each other consistently (target IDs, scope language, threat profile).
 
-Any failed check loops back to the relevant Phase 2 sub-skill.
+Any failed check loops back to the relevant Phase 2 step — fix the document in place, do not re-interview.
 
 ### Phase 4 — Handoff (to Decepticon)
 
-1. Summarize the plan to the operator (objectives, kill-chain order, expected duration, key risks).
-2. Notify decepticon that the four artifacts are ready in `/workspace/plan/`. Decepticon's engagement-startup skill picks up from there.
+1. Print a single bundle summary (high-level table — engagement name, scope, kill-chain order, OPSEC posture, key risks).
+2. Call `complete_engagement_planning` exactly once. This emits the custom event that flips the active assistant from Soundwave to Decepticon so the operator's next message lands on the operations agent. Decepticon's engagement-startup skill picks up the three artifacts in `/workspace/plan/` and converts the kill chain into OPPLAN objectives.
 3. Soundwave then idles unless the engagement requires re-planning (new scope, blocked path, post-engagement reporting).
 
 ## Discipline / Anti-patterns
@@ -62,10 +62,11 @@ Any failed check loops back to the relevant Phase 2 sub-skill.
 
 ## Handoff Format (output files)
 
+Soundwave writes exactly three documents. Decepticon (the orchestrator) generates `opplan.json` itself from these three; soundwave does NOT touch it.
+
 ```
 /workspace/plan/
-├── roe.json                  # Rules of Engagement
-├── conops.json               # Concept of Operations (threat model, kill chain)
-├── deconfliction.json        # Deconfliction identifiers + procedures
-└── opplan.json               # Operational plan — objectives, dependencies, owners
+├── roe.json                  # Rules of Engagement (Soundwave writes)
+├── conops.json               # Concept of Operations — threat model, kill chain (Soundwave writes)
+└── deconfliction.json        # Deconfliction identifiers + procedures (Soundwave writes)
 ```
