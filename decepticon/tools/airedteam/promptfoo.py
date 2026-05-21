@@ -59,8 +59,7 @@ def _promptfoo_binary() -> list[str]:
     if shutil.which("npx"):
         return ["npx", "-y", "promptfoo@latest"]
     raise RuntimeError(
-        "promptfoo not installed. Run `npm install -g promptfoo` "
-        "or ensure `npx` is on PATH."
+        "promptfoo not installed. Run `npm install -g promptfoo` or ensure `npx` is on PATH."
     )
 
 
@@ -132,6 +131,7 @@ def promptfoo_redteam_init(
         },
     }
     import yaml
+
     config_path = output_dir / "redteam.yaml"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
 
@@ -164,16 +164,14 @@ def promptfoo_eval(
         set, pending AATMF classification + verifier gate).
     """
     config_abs = Path(config_path).resolve()
-    output_abs = (
-        Path(output_path).resolve()
-        if output_path
-        else config_abs.parent / "results.json"
-    )
+    output_abs = Path(output_path).resolve() if output_path else config_abs.parent / "results.json"
 
     cmd = _promptfoo_binary() + [
         "eval",
-        "-c", str(config_abs),
-        "--output", str(output_abs),
+        "-c",
+        str(config_abs),
+        "--output",
+        str(output_abs),
     ]
 
     try:
@@ -251,7 +249,8 @@ def promptfoo_eval(
             "score": (item.get("gradingResult") or {}).get("score"),
         }
         for item in inner
-        if (item.get("success") is False) or ((item.get("gradingResult") or {}).get("pass") is False)
+        if (item.get("success") is False)
+        or ((item.get("gradingResult") or {}).get("pass") is False)
     ]
 
     return PromptfooEvalResult(
