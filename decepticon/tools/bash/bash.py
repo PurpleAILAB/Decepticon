@@ -1,7 +1,8 @@
 """Bash tool for the Decepticon agent.
 
-Thin wrapper around DockerSandbox.execute_tmux(). All tmux session
-management and PS1 polling logic lives in decepticon/backends/docker_sandbox.py.
+Thin wrapper around HTTPSandbox.execute_tmux(). All tmux session
+management and PS1 polling logic lives in decepticon/sandbox_kernel/
+(tmux.py + base.py), shared with the in-container daemon.
 
 The sandbox instance is injected at agent startup via set_sandbox().
 
@@ -33,12 +34,13 @@ import time
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.backends.http_sandbox import HTTPSandbox
+from decepticon.sandbox_kernel.base import SandboxBase
 from decepticon.sandbox_kernel.tmux import _interpret_exit_code
 
 log = logging.getLogger("decepticon.tools.bash.bash")
 
-_sandbox: DockerSandbox | None = None
+_sandbox: HTTPSandbox | None = None
 _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
     "decepticon_bash_workspace_path",
     default="/workspace",
@@ -46,7 +48,7 @@ _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 # ─── Output size thresholds ──────────────────────────────────────────────
 INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to <engagement>/.scratch/
-# >5M: size watchdog in docker_sandbox.py kills the command (SIZE_WATCHDOG_CHARS)
+# >5M: size watchdog in sandbox_kernel/tmux.py kills the command (SIZE_WATCHDOG_CHARS)
 
 # ─── Scratch-file TTL prune (bounds <engagement>/.scratch/ growth) ────────
 # Files persist long enough for the agent's grep/read multi-pass workflow,
@@ -171,14 +173,14 @@ def _sanitize_output(text: str) -> str:
     return text
 
 
-def set_sandbox(sandbox: DockerSandbox) -> None:
-    """Inject the shared DockerSandbox instance (called from recon.py)."""
+def set_sandbox(sandbox: HTTPSandbox) -> None:
+    """Inject the shared HTTPSandbox instance (called from recon.py)."""
     global _sandbox
     _sandbox = sandbox
 
 
-def get_sandbox() -> DockerSandbox | None:
-    """Return the current DockerSandbox instance (for wiring progress callbacks)."""
+def get_sandbox() -> HTTPSandbox | None:
+    """Return the current HTTPSandbox instance (for wiring progress callbacks)."""
     return _sandbox
 
 
@@ -186,19 +188,19 @@ def _workspace_path_from_config(config: RunnableConfig | None) -> str:
     configurable = (config or {}).get("configurable", {})
     workspace = configurable.get("workspace_path") if isinstance(configurable, dict) else None
     if isinstance(workspace, str) and workspace.startswith("/workspace"):
-        normalized = DockerSandbox._normalize_workspace_path(workspace)
+        normalized = SandboxBase._normalize_workspace_path(workspace)
         if normalized != "/workspace":
             return normalized
 
     env_workspace = os.environ.get("DECEPTICON_WORKSPACE_PATH")
     if env_workspace:
-        normalized = DockerSandbox._normalize_workspace_path(env_workspace)
+        normalized = SandboxBase._normalize_workspace_path(env_workspace)
         if normalized != "/workspace":
             return normalized
 
     env_slug = os.environ.get("DECEPTICON_ENGAGEMENT")
     if env_slug:
-        normalized = DockerSandbox._normalize_workspace_path(f"/workspace/{env_slug}")
+        normalized = SandboxBase._normalize_workspace_path(f"/workspace/{env_slug}")
         if normalized != "/workspace":
             return normalized
 
@@ -214,7 +216,7 @@ def _with_workspace_kwargs(workspace_path: str) -> dict[str, str]:
 @contextlib.contextmanager
 def bash_workspace(workspace_path: str):
     """Temporarily scope bash tools to one engagement workspace."""
-    safe_path = DockerSandbox._normalize_workspace_path(workspace_path)
+    safe_path = SandboxBase._normalize_workspace_path(workspace_path)
     token = _current_workspace_path.set(safe_path)
     try:
         yield
@@ -325,7 +327,7 @@ async def bash(
         description: Short label for UI display.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized. Call set_sandbox() first.")
+        raise RuntimeError("HTTPSandbox not initialized. Call set_sandbox() first.")
 
     workspace_path = _workspace_path_from_config(config)
 
@@ -373,7 +375,7 @@ async def bash(
     # Multi-tier output management:
     # Tier 1 (≤15K): return inline — fits comfortably in context
     # Tier 2 (>15K): offload to file, return preview + file reference
-    # Tier 3 (>5M): handled by size watchdog in docker_sandbox.py (command killed)
+    # Tier 3 (>5M): handled by size watchdog in sandbox_kernel/tmux.py (command killed)
     if len(result) > INLINE_LIMIT and not result.startswith("["):
         return await _offload_large_output(result, command, session, workspace_path)
 
@@ -399,7 +401,7 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
         session: Session name passed to bash(..., background=True).
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     job = await asyncio.to_thread(
@@ -457,7 +459,7 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
         session: Session name to terminate.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     await asyncio.to_thread(
@@ -476,7 +478,7 @@ async def bash_status(config: RunnableConfig | None = None) -> str:
     detect stale sessions for cleanup.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     # Poll all known running jobs first, then take ONE snapshot for the table.

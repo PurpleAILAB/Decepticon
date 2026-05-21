@@ -1,4 +1,4 @@
-"""Pure-function tests for docker_sandbox helpers.
+"""Pure-function tests for sandbox tmux helpers.
 
 These tests cover the parsing and formatting helpers that don't need a
 running container — exit code interpretation, PS1 marker parsing, output
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 
-from decepticon.backends import docker_sandbox as ds
 from decepticon.sandbox_kernel.tmux import (
     MAX_OUTPUT_CHARS,
     PS1_PATTERN,
@@ -182,18 +181,3 @@ class TestTmuxSessionManagerLock:
         assert TmuxSessionManager._init_lock is not None
         # Same object — shared class-level state
         assert a._init_lock is b._init_lock
-
-
-class TestConfigConstants:
-    """Module-level constants should be sourced from DockerConfig defaults."""
-
-    def test_constants_match_config_defaults(self) -> None:
-        from decepticon.core.config import DockerConfig
-
-        defaults = DockerConfig()
-        assert ds.POLL_INTERVAL == defaults.poll_interval
-        assert ds.STALL_SECONDS == defaults.stall_seconds
-        assert ds.MAX_OUTPUT_CHARS == defaults.max_output_chars
-        assert ds.AUTO_BACKGROUND_SECONDS == defaults.auto_background_seconds
-        assert ds.SIZE_WATCHDOG_CHARS == defaults.size_watchdog_chars
-        assert ds.SIZE_WATCHDOG_INTERVAL == defaults.size_watchdog_interval

@@ -8,11 +8,8 @@ from unittest.mock import patch
 
 from deepagents.backends.protocol import FileDownloadResponse
 
-from decepticon.backends.docker_sandbox import (
-    BackgroundJobTracker,
-    DockerSandbox,
-    TmuxSessionManager,
-)
+from decepticon.sandbox_kernel import BackgroundJobTracker, TmuxSessionManager
+from decepticon.sandbox_kernel.daemon import DaemonSandbox
 
 
 def test_initialize_does_not_create_root_workspace_sessions_log():
@@ -136,7 +133,7 @@ def test_initialize_warns_when_mkdir_fails(caplog):
 
 
 def test_get_manager_concurrent_returns_same_instance():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     seen: list[int] = []
     seen_lock = threading.Lock()
 
@@ -155,12 +152,12 @@ def test_get_manager_concurrent_returns_same_instance():
 
 
 def test_sandbox_has_jobs_tracker():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     assert isinstance(sandbox._jobs, BackgroundJobTracker)
 
 
 def test_sandbox_has_log_offsets_dict():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     assert isinstance(sandbox._log_offsets, dict)
     assert sandbox._log_offsets == {}
 
@@ -170,7 +167,7 @@ def _file_response(path: str, content: bytes) -> FileDownloadResponse:
 
 
 def test_read_session_log_diff_returns_full_log_on_first_call():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
@@ -182,7 +179,7 @@ def test_read_session_log_diff_returns_full_log_on_first_call():
 
 
 def test_read_session_log_diff_uses_engagement_workspace_path():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
@@ -195,7 +192,7 @@ def test_read_session_log_diff_uses_engagement_workspace_path():
 
 
 def test_read_session_log_diff_returns_only_new_bytes_on_second_call():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"old\n")]
@@ -208,7 +205,7 @@ def test_read_session_log_diff_returns_only_new_bytes_on_second_call():
 
 
 def test_read_session_log_diff_empty_when_no_new_bytes():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"data\n")]
@@ -219,7 +216,7 @@ def test_read_session_log_diff_empty_when_no_new_bytes():
 
 
 def test_read_session_log_diff_recovers_when_file_truncated():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [_file_response("/workspace/.sessions/scan.log", b"a" * 100)]
@@ -233,14 +230,14 @@ def test_read_session_log_diff_recovers_when_file_truncated():
 
 
 def test_reset_session_log_offset_clears_state():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._log_offsets["scan"] = 42
     sandbox.reset_session_log_offset("scan")
     assert "scan" not in sandbox._log_offsets
 
 
 def test_read_session_log_diff_returns_empty_when_file_missing():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     with patch.object(sandbox, "download_files") as mock_dl:
         mock_dl.return_value = [
             FileDownloadResponse(
@@ -256,7 +253,7 @@ def test_read_session_log_diff_returns_empty_when_file_missing():
 def test_read_session_log_diff_concurrent_does_not_double_count():
     """20 threads reading the same session log must collectively consume
     each byte exactly once — no overlap, no gaps."""
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     payload = b"x" * 1000
 
     def fake_download(paths):
@@ -289,7 +286,7 @@ def test_read_session_log_diff_concurrent_does_not_double_count():
 
 
 def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="x", initial_markers=1)
     sandbox._log_offsets["scan"] = 42
     mgr = sandbox._get_manager("scan")  # populate the cache
@@ -313,7 +310,7 @@ def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
 
 
 def test_kill_session_swallows_errors():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("flaky", command="x", initial_markers=1)
     sandbox._log_offsets["flaky"] = 7
     mgr = sandbox._get_manager("flaky")

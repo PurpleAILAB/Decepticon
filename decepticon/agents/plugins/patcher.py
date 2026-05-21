@@ -23,7 +23,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
     EngagementContextMiddleware,
@@ -49,15 +48,12 @@ from decepticon.tools.research.tools import (
 
 def create_patcher_agent():
     """Initialize the Patcher Agent — opus, iterative fix-verify loops."""
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("patcher")
     fallback_models = factory.get_fallback_models("patcher")
 
-    sandbox = build_sandbox_backend(
-        container_name=config.docker.sandbox_container_name,
-    )
+    sandbox = build_sandbox_backend()
     set_sandbox(sandbox)
 
     system_prompt = load_prompt("patcher", shared=["bash"])

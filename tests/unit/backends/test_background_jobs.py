@@ -2,10 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from decepticon.backends.docker_sandbox import (
-    BackgroundJobTracker,
-    DockerSandbox,
-)
+from decepticon.sandbox_kernel import BackgroundJobTracker
+from decepticon.sandbox_kernel.daemon import DaemonSandbox
 
 
 def test_register_records_command_and_marker_count():
@@ -73,7 +71,7 @@ def test_remove_drops_session_entry():
 
 
 def test_start_background_registers_job_with_initial_marker_count():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     fake_baseline = "[DCPTN:0:/workspace] "
 
     with patch.object(sandbox, "_get_manager") as mock_get:
@@ -93,7 +91,7 @@ def test_start_background_registers_job_with_initial_marker_count():
 
 
 def test_poll_completion_marks_done_when_new_marker_appears():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
 
     with patch.object(sandbox, "_get_manager") as mock_get:
@@ -112,7 +110,7 @@ def test_poll_completion_marks_done_when_new_marker_appears():
 
 
 def test_poll_completion_keeps_running_without_new_marker():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="nmap target", initial_markers=1)
 
     with patch.object(sandbox, "_get_manager") as mock_get:
@@ -128,14 +126,14 @@ def test_poll_completion_keeps_running_without_new_marker():
 
 
 def test_poll_completion_returns_none_for_unknown_session():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     assert sandbox.poll_completion("never-seen") is None
 
 
 def test_poll_completion_handles_capture_timeout_gracefully():
     import subprocess as _sp
 
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="x", initial_markers=1)
 
     with patch.object(sandbox, "_get_manager") as mock_get:
@@ -150,7 +148,7 @@ def test_poll_completion_handles_capture_timeout_gracefully():
 
 
 def test_poll_completion_handles_capture_failure_gracefully():
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
     sandbox._jobs.register("scan", command="x", initial_markers=1)
 
     with patch.object(sandbox, "_get_manager") as mock_get:
@@ -167,7 +165,7 @@ def test_poll_completion_handles_capture_failure_gracefully():
 def test_auto_background_path_registers_job():
     import asyncio
 
-    sandbox = DockerSandbox(container_name="test")
+    sandbox = DaemonSandbox(container_name="test")
 
     captures = [
         "[DCPTN:0:/workspace] ",  # baseline
@@ -191,7 +189,7 @@ def test_auto_background_path_registers_job():
 
         # Bind the real TmuxSessionManager.execute_async to the mock manager
         # so the auto-background path runs against mocked internals.
-        from decepticon.backends.docker_sandbox import TmuxSessionManager
+        from decepticon.sandbox_kernel import TmuxSessionManager
 
         mgr.execute_async = TmuxSessionManager.execute_async.__get__(mgr, TmuxSessionManager)
 

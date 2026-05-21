@@ -19,7 +19,7 @@ from collections import OrderedDict
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import HumanMessage
 
-from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.backends.http_sandbox import HTTPSandbox
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ _NOTIFIED_KEYS_MAX = 4096
 class SandboxNotificationMiddleware(AgentMiddleware):
     """Emit one HumanMessage per turn aggregating new background completions."""
 
-    def __init__(self, sandbox: DockerSandbox) -> None:
+    def __init__(self, sandbox: HTTPSandbox) -> None:
         super().__init__()
         self._sandbox = sandbox
         # OrderedDict-as-set so we can both check membership and evict in
@@ -45,10 +45,11 @@ class SandboxNotificationMiddleware(AgentMiddleware):
     def _jobs_view(self):
         """Defensive accessor for the sandbox's job registry.
 
-        ``DockerSandbox`` exposes ``_jobs`` as an internal attribute. Going
-        through ``getattr`` lets us survive a backend that has not yet
-        attached the registry (e.g. a partially constructed sandbox in a
-        test fixture) without crashing the middleware.
+        ``HTTPSandbox`` exposes ``_jobs`` as an internal attribute (mirrored
+        from the daemon-side tracker). Going through ``getattr`` lets us
+        survive a backend that has not yet attached the registry (e.g. a
+        partially constructed sandbox in a test fixture) without crashing
+        the middleware.
         """
         return getattr(self._sandbox, "_jobs", None)
 

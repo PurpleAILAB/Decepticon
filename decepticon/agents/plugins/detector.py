@@ -29,7 +29,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import FilesystemMiddleware
 from decepticon.middleware.skills import SkillsMiddleware
@@ -55,22 +54,19 @@ def create_detector_agent():
 
     Notes:
       - The Detector reads source files via FilesystemMiddleware exclusively;
-        no DockerSandbox bash access.
+        no sandbox bash access.
       - Skills are sourced from ``/skills/standard/analyst/*`` (shared with legacy
         analyst — each vuln class has its own playbook) plus a small
         detector-specific operating guide under ``/skills/plugins/detector/``.
       - ``recursion_limit=120`` — source review per candidate burns turns,
         but much less than full analyst iteration loops.
     """
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("detector")
     fallback_models = factory.get_fallback_models("detector")
 
-    sandbox = build_sandbox_backend(
-        container_name=config.docker.sandbox_container_name,
-    )
+    sandbox = build_sandbox_backend()
     # No set_sandbox() here — Detector intentionally has no bash tool.
 
     system_prompt = load_prompt("detector", shared=[])

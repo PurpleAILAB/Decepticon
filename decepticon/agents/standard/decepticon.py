@@ -47,7 +47,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
@@ -75,7 +74,6 @@ def create_decepticon_agent():
       - ModelFallbackMiddleware: primary → fallback chain built from the user's Credentials inventory
     Returns a compiled LangGraph agent ready for invocation.
     """
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("decepticon")
@@ -83,17 +81,16 @@ def create_decepticon_agent():
 
     # Filesystem backend for the orchestrator. The orchestrator has
     # tools=[], so it never touches the bash module's global _sandbox —
-    # sub-agent factories set that for their own execution. Backend
-    # selection mirrors Soundwave: DockerSandbox by default, HTTPSandbox
-    # when DECEPTICON_FILESYSTEM_BACKEND=http (see backends/factory.py).
-    sandbox = build_sandbox_backend(config.docker.sandbox_container_name)
+    # sub-agent factories set that for their own execution. HTTP transport
+    # is the single supported path (see backends/factory.py).
+    sandbox = build_sandbox_backend()
 
     system_prompt = load_prompt("decepticon")
 
-    # Single backend: DockerSandbox provides /workspace/ AND /skills/ (skills
-    # are bind-mounted into the sandbox container at /skills/, see
-    # docker-compose.yml). All file I/O goes through the sandbox so the
-    # langgraph process never reads from the host filesystem.
+    # CompositeBackend: HTTPSandbox serves /workspace/ over HTTP, while
+    # /skills/ resolves locally from /app/skills inside the langgraph
+    # container (skills are read-only knowledge, not sandbox artefacts).
+    # See decepticon/backends/__init__.py:make_agent_backend.
     backend = make_agent_backend(sandbox)
 
     # Build sub-agents via plugin-loader discovery. Each subagent declares

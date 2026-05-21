@@ -26,7 +26,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
     EngagementContextMiddleware,
@@ -58,15 +57,12 @@ def create_analyst_agent():
         defaults to graph-updating operations over raw shell commands.
       - Skills routed through /skills/standard/analyst/ + /skills/shared/.
     """
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("analyst")
     fallback_models = factory.get_fallback_models("analyst")
 
-    sandbox = build_sandbox_backend(
-        container_name=config.docker.sandbox_container_name,
-    )
+    sandbox = build_sandbox_backend()
     set_sandbox(sandbox)
 
     system_prompt = load_prompt("analyst", shared=["bash"])

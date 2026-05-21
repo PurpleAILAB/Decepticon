@@ -18,7 +18,7 @@ Middleware stack (selected for document writer):
   5. AnthropicPromptCachingMiddleware — cache system prompt for Anthropic
   6. PatchToolCallsMiddleware — repair dangling tool calls
 
-Backend: DockerSandbox (single backend; /skills/ is bind-mounted into the
+Backend: HTTPSandbox (sandbox daemon talks over HTTP; /skills/ live in the
 sandbox container — see docker-compose.yml).
 """
 
@@ -30,7 +30,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import EngagementContextMiddleware, FilesystemMiddleware
 from decepticon.middleware.skills import SkillsMiddleware
@@ -51,17 +50,16 @@ def create_soundwave_agent():
       - No bash tool: soundwave is document-generation only
       - ModelFallbackMiddleware: haiku 4.5 primary → gemini 2.5 flash fallback on failure
     """
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("soundwave")
     fallback_models = factory.get_fallback_models("soundwave")
 
-    # Filesystem backend — DockerSandbox by default (dev / per-engagement
+    # Filesystem backend — HTTPSandbox (dev / per-engagement
     # VM), HTTPSandbox when DECEPTICON_FILESYSTEM_BACKEND=http (Cloud Run
     # multi-container deploys where there's no host docker daemon). See
     # decepticon/backends/factory.py for the env contract.
-    sandbox = build_sandbox_backend(config.docker.sandbox_container_name)
+    sandbox = build_sandbox_backend()
 
     system_prompt = load_prompt("soundwave")
     # Skills + workspace both live inside the sandbox (skills bind-mounted at /skills/).

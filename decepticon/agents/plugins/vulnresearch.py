@@ -32,7 +32,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.middleware import FilesystemMiddleware, OPPLANMiddleware
@@ -55,15 +54,12 @@ def create_vulnresearch_agent():
     :class:`OPPLANMiddleware`) and the ``task()`` dispatcher (injected
     by :class:`SubAgentMiddleware`). Everything else is delegated.
     """
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("vulnresearch")
     fallback_models = factory.get_fallback_models("vulnresearch")
 
-    sandbox = build_sandbox_backend(
-        container_name=config.docker.sandbox_container_name,
-    )
+    sandbox = build_sandbox_backend()
     # NOTE: do NOT call set_sandbox() here — the orchestrator must not
     # run bash. Each sub-agent that does need bash calls set_sandbox()
     # from its own factory.

@@ -1,7 +1,7 @@
 """Verifier Agent — Stage 3 of the vulnresearch pipeline.
 
 Given a ``VULNERABILITY`` node from the Detector, the Verifier crafts a
-minimal PoC, runs it inside the DockerSandbox, and either promotes the
+minimal PoC, runs it inside the HTTPSandbox, and either promotes the
 vuln to a ``FINDING`` (via the Zero-False-Positive ``validate_finding``
 tool) or records a reproducible failure and moves on.
 
@@ -28,7 +28,6 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
-from decepticon.core.config import load_config
 from decepticon.llm import LLMFactory
 from decepticon.middleware import (
     EngagementContextMiddleware,
@@ -56,15 +55,12 @@ from decepticon.tools.research.tools import (
 
 def create_verifier_agent():
     """Initialize the Verifier Agent — sonnet, PoC-driven, ZFP gate."""
-    config = load_config()
 
     factory = LLMFactory()
     llm = factory.get_model("verifier")
     fallback_models = factory.get_fallback_models("verifier")
 
-    sandbox = build_sandbox_backend(
-        container_name=config.docker.sandbox_container_name,
-    )
+    sandbox = build_sandbox_backend()
     set_sandbox(sandbox)
 
     system_prompt = load_prompt("verifier", shared=["bash"])
@@ -126,7 +122,7 @@ SUBAGENT_SPEC = SubAgentSpec(
     name="verifier",
     description=(
         "Stage 3 — triage and verification. Builds minimal PoCs for "
-        "VULNERABILITY nodes, runs them inside the DockerSandbox "
+        "VULNERABILITY nodes, runs them inside the sandbox "
         "with Zero-False-Positive controls, and promotes confirmed "
         "bugs to FINDING nodes with CVSS vectors."
     ),

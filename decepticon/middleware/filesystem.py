@@ -21,7 +21,7 @@ from deepagents.backends.protocol import (
 from deepagents.backends.utils import validate_path
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
-from decepticon.backends.docker_sandbox import DockerSandbox
+from decepticon.sandbox_kernel.base import SandboxBase
 from decepticon.tools.filesystem import filesystem_tools_without_execute
 
 WORKSPACE = "/workspace"
@@ -53,7 +53,7 @@ def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
     expected = path.rstrip("/")
     if os.path.normpath(expected) != expected:
         return None
-    normalized = DockerSandbox._normalize_workspace_path(path)
+    normalized = SandboxBase._normalize_workspace_path(path)
     return normalized if normalized == expected else None
 
 

@@ -1,6 +1,5 @@
 from deepagents.backends import CompositeBackend, FilesystemBackend
 
-from .docker_sandbox import DockerSandbox, check_sandbox_running
 from .factory import build_sandbox_backend
 from .http_sandbox import HTTPSandbox
 
@@ -30,8 +29,7 @@ def make_agent_backend(sandbox):
 
     This replaces the previous pattern where every middleware used a raw
     sandbox for both paths, which forced an HTTP round-trip per skill
-    read (and previously ``docker exec`` on the DockerSandbox path),
-    and required the brittle ``_unwrap_backend()`` band-aid in
+    read, and required the brittle ``_unwrap_backend()`` band-aid in
     ``decepticon.tools.skills`` to undo engagement-path mangling for
     ``/skills/`` lookups.
     """
@@ -47,10 +45,8 @@ def make_agent_backend(sandbox):
 
 
 __all__ = [
-    "DockerSandbox",
     "HTTPSandbox",
     "SKILLS_LOCAL_PATH",
     "build_sandbox_backend",
-    "check_sandbox_running",
     "make_agent_backend",
 ]
