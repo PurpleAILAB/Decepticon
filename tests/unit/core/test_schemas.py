@@ -15,11 +15,12 @@ from pathlib import Path
 import pytest
 
 from decepticon.core.schemas import (
+    CONOPS,
+    OPPLAN,
     AbortPlan,
     AbortTrigger,
     CleanupArtifact,
     CleanupPlan,
-    CONOPS,
     Contact,
     ContactPlan,
     DataClass,
@@ -28,13 +29,11 @@ from decepticon.core.schemas import (
     EngagementBundle,
     EngagementType,
     FindingConfidence,
-    OPPLAN,
     RoE,
     ThreatProfile,
     ThreatTier,
     TriggerSeverity,
 )
-
 
 # ── ThreatProfile ─────────────────────────────────────────────────────
 
