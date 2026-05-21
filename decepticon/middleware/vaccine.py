@@ -83,6 +83,25 @@ class VaccineMiddleware(AgentMiddleware):
         # (finding_id, next_stage) -> last-advised turn
         self._last_advised: dict[tuple[str, str], int] = {}
         self._turn = 0
+        self._writer = None
+
+    @property
+    def writer(self):
+        """Atomic stage-transition writer sharing this middleware's backend.
+
+        Sub-agent tools call ``mw.writer.mark_patched(finding_id, ...)``
+        instead of hand-writing JSON via the generic ``write_file`` tool,
+        so flag transitions land in the same finding files this watcher
+        is scanning. See ``decepticon.middleware.vaccine_writer.VaccineWriter``.
+        """
+        if self._writer is None:
+            from decepticon.middleware.vaccine_writer import VaccineWriter
+
+            self._writer = VaccineWriter(
+                backend=self._backend,
+                findings_dir=self._findings_dir,
+            )
+        return self._writer
 
     # ── finding-state scan ─────────────────────────────────────────────
 

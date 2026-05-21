@@ -9,6 +9,7 @@ from decepticon.middleware.notifications import (
 from decepticon.middleware.opplan import OPPLANMiddleware
 from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.middleware.vaccine import VaccineMiddleware
+from decepticon.middleware.vaccine_writer import TransitionResult, VaccineWriter
 
 __all__ = [
     "EngagementContextMiddleware",
@@ -17,5 +18,7 @@ __all__ = [
     "OPPLANMiddleware",
     "SandboxNotificationMiddleware",
     "SkillsMiddleware",
+    "TransitionResult",
     "VaccineMiddleware",
+    "VaccineWriter",
 ]
