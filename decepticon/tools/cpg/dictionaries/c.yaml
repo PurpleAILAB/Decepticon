@@ -1,0 +1,63 @@
+sources:
+  http_param:
+    - getenv
+  user_input:
+    - gets
+    - scanf
+    - fscanf
+    - sscanf
+    - getchar
+    - fgetc
+    - fgets
+  network_read:
+    - recv
+    - recvfrom
+    - read
+  file_read:
+    - fopen
+    - fread
+    - open
+    - read
+
+sinks:
+  buffer_overflow:
+    - strcpy
+    - strcat
+    - sprintf
+    - vsprintf
+    - gets
+    - memcpy
+  format_string:
+    - printf
+    - fprintf
+    - sprintf
+    - vsprintf
+    - snprintf
+    - vprintf
+    - vfprintf
+  shell_exec:
+    - system
+    - popen
+    - execl
+    - execv
+    - execvp
+    - execlp
+    - execve
+  memory_corruption:
+    - free
+    - malloc
+    - realloc
+    - alloca
+  path_traversal:
+    - fopen
+    - open
+    - unlink
+    - rename
+
+sanitizers:
+  bounded:
+    - strncpy
+    - strncat
+    - snprintf
+    - strlcpy
+    - strlcat

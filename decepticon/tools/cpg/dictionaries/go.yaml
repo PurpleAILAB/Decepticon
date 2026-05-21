@@ -1,0 +1,70 @@
+sources:
+  http_param:
+    - r.FormValue
+    - r.PostFormValue
+    - r.URL.Query
+    - r.URL.Query().Get
+    - r.Form
+    - r.PostForm
+    - mux.Vars
+    - chi.URLParam
+    - gin.Context.Param
+    - gin.Context.Query
+    - echo.Context.Param
+    - echo.Context.QueryParam
+  http_body:
+    - ioutil.ReadAll
+    - io.ReadAll
+    - json.Decode
+    - json.NewDecoder
+  http_header:
+    - r.Header.Get
+  env_var:
+    - os.Getenv
+    - os.LookupEnv
+  file_read:
+    - os.Open
+    - os.ReadFile
+    - ioutil.ReadFile
+
+sinks:
+  sql_exec:
+    - db.Exec
+    - db.Query
+    - db.QueryRow
+    - tx.Exec
+    - tx.Query
+    - stmt.Exec
+  shell_exec:
+    - exec.Command
+    - exec.CommandContext
+    - syscall.Exec
+  eval:
+    - template.New
+  ssrf:
+    - http.Get
+    - http.Post
+    - http.PostForm
+    - http.NewRequest
+    - http.DefaultClient.Do
+  template_render:
+    - template.Must
+    - html/template.New
+    - text/template.New
+  file_write:
+    - os.Create
+    - os.OpenFile
+    - ioutil.WriteFile
+    - os.Remove
+  path_traversal:
+    - filepath.Join
+    - path.Join
+  unsafe_pointer:
+    - unsafe.Pointer
+
+sanitizers:
+  html:
+    - template.HTMLEscapeString
+    - html.EscapeString
+  shell:
+    - exec.LookPath

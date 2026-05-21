@@ -1,0 +1,119 @@
+# Source / sink / sanitizer dictionary for Python.
+#
+# Each entry maps a vuln-class kind to a list of substring patterns
+# matched against call-site identifiers (head before the opening paren).
+# Patterns are word-boundary delimited regex alternations; keep entries
+# short + specific to limit false positives.
+#
+# Add new patterns: identify the vuln class, list the canonical
+# function/method names that introduce untrusted data (sources),
+# evaluate or transmit data unsafely (sinks), or render data safe
+# (sanitizers).
+
+sources:
+  http_param:
+    - request.args.get
+    - request.form.get
+    - request.json
+    - request.values.get
+    - request.get_json
+    - flask.request
+    - aiohttp.request
+    - django.http.HttpRequest
+    - bottle.request
+    - starlette.requests.Request
+    - tornado.web.RequestHandler.get_argument
+  http_header:
+    - request.headers.get
+    - request.META.get
+    - request.cookies.get
+  env_var:
+    - os.environ
+    - os.getenv
+  file_read:
+    - open
+    - io.open
+    - pathlib.Path.read_text
+    - pathlib.Path.read_bytes
+  network_read:
+    - socket.recv
+    - urllib.request.urlopen
+    - requests.get
+    - requests.post
+    - httpx.get
+    - aiohttp.ClientSession.get
+
+sinks:
+  sql_exec:
+    - cursor.execute
+    - cursor.executemany
+    - session.execute
+    - db.execute
+    - engine.execute
+    - text
+  shell_exec:
+    - os.system
+    - os.popen
+    - subprocess.call
+    - subprocess.check_call
+    - subprocess.check_output
+    - subprocess.run
+    - subprocess.Popen
+    - commands.getoutput
+    - pty.spawn
+  eval:
+    - eval
+    - exec
+    - compile
+    - __import__
+  pickle_load:
+    - pickle.loads
+    - pickle.load
+    - cPickle.loads
+    - dill.loads
+    - shelve.open
+  yaml_load:
+    - yaml.load
+    - yaml.unsafe_load
+  xml_parse:
+    - xml.etree.ElementTree.parse
+    - xml.etree.ElementTree.fromstring
+    - lxml.etree.fromstring
+    - lxml.etree.parse
+  ssrf:
+    - urllib.request.urlopen
+    - urllib2.urlopen
+    - requests.get
+    - requests.post
+    - requests.request
+    - httpx.get
+    - httpx.post
+    - aiohttp.ClientSession.get
+  template_render:
+    - jinja2.Template
+    - Template
+    - render_template_string
+  redirect:
+    - flask.redirect
+    - django.shortcuts.redirect
+  file_write:
+    - open
+    - shutil.copy
+    - shutil.move
+    - os.remove
+    - os.unlink
+  ldap_search:
+    - ldap.search
+    - ldap3.Connection.search
+
+sanitizers:
+  html:
+    - html.escape
+    - markupsafe.escape
+    - cgi.escape
+  shell:
+    - shlex.quote
+    - pipes.quote
+  sql:
+    - psycopg2.sql.SQL
+    - psycopg2.sql.Identifier
