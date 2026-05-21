@@ -66,6 +66,34 @@ def test_maps_virtual_workspace_paths_to_engagement_root() -> None:
     assert backend.calls[-1] == ("read", ("/workspace/test/plan/roe.json", 0, 2000))
 
 
+def test_real_path_is_accepted_idempotently() -> None:
+    """Passing the already-real engagement path must not double the slug.
+
+    Regression: agent prompts historically advertised the real per-engagement
+    path (e.g. ``/workspace/test``) and instructed sub-agents to use it as
+    their workspace root. The agent then passed
+    ``/workspace/test/exploit/x.txt`` to filesystem tools. Without
+    idempotency, ``_real()`` re-prefixed ``self._root`` and produced
+    ``/workspace/test/test/exploit/x.txt`` — a duplicated nested directory
+    visible on the host as ``~/.decepticon/workspace/test/test/...``. The
+    backend now detects "already inside ``self._root``" and returns the
+    path unchanged, so both virtual (``/workspace/...``) and real
+    (``/workspace/test/...``) inputs converge on the same on-disk file.
+    """
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.read("/workspace/test/plan/roe.json")
+
+    assert result.file_data == {
+        "content": "read:/workspace/test/plan/roe.json",
+        "encoding": "utf-8",
+    }
+    # Critical: the real-path input is not re-prefixed into
+    # /workspace/test/test/plan/roe.json.
+    assert backend.calls[-1] == ("read", ("/workspace/test/plan/roe.json", 0, 2000))
+
+
 def test_returns_virtual_paths_to_agent() -> None:
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace/test")
@@ -116,9 +144,61 @@ def test_missing_engagement_workspace_fails_closed() -> None:
     assert backend.calls == []
 
 
-def test_root_workspace_fails_closed() -> None:
+def test_root_workspace_accepted_as_engagement_root() -> None:
+    """Launcher mode binds the engagement directory directly at ``/workspace``.
+
+    The bare root must be accepted as a valid engagement root so filesystem
+    tools work without a slug prefix. ``ls /workspace`` must hit the backend
+    at ``/workspace`` (no doubling) and surface entries unchanged.
+    """
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    result = scoped.ls("/workspace")
+
+    assert result.error is None
+    assert result.entries == [{"path": "/workspace/plan/roe.json", "is_dir": False}]
+    assert backend.calls[-1] == ("ls_info", "/workspace")
+
+
+def test_root_workspace_no_prefix_doubling_under_engagement_root() -> None:
+    """Reads under ``/workspace`` in launcher mode must not get prefixed twice."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace")
+
+    scoped.read("/workspace/plan/roe.json")
+
+    assert backend.calls[-1] == ("read", ("/workspace/plan/roe.json", 0, 2000))
+
+
+def test_root_workspace_accepts_trailing_slash() -> None:
+    """``/workspace/`` (trailing slash) is the same engagement root."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/")
+
+    result = scoped.ls("/workspace")
+
+    assert result.error is None
+    assert backend.calls[-1] == ("ls_info", "/workspace")
+
+
+def test_traversal_path_fails_closed_does_not_silently_coerce() -> None:
+    """``..`` traversal must fail closed rather than collapse to ``/workspace``.
+
+    Without the ``os.path.normpath`` guard the slug regex would accept the
+    component, which would then resolve to a path outside the engagement.
+    """
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/../etc")
+
+    assert scoped.ls("/workspace").error is not None
+    assert backend.calls == []
+
+
+def test_invalid_path_outside_workspace_fails_closed() -> None:
+    """Anything not under ``/workspace`` must fail closed (no silent coerce)."""
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/etc")
 
     assert scoped.ls("/workspace").error is not None
     assert backend.calls == []

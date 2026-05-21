@@ -1,0 +1,307 @@
+// @vitest-environment jsdom
+import { renderHook, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
+import {
+  createMockStream,
+  createMockClient,
+  createControllableStream,
+  type MockClient,
+  type StreamEvent,
+} from "./__fixtures__/mockStream.js";
+
+// ── Hoisted mock state ──────────────────────────────────────────────────────
+// vi.hoisted() runs before module imports so the factory closure is safe to
+// reference even after vitest hoists the vi.mock() calls.
+const { mockState } = vi.hoisted(() => ({
+  mockState: { client: null as MockClient | null },
+}));
+
+vi.mock("@langchain/langgraph-sdk", () => ({
+  Client: vi.fn(() => mockState.client),
+}));
+
+vi.mock("../utils/threadStore.js", () => ({
+  saveThread: vi.fn(async () => {}),
+  touchThread: vi.fn(async () => {}),
+  loadThreadByIndex: vi.fn(async () => null),
+}));
+
+vi.mock("../commands/modelOverride.js", () => ({
+  getModelOverride: () => undefined,
+}));
+
+// ── Module-level binding (reset per test via dynamic import) ─────────────────
+// useAgent reads INITIAL_ASSISTANT_ID = process.env.DECEPTICON_ASSISTANT_ID at
+// module load time. Static import would capture the value before vi.stubEnv()
+// runs in beforeEach. Dynamic import after stubbing gets the right default.
+let useAgent: (typeof import("./useAgent.js"))["useAgent"];
+
+// ── Common event fixtures ────────────────────────────────────────────────────
+const noopValuesEvent: StreamEvent = { event: "values", data: { messages: [] } };
+
+const engagementReadyEvent: StreamEvent = {
+  event: "custom",
+  data: { type: "engagement_ready" },
+};
+
+// ── Suite ────────────────────────────────────────────────────────────────────
+describe("useAgent — engagement handoff lifecycle", () => {
+  beforeEach(async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.stubEnv("DECEPTICON_API_URL", "http://localhost:2024");
+    vi.stubEnv("DECEPTICON_ASSISTANT_ID", "soundwave");
+    vi.stubEnv("DECEPTICON_ENGAGEMENT", "eng-abc");
+    vi.stubEnv("DECEPTICON_WORKSPACE_PATH", "/tmp/ws");
+    delete process.env.DECEPTICON_THREAD_ID;
+    mockState.client = createMockClient();
+    ({ useAgent } = await import("./useAgent.js"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  // ── 1. engagement_ready flips assistantId mid-stream ─────────────────────
+  it("flips assistantId to 'decepticon' when engagement_ready fires mid-stream", async () => {
+    const stream = createControllableStream();
+    (mockState.client!.runs.stream as Mock).mockReturnValueOnce(stream);
+
+    const { result } = renderHook(() => useAgent());
+
+    // First runs.stream call should use the INITIAL_ASSISTANT_ID = "soundwave"
+    act(() => {
+      result.current.submit("hello soundwave");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect((mockState.client!.runs.stream as Mock).mock.calls[0][1]).toBe("soundwave");
+
+    // Emit engagement_ready while the stream is still open
+    await act(async () => {
+      await stream.emit(engagementReadyEvent);
+    });
+
+    // assistantId state should have flipped; stream has NOT ended yet
+    expect(result.current.assistantId).toBe("decepticon");
+
+    // Clean up — end stream so the hook reaches an idle state
+    await act(async () => {
+      stream.end();
+      await vi.runAllTimersAsync();
+    });
+  });
+
+  // ── 2. Handoff auto-submits enqueued message on fresh decepticon thread ───
+  it("auto-submits enqueued message on a fresh decepticon thread after handoff", async () => {
+    const firstStream = createControllableStream();
+    const secondStream = createMockStream([noopValuesEvent]);
+    const mc = mockState.client!;
+    (mc.runs.stream as Mock)
+      .mockReturnValueOnce(firstStream)
+      .mockReturnValueOnce(secondStream);
+    (mc.threads.create as Mock)
+      .mockResolvedValueOnce({ thread_id: "thread-soundwave" })
+      .mockResolvedValueOnce({ thread_id: "thread-decepticon" });
+
+    const { result } = renderHook(() => useAgent());
+
+    // Start soundwave run
+    act(() => {
+      result.current.submit("start engagement");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    // Queue a follow-up while the soundwave stream is still active
+    act(() => {
+      result.current.enqueue("queued follow-up");
+    });
+    expect(result.current.queuedMessage).toBe("queued follow-up");
+
+    // Emit handoff signal, then end stream to trigger handleStreamComplete
+    await act(async () => {
+      await firstStream.emit(engagementReadyEvent);
+    });
+    await act(async () => {
+      firstStream.end();
+      await vi.runAllTimersAsync(); // fire setTimeout(0) auto-submit
+    });
+
+    const streamCalls = (mc.runs.stream as Mock).mock.calls;
+    const createCalls = (mc.threads.create as Mock).mock.calls;
+
+    // New thread created for the decepticon run
+    expect(createCalls.length).toBe(2);
+
+    // Second stream call targets decepticon assistant on the fresh thread
+    expect(streamCalls.length).toBe(2);
+    expect(streamCalls[1][0]).toBe("thread-decepticon"); // new thread, not original
+    expect(streamCalls[1][1]).toBe("decepticon");
+
+    // Second stream call's input carries the queued message
+    const secondInput = streamCalls[1][2].input as { messages: Array<{ content: string }> };
+    expect(secondInput.messages[0].content).toBe("queued follow-up");
+  });
+
+  // ── 3. Engagement fields travel only via config.configurable ─────────────
+  it("injects engagement context via config.configurable only — never as top-level run input", async () => {
+    const firstStream = createControllableStream();
+    const secondStream = createMockStream([noopValuesEvent]);
+    const mc = mockState.client!;
+    (mc.runs.stream as Mock)
+      .mockReturnValueOnce(firstStream)
+      .mockReturnValueOnce(secondStream);
+    (mc.threads.create as Mock)
+      .mockResolvedValueOnce({ thread_id: "thread-soundwave" })
+      .mockResolvedValueOnce({ thread_id: "thread-decepticon" });
+
+    const { result } = renderHook(() => useAgent());
+
+    act(() => {
+      result.current.submit("start");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    act(() => {
+      result.current.enqueue("decepticon prompt");
+    });
+
+    await act(async () => {
+      await firstStream.emit(engagementReadyEvent);
+    });
+    await act(async () => {
+      firstStream.end();
+      await vi.runAllTimersAsync();
+    });
+
+    const streamCalls = (mc.runs.stream as Mock).mock.calls;
+    expect(streamCalls.length).toBe(2);
+
+    for (let i = 0; i < 2; i++) {
+      const opts = streamCalls[i][2] as Record<string, unknown>;
+
+      // Engagement fields must never appear anywhere inside `input` — checked
+      // recursively via serialization to catch nested placements.
+      const inputJson = JSON.stringify(opts.input);
+      expect(inputJson).not.toContain("engagement_name");
+      expect(inputJson).not.toContain("workspace_path");
+
+      // Engagement fields must be present in config.configurable for every
+      // run (the env vars are set for the full test, so both submits route
+      // context this way per the post-#182 architecture).
+      const configurable = (opts.config as Record<string, unknown> | undefined)
+        ?.configurable as Record<string, unknown> | undefined;
+      expect(configurable).toMatchObject({
+        engagement_name: "eng-abc",
+        workspace_path: "/tmp/ws",
+      });
+    }
+  });
+
+  // ── 4. No handoff — thread state preserved across two submits ────────────
+  it("preserves thread across two submits when no engagement_ready fires", async () => {
+    const firstStream = createMockStream([noopValuesEvent]);
+    const secondStream = createMockStream([noopValuesEvent]);
+    const mc = mockState.client!;
+    (mc.runs.stream as Mock)
+      .mockReturnValueOnce(firstStream)
+      .mockReturnValueOnce(secondStream);
+
+    const { result } = renderHook(() => useAgent());
+
+    // First submit — stream has no handoff event
+    act(() => {
+      result.current.submit("first");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    // Flush again — processStream → handleStreamComplete → setState chain
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(result.current.runState).toBe("idle");
+
+    // Second submit — same thread should be reused
+    act(() => {
+      result.current.submit("second");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(result.current.runState).toBe("idle");
+
+    const streamCalls = (mc.runs.stream as Mock).mock.calls;
+    const createCalls = (mc.threads.create as Mock).mock.calls;
+
+    // Only one thread was created across both runs
+    expect(createCalls.length).toBe(1);
+
+    // Both stream calls used the same threadId
+    expect(streamCalls.length).toBe(2);
+    expect(streamCalls[0][0]).toBe(streamCalls[1][0]);
+
+    // assistantId never flipped
+    expect(result.current.assistantId).toBe("soundwave");
+  });
+
+  // ── 5. engagement_ready alone does not clear queuedMessage ───────────────
+  it("keeps queuedMessage intact after engagement_ready — only handleStreamComplete handoff branch clears it", async () => {
+    const firstStream = createControllableStream();
+    const secondStream = createMockStream([noopValuesEvent]);
+    const mc = mockState.client!;
+    (mc.runs.stream as Mock)
+      .mockReturnValueOnce(firstStream)
+      .mockReturnValueOnce(secondStream);
+    (mc.threads.create as Mock)
+      .mockResolvedValueOnce({ thread_id: "t-soundwave" })
+      .mockResolvedValueOnce({ thread_id: "t-decepticon" });
+
+    const { result } = renderHook(() => useAgent());
+
+    act(() => {
+      result.current.submit("start");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    // Queue a message while the stream is active
+    act(() => {
+      result.current.enqueue("queued-msg");
+    });
+    expect(result.current.queuedMessage).toBe("queued-msg");
+
+    // Emit engagement_ready — keep the stream open
+    await act(async () => {
+      await firstStream.emit(engagementReadyEvent);
+    });
+
+    // Queue must still be intact — engagement_ready alone must not clear it
+    expect(result.current.queuedMessage).toBe("queued-msg");
+
+    // Now end the stream — handleStreamComplete handoff branch auto-submits
+    await act(async () => {
+      firstStream.end();
+      await vi.runAllTimersAsync();
+    });
+    // Additional flush for the queued auto-submit to complete
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    // After the handoff auto-submit fires, queuedMessage is cleared
+    expect(result.current.queuedMessage).toBeNull();
+  });
+});

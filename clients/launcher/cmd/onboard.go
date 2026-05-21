@@ -8,6 +8,7 @@ import (
 
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -33,22 +34,44 @@ func init() {
 
 // AuthMethod identifiers — must match decepticon/llm/models.py::AuthMethod.
 const (
-	methodAnthropicOAuth  = "anthropic_oauth"
-	methodAnthropicAPI    = "anthropic_api"
-	methodOpenAIOAuth     = "openai_oauth"
-	methodOpenAIAPI       = "openai_api"
-	methodGoogleOAuth     = "google_oauth"
-	methodGoogleAPI       = "google_api"
-	methodMiniMaxAPI      = "minimax_api"
-	methodDeepSeekAPI     = "deepseek_api"
-	methodXAIAPI          = "xai_api"
-	methodGrokOAuth       = "grok_oauth"
-	methodMistralAPI      = "mistral_api"
-	methodOpenRouterAPI   = "openrouter_api"
-	methodNvidiaAPI       = "nvidia_api"
-	methodCopilotOAuth    = "copilot_oauth"
-	methodPerplexityOAuth = "perplexity_oauth"
-	methodOllamaLocal     = "ollama_local"
+	methodAnthropicOAuth   = "anthropic_oauth"
+	methodAnthropicAPI     = "anthropic_api"
+	methodOpenAIOAuth      = "openai_oauth"
+	methodOpenAIAPI        = "openai_api"
+	methodGoogleOAuth      = "google_oauth"
+	methodGoogleAPI        = "google_api"
+	methodMiniMaxAPI       = "minimax_api"
+	methodDeepSeekAPI      = "deepseek_api"
+	methodXAIAPI           = "xai_api"
+	methodGrokOAuth        = "grok_oauth"
+	methodMistralAPI       = "mistral_api"
+	methodOpenRouterAPI    = "openrouter_api"
+	methodNvidiaAPI        = "nvidia_api"
+	methodCopilotOAuth     = "copilot_oauth"
+	methodPerplexityOAuth  = "perplexity_oauth"
+	methodOllamaLocal      = "ollama_local"
+	methodOllamaCloud      = "ollama_cloud"
+	// Cloud gateways added in the OpenClaude provider migration.
+	methodBedrockAPI       = "bedrock_api"
+	methodVertexAPI        = "vertex_api"
+	methodAzureAPI         = "azure_api"
+	methodGroqAPI          = "groq_api"
+	methodTogetherAPI      = "together_api"
+	methodFireworksAPI     = "fireworks_api"
+	methodCohereAPI        = "cohere_api"
+	methodMoonshotAPI      = "moonshot_api"
+	methodZaiAPI           = "zai_api"
+	methodDashscopeAPI     = "dashscope_api"
+	methodGitHubModelsAPI  = "github_models_api"
+	methodLMStudioLocal    = "lmstudio_local"
+	methodCustomOpenAIAPI  = "custom_openai_api"
+)
+
+// Defaults shown in form placeholders for the new providers.
+const (
+	defaultLMStudioAPIBase = "http://host.docker.internal:1234/v1"
+	defaultLMStudioModel   = "qwen2.5-coder-7b-instruct"
+	defaultAzureAPIVersion = "2024-08-01-preview"
 )
 
 // Default Ollama wiring shown to OSS users. `host.docker.internal`
@@ -94,7 +117,25 @@ var methodOrder = []string{
 	methodNvidiaAPI,
 	methodCopilotOAuth,
 	methodPerplexityOAuth,
+	// Cloud gateways — anthropic-via-cloud paths first, then
+	// other multi-vendor hubs.
+	methodBedrockAPI,
+	methodVertexAPI,
+	methodAzureAPI,
+	methodGitHubModelsAPI,
+	methodGroqAPI,
+	methodTogetherAPI,
+	methodFireworksAPI,
+	methodCohereAPI,
+	methodMoonshotAPI,
+	methodZaiAPI,
+	methodDashscopeAPI,
+	// Local last so cloud-preferred default still picks remote
+	// providers as primary; users can re-order in .env.
+	methodLMStudioLocal,
 	methodOllamaLocal,
+	methodOllamaCloud,
+	methodCustomOpenAIAPI,
 }
 
 func runOnboard(cmd *cobra.Command, args []string) error {
@@ -129,6 +170,35 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		perplexitySessionToken string
 		ollamaAPIBase          = defaultOllamaAPIBase
 		ollamaModel            = defaultOllamaModel
+		// Cloud gateways
+		awsAccessKeyID         string
+		awsSecretAccessKey     string
+		awsRegion              = "us-east-1"
+		vertexCredsPath        string
+		vertexProject          string
+		vertexLocation         = "us-central1"
+		azureAPIKey            string
+		azureAPIBase           string
+		azureAPIVersion        = defaultAzureAPIVersion
+		groqKey                string
+		togetherKey            string
+		fireworksKey           string
+		cohereKey              string
+		moonshotKey            string
+		zaiKey                 string
+		dashscopeKey           string
+		githubToken            string
+		// Cloud Ollama
+		ollamaCloudAPIBase     string
+		ollamaCloudAPIKey      string
+		ollamaCloudModel       string
+		// LM Studio (local OpenAI-compatible)
+		lmStudioAPIBase        = defaultLMStudioAPIBase
+		lmStudioModel          = defaultLMStudioModel
+		// Custom OpenAI-compatible endpoint
+		customOpenAIAPIBase    string
+		customOpenAIAPIKey     string
+		customOpenAIModel      string
 		profile                string
 		language               = "en"
 		useLangSmith           bool
@@ -159,11 +229,13 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
 				Title("Auth Methods").
-				Description("Pick every credential you have. Each method is an\nindependent fallback in priority order shown.").
+				Description("Press SPACE to toggle, ENTER to confirm.\nUse ↑↓ to scroll, '/' to filter the list.\nPick every credential you have — each is an\nindependent fallback in priority order.").
+				Filterable(true).
+				Height(15).
 				Options(
 					huh.NewOption("Claude Code OAuth — Anthropic subscription (auth/*)", methodAnthropicOAuth),
 					huh.NewOption("Anthropic API Key — sk-ant-...", methodAnthropicAPI),
-					huh.NewOption("ChatGPT OAuth     — ChatGPT Pro/Plus/Team subscription (auth/gpt-*)", methodOpenAIOAuth),
+					huh.NewOption("ChatGPT OAuth     — ChatGPT Pro/Plus/Team subscription via `codex login` (auth/gpt-*)", methodOpenAIOAuth),
 					huh.NewOption("OpenAI API Key    — sk-...", methodOpenAIAPI),
 					huh.NewOption("Google API Key    — AIza... (Gemini)", methodGoogleAPI),
 					huh.NewOption("MiniMax API Key   — eyJ...", methodMiniMaxAPI),
@@ -176,7 +248,21 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("SuperGrok           — X Premium+ Grok subscription (grok-sub/*)", methodGrokOAuth),
 					huh.NewOption("GitHub Copilot Pro  — Copilot subscription (copilot/*)", methodCopilotOAuth),
 					huh.NewOption("Perplexity Pro      — Perplexity subscription (pplx-sub/*)", methodPerplexityOAuth),
+					huh.NewOption("AWS Bedrock         — Anthropic models on AWS (bedrock/*)", methodBedrockAPI),
+					huh.NewOption("GCP Vertex AI       — Anthropic + Gemini on GCP (vertex_ai/*)", methodVertexAPI),
+					huh.NewOption("Azure OpenAI        — Azure-hosted GPT deployments (azure/*)", methodAzureAPI),
+					huh.NewOption("GitHub Models       — GPT family via GitHub PAT (github/*)", methodGitHubModelsAPI),
+					huh.NewOption("Groq Cloud          — LPU-accelerated Llama (groq/*)", methodGroqAPI),
+					huh.NewOption("Together AI         — Llama / Mixtral hub (together_ai/*)", methodTogetherAPI),
+					huh.NewOption("Fireworks AI        — Llama / Mixtral hub (fireworks_ai/*)", methodFireworksAPI),
+					huh.NewOption("Cohere Command      — Command-A / Command-R (cohere/*)", methodCohereAPI),
+					huh.NewOption("Moonshot Kimi K2    — Kimi K2 (moonshot/*)", methodMoonshotAPI),
+					huh.NewOption("Z.ai GLM-4.5        — GLM-4.5 / GLM-4.5-Air (zai/*)", methodZaiAPI),
+					huh.NewOption("Alibaba DashScope   — Qwen Max/Plus/Turbo (dashscope/*)", methodDashscopeAPI),
+					huh.NewOption("LM Studio (local)   — local OpenAI-compatible server (lm_studio/*)", methodLMStudioLocal),
 					huh.NewOption("Local LLM (Ollama)  — any pulled model, no API key", methodOllamaLocal),
+					huh.NewOption("Ollama Cloud        — hosted Ollama (ollama_chat/* via cloud)", methodOllamaCloud),
+					huh.NewOption("Custom OpenAI Endpoint — bring-your-own OpenAI-compatible URL", methodCustomOpenAIAPI),
 				).
 				Value(&methods).
 				Validate(func(s []string) error {
@@ -362,6 +448,230 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("2 / 5  ·  Local LLM (Ollama)").
 			WithHideFunc(func() bool { return !contains(methods, methodOllamaLocal) }),
 
+		// Step 2-cloud-i: AWS Bedrock — three-field group (key + secret + region)
+		huh.NewGroup(
+			huh.NewNote().
+				Title("AWS Bedrock").
+				Description("Bedrock uses AWS SigV4 — provide IAM access key,\nsecret, and the region where Anthropic models are\nenabled (us-east-1 or us-west-2 typically)."),
+			huh.NewInput().
+				Title("AWS_ACCESS_KEY_ID").
+				Placeholder("AKIA...").
+				Value(&awsAccessKeyID).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("AWS_SECRET_ACCESS_KEY").
+				EchoMode(huh.EchoModePassword).
+				Value(&awsSecretAccessKey).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("AWS_REGION").
+				Placeholder("us-east-1").
+				Value(&awsRegion).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  AWS Bedrock").
+			WithHideFunc(func() bool { return !contains(methods, methodBedrockAPI) }),
+
+		// Step 2-cloud-ii: GCP Vertex AI — service-account JSON path + project + region
+		huh.NewGroup(
+			huh.NewNote().
+				Title("GCP Vertex AI").
+				Description("Vertex AI uses a Google Cloud service-account JSON.\nDownload one from IAM & Admin → Service Accounts and\npaste the absolute file path. Project + region must\nmatch where you enabled Anthropic + Gemini models."),
+			huh.NewInput().
+				Title("GOOGLE_APPLICATION_CREDENTIALS").
+				Placeholder("/abs/path/to/service-account.json").
+				Value(&vertexCredsPath).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("VERTEXAI_PROJECT").
+				Placeholder("my-gcp-project-id").
+				Value(&vertexProject).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("VERTEXAI_LOCATION").
+				Placeholder("us-central1").
+				Value(&vertexLocation).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  GCP Vertex AI").
+			WithHideFunc(func() bool { return !contains(methods, methodVertexAPI) }),
+
+		// Step 2-cloud-iii: Azure OpenAI — key + endpoint + version
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Azure OpenAI Service").
+				Description("Endpoint is your azure-openai resource URL,\ne.g. https://my-resource.openai.azure.com.\nThe deployment names map 1:1 to gpt-5.5/gpt-5.4/...\nso the model matrix in DF resolves out of the box."),
+			huh.NewInput().
+				Title("AZURE_API_KEY").
+				EchoMode(huh.EchoModePassword).
+				Value(&azureAPIKey).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("AZURE_API_BASE").
+				Placeholder("https://<resource>.openai.azure.com").
+				Value(&azureAPIBase).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("AZURE_API_VERSION").
+				Placeholder(defaultAzureAPIVersion).
+				Value(&azureAPIVersion).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Azure OpenAI").
+			WithHideFunc(func() bool { return !contains(methods, methodAzureAPI) }),
+
+		// Step 2-cloud-iv: GitHub Models — PAT
+		huh.NewGroup(
+			huh.NewInput().
+				Title("GITHUB_TOKEN").
+				Description("Fine-grained PAT with the 'models' permission scope.\nGenerate at github.com/settings/personal-access-tokens.").
+				Placeholder("github_pat_...").
+				EchoMode(huh.EchoModePassword).
+				Value(&githubToken).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  GitHub Models").
+			WithHideFunc(func() bool { return !contains(methods, methodGitHubModelsAPI) }),
+
+		// Step 2-cloud-v: Groq
+		huh.NewGroup(
+			huh.NewInput().
+				Title("GROQ_API_KEY").
+				Placeholder("gsk_...").
+				EchoMode(huh.EchoModePassword).
+				Value(&groqKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Groq Cloud").
+			WithHideFunc(func() bool { return !contains(methods, methodGroqAPI) }),
+
+		// Step 2-cloud-vi: Together AI
+		huh.NewGroup(
+			huh.NewInput().
+				Title("TOGETHER_API_KEY").
+				Placeholder("paste your Together AI API key").
+				EchoMode(huh.EchoModePassword).
+				Value(&togetherKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Together AI").
+			WithHideFunc(func() bool { return !contains(methods, methodTogetherAPI) }),
+
+		// Step 2-cloud-vii: Fireworks AI
+		huh.NewGroup(
+			huh.NewInput().
+				Title("FIREWORKS_API_KEY").
+				Placeholder("fw_...").
+				EchoMode(huh.EchoModePassword).
+				Value(&fireworksKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Fireworks AI").
+			WithHideFunc(func() bool { return !contains(methods, methodFireworksAPI) }),
+
+		// Step 2-cloud-viii: Cohere
+		huh.NewGroup(
+			huh.NewInput().
+				Title("COHERE_API_KEY").
+				Placeholder("paste your Cohere API key").
+				EchoMode(huh.EchoModePassword).
+				Value(&cohereKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Cohere").
+			WithHideFunc(func() bool { return !contains(methods, methodCohereAPI) }),
+
+		// Step 2-cloud-ix: Moonshot Kimi K2
+		huh.NewGroup(
+			huh.NewInput().
+				Title("MOONSHOT_API_KEY").
+				Placeholder("sk-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&moonshotKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Moonshot Kimi K2").
+			WithHideFunc(func() bool { return !contains(methods, methodMoonshotAPI) }),
+
+		// Step 2-cloud-x: Z.ai GLM-4.5
+		huh.NewGroup(
+			huh.NewInput().
+				Title("ZAI_API_KEY").
+				Description("Z.ai is OpenAI-compatible — base URL is hard-wired to\nhttps://api.z.ai/api/paas/v4. Get a key at z.ai/manage.").
+				Placeholder("paste your Z.ai API key").
+				EchoMode(huh.EchoModePassword).
+				Value(&zaiKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Z.ai GLM-4.5").
+			WithHideFunc(func() bool { return !contains(methods, methodZaiAPI) }),
+
+		// Step 2-cloud-xi: Alibaba DashScope (Qwen)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("DASHSCOPE_API_KEY").
+				Placeholder("sk-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&dashscopeKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  DashScope (Qwen)").
+			WithHideFunc(func() bool { return !contains(methods, methodDashscopeAPI) }),
+
+		// Step 2-local-ii: LM Studio (local OpenAI-compatible)
+		huh.NewGroup(
+			huh.NewNote().
+				Title("LM Studio").
+				Description("LM Studio runs a local OpenAI-compatible server.\nLaunch the LM Studio app and start the server\n(Developer tab → Start). The default port is 1234."),
+			huh.NewInput().
+				Title("LMSTUDIO_API_BASE").
+				Placeholder(defaultLMStudioAPIBase).
+				Value(&lmStudioAPIBase).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("LMSTUDIO_MODEL").
+				Description("Model identifier as shown in LM Studio (e.g.\nqwen2.5-coder-7b-instruct).").
+				Placeholder(defaultLMStudioModel).
+				Value(&lmStudioModel).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  LM Studio").
+			WithHideFunc(func() bool { return !contains(methods, methodLMStudioLocal) }),
+
+		// Step 2-local-iii: Ollama Cloud (hosted)
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Ollama Cloud").
+				Description("Hosted Ollama — same /api/chat tool-calling endpoint\nas local Ollama, just behind an API key."),
+			huh.NewInput().
+				Title("OLLAMA_CLOUD_API_BASE").
+				Placeholder("https://api.ollama.com/v1").
+				Value(&ollamaCloudAPIBase).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("OLLAMA_CLOUD_API_KEY").
+				EchoMode(huh.EchoModePassword).
+				Value(&ollamaCloudAPIKey).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("OLLAMA_CLOUD_MODEL").
+				Placeholder("llama3.3:70b").
+				Value(&ollamaCloudModel).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Ollama Cloud").
+			WithHideFunc(func() bool { return !contains(methods, methodOllamaCloud) }),
+
+		// Step 2-custom: Custom OpenAI-compatible endpoint
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Custom OpenAI-compatible Endpoint").
+				Description("Point at any OpenAI-compatible server (gateways,\nself-hosted vLLM, internal LiteLLM, etc.). The model\nname is sent verbatim to the upstream — match what\nyour gateway exposes."),
+			huh.NewInput().
+				Title("CUSTOM_OPENAI_API_BASE").
+				Placeholder("https://gateway.example.com/v1").
+				Value(&customOpenAIAPIBase).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("CUSTOM_OPENAI_API_KEY").
+				EchoMode(huh.EchoModePassword).
+				Value(&customOpenAIAPIKey).
+				Validate(nonEmpty),
+			huh.NewInput().
+				Title("CUSTOM_OPENAI_MODEL").
+				Placeholder("gpt-4o-mini").
+				Value(&customOpenAIModel).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Custom OpenAI Endpoint").
+			WithHideFunc(func() bool { return !contains(methods, methodCustomOpenAIAPI) }),
+
 		// Step 3: Model profile
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -523,6 +833,70 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		values["OLLAMA_API_BASE"] = strings.TrimSpace(ollamaAPIBase)
 		values["OLLAMA_MODEL"] = strings.TrimSpace(ollamaModel)
 	}
+	if contains(methods, methodOllamaCloud) {
+		values["OLLAMA_CLOUD_API_BASE"] = strings.TrimSpace(ollamaCloudAPIBase)
+		values["OLLAMA_CLOUD_API_KEY"] = strings.TrimSpace(ollamaCloudAPIKey)
+		values["OLLAMA_CLOUD_MODEL"] = strings.TrimSpace(ollamaCloudModel)
+	}
+	if contains(methods, methodBedrockAPI) {
+		values["AWS_ACCESS_KEY_ID"] = strings.TrimSpace(awsAccessKeyID)
+		values["AWS_SECRET_ACCESS_KEY"] = strings.TrimSpace(awsSecretAccessKey)
+		// LiteLLM's Bedrock provider reads AWS_REGION_NAME, not the
+		// boto3-standard AWS_REGION. Set both for SDK compatibility.
+		values["AWS_REGION_NAME"] = strings.TrimSpace(awsRegion)
+		values["AWS_REGION"] = strings.TrimSpace(awsRegion)
+	}
+	if contains(methods, methodVertexAPI) {
+		values["GOOGLE_APPLICATION_CREDENTIALS"] = strings.TrimSpace(vertexCredsPath)
+		values["VERTEXAI_PROJECT"] = strings.TrimSpace(vertexProject)
+		values["VERTEXAI_LOCATION"] = strings.TrimSpace(vertexLocation)
+	}
+	if contains(methods, methodAzureAPI) {
+		values["AZURE_API_KEY"] = strings.TrimSpace(azureAPIKey)
+		values["AZURE_API_BASE"] = strings.TrimSpace(azureAPIBase)
+		values["AZURE_API_VERSION"] = strings.TrimSpace(azureAPIVersion)
+	}
+	if githubToken != "" {
+		// LiteLLM's github/ provider reads GITHUB_API_KEY; the GitHub
+		// CLI + most docs use GITHUB_TOKEN. Set both so either path
+		// works without operator surprise.
+		values["GITHUB_TOKEN"] = strings.TrimSpace(githubToken)
+		values["GITHUB_API_KEY"] = strings.TrimSpace(githubToken)
+	}
+	if groqKey != "" {
+		values["GROQ_API_KEY"] = strings.TrimSpace(groqKey)
+	}
+	if togetherKey != "" {
+		values["TOGETHER_API_KEY"] = strings.TrimSpace(togetherKey)
+	}
+	if fireworksKey != "" {
+		values["FIREWORKS_API_KEY"] = strings.TrimSpace(fireworksKey)
+	}
+	if cohereKey != "" {
+		values["COHERE_API_KEY"] = strings.TrimSpace(cohereKey)
+	}
+	if moonshotKey != "" {
+		values["MOONSHOT_API_KEY"] = strings.TrimSpace(moonshotKey)
+	}
+	if zaiKey != "" {
+		values["ZAI_API_KEY"] = strings.TrimSpace(zaiKey)
+	}
+	if dashscopeKey != "" {
+		values["DASHSCOPE_API_KEY"] = strings.TrimSpace(dashscopeKey)
+	}
+	if contains(methods, methodLMStudioLocal) {
+		values["LMSTUDIO_API_BASE"] = strings.TrimSpace(lmStudioAPIBase)
+		values["LMSTUDIO_MODEL"] = strings.TrimSpace(lmStudioModel)
+		// LM Studio accepts any string as the API key; set a sentinel
+		// so LiteLLM's openai-compatible shim doesn't fail an empty
+		// Authorization header.
+		values["LMSTUDIO_API_KEY"] = "lm-studio"
+	}
+	if contains(methods, methodCustomOpenAIAPI) {
+		values["CUSTOM_OPENAI_API_BASE"] = strings.TrimSpace(customOpenAIAPIBase)
+		values["CUSTOM_OPENAI_API_KEY"] = strings.TrimSpace(customOpenAIAPIKey)
+		values["CUSTOM_OPENAI_MODEL"] = strings.TrimSpace(customOpenAIModel)
+	}
 
 	if useLangSmith && langSmithKey != "" {
 		values["LANGSMITH_TRACING"] = "true"
@@ -549,6 +923,13 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  │  ") + ui.Dim.Render(config.EnvPath()))
 	fmt.Println(ui.Dim.Render("  └──────────────────────────────────┘"))
 	fmt.Println()
+
+	// One-time GitHub star ask — the natural post-onboarding moment.
+	// Suppressed on subsequent runs by the ack file at
+	// $DECEPTICON_HOME/.starred, so a re-run of `decepticon onboard
+	// --reset` does not re-prompt.
+	starprompt.PromptIfNotStarred()
+
 	ui.DimText("  Run 'decepticon' to start the platform")
 	return nil
 }

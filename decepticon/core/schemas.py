@@ -282,8 +282,14 @@ class RoE(BaseModel):
 
     # Escalation
     escalation_contacts: list[EscalationContact] = Field(default_factory=list)
+    # Deprecated: prefer AbortPlan (``plan/abort.json``) for structured
+    # halt-triggers + AI-aware safety gates. Kept as a one-line legacy
+    # default for readers that don't load the expansion doc.
     incident_procedure: str = Field(
-        default="Stop immediately, document the incident, notify engagement lead within 15 minutes."
+        default=(
+            "Stop immediately, document the incident, notify engagement lead within 15 minutes."
+        ),
+        description=("DEPRECATED one-liner — see plan/abort.json for structured halt-triggers."),
     )
 
     # Legal
@@ -292,13 +298,26 @@ class RoE(BaseModel):
     )
 
     # Operational limits
+    # Deprecated: prefer DataHandlingPlan (``plan/data-handling.json``) for
+    # structured fields (data classes, retention, encryption). Kept here
+    # as a one-line summary for legacy readers that don't load the
+    # expansion doc.
     data_handling: str = Field(
         default="",
-        description="How discovered PII, credentials, and client data must be handled",
+        description=(
+            "DEPRECATED summary — see plan/data-handling.json for structured fields. "
+            "Kept as a one-line legacy summary."
+        ),
     )
+    # Deprecated: prefer CleanupPlan (``plan/cleanup.json``) for the
+    # full artifact inventory + removal commands. The bool is kept as
+    # a legacy "did the engagement opt out of cleanup entirely?" flag.
     cleanup_required: bool = Field(
         default=True,
-        description="Whether red team must remove tools/artifacts after engagement",
+        description=(
+            "DEPRECATED flag — see plan/cleanup.json for the full artifact "
+            "inventory and removal commands. Kept as a legacy opt-out switch."
+        ),
     )
 
     # Metadata
@@ -352,8 +371,15 @@ class CONOPS(BaseModel):
 
     # Operational
     methodology: str = Field(default="PTES + MITRE ATT&CK framework")
+    # Deprecated: prefer ContactPlan (``plan/contact.json``) for the
+    # structured operator + escalation + abort channels matrix. Kept as
+    # a one-line legacy summary.
     communication_plan: str = Field(
-        default="", description="How red cell communicates with client and internally"
+        default="",
+        description=(
+            "DEPRECATED one-liner — see plan/contact.json for the structured operator + "
+            "escalation + abort channels."
+        ),
     )
 
     # Timeline
@@ -538,20 +564,464 @@ class OPPLAN(BaseModel):
         return _build(None)
 
 
+# ── ThreatProfile (standalone) ───────────────────────────────────────
+#
+# Distinct from ``CONOPS.threat_actors`` (which stays for backward-compat
+# inside the CONOPS doc): the standalone ``plan/threat-profile.json``
+# carries the MITRE-group-ID-keyed adversary persona that Decepticon's
+# OPPLAN builder consults to pick TTP sequences. CTI delta and per-tier
+# numeric grading live here, not in CONOPS.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class ThreatTier(StrEnum):
+    """Adversary tier — numeric grading aligned with the threat-profile
+    skill (Tier 1–4). Distinct from ``ThreatActor.sophistication``,
+    which stays as the free-form CONOPS embedded field."""
+
+    TIER_1 = "tier-1"  # Opportunistic attacker (script-kiddie, opportunistic)
+    TIER_2 = "tier-2"  # Targeted cybercriminal (ransomware crew, financial)
+    TIER_3 = "tier-3"  # APT / nation-state
+    TIER_4 = "tier-4"  # Insider threat (privileged access)
+
+
+class ThreatProfile(BaseModel):
+    """Adversary persona for emulation — stored at ``plan/threat-profile.json``.
+
+    Distinct from ``CONOPS.threat_actors`` (embedded), this is the
+    standalone JSON the orchestrator's OPPLAN-builder consults to choose
+    TTP sequences and the operations agents consult to bound tool
+    selection. One profile per engagement; multi-actor scenarios should
+    pick the dominant emulation target.
+    """
+
+    engagement_name: str
+    actor_name: str = Field(
+        description="Primary actor identifier, e.g. 'APT29-like (Cozy Bear)' or 'Custom — Insider'"
+    )
+    actor_aliases: list[str] = Field(default_factory=list)
+    group_id: str = Field(default="", description="MITRE Groups ID if known, e.g. 'G0050'")
+    tier: ThreatTier
+    sophistication: str = Field(description="low / medium / high / nation-state")
+    motivation: str = Field(description="espionage / financial / disruption / hacktivism / insider")
+    initial_access: list[str] = Field(
+        default_factory=list,
+        description="MITRE ATT&CK initial-access technique IDs (TA0001)",
+    )
+    key_ttps: list[str] = Field(
+        default_factory=list,
+        description="Top 5–10 MITRE ATT&CK technique IDs this actor relies on",
+    )
+    tools: list[str] = Field(
+        default_factory=list,
+        description="Realistic toolset for emulation (e.g. Cobalt Strike, Mimikatz, custom RAT)",
+    )
+    infrastructure: list[str] = Field(
+        default_factory=list,
+        description="C2 patterns, VPS providers, domain naming heuristics",
+    )
+    recent_cti_delta: str = Field(
+        default="",
+        description="Free-text summary of CTI deltas from the most recent 12 months",
+    )
+    confidence: FindingConfidence = Field(
+        default=FindingConfidence.PROBABLE,
+        description="Confidence that the live actor matches this profile",
+    )
+
+    version: str = "1.0"
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ── Cleanup & Restoration Plan ───────────────────────────────────────
+#
+# Inventory of every artifact the agent will (or did) create during the
+# engagement, plus the concrete command to remove each one and a
+# verifier command to confirm removal. Drives the post-engagement
+# cleanup tool — without this list, dummy accounts / beacons / scheduled
+# tasks routinely outlive the engagement.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class CleanupArtifact(BaseModel):
+    """Single artifact the agent created on a target during the engagement.
+
+    Filled in mostly during execution (by the operations agents) but
+    Soundwave seeds the plan with the expected categories based on the
+    CONOPS kill chain so each phase has a place to record what it
+    touched.
+    """
+
+    artifact_type: str = Field(
+        description=(
+            "Category: beacon / account / file / scheduled-task / service / "
+            "registry-key / persistence-mechanism / tool / network-rule"
+        )
+    )
+    host: str = Field(description="Hostname, IP, or asset identifier where the artifact lives")
+    path: str = Field(
+        description="File path, registry key, account name, or other concrete locator"
+    )
+    sha256: str = Field(default="", description="SHA-256 of the artifact when it's a file")
+    persistence_mech: str = Field(
+        default="",
+        description=(
+            "If this is a persistence implant: which mech "
+            "(scheduled-task, service, registry-run, cron, systemd-unit, ...)"
+        ),
+    )
+    removal_command: str = Field(
+        description="Concrete command to remove the artifact (idempotent if possible)"
+    )
+    verifier_command: str = Field(
+        default="", description="Command whose zero exit confirms removal"
+    )
+    created_by_objective: str = Field(
+        default="", description="OPPLAN objective ID that created this artifact"
+    )
+    removed: bool = False
+    removed_at: str = Field(default="", description="ISO 8601 timestamp of confirmed removal")
+
+
+class CleanupPlan(BaseModel):
+    """Post-engagement cleanup roster — ``plan/cleanup.json``.
+
+    Replaces ``RoE.cleanup_required`` (deprecated bool flag). The
+    orchestrator and operations agents append to ``artifacts`` as they
+    create persistent state on targets; the engagement is not "complete"
+    until every artifact has ``removed=True`` or has an explicit
+    ``cancellation_reason`` recorded.
+    """
+
+    engagement_name: str
+    completion_criteria: str = Field(
+        default=(
+            "All listed artifacts have removed=True OR a documented "
+            "cancellation_reason (e.g. operator decided to leave a "
+            "honeyfile for blue team training)."
+        )
+    )
+    artifacts: list[CleanupArtifact] = Field(default_factory=list)
+    pre_engagement_baseline: str = Field(
+        default="",
+        description=(
+            "Reference to a pre-engagement system snapshot or backup "
+            "(volume ID, snapshot timestamp, restore command) so the "
+            "operator can roll back if cleanup is incomplete."
+        ),
+    )
+
+    version: str = "1.0"
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ── Abort / Crisis Plan ──────────────────────────────────────────────
+#
+# Halt triggers, response actions, and AI-aware safety gates. Replaces
+# ``RoE.incident_procedure`` (deprecated free-form string). The
+# orchestrator's SafetyMiddleware reads this to decide when to freeze
+# the agent loop.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class TriggerSeverity(StrEnum):
+    """Severity tier for an abort trigger — drives the agent's response."""
+
+    INFO = "info"  # Log only, continue
+    WARNING = "warning"  # Pause current step, ask operator
+    CRITICAL = "critical"  # Halt the active objective, preserve evidence
+    EMERGENCY = "emergency"  # Halt all agents, freeze workspace, page operator
+
+
+class AbortTrigger(BaseModel):
+    """A single condition that, when matched, triggers the response_action."""
+
+    condition: str = Field(
+        description=(
+            "Concrete condition, e.g. 'SOC issues real-incident alert', "
+            "'real production data observed in scan output', 'scope "
+            "boundary violation detected'"
+        )
+    )
+    severity: TriggerSeverity
+    response_action: str = Field(
+        description=(
+            "Agent's mandated action, e.g. 'halt current objective, "
+            "snapshot workspace, notify operator within 60s'"
+        )
+    )
+    auto_halt: bool = Field(
+        default=True,
+        description=(
+            "Whether the agent halts itself on detection (True) or only "
+            "flags the trigger and awaits operator decision (False)"
+        ),
+    )
+
+
+class AbortPlan(BaseModel):
+    """Halt-trigger roster + AI-aware safety gates — ``plan/abort.json``.
+
+    AI-specific fields (``hallucination_threshold``, ``destructive_action_gate``,
+    ``output_validation``) defend against the LLM-driven failure modes
+    documented in OWASP Top 10 for Agentic Applications (2025.12).
+    """
+
+    engagement_name: str
+    halt_triggers: list[AbortTrigger] = Field(
+        default_factory=lambda: [
+            AbortTrigger(
+                condition="Real-incident alert from blue team / SOC",
+                severity=TriggerSeverity.EMERGENCY,
+                response_action="Halt all agents; preserve evidence; notify operator immediately",
+                auto_halt=True,
+            ),
+            AbortTrigger(
+                condition="Production data observed in collected evidence",
+                severity=TriggerSeverity.CRITICAL,
+                response_action="Halt active objective; quarantine evidence; await operator",
+                auto_halt=True,
+            ),
+            AbortTrigger(
+                condition="Scope boundary violation detected",
+                severity=TriggerSeverity.CRITICAL,
+                response_action="Halt active objective; document the violation; await operator",
+                auto_halt=True,
+            ),
+        ]
+    )
+    abort_signal_channel: str = Field(
+        default="",
+        description=(
+            "Operator-side mechanism to signal abort (file marker, HTTP "
+            "endpoint, ask_user_question response). Empty = no out-of-band "
+            "abort channel; operator pauses via CLI Ctrl+C only."
+        ),
+    )
+    recovery_procedure: str = Field(
+        default=(
+            "After abort: snapshot workspace; export evidence with chain-of-custody; "
+            "run cleanup.json removal commands; require operator approval before resume."
+        )
+    )
+
+    # ── AI-aware safety gates (OWASP Top 10 for Agentic Applications, 2025.12) ──
+    hallucination_threshold: int = Field(
+        default=3,
+        description=(
+            "Count of consecutive unverified-success claims before the agent "
+            "is forced into evidence-collection mode rather than progress"
+        ),
+        ge=1,
+    )
+    destructive_action_gate: bool = Field(
+        default=True,
+        description=(
+            "If True, every command flagged as destructive (rm -rf, drop "
+            "table, format, ...) must pass verify-before-run policy. "
+            "Disable only for read-only engagements."
+        ),
+    )
+    output_validation: str = Field(
+        default="verify-evidence-hash",
+        description=(
+            "Method used to validate agent-reported successes: "
+            "'verify-evidence-hash' (sha256 every artifact), "
+            "'second-tool-confirm' (re-run with different tool), "
+            "'operator-spot-check' (ask_user_question)"
+        ),
+    )
+
+    version: str = "1.0"
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ── Contact Plan ─────────────────────────────────────────────────────
+#
+# Slim version of the traditional white-cell/blue-cell/red-cell matrix.
+# For Decepticon's autonomous flow the agent only needs the operator
+# channel, escalation chain, and abort recipient — full red-team
+# cell-management lives outside the agent. Replaces
+# ``CONOPS.communication_plan`` (deprecated free-form string).
+# ─────────────────────────────────────────────────────────────────────
+
+
+class Contact(BaseModel):
+    """A single human contact reachable by the agent or operator."""
+
+    name: str
+    role: str = Field(description="e.g. 'Primary Operator', 'Client SOC Lead', 'Engagement Owner'")
+    channel: str = Field(
+        description=(
+            "Resolvable channel: 'signal:+1234567890', 'email:soc@client.example', "
+            "'pagerduty:service-key', 'slack:#redteam-ops'"
+        )
+    )
+    availability: str = Field(default="24/7", description="Coverage window")
+
+
+class ContactPlan(BaseModel):
+    """Operator + escalation + abort channels — ``plan/contact.json``.
+
+    Designed for autonomous-AI engagements where the agent itself is the
+    "red cell" and only humans staff the white / blue cells. Full
+    multi-cell rosters belong in an external comms doc.
+    """
+
+    engagement_name: str
+    primary_operator: Contact
+    escalation_chain: list[Contact] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list — agent escalates down this chain when the "
+            "primary operator is unreachable past the abort_plan's "
+            "response window."
+        ),
+    )
+    abort_signal_recipient: Contact | None = Field(
+        default=None,
+        description="Who the agent pages on EMERGENCY-severity abort triggers",
+    )
+    external_soc_endpoint: str = Field(
+        default="",
+        description=(
+            "Optional webhook the agent POSTs to before active scanning "
+            "(deconfliction notice). Empty = no external SOC integration."
+        ),
+    )
+    blackout_windows: list[str] = Field(
+        default_factory=list,
+        description=(
+            "ISO 8601 datetime ranges (e.g. '2026-05-21T22:00:00+09:00/PT8H') "
+            "during which the agent must not run active operations"
+        ),
+    )
+
+    version: str = "1.0"
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
+# ── Data Handling Plan ───────────────────────────────────────────────
+#
+# Evidence collection, storage, encryption, retention, and chain of
+# custody. Replaces ``RoE.data_handling`` (deprecated free-form string).
+# Drives the operations agents' evidence-storage logic and the post-
+# engagement purge.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class DataClass(BaseModel):
+    """A single category of data the agent may encounter or collect."""
+
+    name: str = Field(
+        description="e.g. 'credentials', 'pii', 'health-records', 'trade-secrets', 'source-code'"
+    )
+    classification: str = Field(description="public / internal / restricted / secret")
+    retention_days: int = Field(
+        description="Days to keep collected evidence of this class before automatic purge",
+        ge=0,
+    )
+    encryption_at_rest: bool = True
+    encryption_in_transit: bool = True
+    handling_notes: str = Field(
+        default="",
+        description=(
+            "Class-specific rules, e.g. 'redact PII before quoting in findings', "
+            "'never store cleartext credentials — hash with bcrypt before logging'"
+        ),
+    )
+
+
+class DataHandlingPlan(BaseModel):
+    """Evidence storage + chain-of-custody — ``plan/data-handling.json``.
+
+    Default ``data_classes`` cover credentials / PII / source-code with
+    conservative retention; engagements with compliance requirements
+    (GDPR, HIPAA, PCI-DSS) override via the interview.
+    """
+
+    engagement_name: str
+    data_classes: list[DataClass] = Field(
+        default_factory=lambda: [
+            DataClass(
+                name="credentials",
+                classification="restricted",
+                retention_days=30,
+                handling_notes="Hash before logging; never quote cleartext in findings.",
+            ),
+            DataClass(
+                name="pii",
+                classification="restricted",
+                retention_days=14,
+                handling_notes="Redact PII fields in findings; aggregate before reporting.",
+            ),
+            DataClass(
+                name="source-code",
+                classification="internal",
+                retention_days=90,
+                handling_notes="OK to quote relevant snippets in findings under fair use.",
+            ),
+            DataClass(
+                name="business-data",
+                classification="restricted",
+                retention_days=14,
+                handling_notes="Do not export beyond the engagement workspace; summarize only.",
+            ),
+        ]
+    )
+    evidence_storage_path: str = Field(
+        default="/workspace/<engagement>/evidence/",
+        description="Engagement-workspace-relative path where collected evidence is stored",
+    )
+    chain_of_custody: bool = Field(
+        default=True,
+        description="If True, every evidence file gets a SHA-256 hash recorded in the Finding",
+    )
+    purge_after_days: int = Field(
+        default=90,
+        description=(
+            "Hard cap — every artifact in evidence/ older than this is purged "
+            "regardless of data_class.retention_days"
+        ),
+        ge=0,
+    )
+    compliance_frameworks: list[str] = Field(
+        default_factory=list,
+        description="Frameworks that bind this engagement: GDPR / HIPAA / PCI-DSS / SOC2 / etc.",
+    )
+
+    version: str = "1.0"
+    last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+
 # ── Engagement Bundle ─────────────────────────────────────────────────
 
 
 class EngagementBundle(BaseModel):
     """Complete engagement document set.
 
-    The planning agent generates all four documents as a unit.
-    The ralph loop reads roe + opplan each iteration.
+    Soundwave generates the three baseline documents (``roe``, ``conops``,
+    ``deconfliction``) plus the five expansion documents introduced for
+    the AI-autonomous red-team flow (``threat_profile``, ``cleanup``,
+    ``abort``, ``contact``, ``data_handling``). The orchestrator
+    (Decepticon) generates ``opplan`` separately by reading the
+    expansion docs — Soundwave does not write opplan.
+
+    The ralph loop reads roe + opplan each iteration; the operations
+    agents consult ``cleanup`` (to record artifacts) and ``abort``
+    (for halt-trigger evaluation) during execution.
     """
 
     roe: RoE
     conops: CONOPS
     opplan: OPPLAN
     deconfliction: DeconflictionPlan
+    # ── Expansion documents (Soundwave writes; orchestrator + ops consume) ──
+    threat_profile: ThreatProfile | None = None
+    cleanup: CleanupPlan | None = None
+    abort: AbortPlan | None = None
+    contact: ContactPlan | None = None
+    data_handling: DataHandlingPlan | None = None
 
     def save(self, engagement_dir: str) -> dict[str, str]:
         """Save all documents to an engagement workspace directory.
@@ -574,12 +1044,25 @@ class EngagementBundle(BaseModel):
         plan_dir.mkdir(parents=True, exist_ok=True)
 
         files = {}
-        for name, doc in [
+        # Baseline four + the expansion five (optional). The four
+        # baseline docs always serialize even when their content is
+        # default; the expansion docs only serialize when populated so
+        # legacy callers writing only roe/conops/opplan/deconfliction
+        # remain compatible.
+        baseline = [
             ("roe", self.roe),
             ("conops", self.conops),
             ("opplan", self.opplan),
             ("deconfliction", self.deconfliction),
-        ]:
+        ]
+        expansion = [
+            ("threat-profile", self.threat_profile),
+            ("cleanup", self.cleanup),
+            ("abort", self.abort),
+            ("contact", self.contact),
+            ("data-handling", self.data_handling),
+        ]
+        for name, doc in [*baseline, *[(n, d) for n, d in expansion if d is not None]]:
             path = plan_dir / f"{name}.json"
             path.write_text(
                 json.dumps(doc.model_dump(), indent=2, ensure_ascii=False),

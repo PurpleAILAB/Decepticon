@@ -1,7 +1,8 @@
 """Bash tool for the Decepticon agent.
 
-Thin wrapper around DockerSandbox.execute_tmux(). All tmux session
-management and PS1 polling logic lives in decepticon/backends/docker_sandbox.py.
+Thin wrapper around HTTPSandbox.execute_tmux(). All tmux session
+management and PS1 polling logic lives in decepticon/sandbox_kernel/
+(tmux.py + base.py), shared with the in-container daemon.
 
 The sandbox instance is injected at agent startup via set_sandbox().
 
@@ -33,11 +34,13 @@ import time
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from decepticon.backends.docker_sandbox import DockerSandbox, _interpret_exit_code
+from decepticon.backends.http_sandbox import HTTPSandbox
+from decepticon.sandbox_kernel.base import SandboxBase
+from decepticon.sandbox_kernel.tmux import _interpret_exit_code
 
 log = logging.getLogger("decepticon.tools.bash.bash")
 
-_sandbox: DockerSandbox | None = None
+_sandbox: HTTPSandbox | None = None
 _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
     "decepticon_bash_workspace_path",
     default="/workspace",
@@ -45,7 +48,7 @@ _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 # ─── Output size thresholds ──────────────────────────────────────────────
 INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to <engagement>/.scratch/
-# >5M: size watchdog in docker_sandbox.py kills the command (SIZE_WATCHDOG_CHARS)
+# >5M: size watchdog in sandbox_kernel/tmux.py kills the command (SIZE_WATCHDOG_CHARS)
 
 # ─── Scratch-file TTL prune (bounds <engagement>/.scratch/ growth) ────────
 # Files persist long enough for the agent's grep/read multi-pass workflow,
@@ -54,6 +57,50 @@ INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to <engageme
 SCRATCH_TTL_MINUTES = 60
 SCRATCH_PRUNE_INTERVAL = 600  # seconds between prune attempts (per process)
 _scratch_prune_state: dict[str, float] = {}
+
+# ─── Passive-read stale-poll detection ────────────────────────────────────
+# Empty-command `bash` and `bash_output` are passive reads: they sample the
+# session state without sending input. When the agent runs N consecutive
+# passive reads on the same session and the underlying output is unchanged
+# every time, the session is wedged (or the background job has gone quiet)
+# and further polling cannot unwedge it — the documented next step is to
+# kill and pivot. Track per-(workspace, session) hashes and inject a [STALE]
+# hint once the threshold is hit. Resets on any state-changing event:
+# non-empty command, output diff, kill, or new background job.
+_STALE_PASSIVE_READS = 3  # consecutive identical reads before [STALE] hint
+_passive_read_state: dict[tuple[str, str], list[str]] = {}
+
+
+def _passive_key(workspace_path: str, session: str) -> tuple[str, str]:
+    return (workspace_path, session)
+
+
+def _track_passive_read(workspace_path: str, session: str, output: str) -> str | None:
+    """Record a passive read; return [STALE] hint when threshold tripped."""
+    key = _passive_key(workspace_path, session)
+    digest = hashlib.sha256(output.encode("utf-8", errors="replace")).hexdigest()[:16]
+    hashes = _passive_read_state.setdefault(key, [])
+    hashes.append(digest)
+    del hashes[: max(0, len(hashes) - _STALE_PASSIVE_READS)]
+    if len(hashes) < _STALE_PASSIVE_READS or len(set(hashes)) != 1:
+        return None
+    return (
+        f"\n\n[STALE] session='{session}' returned identical output across "
+        f"{_STALE_PASSIVE_READS} consecutive passive reads. Either the shell "
+        f"is wedged or the background job is quiet — further polling cannot "
+        f"unwedge it. Pivot now:\n"
+        f"  (a) bash_kill('{session}') and try a different attack vector;\n"
+        f"  (b) read the underlying log file directly "
+        f"(e.g. cat .sessions/{session}.log) to confirm progress before resuming;\n"
+        f"  (c) only continue waiting if a SEPARATE operation is making "
+        f"concrete progress.\n"
+    )
+
+
+def _reset_passive_read(workspace_path: str, session: str) -> None:
+    """Clear the stale-poll counter on any state-changing event."""
+    _passive_read_state.pop(_passive_key(workspace_path, session), None)
+
 
 # ─── ANSI escape code pattern ────────────────────────────────────────────
 _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]")
@@ -126,14 +173,14 @@ def _sanitize_output(text: str) -> str:
     return text
 
 
-def set_sandbox(sandbox: DockerSandbox) -> None:
-    """Inject the shared DockerSandbox instance (called from recon.py)."""
+def set_sandbox(sandbox: HTTPSandbox) -> None:
+    """Inject the shared HTTPSandbox instance (called from recon.py)."""
     global _sandbox
     _sandbox = sandbox
 
 
-def get_sandbox() -> DockerSandbox | None:
-    """Return the current DockerSandbox instance (for wiring progress callbacks)."""
+def get_sandbox() -> HTTPSandbox | None:
+    """Return the current HTTPSandbox instance (for wiring progress callbacks)."""
     return _sandbox
 
 
@@ -141,19 +188,19 @@ def _workspace_path_from_config(config: RunnableConfig | None) -> str:
     configurable = (config or {}).get("configurable", {})
     workspace = configurable.get("workspace_path") if isinstance(configurable, dict) else None
     if isinstance(workspace, str) and workspace.startswith("/workspace"):
-        normalized = DockerSandbox._normalize_workspace_path(workspace)
+        normalized = SandboxBase._normalize_workspace_path(workspace)
         if normalized != "/workspace":
             return normalized
 
     env_workspace = os.environ.get("DECEPTICON_WORKSPACE_PATH")
     if env_workspace:
-        normalized = DockerSandbox._normalize_workspace_path(env_workspace)
+        normalized = SandboxBase._normalize_workspace_path(env_workspace)
         if normalized != "/workspace":
             return normalized
 
     env_slug = os.environ.get("DECEPTICON_ENGAGEMENT")
     if env_slug:
-        normalized = DockerSandbox._normalize_workspace_path(f"/workspace/{env_slug}")
+        normalized = SandboxBase._normalize_workspace_path(f"/workspace/{env_slug}")
         if normalized != "/workspace":
             return normalized
 
@@ -169,7 +216,7 @@ def _with_workspace_kwargs(workspace_path: str) -> dict[str, str]:
 @contextlib.contextmanager
 def bash_workspace(workspace_path: str):
     """Temporarily scope bash tools to one engagement workspace."""
-    safe_path = DockerSandbox._normalize_workspace_path(workspace_path)
+    safe_path = SandboxBase._normalize_workspace_path(workspace_path)
     token = _current_workspace_path.set(safe_path)
     try:
         yield
@@ -280,7 +327,7 @@ async def bash(
         description: Short label for UI display.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized. Call set_sandbox() first.")
+        raise RuntimeError("HTTPSandbox not initialized. Call set_sandbox() first.")
 
     workspace_path = _workspace_path_from_config(config)
 
@@ -289,6 +336,7 @@ async def bash(
 
     # Background mode: send command and return immediately
     if background and command:
+        _reset_passive_read(workspace_path, session)
         await asyncio.to_thread(
             _sandbox.start_background,
             command=command,
@@ -302,6 +350,12 @@ async def bash(
             f'Inspect early progress with bash_output(session="{session}").'
         )
 
+    # Stale-poll tracking: empty command + is_input=False is a passive read.
+    # Any state-changing path (non-empty command, control sequence) resets.
+    is_passive_read = not command and not is_input
+    if not is_passive_read:
+        _reset_passive_read(workspace_path, session)
+
     result = await _sandbox.execute_tmux_async(
         command=command,
         session=session,
@@ -313,10 +367,15 @@ async def bash(
     # Sanitize: surrogates → ANSI strip → repetitive line compression
     result = _sanitize_output(result)
 
+    if is_passive_read:
+        hint = _track_passive_read(workspace_path, session, result)
+        if hint:
+            result = result + hint
+
     # Multi-tier output management:
     # Tier 1 (≤15K): return inline — fits comfortably in context
     # Tier 2 (>15K): offload to file, return preview + file reference
-    # Tier 3 (>5M): handled by size watchdog in docker_sandbox.py (command killed)
+    # Tier 3 (>5M): handled by size watchdog in sandbox_kernel/tmux.py (command killed)
     if len(result) > INLINE_LIMIT and not result.startswith("["):
         return await _offload_large_output(result, command, session, workspace_path)
 
@@ -342,7 +401,7 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
         session: Session name passed to bash(..., background=True).
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     job = await asyncio.to_thread(
@@ -358,12 +417,14 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
     diff = _sanitize_output(diff_raw) if diff_raw else ""
 
     if job is None:
+        _reset_passive_read(workspace_path, session)
         if diff:
             return f"[IDLE] No background job in session '{session}'.\n{diff}"
         return f"[IDLE] No background job in session '{session}'."
 
     if job.status == "done":
         _sandbox._jobs.mark_consumed(session, key=job.key)
+        _reset_passive_read(workspace_path, session)
         hint = _interpret_exit_code(job.exit_code) if job.exit_code is not None else ""
         body = diff if diff else "(no new output)"
         return (
@@ -372,9 +433,19 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
         )
 
     body = diff if diff else "(no new output yet)"
-    return (
+    response = (
         f"[RUNNING elapsed={job.elapsed:.1f}s] session='{session}' command='{job.command}'\n{body}"
     )
+    # Track on the stable "no new bytes" signal — NOT the full response, whose
+    # elapsed-time string changes every poll and would prevent the counter from
+    # ever advancing.
+    if not diff:
+        stale_hint = _track_passive_read(workspace_path, session, "<<NO_NEW_BYTES>>")
+        if stale_hint:
+            response = response + stale_hint
+    else:
+        _reset_passive_read(workspace_path, session)
+    return response
 
 
 @tool
@@ -388,12 +459,13 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
         session: Session name to terminate.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     await asyncio.to_thread(
         _sandbox.kill_session, session, **_with_workspace_kwargs(workspace_path)
     )
+    _reset_passive_read(workspace_path, session)
     log_path = _sandbox.session_log_path(session, workspace_path)
     return f"[KILLED] session '{session}' terminated. Log preserved at {log_path}."
 
@@ -406,7 +478,7 @@ async def bash_status(config: RunnableConfig | None = None) -> str:
     detect stale sessions for cleanup.
     """
     if _sandbox is None:
-        raise RuntimeError("DockerSandbox not initialized.")
+        raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
     # Poll all known running jobs first, then take ONE snapshot for the table.

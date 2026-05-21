@@ -149,3 +149,127 @@ class TestAinvokeNoStateReturnsErrorNotDoubleExec:
         assert fake.astream_calls == 1
         assert fake.ainvoke_calls == 0
         assert out is state_final
+
+
+class TestNoneIdToolCallGuard:
+    """ToolCall.id is `str | None` per the LangChain spec; None-id calls
+    must not be keyed at None (collision corrupts subsequent lookups)."""
+
+    def _capture_writer(self) -> tuple[list[dict[str, Any]], Any]:
+        events: list[dict[str, Any]] = []
+
+        def writer(payload: dict[str, Any]) -> None:
+            events.append(payload)
+
+        return events, writer
+
+    def test_none_id_tool_call_skips_active_dict_and_logs(self) -> None:
+        import logging
+
+        from langchain_core.messages import AIMessage as _AI
+
+        wrapper = StreamingRunnable(CountingRunnable([]), "scanner")
+        active: dict[str, Any] = {}
+        events, writer = self._capture_writer()
+
+        # Attach a handler directly — pytest's caplog can drop records under
+        # xdist parallel execution, so capture from the logger ourselves.
+        records: list[logging.LogRecord] = []
+        target = logging.getLogger("decepticon.subagent_streaming")
+        prior_level = target.level
+        target.setLevel(logging.WARNING)
+
+        class _Capture(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        handler = _Capture()
+        target.addHandler(handler)
+        try:
+            msg = _AI(
+                content="",
+                tool_calls=[
+                    {"id": None, "name": "bash", "args": {"command": "ls"}, "type": "tool_call"},
+                ],
+            )
+            wrapper._process_messages(
+                [msg], active, renderer=None, has_renderer=False, writer=writer
+            )
+        finally:
+            target.removeHandler(handler)
+            target.setLevel(prior_level)
+
+        assert active == {}, "None-id tool call must not be keyed under None"
+        assert any("without id" in r.getMessage() for r in records)
+        # The tool_call event still fires so the operator sees activity.
+        assert any(e["type"] == "subagent_tool_call" for e in events)
+
+    def test_none_id_tool_message_falls_through_to_unknown(self) -> None:
+        from langchain_core.messages import AIMessage as _AI
+        from langchain_core.messages import ToolMessage
+
+        wrapper = StreamingRunnable(CountingRunnable([]), "scanner")
+        active: dict[str, Any] = {}
+        events, writer = self._capture_writer()
+
+        wrapper._process_messages(
+            [
+                _AI(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": None,
+                            "name": "bash",
+                            "args": {"command": "ls"},
+                            "type": "tool_call",
+                        }
+                    ],
+                ),
+                ToolMessage(content="output", tool_call_id=""),
+            ],
+            active,
+            renderer=None,
+            has_renderer=False,
+            writer=writer,
+        )
+
+        results = [e for e in events if e["type"] == "subagent_tool_result"]
+        assert results and results[0]["tool"] == "unknown"
+
+    def test_valid_id_call_unaffected_by_concurrent_none_id_call(self) -> None:
+        """A valid-id call must not be overwritten or shadowed by a None-id call."""
+        from langchain_core.messages import AIMessage as _AI
+        from langchain_core.messages import ToolMessage
+
+        wrapper = StreamingRunnable(CountingRunnable([]), "scanner")
+        active: dict[str, Any] = {}
+        events, writer = self._capture_writer()
+
+        wrapper._process_messages(
+            [
+                _AI(
+                    content="",
+                    tool_calls=[
+                        {
+                            "id": "tc-1",
+                            "name": "bash",
+                            "args": {"command": "ls"},
+                            "type": "tool_call",
+                        },
+                        {"id": None, "name": "grep", "args": {"pattern": "x"}, "type": "tool_call"},
+                    ],
+                ),
+                ToolMessage(content="ls-output", tool_call_id="tc-1"),
+            ],
+            active,
+            renderer=None,
+            has_renderer=False,
+            writer=writer,
+        )
+
+        # The id-less call did not displace the keyed call.
+        assert "tc-1" in active
+        assert None not in active
+
+        results = [e for e in events if e["type"] == "subagent_tool_result"]
+        assert results and results[0]["tool"] == "bash"

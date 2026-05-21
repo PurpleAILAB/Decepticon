@@ -1,8 +1,8 @@
 # ----------------------
-# build-base — Node 24 + native build toolchain.
+# build-base — Node 22 LTS + native build toolchain.
 # Used only by stages that compile native addons (node-pty, sharp).
 # ----------------------
-FROM node:24-slim AS build-base
+FROM node:22-slim AS build-base
 
 WORKDIR /app
 
@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ----------------------
 # deps — install full workspace dependencies (incl. devDependencies for build).
+# Layer busted only when package.json or package-lock.json change.
 # ----------------------
 FROM build-base AS deps
 
@@ -30,7 +31,12 @@ RUN npm ci --no-audit --no-fund
 
 # ----------------------
 # build — prisma generate + next build.
-# Granular COPYs so unrelated files don't bust the build cache.
+#
+# Layer strategy (ordered by change frequency, rarest first):
+#   1. node_modules (busted only by package.json changes — deps stage)
+#   2. shared libs   (changes rarely)
+#   3. cli source    (changes occasionally)
+#   4. web source    (changes most often — last COPY before build)
 # ----------------------
 FROM build-base AS build
 
@@ -38,32 +44,38 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
-COPY clients/web ./clients/web
-COPY clients/cli ./clients/cli
-COPY clients/shared ./clients/shared
 
-# Stamp the package version from the git tag at build time. Source-tree
-# package.json files carry a "0.0.0" sentinel; release.yml passes the real
-# version via --build-arg. Both web (this image's surface) and cli (spawned
-# by the terminal server via PTY) need the patched value.
+# Rarely-changing layers first
+COPY clients/shared ./clients/shared
+COPY clients/cli ./clients/cli
+
+# Web source last — most frequent changes only bust from here
+COPY clients/web ./clients/web
+
+# Stamp the package version from the git tag at build time.
 ARG VERSION=0.0.0
 RUN sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/web/package.json && \
     sed -i 's/"version": "[^"]*"/"version": "'"$VERSION"'"/' clients/cli/package.json
 
 WORKDIR /app/clients/web
 
+# Build the shared streaming workspace first — its package.json main
+# points at dist/index.js, so the Next build's import resolution will
+# fail with "Module not found: @decepticon/streaming" otherwise.
+WORKDIR /app
+RUN npm run build --workspace=@decepticon/streaming
+WORKDIR /app/clients/web
+
 RUN npx prisma generate
 RUN npm run build
 
-WORKDIR /app
-RUN npm prune --omit=dev --no-audit --no-fund
-
 # ----------------------
-# runtime — minimal node:24-slim, NO build toolchain.
-# Native addons compiled in `build` are copied as prebuilt .node binaries;
-# python3/make/g++ are not needed at runtime and would add ~1GB of bloat.
+# runtime — minimal node:22-slim, NO build toolchain.
+#
+# Layer strategy: node_modules is by far the largest COPY (~1.7GB).
+# It's placed early so source-only rebuilds reuse it from cache.
 # ----------------------
-FROM node:24-slim AS runner
+FROM node:22-slim AS runner
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
@@ -80,23 +92,29 @@ ENV TERMINAL_PORT=3003
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
-# Standalone Next.js server
-COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/standalone ./
-COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/static ./clients/web/.next/static
-COPY --from=build --chown=nextjs:nodejs /app/clients/web/public ./clients/web/public
-# Prisma schema + migrations
+# Heaviest layer first — cached unless deps change
+COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Prisma schema + migrations (rarely changes)
 COPY --from=build --chown=nextjs:nodejs /app/clients/web/prisma ./clients/web/prisma
 COPY --from=build --chown=nextjs:nodejs /app/clients/web/prisma.config.ts ./clients/web/prisma.config.ts
-# Terminal WebSocket server
-COPY --from=build --chown=nextjs:nodejs /app/clients/web/server ./clients/web/server
+
+# Shared streaming library
+COPY --from=build --chown=nextjs:nodejs /app/clients/shared ./clients/shared
+
 # CLI source (spawned by terminal server via PTY)
 COPY --from=build --chown=nextjs:nodejs /app/clients/cli/src ./clients/cli/src
 COPY --from=build --chown=nextjs:nodejs /app/clients/cli/package.json ./clients/cli/package.json
-# Shared streaming library
-COPY --from=build --chown=nextjs:nodejs /app/clients/shared ./clients/shared
-# Production workspace dependencies: external Next packages, Prisma CLI,
-# node-pty, sharp, and tsx for the current embedded terminal/CLI bridge.
-COPY --from=build --chown=nextjs:nodejs /app/node_modules ./node_modules
+
+# Public assets (changes rarely)
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/public ./clients/web/public
+
+# Terminal WebSocket server (changes occasionally)
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/server ./clients/web/server
+
+# Standalone Next.js server + static — changes every build but layer is small (~80MB)
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/static ./clients/web/.next/static
 
 WORKDIR /app/clients/web
 

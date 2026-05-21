@@ -123,3 +123,33 @@ class TestScorer:
         assert report.pass_rate == 0.0
         assert report.passed == 0
         assert report.failed == 2
+
+    def test_total_cost_aggregates_per_challenge(self) -> None:
+        """total_cost_usd sums non-None cost_usd entries."""
+        start, end = self._times()
+        a = _make_result("C-001", 1, ["xss"], True)
+        a.cost_usd = 0.123
+        b = _make_result("C-002", 1, ["sqli"], False)
+        b.cost_usd = 0.001
+        report = Scorer.score([a, b], "test", start, end)
+        assert report.total_cost_usd is not None
+        assert abs(report.total_cost_usd - 0.124) < 1e-9
+
+    def test_total_cost_partial_capture_still_rolls_up(self) -> None:
+        """Mixed None/float — total reflects the captured subset."""
+        start, end = self._times()
+        a = _make_result("C-001", 1, ["xss"], True)
+        a.cost_usd = 0.05
+        b = _make_result("C-002", 1, ["sqli"], False)  # cost_usd stays None
+        report = Scorer.score([a, b], "test", start, end)
+        assert report.total_cost_usd == 0.05
+
+    def test_total_cost_none_when_all_missing(self) -> None:
+        """All cost_usd None -> total_cost_usd is None (not 0.0)."""
+        start, end = self._times()
+        results = [
+            _make_result("C-001", 1, ["xss"], True),
+            _make_result("C-002", 1, ["sqli"], False),
+        ]
+        report = Scorer.score(results, "test", start, end)
+        assert report.total_cost_usd is None

@@ -143,20 +143,28 @@ OPENAI_API_KEY=sk-proj-...
 | MiniMax | `MINIMAX_API_KEY` | `eyJ...` | [minimax.io](https://minimax.io) |
 | OpenRouter | `OPENROUTER_API_KEY` | `sk-or-...` | [openrouter.ai](https://openrouter.ai) |
 | Replicate | `REPLICATE_API_TOKEN` | `r8_...` | [replicate.com](https://replicate.com) |
+| NVIDIA NIM | `NVIDIA_API_KEY` | `nvapi-...` | [build.nvidia.com](https://build.nvidia.com) |
+| Moonshot (Kimi K2) | `MOONSHOT_API_KEY` | `sk-...` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| Z.ai (GLM-4.5) | `ZAI_API_KEY` | `...` | [z.ai/manage](https://z.ai/manage) |
+| Alibaba DashScope (Qwen) | `DASHSCOPE_API_KEY` | `sk-...` | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
+| GitHub Models | `GITHUB_TOKEN` | `github_pat_...` | [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens) |
 
 **Cloud platform providers:**
 
 | Provider | Required Env Vars |
 |----------|-------------------|
 | Azure OpenAI | `AZURE_API_KEY`, `AZURE_API_BASE`, `AZURE_API_VERSION` |
-| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION_NAME` |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` |
+| GCP Vertex AI | `GOOGLE_APPLICATION_CREDENTIALS`, `VERTEXAI_PROJECT`, `VERTEXAI_LOCATION` |
 
 **Self-hosted / OpenAI-compatible:**
 
 | Provider | Required Env Vars |
 |----------|-------------------|
 | Ollama (local) | `OLLAMA_API_BASE` + `OLLAMA_MODEL` — see [Local LLM (Ollama)](#local-llm-ollama) below |
-| Custom gateway | `CUSTOM_OPENAI_API_KEY`, `CUSTOM_OPENAI_API_BASE` |
+| Ollama Cloud | `OLLAMA_CLOUD_API_BASE`, `OLLAMA_CLOUD_API_KEY`, `OLLAMA_CLOUD_MODEL` |
+| LM Studio (local) | `LMSTUDIO_API_BASE` + `LMSTUDIO_MODEL` (server on port 1234) |
+| Custom gateway | `CUSTOM_OPENAI_API_KEY`, `CUSTOM_OPENAI_API_BASE`, `CUSTOM_OPENAI_MODEL` |
 
 ---
 
@@ -320,9 +328,9 @@ Use your ChatGPT Pro, Plus, or Team subscription instead of OpenAI API billing.
 
 | Tier | Models Available (via `auth/gpt-5.x` route) |
 |------|--------------------------------------------|
-| ChatGPT Plus ($20/mo) | `auth/gpt-5.5`, `auth/gpt-5.4` |
-| ChatGPT Pro ($200/mo) | `auth/gpt-5.5`, `auth/gpt-5.4` |
-| ChatGPT Team | `auth/gpt-5.5`, `auth/gpt-5.4` + admin controls |
+| ChatGPT Plus ($20/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` |
+| ChatGPT Pro ($200/mo) | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` |
+| ChatGPT Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` + admin controls |
 
 **Setup:**
 
@@ -350,18 +358,25 @@ decepticon
 
 - Decepticon exposes ChatGPT subscription models as `auth/gpt-5.5`
   and `auth/gpt-5.4`.
-- LiteLLM dynamic config maps those aliases to LiteLLM's native
-  `chatgpt/gpt-*` provider routes only when `DECEPTICON_AUTH_CHATGPT=true`.
-- `docker-compose.yml` mounts the host token directory into the LiteLLM
-  container at `/root/.config/litellm/chatgpt`.
-- Access tokens are handled by LiteLLM's native ChatGPT provider. It stores
-  OAuth credentials in `~/.config/litellm/chatgpt/auth.json` and refreshes
-  them as needed.
+- LiteLLM dynamic config maps those aliases through Decepticon's custom
+  `auth/` handler (`codex_chatgpt_handler`) only when
+  `DECEPTICON_AUTH_CHATGPT=true`.
+- `docker-compose.yml` mounts the host's Codex CLI credential file
+  (`~/.codex/auth.json`) into the LiteLLM container at
+  `/root/.codex/auth.json` (read-write, so the in-container refresh path
+  can persist rotated tokens back to the host).
+- The `auth/` handler reads and writes the same `auth.json` the Codex CLI
+  itself uses, so a host-side `codex login` is visible to the running
+  container without a restart, and a refresh inside the container is
+  visible to the host CLI on the next call.
 
-**Custom token path:**
+**Setup:**
 
 ```bash
-LITELLM_CHATGPT_TOKEN_DIR=/custom/host/token/dir
+# Install the Codex CLI and run the device-code login on the host:
+codex login
+# Confirm the file exists:
+ls ~/.codex/auth.json
 ```
 
 ---
@@ -377,7 +392,7 @@ Use your Google One AI Premium subscription ($20/mo).
 
 ```bash
 DECEPTICON_AUTH_GEMINI=true
-GEMINI_ACCESS_TOKEN=ya29.a0...your-google-oauth-token
+GEMINI_ACCESS_TOKEN=<your-google-oauth-token>
 ```
 
 Or use session cookies:
@@ -457,17 +472,17 @@ Complete list of all supported LLM providers and their pre-configured models:
 |----------|--------|-----------|------|
 | **Subscriptions (OAuth — no API billing)** | | | |
 | Claude Max/Pro/Team | Opus, Sonnet, Haiku | OAuth | $20–$100/mo |
-| ChatGPT Pro/Plus/Team | `auth/gpt-5.5`, `auth/gpt-5.4` | OAuth | $20–$200/mo |
+| ChatGPT Pro/Plus/Team | `auth/gpt-5.5`, `auth/gpt-5.4`, `auth/gpt-5.4-mini` (+ `auth/gpt-5.3-codex` for code agents) | OAuth | $20–$200/mo |
 | Gemini Advanced | Gemini 2.5 Pro/Flash | OAuth | $20/mo |
-| Copilot Pro | `copilot/gpt-4o`, `copilot/o1`, `copilot/o3-mini` | OAuth | $20/mo |
-| SuperGrok | Grok-3, Grok-3 Mini | OAuth | X Premium+ |
+| Copilot Pro | `copilot/gpt-5.5`, `copilot/claude-sonnet-4-6`, `copilot/gpt-5.4-mini` (+ `copilot/gpt-5.3-codex`) | OAuth | $20/mo |
+| SuperGrok | Grok 4.3, Grok 4-1 Fast Reasoning | OAuth | X Premium+ |
 | Perplexity Pro | Sonar Pro, Sonar | OAuth | $20/mo |
 | **API Key Providers (pay-per-token)** | | | |
 | Anthropic | Claude Opus 4.7, Sonnet 4.6, Haiku 4.5 | API key | Per token |
-| OpenAI | GPT-5.5, GPT-5.4, GPT-5-nano | API key | Per token |
+| OpenAI | GPT-5.5, GPT-5.4, GPT-5-nano (+ GPT-5.3-Codex for code agents) | API key | Per token |
 | DeepSeek | DeepSeek Chat, DeepSeek Reasoner | API key | Per token |
 | Google | Gemini 2.5 Flash, Gemini 2.5 Pro | API key | Per token |
-| xAI | Grok-3, Grok-3 Mini | API key | Per token |
+| xAI | Grok 4.3, Grok 4-1 Fast Reasoning | API key | Per token |
 | Mistral | Mistral Large, Codestral | API key | Per token |
 | Cohere | Command R+, Command R | API key | Per token |
 | Groq | Llama 3.3 70B, Llama 3.1 8B | API key | Per token |
@@ -844,10 +859,10 @@ cat ~/.claude/.credentials.json | python3 -c "import sys,json; d=json.load(sys.s
 
 **ChatGPT OAuth: missing or expired auth**
 
-LiteLLM's native ChatGPT provider stores credentials at
-`~/.config/litellm/chatgpt/auth.json`. If the file is missing or expired,
-restart Decepticon and follow the ChatGPT device-code login instructions shown
-in the LiteLLM logs.
+The Decepticon `auth/` ChatGPT handler reads the Codex CLI credential
+store at `~/.codex/auth.json`. If the file is missing or the refresh
+token is rejected, run `codex login` on the host and retry. The handler
+picks up the refreshed file automatically (no container restart needed).
 
 **API Key: "401 Unauthorized"**
 

@@ -134,7 +134,7 @@ class TestPatchPropose:
 
 
 class FakeSandbox:
-    """Minimal stand-in for DockerSandbox that records commands and returns
+    """Minimal stand-in for HTTPSandbox that records commands and returns
     scripted output. Matches the ``execute_tmux_async`` interface the
     ``sandbox_runner`` adapter expects."""
 

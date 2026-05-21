@@ -13,7 +13,6 @@ Model names: pplx-sub/sonar-pro, pplx-sub/sonar, etc.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -24,6 +23,14 @@ from typing import Any
 import httpx
 import litellm
 from litellm import CustomLLM, ModelResponse
+from oauth_token_store import (
+    DEFAULT_REFRESH_BUFFER_SECONDS,
+    FileBackedCache,
+    is_timestamp_expired,
+    read_json_file,
+    with_retry_on_401,
+    write_json_atomic,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -35,9 +42,9 @@ PERPLEXITY_TOKENS_PATH = Path(
 )
 
 PERPLEXITY_API_BASE = "https://api.perplexity.ai"
-REFRESH_BUFFER_SECONDS = 5 * 60
 
-_token_cache: dict[str, Any] = {}
+
+_pplx_file_cache = FileBackedCache(PERPLEXITY_TOKENS_PATH, read_json_file)
 
 
 def _load_tokens() -> dict[str, Any] | None:
@@ -54,13 +61,7 @@ def _load_tokens() -> dict[str, Any] | None:
             "source": "session",
         }
 
-    if PERPLEXITY_TOKENS_PATH.exists():
-        try:
-            return json.loads(PERPLEXITY_TOKENS_PATH.read_text())
-        except (json.JSONDecodeError, OSError):
-            _log.debug("Could not read token file")
-
-    return None
+    return _pplx_file_cache.get()
 
 
 def _exchange_session_for_access(session_token: str) -> dict[str, Any]:
@@ -91,25 +92,15 @@ def _exchange_session_for_access(session_token: str) -> dict[str, Any]:
         "source": "session_exchange",
     }
 
-    try:
-        PERPLEXITY_TOKENS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        PERPLEXITY_TOKENS_PATH.write_text(json.dumps(tokens, indent=2))
-        os.chmod(PERPLEXITY_TOKENS_PATH, 0o600)
-    except OSError:
-        _log.debug("Could not persist tokens to disk")
-
+    write_json_atomic(PERPLEXITY_TOKENS_PATH, tokens)
+    _pplx_file_cache.replace(tokens)
     return tokens
 
 
-def _is_expired(tokens: dict[str, Any]) -> bool:
-    expires_at = tokens.get("expiresAt", 0)
-    if expires_at == 0:
-        return False
-    return time.time() + REFRESH_BUFFER_SECONDS >= expires_at
-
-
-def get_access_token() -> str:
-    tokens = _token_cache.get("token") or _load_tokens()
+def get_perplexity_access_token(force_refresh: bool = False) -> str:
+    if force_refresh:
+        _pplx_file_cache.invalidate()
+    tokens = _load_tokens()
     if tokens is None:
         raise litellm.AuthenticationError(
             message=(
@@ -123,10 +114,12 @@ def get_access_token() -> str:
     if not tokens.get("accessToken") and tokens.get("sessionToken"):
         tokens = _exchange_session_for_access(tokens["sessionToken"])
 
-    if _is_expired(tokens) and tokens.get("sessionToken"):
+    expired = is_timestamp_expired(
+        tokens.get("expiresAt"), buffer_seconds=DEFAULT_REFRESH_BUFFER_SECONDS
+    )
+    if (force_refresh or expired) and tokens.get("sessionToken"):
         tokens = _exchange_session_for_access(tokens["sessionToken"])
 
-    _token_cache["token"] = tokens
     return tokens.get("accessToken", "")
 
 
@@ -154,14 +147,7 @@ class PerplexitySubHandler(CustomLLM):
         headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        access_token = get_access_token()
         actual_model = model.split("/", 1)[-1] if "/" in model else model
-
-        req_headers = {
-            "authorization": f"Bearer {access_token}",
-            "content-type": "application/json",
-            "accept": "application/json",
-        }
 
         opts = optional_params or {}
         request_body: dict[str, Any] = {"model": actual_model, "messages": messages}
@@ -172,17 +158,30 @@ class PerplexitySubHandler(CustomLLM):
             request_body["max_tokens"] = opts["max_tokens"]
 
         api_url = api_base or PERPLEXITY_API_BASE
-        resp = httpx.post(
-            f"{api_url}/chat/completions",
-            json=request_body,
-            headers=req_headers,
-            timeout=timeout or 600,
-        )
+
+        def _send(force_refresh: bool) -> httpx.Response:
+            access_token = get_perplexity_access_token(force_refresh=force_refresh)
+            req_headers = {
+                "authorization": f"Bearer {access_token}",
+                "content-type": "application/json",
+                "accept": "application/json",
+            }
+            return httpx.post(
+                f"{api_url}/chat/completions",
+                json=request_body,
+                headers=req_headers,
+                timeout=timeout or 600,
+            )
+
+        resp = with_retry_on_401(_send)
 
         if resp.status_code == 401:
-            _token_cache.pop("token", None)
+            _pplx_file_cache.invalidate()
             raise litellm.AuthenticationError(
-                message=f"Perplexity auth failed (401): {resp.text}",
+                message=(
+                    "Perplexity Pro authentication was rejected. Re-extract the "
+                    f"PERPLEXITY_SESSION_TOKEN cookie. Underlying: {resp.text}"
+                ),
                 model=model,
                 llm_provider="pplx-sub",
             )

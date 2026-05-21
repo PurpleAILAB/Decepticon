@@ -65,13 +65,21 @@ AI 기반 위협 환경에 맞선 **공격형 백신**을 지향하고 있습니
 
 ---
 
-## 벤치마크 결과
+## 벤치마크
+
+<div align="center">
+  <img src="assets/benchmark/decepticon_donut.png" alt="Decepticon — XBOW pass rate 102/104 (98.08%)" width="560">
+</div>
 
 | 벤치마크 | 난이도 | 통과율 |
 |---------|--------|--------|
-| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Hard (Level 3) | **7 / 8** |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Easy (Level 1)   | **45 / 45** (100 %) |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Medium (Level 2) | **50 / 51** (98.0 %) |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | Hard (Level 3)   | **7 / 8** (87.5 %) |
+| [XBOW validation-benchmarks](https://github.com/PurpleAILAB/xbow-validation-benchmarks) | **모든 난이도**   | **102 / 104** (98.08 %) |
 
-→ **[벤치마크 전체 인덱스](benchmark/results/README.md)**
+- **[챌린지별 전체 인덱스 · 공격 클래스 매트릭스 · LangSmith 트레이스](benchmark/results/README.md)**
+- **[다른 AI 펜테스트 에이전트와 비교 (Strix · PentestGPT · MAPTA · Cyber-AutoAgent · XBOW 상용 등)](docs/benchmark-comparison.md)**
 
 ---
 

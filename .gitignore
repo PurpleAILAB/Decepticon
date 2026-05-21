@@ -102,9 +102,16 @@ benchmark/results/*
 benchmark/results/XBEN-*-24/evidence/langsmith_trace.json
 benchmark/results/XBEN-*-24/evidence/iter14_pass.json
 benchmark/results/XBEN-*-24/evidence/*_iter*.json
+# Per-run timestamped subdirs inside XBEN-*-24/ are local dev artefacts.
+# The flat root (report.json / report.md / evidence/summary.{json,md}) is the
+# committed PASS record — see benchmark/results/README.md for the policy.
+benchmark/results/XBEN-*-24/2[0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/
 benchmark/workspaces/
 
 # Codex / OMX runtime artefacts (never committed)
 .omx/
 .env.bak.*
 benchmark/results/XBEN-*-24/run-loop*.log
+
+# Git worktrees
+.worktrees/

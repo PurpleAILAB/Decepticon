@@ -207,30 +207,13 @@ func TestValidateAuth_ChatGPTNativeOAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("uses litellm auth.json path", func(t *testing.T) {
+	t.Run("uses codex auth.json path", func(t *testing.T) {
 		home := t.TempDir()
 		t.Setenv("HOME", home)
 		got := subscriptionTokenPaths(map[string]string{}, home, oauthSubscriptions["chatgpt"])
-		want := []string{filepath.Join(home, ".config", "litellm", "chatgpt", "auth.json")}
+		want := []string{filepath.Join(home, ".codex", "auth.json")}
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("unexpected ChatGPT token paths: got %v want %v", got, want)
-		}
-	})
-
-	t.Run("custom host token dir uses auth.json", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("HOME", home)
-		customDir := filepath.Join(home, "custom-chatgpt")
-		env := map[string]string{
-			"LITELLM_CHATGPT_TOKEN_DIR": customDir,
-		}
-		got := subscriptionTokenPaths(env, home, oauthSubscriptions["chatgpt"])
-		want := []string{
-			filepath.Join(customDir, "auth.json"),
-			filepath.Join(home, ".config", "litellm", "chatgpt", "auth.json"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Errorf("unexpected custom ChatGPT token paths: got %v want %v", got, want)
 		}
 	})
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/engagement"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/health"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
 	"github.com/spf13/cobra"
@@ -79,7 +80,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 			ref = config.Get(env, "DECEPTICON_BRANCH", "main")
 		}
 		ui.Info("Downloading configuration files...")
-		if err := updater.SyncConfigFiles(ref); err != nil {
+		// release == nil here: this branch only triggers when compose
+		// files are missing on launch (e.g. user wiped ~/.decepticon), so
+		// we lack the prefetched Release object that ApplyUpdate carries.
+		// SyncConfigFiles falls back to unverified download with a
+		// warning — the install.sh path is the verified-by-default entry.
+		if err := updater.SyncConfigFiles(ref, nil); err != nil {
 			return fmt.Errorf("sync config: %w", err)
 		}
 	}
@@ -105,10 +111,35 @@ func runStart(cmd *cobra.Command, args []string) error {
 		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", "/dev/null")
 	}
 
-	// 2.5. Update notice. Applying updates is intentionally explicit via
-	// `decepticon update` because it can replace the binary, compose files,
-	// LiteLLM config, and Docker images.
-	updater.NotifyIfUpdateAvailable(version)
+	// Same pattern for the Codex CLI credential store at ~/.codex/auth.json.
+	// The new auth/ ChatGPT handler reads (and writes) this file directly so
+	// a host-side `codex login` flows into the container without a rebuild.
+	codexAuthPath := filepath.Join(os.Getenv("HOME"), ".codex", "auth.json")
+	if _, statErr := os.Stat(codexAuthPath); statErr == nil {
+		_ = os.Setenv("CODEX_AUTH_VOLUME", codexAuthPath)
+	} else {
+		_ = os.Setenv("CODEX_AUTH_VOLUME", "/dev/null")
+	}
+
+	// 2.5. Update prompt. When a newer release is available and stdin is
+	// a TTY, ask the operator interactively whether to apply it. On
+	// confirmation the launcher applies the update (config sync + image
+	// pull + binary replace) and re-execs itself so the rest of this
+	// ``start`` flow runs against the just-installed version — matches
+	// the Claude Code / Codex CLI "update available, restarting" UX.
+	// Non-interactive shells (CI, piped) fall back to the passive notice
+	// path inside ``PromptIfUpdateAvailable``.
+	if _, err := updater.PromptIfUpdateAvailable(version); err != nil {
+		// Non-fatal — surface as a warning and continue with the
+		// current launcher rather than aborting the start.
+		ui.Warning("Update check: " + err.Error())
+	}
+
+	// 2.6. One-time GitHub star ask. Idempotent across launches — the
+	// ack file at $DECEPTICON_HOME/.starred suppresses the prompt
+	// after the user has been through it once. Silent no-op on
+	// non-interactive stdin, so CI / piped invocations are untouched.
+	starprompt.PromptIfNotStarred()
 
 	// 3. Engagement picker — must run BEFORE compose Up so the sandbox
 	// container starts with /workspace bound to the chosen engagement
