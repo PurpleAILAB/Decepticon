@@ -450,3 +450,49 @@ def load_prompt(name: str, *, shared: list[str] | None = None) -> str:
         pass
 
     return prompt
+
+
+def load_prompt_with_overrides(
+    name: str,
+    *,
+    shared: list[str] | None = None,
+    override: str | dict[str, str] | None = None,
+) -> str:
+    """``load_prompt`` + plugin / library prompt override hook.
+
+    Wraps the standard prompt assembly and applies (in order):
+
+      1. ``replace`` — the entire prompt is substituted (explicit
+         override beats plugin override on conflict).
+      2. ``prepend`` / ``append`` — wrap the (possibly replaced) prompt.
+
+    Both explicit and plugin overrides feed the same pipeline; see
+    ``decepticon.agents.assembly.resolve_prompt_overrides``. Library
+    callers pass ``override`` directly; Docker / plugin authors ship a
+    ``PluginBundle(prompt_overrides={...})`` under the
+    ``decepticon.bundles`` entry-point group.
+
+    Args:
+        name: prompt role name, e.g. "soundwave" / "recon".
+        shared: shared fragment list, mirroring ``load_prompt``.
+        override:
+          - ``None`` — only plugin overrides apply.
+          - ``str`` — full replace (most aggressive).
+          - ``dict`` with ``prepend`` / ``append`` / ``replace`` keys.
+    """
+    base = load_prompt(name, shared=shared)
+
+    # Lazy import keeps this module free of agent-assembly dependencies
+    # so plain callers of ``load_prompt`` don't pay the cost.
+    from decepticon.agents.assembly import resolve_prompt_overrides
+
+    merged = resolve_prompt_overrides(name, override=override)
+
+    prompt = merged.get("replace", base)
+    prepend = merged.get("prepend", "")
+    append = merged.get("append", "")
+    if prepend:
+        prompt = f"{prepend}\n\n{prompt}"
+    if append:
+        prompt = f"{prompt}\n\n{append}"
+    return prompt
