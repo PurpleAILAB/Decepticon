@@ -93,12 +93,27 @@ REGISTRY: list[ToolSpec] = [
         description="Network scanner — port enum, service detection, OS fingerprint, NSE scripts.",
         args=[
             ArgSchema("target", str, required=True, description="IP/CIDR/hostname"),
-            ArgSchema("ports", str, flag="-p", default="-", description="Port spec, e.g. '1-65535' or '80,443'"),
+            ArgSchema(
+                "ports",
+                str,
+                flag="-p",
+                default="-",
+                description="Port spec, e.g. '1-65535' or '80,443'",
+            ),
             ArgSchema("service_detection", bool, flag="-sV", description="Service+version probe"),
             ArgSchema("os_detection", bool, flag="-O", description="OS fingerprint (needs root)"),
-            ArgSchema("scripts", str, flag="--script", description="NSE script(s), e.g. 'default,vuln'"),
-            ArgSchema("timing", str, flag="-T", default="4", choices=["0", "1", "2", "3", "4", "5"]),
-            ArgSchema("output_all", str, flag="-oA", description="Output base name; emits .nmap .gnmap .xml"),
+            ArgSchema(
+                "scripts", str, flag="--script", description="NSE script(s), e.g. 'default,vuln'"
+            ),
+            ArgSchema(
+                "timing", str, flag="-T", default="4", choices=["0", "1", "2", "3", "4", "5"]
+            ),
+            ArgSchema(
+                "output_all",
+                str,
+                flag="-oA",
+                description="Output base name; emits .nmap .gnmap .xml",
+            ),
             ArgSchema("verbose", bool, flag="-v"),
         ],
         examples=["nmap -sV -p 1-65535 10.0.0.1", "nmap --script vuln -p 80,443 target.com"],
@@ -110,7 +125,13 @@ REGISTRY: list[ToolSpec] = [
         category="recon",
         description="Fast TCP port scanner — internet-scale recon. Faster than nmap, less protocol detail.",
         args=[
-            ArgSchema("target", str, required=True, flag="-p", description="(Note: -p is ports; pass IPs as positional)"),
+            ArgSchema(
+                "target",
+                str,
+                required=True,
+                flag="-p",
+                description="(Note: -p is ports; pass IPs as positional)",
+            ),
             ArgSchema("ports", str, flag="-p", default="1-65535"),
             ArgSchema("rate", int, flag="--rate", default=10000),
             ArgSchema("interface", str, flag="-e"),
@@ -164,7 +185,12 @@ REGISTRY: list[ToolSpec] = [
             ArgSchema("list", str, flag="-l"),
             ArgSchema("templates", str, flag="-t", multi=True, description="Template dir(s)"),
             ArgSchema("tags", str, flag="-tags", multi=True),
-            ArgSchema("severity", str, flag="-severity", description="Comma list: critical,high,medium,low"),
+            ArgSchema(
+                "severity",
+                str,
+                flag="-severity",
+                description="Comma list: critical,high,medium,low",
+            ),
             ArgSchema("json", bool, flag="-j"),
             ArgSchema("output", str, flag="-o"),
             ArgSchema("rate_limit", int, flag="-rl", default=150),
@@ -203,7 +229,6 @@ REGISTRY: list[ToolSpec] = [
         ],
         install_hint="go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest",
     ),
-
     # ────────── Web exploitation ──────────
     ToolSpec(
         name="ffuf",
@@ -249,7 +274,9 @@ REGISTRY: list[ToolSpec] = [
         description="Fast XSS scanner — reflected, DOM, blind w/ callback.",
         args=[
             ArgSchema("mode", str, choices=["url", "file", "pipe"], default="url"),
-            ArgSchema("target", str, required=True, description="URL or file path depending on mode"),
+            ArgSchema(
+                "target", str, required=True, description="URL or file path depending on mode"
+            ),
             ArgSchema("blind", str, flag="--blind", description="Callback URL for blind XSS"),
             ArgSchema("output", str, flag="-o"),
             ArgSchema("custom_payload", str, flag="--custom-payload"),
@@ -287,7 +314,6 @@ REGISTRY: list[ToolSpec] = [
         examples=["feroxbuster -u https://target.com -t 100 -o ferox.txt"],
         install_hint="cargo install feroxbuster",
     ),
-
     # ────────── Active Directory ──────────
     ToolSpec(
         name="nxc",
@@ -295,7 +321,12 @@ REGISTRY: list[ToolSpec] = [
         category="ad",
         description="NetExec — CrackMapExec successor. SMB/LDAP/MSSQL/WinRM/RDP/SSH/FTP/VNC + 200 modules.",
         args=[
-            ArgSchema("protocol", str, required=True, choices=["smb", "ldap", "mssql", "winrm", "rdp", "ssh", "ftp", "vnc"]),
+            ArgSchema(
+                "protocol",
+                str,
+                required=True,
+                choices=["smb", "ldap", "mssql", "winrm", "rdp", "ssh", "ftp", "vnc"],
+            ),
             ArgSchema("target", str, required=True),
             ArgSchema("user", str, flag="-u"),
             ArgSchema("password", str, flag="-p"),
@@ -353,7 +384,9 @@ REGISTRY: list[ToolSpec] = [
             ArgSchema("output_format", str, flag="-format", default="hashcat"),
             ArgSchema("output", str, flag="-outputfile"),
         ],
-        examples=["GetNPUsers.py DOM/ -usersfile users.txt -dc-ip 10.0.0.5 -no-pass -format hashcat"],
+        examples=[
+            "GetNPUsers.py DOM/ -usersfile users.txt -dc-ip 10.0.0.5 -no-pass -format hashcat"
+        ],
         install_hint="pipx install impacket",
     ),
     ToolSpec(
@@ -395,7 +428,12 @@ REGISTRY: list[ToolSpec] = [
         category="ad",
         description="Kerberos user enum + password spray via pre-auth.",
         args=[
-            ArgSchema("subcommand", str, required=True, choices=["userenum", "passwordspray", "bruteuser", "bruteforce"]),
+            ArgSchema(
+                "subcommand",
+                str,
+                required=True,
+                choices=["userenum", "passwordspray", "bruteuser", "bruteforce"],
+            ),
             ArgSchema("domain", str, flag="--domain", required=True),
             ArgSchema("dc", str, flag="--dc"),
             ArgSchema("user_list", str, description="Positional after subcommand"),
@@ -404,7 +442,6 @@ REGISTRY: list[ToolSpec] = [
         examples=["kerbrute userenum --dc 10.0.0.5 --domain corp.local users.txt"],
         install_hint="go install github.com/ropnop/kerbrute@latest",
     ),
-
     # ────────── Cred crack ──────────
     ToolSpec(
         name="hashcat",
@@ -449,14 +486,18 @@ REGISTRY: list[ToolSpec] = [
             ArgSchema("password", str, flag="-p"),
             ArgSchema("password_list", str, flag="-P"),
             ArgSchema("target", str, required=True, description="Positional: target:port"),
-            ArgSchema("protocol", str, required=True, description="Positional: ssh|ftp|http-post-form|smb|..."),
+            ArgSchema(
+                "protocol",
+                str,
+                required=True,
+                description="Positional: ssh|ftp|http-post-form|smb|...",
+            ),
             ArgSchema("threads", int, flag="-t", default=16),
             ArgSchema("output", str, flag="-o"),
         ],
         examples=["hydra -l alice -P rockyou.txt 10.0.0.5 ssh -t 4"],
         install_hint="apt install hydra",
     ),
-
     # ────────── Decode / crypto ──────────
     ToolSpec(
         name="ciphey",
@@ -484,7 +525,6 @@ REGISTRY: list[ToolSpec] = [
         examples=["hashid '\\$2a\\$12\\$abc...'"],
         install_hint="pipx install hashid",
     ),
-
     # ────────── Reversing ──────────
     ToolSpec(
         name="binwalk",
@@ -528,7 +568,6 @@ REGISTRY: list[ToolSpec] = [
         examples=["r2 -A -q -c 'afl;axt @ main' /tmp/binary"],
         install_hint="apt install radare2",
     ),
-
     # ────────── Mobile ──────────
     ToolSpec(
         name="jadx",
@@ -557,7 +596,6 @@ REGISTRY: list[ToolSpec] = [
         examples=["apktool d app.apk -o /tmp/smali"],
         install_hint="apt install apktool",
     ),
-
     # ────────── Cloud ──────────
     ToolSpec(
         name="aws",
@@ -568,7 +606,9 @@ REGISTRY: list[ToolSpec] = [
             ArgSchema("service", str, required=True, description="e.g. 's3', 'iam', 'sts'"),
             ArgSchema("operation", str, required=True, description="e.g. 'list-buckets'"),
             ArgSchema("extra_args", str, multi=True, description="Additional flag/value pairs"),
-            ArgSchema("output", str, flag="--output", default="json", choices=["json", "text", "table"]),
+            ArgSchema(
+                "output", str, flag="--output", default="json", choices=["json", "text", "table"]
+            ),
         ],
         examples=["aws sts get-caller-identity", "aws s3 ls --recursive"],
         install_hint="apt install awscli OR pipx install awscli",
@@ -607,9 +647,7 @@ def build_arsenal_server(sandbox: Any) -> Any:
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError as e:
-        raise ImportError(
-            "fastmcp not installed. Install: pipx install mcp[server]"
-        ) from e
+        raise ImportError("fastmcp not installed. Install: pipx install mcp[server]") from e
 
     mcp = FastMCP("decepticon-arsenal")
 
