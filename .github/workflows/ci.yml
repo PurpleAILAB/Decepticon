@@ -211,6 +211,19 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  # Status gate: produces the check name that branch protection requires.
+  # The matrix jobs above produce "Python (ubuntu-latest)" etc.; upstream
+  # main's required status check is still "Python (lint + typecheck + test)".
+  # This thin job collapses all three matrix results into one canonical name.
+  python-status:
+    name: Python (lint + typecheck + test)
+    needs: [changes, python]
+    if: always() && needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check matrix results
+        run: test "${{ needs.python.result }}" = "success"
+
   cli:
     name: CLI (${{ matrix.os }})
     needs: changes
@@ -245,6 +258,16 @@ jobs:
       - run: cd clients/cli && npm run typecheck
       - name: Run CLI tests
         run: cd clients/cli && npm test --if-present
+
+  # Status gate: same pattern as python-status above, for CLI.
+  cli-status:
+    name: CLI (typecheck + test)
+    needs: [changes, cli]
+    if: always() && needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check matrix results
+        run: test "${{ needs.cli.result }}" = "success"
 
   web:
     name: Web (lint + build)
