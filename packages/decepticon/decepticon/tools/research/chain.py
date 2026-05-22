@@ -207,8 +207,9 @@ def plan_chains(
 
     try:
         rows = store.query_custom(apoc_query, params)
-    except Exception:
+    except Exception as exc:
         log.info("APOC dijkstra unavailable, falling back to shortestPath")
+        log.debug("APOC dijkstra error (swallowed): %s", exc)
         try:
             rows = store.query_custom(fallback_query, params)
         except Exception as exc:
@@ -342,8 +343,9 @@ def critical_path_score(chain: Chain) -> float:
                     score = 0.0
                 if score > worst_sev:
                     worst_sev = score
-        except Exception:
-            pass  # APOC unavailable — fall back to shortestPath
+        except Exception as exc:
+            # APOC unavailable — fall back to shortestPath
+            log.debug("Worst-severity lookup failed (swallowed): %s", exc)
 
     inv_cost = 1.0 / max(chain.total_cost, 0.1)
     return round(0.6 * inv_cost * 10 + 0.4 * worst_sev, 2)

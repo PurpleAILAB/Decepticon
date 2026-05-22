@@ -325,23 +325,13 @@ def _is_truthy(value: str) -> bool:
     return value.strip().lower() in ("true", "1", "yes", "on")
 
 
-def _resolve_credentials() -> Credentials:
-    """Build Credentials from environment variables.
+def _parse_auth_priority() -> tuple[list[AuthMethod], bool]:
+    """Parse ``DECEPTICON_AUTH_PRIORITY`` into an ordered AuthMethod list.
 
-    Walks ``DECEPTICON_AUTH_PRIORITY`` (comma-separated AuthMethod
-    values; defaults to ``_DEFAULT_AUTH_PRIORITY``) and includes only
-    methods whose detection rule passes:
-
-      - API methods: their key env var is set to a non-placeholder
-      - OAuth methods: their boolean env var is set truthy
-
-    When **nothing** is detected — typical of CI / dev shells where
-    onboard hasn't run — falls back to all four API methods. This keeps
-    module-level ``graph = create_X_agent()`` calls importable so the
-    test suite (and tools like langgraph Studio) can load agents
-    without API keys present. Real LLM calls under that fallback will
-    fail at request time with a provider 401, which is the correct
-    surface for that misconfiguration.
+    Returns ``(priority, priority_explicit)``: the ordered method list and a
+    flag for whether the env var was set non-empty. When it is unset/blank
+    the default ordering (``_DEFAULT_AUTH_PRIORITY``) is returned. Unknown
+    tokens are logged and skipped.
     """
     priority_raw = os.getenv("DECEPTICON_AUTH_PRIORITY", "")
     priority_explicit = bool(priority_raw.strip())
@@ -357,7 +347,17 @@ def _resolve_credentials() -> Credentials:
                 log.warning("Unknown method in DECEPTICON_AUTH_PRIORITY: %s", token)
     else:
         priority = list(_DEFAULT_AUTH_PRIORITY)
+    return priority, priority_explicit
 
+
+def _detect_available_methods(priority: list[AuthMethod]) -> list[AuthMethod]:
+    """Return the subset of ``priority`` whose credential-detection rule passes.
+
+    - API methods: their key env var is set to a non-placeholder
+    - OAuth methods: their boolean env var is truthy AND the credential
+      file is present
+    - Local methods: their own env signal is configured
+    """
     methods: list[AuthMethod] = []
     for method in priority:
         if method in _API_METHOD_ENV:
@@ -388,60 +388,95 @@ def _resolve_credentials() -> Credentials:
         elif method == AuthMethod.CUSTOM_OPENAI_API:
             if _custom_openai_configured():
                 methods.append(method)
+    return methods
+
+
+def _fallback_credentials(*, priority_explicit: bool) -> Credentials:
+    """Build the fallback Credentials when no priority method was detected.
+
+    A user who wired only a local/cloud OpenAI-compatible endpoint (Ollama,
+    LM Studio, llama.cpp, custom) but authored no priority list gets a
+    single-method chain for it. Otherwise falls back to all API methods so
+    module-level agent constructors stay importable; ``priority_explicit``
+    only changes the log severity (ERROR vs INFO).
+    """
+    # Local-only or cloud-only OSS path: a user who set Ollama env vars
+    # but didn't write a priority list gets a single-method Ollama chain.
+    if _ollama_local_configured():
+        log.info(
+            "Only OLLAMA_API_BASE/OLLAMA_MODEL detected; running against local Ollama exclusively"
+        )
+        return Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
+    if _ollama_cloud_configured():
+        log.info(
+            "Only OLLAMA_CLOUD_API_BASE/OLLAMA_CLOUD_MODEL detected; "
+            "running against Ollama Cloud exclusively"
+        )
+        return Credentials(methods=[AuthMethod.OLLAMA_CLOUD])
+    if _lmstudio_local_configured():
+        log.info("Only LMSTUDIO_API_BASE/LMSTUDIO_MODEL detected; using LM Studio")
+        return Credentials(methods=[AuthMethod.LMSTUDIO_LOCAL])
+    if _llamacpp_local_configured():
+        log.info("Only LLAMACPP_API_BASE/LLAMACPP_MODEL detected; using llama.cpp")
+        return Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
+    if _custom_openai_configured():
+        log.info("Only CUSTOM_OPENAI_* detected; using custom OpenAI-compatible endpoint")
+        return Credentials(methods=[AuthMethod.CUSTOM_OPENAI_API])
+    if priority_explicit:
+        # User expressed clear intent (set DECEPTICON_AUTH_PRIORITY) but
+        # every listed method failed detection. Surface the root cause
+        # at ERROR level — otherwise the silent fallback to
+        # all_api_methods() runs through providers the user doesn't
+        # have, producing a confusing 401 cascade (often masked as a
+        # downstream "rate limit (429)" once the routed-to provider
+        # cools down). Return behavior preserved so module imports
+        # stay green; real model calls still surface a remediation
+        # hint via _reraise_with_actionable_message.
+        log.error(
+            "DECEPTICON_AUTH_PRIORITY=%r set but no listed method has "
+            "detectable credentials. Verify: (1) API keys are "
+            "non-placeholder (e.g. ANTHROPIC_API_KEY starts with "
+            "'sk-ant-'), (2) OAuth flag matches credential file "
+            "(e.g. DECEPTICON_AUTH_CLAUDE_CODE=true requires "
+            "~/.claude/.credentials.json to exist and contain a valid "
+            "JSON object — a /dev/null mount fails this check). "
+            "Falling back to all-API-methods so module imports "
+            "remain importable; every model call will 401 until "
+            "the priority chain is fixed.",
+            os.getenv("DECEPTICON_AUTH_PRIORITY", ""),
+        )
+    else:
+        log.info(
+            "No credentials detected in environment; using all-API-methods "
+            "fallback so module-level agent constructors stay importable"
+        )
+    return Credentials.all_api_methods()
+
+
+def _resolve_credentials() -> Credentials:
+    """Build Credentials from environment variables.
+
+    Walks ``DECEPTICON_AUTH_PRIORITY`` (comma-separated AuthMethod
+    values; defaults to ``_DEFAULT_AUTH_PRIORITY``) and includes only
+    methods whose detection rule passes:
+
+      - API methods: their key env var is set to a non-placeholder
+      - OAuth methods: their boolean env var is set truthy
+
+    When **nothing** is detected — typical of CI / dev shells where
+    onboard hasn't run — falls back to all four API methods. This keeps
+    module-level ``graph = create_X_agent()`` calls importable so the
+    test suite (and tools like langgraph Studio) can load agents
+    without API keys present. Real LLM calls under that fallback will
+    fail at request time with a provider 401, which is the correct
+    surface for that misconfiguration.
+    """
+    priority, priority_explicit = _parse_auth_priority()
+
+    methods = _detect_available_methods(priority)
 
     if not methods:
-        # Local-only or cloud-only OSS path: a user who set Ollama env vars
-        # but didn't write a priority list gets a single-method Ollama chain.
-        if _ollama_local_configured():
-            log.info(
-                "Only OLLAMA_API_BASE/OLLAMA_MODEL detected; "
-                "running against local Ollama exclusively"
-            )
-            return Credentials(methods=[AuthMethod.OLLAMA_LOCAL])
-        if _ollama_cloud_configured():
-            log.info(
-                "Only OLLAMA_CLOUD_API_BASE/OLLAMA_CLOUD_MODEL detected; "
-                "running against Ollama Cloud exclusively"
-            )
-            return Credentials(methods=[AuthMethod.OLLAMA_CLOUD])
-        if _lmstudio_local_configured():
-            log.info("Only LMSTUDIO_API_BASE/LMSTUDIO_MODEL detected; using LM Studio")
-            return Credentials(methods=[AuthMethod.LMSTUDIO_LOCAL])
-        if _llamacpp_local_configured():
-            log.info("Only LLAMACPP_API_BASE/LLAMACPP_MODEL detected; using llama.cpp")
-            return Credentials(methods=[AuthMethod.LLAMACPP_LOCAL])
-        if _custom_openai_configured():
-            log.info("Only CUSTOM_OPENAI_* detected; using custom OpenAI-compatible endpoint")
-            return Credentials(methods=[AuthMethod.CUSTOM_OPENAI_API])
-        if priority_explicit:
-            # User expressed clear intent (set DECEPTICON_AUTH_PRIORITY) but
-            # every listed method failed detection. Surface the root cause
-            # at ERROR level — otherwise the silent fallback to
-            # all_api_methods() runs through providers the user doesn't
-            # have, producing a confusing 401 cascade (often masked as a
-            # downstream "rate limit (429)" once the routed-to provider
-            # cools down). Return behavior preserved so module imports
-            # stay green; real model calls still surface a remediation
-            # hint via _reraise_with_actionable_message.
-            log.error(
-                "DECEPTICON_AUTH_PRIORITY=%r set but no listed method has "
-                "detectable credentials. Verify: (1) API keys are "
-                "non-placeholder (e.g. ANTHROPIC_API_KEY starts with "
-                "'sk-ant-'), (2) OAuth flag matches credential file "
-                "(e.g. DECEPTICON_AUTH_CLAUDE_CODE=true requires "
-                "~/.claude/.credentials.json to exist and contain a valid "
-                "JSON object — a /dev/null mount fails this check). "
-                "Falling back to all-API-methods so module imports "
-                "remain importable; every model call will 401 until "
-                "the priority chain is fixed.",
-                priority_raw,
-            )
-        else:
-            log.info(
-                "No credentials detected in environment; using all-API-methods "
-                "fallback so module-level agent constructors stay importable"
-            )
-        return Credentials.all_api_methods()
+        return _fallback_credentials(priority_explicit=priority_explicit)
 
     return Credentials(methods=methods)
 

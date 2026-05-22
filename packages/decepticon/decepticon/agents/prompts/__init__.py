@@ -1,476 +1,77 @@
 """Agent system prompt assembly pipeline.
 
-Structured prompt composition with:
+Re-export shim. The implementation lives in two sibling modules:
 
-1. **Static/dynamic section separation** — static sections (identity, rules, environment)
-   are stable and cacheable; dynamic sections (skills metadata, engagement context) vary
-   per invocation. A cache boundary marker separates them for Anthropic prompt caching.
+- :mod:`decepticon.agents.prompts.builder` — the prompt-assembly engine:
+  fragment readers, :class:`PromptBuilder`, :func:`load_prompt`, the
+  cross-cutting pattern constants, and the cache-boundary constant.
+- :mod:`decepticon.agents.prompts.registry` — language / locale data and
+  policy: the country→language and language-name maps, and
+  :func:`build_language_policy`.
 
-2. **Tool prompt co-location** — tool prompts live with their tool code (e.g.,
-   decepticon/tools/bash/prompt.py) and are injected here with role-specific variations.
+``builder`` depends on ``registry`` (one-directional — no cycle). Every name
+previously defined at the top level of this module is re-exported here so
+``from decepticon.agents.prompts import X`` keeps working unchanged. The
+redundant ``X as X`` import aliases mark these as intentional re-exports; the
+original module defined no ``__all__``, so none is added here and ``import *``
+behaviour is preserved.
 
-3. **Cross-cutting patterns** — faithful reporting, verification gates, output discipline
-   are injected consistently across all operational agents.
-
-4. **Section registry** — prompts are composed from named sections, making it easy to
-   add, remove, or reorder sections without touching the assembly logic.
-
-Usage:
-    # Simple (backward-compatible)
-    load_prompt("recon", shared=["bash"])
-
-    # Builder API (structured)
-    prompt = (
-        PromptBuilder("recon")
-        .with_tool_prompts(["bash"])
-        .with_shared(["language"])
-        .build()
-    )
+See :mod:`decepticon.agents.prompts.builder` for the assembly design notes
+(static/dynamic section separation, tool-prompt co-location, cross-cutting
+patterns, section registry) and the :func:`load_prompt` / :class:`PromptBuilder`
+usage examples.
 """
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, timezone
-from functools import lru_cache
-from pathlib import Path
-
-_PROMPTS_DIR = Path(__file__).parent
-
-# Search order for prompt fragment lookup. ``_read_fragment(name)`` tries
-# each base directory in order, returning the first ``<base>/<name>.md``
-# that exists. The top-level dir holds cross-cutting fragments
-# (``language.md``); ``standard/`` and ``plugins/`` hold per-agent
-# prompts mirroring the bundle split applied to ``decepticon/agents/``
-# and ``skills/``. External plugin packages ship their own prompts via
-# their own ``importlib.resources`` lookups; this list is OSS-internal.
-_PROMPT_SEARCH_PATHS: tuple[Path, ...] = (
-    _PROMPTS_DIR,
-    _PROMPTS_DIR / "standard",
-    _PROMPTS_DIR / "plugins",
+from decepticon.agents.prompts.builder import (
+    _ANALYST_MINDSET as _ANALYST_MINDSET,
 )
-
-# ── Cache boundary marker ────────────────────────────────────────────────────
-# Inserted between static and dynamic sections. Anthropic's prompt caching
-# heuristic uses this to determine the cacheable prefix boundary.
-# Everything above this marker is stable across invocations and can be cached.
-CACHE_BOUNDARY = "\n\n---\n\n"
-
-# ── Cross-cutting prompt patterns ─────────────────────────────────────────────
-
-_FAITHFUL_REPORTING = """\
-<FAITHFUL_REPORTING>
-Report findings exactly as observed. Do NOT:
-- Speculate about vulnerabilities that scans did not confirm
-- Inflate severity to appear more productive
-- Omit negative results — "no findings" is a valid and valuable result
-- Assume a service is vulnerable without evidence
-
-If a tool returns empty output or no results, report that explicitly. The operator
-needs ground truth to make decisions, not optimistic guesses. A false positive
-wastes more time than a missed finding — the operator will direct further investigation.
-</FAITHFUL_REPORTING>"""
-
-_VERIFICATION_GATE = """\
-<VERIFICATION_GATE>
-Before declaring any finding CRITICAL or HIGH severity:
-1. Verify with at least one additional method (different tool, manual confirmation, or secondary evidence)
-2. Confirm the target is in scope (re-check roe.json if uncertain)
-3. Document the evidence chain: what tool reported it, what confirmed it
-
-Do NOT skip verification to save time. Unverified findings that turn out to be
-false positives erode operator trust and waste downstream effort.
-</VERIFICATION_GATE>"""
-
-_OUTPUT_DISCIPLINE = """\
-<OUTPUT_DISCIPLINE>
-## Response Length Rules
-
-- **Between tool calls**: Keep text to 1-2 sentences. State what you found and what you're doing next. No summaries, no analysis paragraphs — save those for the report.
-- **Final report / handoff**: Be thorough and structured. Use the full format from RESPONSE_RULES.
-- **When the operator asks a question**: Answer directly and concisely. Lead with the answer, not the reasoning.
-
-Do NOT narrate your thought process ("Let me now check...", "I'll proceed to...").
-Just execute. The operator can see your tool calls.
-</OUTPUT_DISCIPLINE>"""
-
-_FINDING_PROTOCOL_POINTER = """\
-<FINDING_PROTOCOL>
-Before recording findings, load the finding-protocol skill:
-`load_skill("/skills/shared/finding-protocol/SKILL.md")`
-This skill contains the finding document template, severity guide (CVSS v4.0),
-naming conventions, and post-creation checklist. Load it before creating any
-finding files.
-</FINDING_PROTOCOL>"""
-
-_ANALYST_MINDSET = """\
-<ANALYST_MINDSET>
-You are an analyst and collaborator, not just a tool executor. This means:
-- **Interpret results**: Don't just dump output — highlight what matters and why
-- **Suggest next steps**: Based on findings, recommend the logical next action
-- **Challenge assumptions**: If the current approach isn't yielding results, say so and propose alternatives
-- **Connect the dots**: Relate new findings to previous discoveries across the engagement
-</ANALYST_MINDSET>"""
-
-
-@lru_cache(maxsize=32)
-def _read_fragment(name: str) -> str:
-    """Read and cache a prompt fragment file from any configured search path."""
-    for base in _PROMPT_SEARCH_PATHS:
-        path = base / f"{name}.md"
-        if path.exists():
-            return path.read_text(encoding="utf-8")
-    searched = ", ".join(str(p / f"{name}.md") for p in _PROMPT_SEARCH_PATHS)
-    msg = f"Prompt fragment not found: {name}.md (searched: {searched})"
-    raise FileNotFoundError(msg)
-
-
-def _get_tool_prompt(tool_name: str, role: str | None = None) -> str:
-    """Get a tool's prompt from its co-located prompt module.
-
-    Tool prompts live with their tool code (e.g., tools/bash/prompt.py).
-    This allows each tool to own its documentation and provide role-specific
-    variations.
-    """
-    if tool_name == "bash":
-        from decepticon.tools.bash.prompt import BASH_PROMPT
-
-        return BASH_PROMPT
-
-    # Fallback: try reading from the prompts directory (backward compat)
-    return _read_fragment(tool_name)
-
-
-# ── Roles that get cross-cutting prompt patterns ─────────────────────────────
-# The orchestrator (decepticon) and soundwave don't do direct tool execution,
-# so they get a subset of the patterns.
-_OPERATIONAL_ROLES = {
-    "recon",
-    "exploit",
-    "postexploit",
-    "analyst",
-    "reverser",
-    "contract_auditor",
-    "cloud_hunter",
-    "ad_operator",
-}
-
-
-class PromptBuilder:
-    """Structured prompt assembly with static/dynamic section separation.
-
-    Structured prompt assembly with static/dynamic section separation:
-    - Static sections are loaded from .md files and tool prompt modules
-    - Cross-cutting patterns are injected based on agent role
-    - A cache boundary marker separates static from dynamic content
-    - Dynamic sections (skills metadata, context) are appended last
-
-    Example:
-        prompt = (
-            PromptBuilder("recon")
-            .with_tool_prompts(["bash"])
-            .with_shared(["language"])
-            .with_dynamic("Current engagement: acme-corp-2026")
-            .build()
-        )
-    """
-
-    def __init__(self, role: str) -> None:
-        self._role = role
-        self._tool_prompts: list[str] = []
-        self._shared: list[str] = []
-        self._dynamic_sections: list[str] = []
-
-    def with_tool_prompts(self, tools: list[str]) -> PromptBuilder:
-        """Add tool prompts (co-located with tool code)."""
-        self._tool_prompts = tools
-        return self
-
-    def with_shared(self, fragments: list[str]) -> PromptBuilder:
-        """Add shared prompt fragments."""
-        self._shared = fragments
-        return self
-
-    def with_dynamic(self, section: str) -> PromptBuilder:
-        """Add a dynamic section (varies per invocation, not cached)."""
-        self._dynamic_sections.append(section)
-        return self
-
-    def build(self) -> str:
-        """Assemble the complete system prompt.
-
-        Layout:
-            [Agent identity + rules + environment]  ← from .md file (static)
-            [Cross-cutting patterns]                ← faithful reporting, etc. (static)
-            [Tool prompts]                          ← from tool prompt modules (static)
-            --- cache boundary ---
-            [Shared fragments]                      ← skills metadata (semi-dynamic)
-            [Dynamic sections]                      ← engagement context (dynamic)
-        """
-        parts: list[str] = []
-
-        # 1. Agent-specific prompt (identity, rules, environment, workflow)
-        parts.append(_read_fragment(self._role))
-
-        # 2. Cross-cutting prompt patterns
-        if self._role in _OPERATIONAL_ROLES:
-            parts.append(_FAITHFUL_REPORTING)
-            parts.append(_VERIFICATION_GATE)
-            parts.append(_FINDING_PROTOCOL_POINTER)
-            parts.append(_OUTPUT_DISCIPLINE)
-            parts.append(_ANALYST_MINDSET)
-        elif self._role == "decepticon":
-            # Orchestrator gets reporting + output discipline but not verification gate
-            parts.append(_FAITHFUL_REPORTING)
-            parts.append(_FINDING_PROTOCOL_POINTER)
-            parts.append(_OUTPUT_DISCIPLINE)
-            parts.append(_ANALYST_MINDSET)
-
-        # 3. Tool prompts (co-located with tool code, role-specific)
-        for tool_name in self._tool_prompts:
-            parts.append(_get_tool_prompt(tool_name, self._role))
-
-        # ── Cache boundary ──
-        # Everything above is static and cacheable by Anthropic prompt caching.
-        # Everything below may change between invocations.
-        parts.append(CACHE_BOUNDARY)
-
-        # 4. Current date/time (prevents model from assuming training cutoff date)
-        now = datetime.now(timezone.utc)
-        parts.append(
-            f"<CURRENT_DATE>Today is {now.strftime('%Y-%m-%d')} "
-            f"(UTC {now.strftime('%H:%M')}). "
-            f"Use this date for all reporting and timestamps.</CURRENT_DATE>"
-        )
-
-        # 5. Shared fragments (skills metadata — semi-dynamic, changes with skill updates)
-        for fragment_name in self._shared:
-            parts.append(_read_fragment(fragment_name))
-
-        # 6. Dynamic sections (engagement context, runtime state)
-        for section in self._dynamic_sections:
-            parts.append(section)
-
-        return "\n\n".join(parts)
-
-
-# Country-code aliases → ISO 639-1 language codes. Users naturally type
-# "dk" (Denmark), "se" (Sweden), "jp" (Japan), "cn" (China) instead of
-# the ISO 639-1 "da", "sv", "ja", "zh". Shared between the env-based
-# prompt-time path (CLI) and the runtime config path (web SaaS).
-_COUNTRY_TO_LANG = {
-    "dk": "da",
-    "se": "sv",
-    "jp": "ja",
-    "cn": "zh",
-    "br": "pt-br",
-    "tw": "zh-tw",
-}
-
-_LANG_NAMES = {
-    # East Asian
-    "ko": "Korean",
-    "ja": "Japanese",
-    "zh": "Chinese",
-    "zh-cn": "Simplified Chinese",
-    "zh-tw": "Traditional Chinese",
-    # Nordic / Scandinavian
-    "no": "Norwegian",
-    "nb": "Norwegian Bokmål",
-    "nn": "Norwegian Nynorsk",
-    "sv": "Swedish",
-    "da": "Danish",
-    "fi": "Finnish",
-    "is": "Icelandic",
-    # Western European
-    "de": "German",
-    "fr": "French",
-    "es": "Spanish",
-    "pt": "Portuguese",
-    "pt-br": "Brazilian Portuguese",
-    "it": "Italian",
-    "nl": "Dutch",
-    "ca": "Catalan",
-    # Eastern European / Slavic
-    "ru": "Russian",
-    "pl": "Polish",
-    "cs": "Czech",
-    "sk": "Slovak",
-    "uk": "Ukrainian",
-    "bg": "Bulgarian",
-    "hr": "Croatian",
-    "sr": "Serbian",
-    "sl": "Slovenian",
-    "ro": "Romanian",
-    # South / Southeast Asian
-    "hi": "Hindi",
-    "bn": "Bengali",
-    "ta": "Tamil",
-    "te": "Telugu",
-    "th": "Thai",
-    "vi": "Vietnamese",
-    "id": "Indonesian",
-    "ms": "Malay",
-    "tl": "Filipino",
-    # Middle Eastern
-    "ar": "Arabic",
-    "fa": "Persian",
-    "he": "Hebrew",
-    "tr": "Turkish",
-    # Other
-    "el": "Greek",
-    "hu": "Hungarian",
-    "et": "Estonian",
-    "lv": "Latvian",
-    "lt": "Lithuanian",
-    "sw": "Swahili",
-    "af": "Afrikaans",
-}
-
-
-def build_language_policy(language: str) -> str | None:
-    """Build the LANGUAGE_POLICY block for a given ISO 639-1 code.
-
-    Returns the policy text, or None when the code is empty / English (no
-    override needed — the prompt's default language.md fragment applies).
-    Shared between the prompt builder (env-based) and the
-    EngagementContextMiddleware runtime path (config-based).
-    """
-    lang = (language or "").strip()
-    if not lang or lang.lower() == "en":
-        return None
-
-    resolved = _COUNTRY_TO_LANG.get(lang.lower(), lang.lower())
-
-    if resolved == "wenyan":
-        return (
-            "<LANGUAGE_POLICY>\n"
-            "You MUST respond in 文言文 (wenyan-full) — Classical Chinese literary\n"
-            "prose with English technical terms preserved verbatim.\n"
-            "\n"
-            "Rules:\n"
-            "- Maximum classical terseness. 80-90% character reduction vs normal prose.\n"
-            "- Classical sentence patterns: verbs precede objects, subjects often omitted,\n"
-            "  use classical particles (之/乃/為/其/則/而/以/故).\n"
-            "- ALL technical terms stay in English exactly as-is: function names, API names,\n"
-            "  code symbols, error strings, file paths, command flags, tool names, config\n"
-            "  keys, variable names. NEVER transliterate these into Chinese.\n"
-            "- Code blocks, tool calls, JSON, structured payloads: completely unchanged.\n"
-            "- Mix freely: Classical Chinese for explanation, English for technical nouns.\n"
-            "\n"
-            "Examples:\n"
-            "- '物出新參照，致重繪。useMemo Wrap之。'\n"
-            "- '池reuse open connection。不每req新開。skip handshake overhead。'\n"
-            "- 'Bug在auth middleware。Token expiry check用 `<` 非 `<=`。Fix:'\n"
-            "\n"
-            "Drop caveman for: security warnings, irreversible action confirmations,\n"
-            "cases where compression creates technical ambiguity. Resume after.\n"
-            "</LANGUAGE_POLICY>"
-        )
-
-    lang_name = _LANG_NAMES.get(resolved, lang)
-    return (
-        "<LANGUAGE_POLICY>\n"
-        f"You MUST respond in {lang_name} for all operator-facing prose.\n"
-        f"\n"
-        f"- All operator-facing prose (interview questions, menu options, explanations,\n"
-        f"  summaries, status updates, error messages) MUST be in {lang_name}.\n"
-        f"- Tool calls, tool arguments, and structured payloads (JSON fields, code\n"
-        f"  blocks, file paths, command output) stay in their original technical\n"
-        f"  form — do not translate identifiers, file names, command flags, or\n"
-        f"  schema field names.\n"
-        f"</LANGUAGE_POLICY>"
-    )
-
-
-def load_prompt(
-    name: str,
-    *,
-    shared: list[str] | None = None,
-    override: str | dict[str, str] | None = None,
-) -> str:
-    """Load an agent system prompt with structured assembly.
-
-    Static identity/rules/environment load from ``<name>.md`` and combine
-    with cross-cutting patterns (faithful reporting, verification gate,
-    output discipline) and tool prompts. The Anthropic prompt-caching
-    boundary separates the cacheable static prefix from per-invocation
-    dynamic content.
-
-    Plugin prompt overrides (``PluginBundle(prompts={...})`` under the
-    ``decepticon.bundles`` entry-point group) apply automatically. Library
-    callers can supply an explicit ``override`` — ``str`` for full
-    replace, ``dict`` with ``prepend`` / ``append`` / ``replace`` keys.
-    Explicit overrides win over plugin overrides on conflict.
-
-    Args:
-        name: Prompt filename without extension (e.g., "recon", "exploit").
-        shared: Shared fragment names to append (e.g., ["bash", "skills"]).
-            "bash" is special-cased to use the co-located tool prompt module.
-        override: Optional explicit prompt override. ``None`` (default) =
-            only plugin overrides apply.
-
-    Returns:
-        Assembled system prompt string.
-    """
-    shared = shared or []
-
-    # Separate tool prompts from shared fragments
-    tool_prompts = [s for s in shared if s == "bash"]
-    fragments = [s for s in shared if s != "bash"]
-
-    # Cross-cutting language policy — applies to every agent. Prepended once
-    # so every prompt picks up the same operator-language directive without
-    # per-agent edits.
-    #
-    # DECEPTICON_LANGUAGE env var pins the output language (e.g. "en", "ko",
-    # "no"). When set, auto-detect is disabled and the agent always responds
-    # in the pinned language. When unset, the language.md fragment's
-    # auto-detect logic applies.
-    if "language" not in fragments:
-        fragments = ["language", *fragments]
-
-    prompt = PromptBuilder(name).with_tool_prompts(tool_prompts).with_shared(fragments).build()
-
-    # Runtime language pin: when DECEPTICON_LANGUAGE is set, replace the
-    # default English policy with a pinned-language directive so every agent
-    # replies in the configured locale regardless of input language. The
-    # env-based path is the CLI / single-tenant convention; multi-tenant
-    # launchers (SaaS web) override per-run via config.configurable.language
-    # which EngagementContextMiddleware injects as a later SystemMessage.
-    pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
-    lang_policy = build_language_policy(pinned_lang)
-    if lang_policy is not None:
-        import re
-
-        prompt = re.sub(
-            r"<LANGUAGE_POLICY>.*?</LANGUAGE_POLICY>",
-            lang_policy,
-            prompt,
-            flags=re.DOTALL,
-        )
-
-    # Apply Claude 4.x compatibility shim (no-op for other model families).
-    # See decepticon/agents/prompts/claude4_compat.py and docs/model-compatibility.md.
-    try:
-        from decepticon.agents.prompts.claude4_compat import apply_compat_for_role
-
-        prompt = apply_compat_for_role(prompt, name)
-    except Exception:
-        # Fail soft: never break prompt loading because of the compat shim.
-        pass
-
-    # Plugin + explicit prompt overrides apply last so prepend/append wrap
-    # the fully-assembled prompt (language policy + compat shim included).
-    # Lazy import avoids a circular dependency between assembly and prompts.
-    from decepticon.agents.build import resolve_prompt_overrides
-
-    merged = resolve_prompt_overrides(name, override=override)
-    if "replace" in merged:
-        prompt = merged["replace"]
-    if merged.get("prepend"):
-        prompt = f"{merged['prepend']}\n\n{prompt}"
-    if merged.get("append"):
-        prompt = f"{prompt}\n\n{merged['append']}"
-
-    return prompt
+from decepticon.agents.prompts.builder import (
+    _FAITHFUL_REPORTING as _FAITHFUL_REPORTING,
+)
+from decepticon.agents.prompts.builder import (
+    _FINDING_PROTOCOL_POINTER as _FINDING_PROTOCOL_POINTER,
+)
+from decepticon.agents.prompts.builder import (
+    _OPERATIONAL_ROLES as _OPERATIONAL_ROLES,
+)
+from decepticon.agents.prompts.builder import (
+    _OUTPUT_DISCIPLINE as _OUTPUT_DISCIPLINE,
+)
+from decepticon.agents.prompts.builder import (
+    _PROMPT_SEARCH_PATHS as _PROMPT_SEARCH_PATHS,
+)
+from decepticon.agents.prompts.builder import (
+    _PROMPTS_DIR as _PROMPTS_DIR,
+)
+from decepticon.agents.prompts.builder import (
+    _VERIFICATION_GATE as _VERIFICATION_GATE,
+)
+from decepticon.agents.prompts.builder import (
+    CACHE_BOUNDARY as CACHE_BOUNDARY,
+)
+from decepticon.agents.prompts.builder import (
+    PromptBuilder as PromptBuilder,
+)
+from decepticon.agents.prompts.builder import (
+    _get_tool_prompt as _get_tool_prompt,
+)
+from decepticon.agents.prompts.builder import (
+    _read_fragment as _read_fragment,
+)
+from decepticon.agents.prompts.builder import (
+    load_prompt as load_prompt,
+)
+from decepticon.agents.prompts.builder import (
+    log as log,
+)
+from decepticon.agents.prompts.registry import (
+    _COUNTRY_TO_LANG as _COUNTRY_TO_LANG,
+)
+from decepticon.agents.prompts.registry import (
+    _LANG_NAMES as _LANG_NAMES,
+)
+from decepticon.agents.prompts.registry import (
+    build_language_policy as build_language_policy,
+)

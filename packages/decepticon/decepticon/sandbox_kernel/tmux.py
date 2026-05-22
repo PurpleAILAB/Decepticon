@@ -234,14 +234,13 @@ class TmuxSessionManager:
 
     # ── session lifecycle ──
 
-    def initialize(self) -> None:
-        """Create session if needed and inject PS1 marker (once per session)."""
-        with TmuxSessionManager._init_lock:
-            if self._cached_pane_is_alive():
-                return
-            TmuxSessionManager._initialized.discard(self.session)
-            self._pane_id = None
+    def _ensure_session(self) -> bool:
+        """Ensure the tmux session exists, creating it if needed.
 
+        Returns ``True`` when the session already existed before this call
+        (so the caller can skip first-run-only setup like pipe-pane logging).
+        Sets ``self._pane_id`` as a side effect.
+        """
         session_exists = False
         try:
             self._docker_tmux(["has-session", "-t", self.session], timeout=5)
@@ -285,40 +284,59 @@ class TmuxSessionManager:
         else:
             self._pane_id = self._resolve_pane_id()
 
-        # Inject PS1 marker + disable PS2 + clear screen
+        return session_exists
+
+    def _inject_ps1_marker(self) -> None:
+        """Inject the PS1 completion marker, disable PS2, and clear the screen."""
         ps1_cmd = "export PROMPT_COMMAND='export PS1=\"[DCPTN:$?:$PWD] \"'; export PS2=''; clear"
         self._send(ps1_cmd)
         time.sleep(0.5)
         self._clear_screen()
         time.sleep(0.2)
 
+    def _setup_pipe_pane_logging(self) -> None:
+        """Wire ``pipe-pane`` so the session's output streams to a host-tailable log."""
+        log_path = f"{self._workspace_path}/.sessions/{self._log_name}.log"
+        try:
+            # Idempotent — the directory is bind-mounted to the host so
+            # operators can tail the same file the agent reads. Use
+            # the configured exec_prefix instead of a hardcoded
+            # ``docker exec`` so this works both when the manager
+            # wraps a sibling docker container AND when it runs
+            # in-process inside the HTTP sandbox daemon (where
+            # exec_prefix is empty and no docker socket is reachable).
+            subprocess.run(
+                [*self._exec_prefix, "mkdir", "-p", f"{self._workspace_path}/.sessions"],
+                capture_output=True,
+                timeout=5,
+                check=True,
+            )
+            self._docker_tmux(
+                [
+                    "pipe-pane",
+                    "-t",
+                    self.session,
+                    "-o",
+                    f"cat >> {log_path}",
+                ]
+            )
+        except Exception as e:
+            log.warning("pipe-pane setup failed for session '%s': %s", self.session, e)
+
+    def initialize(self) -> None:
+        """Create session if needed and inject PS1 marker (once per session)."""
+        with TmuxSessionManager._init_lock:
+            if self._cached_pane_is_alive():
+                return
+            TmuxSessionManager._initialized.discard(self.session)
+            self._pane_id = None
+
+        session_exists = self._ensure_session()
+
+        self._inject_ps1_marker()
+
         if not session_exists and self._workspace_path != "/workspace":
-            log_path = f"{self._workspace_path}/.sessions/{self._log_name}.log"
-            try:
-                # Idempotent — the directory is bind-mounted to the host so
-                # operators can tail the same file the agent reads. Use
-                # the configured exec_prefix instead of a hardcoded
-                # ``docker exec`` so this works both when the manager
-                # wraps a sibling docker container AND when it runs
-                # in-process inside the HTTP sandbox daemon (where
-                # exec_prefix is empty and no docker socket is reachable).
-                subprocess.run(
-                    [*self._exec_prefix, "mkdir", "-p", f"{self._workspace_path}/.sessions"],
-                    capture_output=True,
-                    timeout=5,
-                    check=True,
-                )
-                self._docker_tmux(
-                    [
-                        "pipe-pane",
-                        "-t",
-                        self.session,
-                        "-o",
-                        f"cat >> {log_path}",
-                    ]
-                )
-            except Exception as e:
-                log.warning("pipe-pane setup failed for session '%s': %s", self.session, e)
+            self._setup_pipe_pane_logging()
 
         with TmuxSessionManager._init_lock:
             TmuxSessionManager._initialized.add(self.session)
