@@ -18,7 +18,6 @@ COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /usr/local/bin/uv
 # Copy project files (uv.lock included so the install is reproducible)
 COPY pyproject.toml langgraph.json README.md uv.lock ./
 COPY decepticon/ decepticon/
-COPY skills/ skills/
 
 # Stamp the package version from the git tag at build time. Source-tree
 # pyproject.toml carries a "0.0.0" sentinel; release.yml passes the real

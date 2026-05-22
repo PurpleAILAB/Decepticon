@@ -1,30 +1,30 @@
+import importlib.resources
+
 from deepagents.backends import CompositeBackend, FilesystemBackend
 
 from .factory import build_sandbox_backend
 from .http_sandbox import HTTPSandbox
 
-# Container-local path where the langgraph image bakes the skills tree
-# (see ``containers/langgraph.Dockerfile``). Skills are READ-ONLY knowledge
-# and live INSIDE the langgraph container — not the sandbox container —
-# so reads happen as fast in-process ``FilesystemBackend`` calls instead
-# of cross-container HTTP round-trips. This is the architectural reason
-# the sandbox image no longer bakes skills: skills don't belong in an
-# isolated execution environment, they belong next to the agent process
-# that consumes them.
-SKILLS_LOCAL_PATH = "/app/skills"
+# Skills ship as package data under ``decepticon/skills/`` and are read
+# in-process by a local ``FilesystemBackend`` (not the sandbox container).
+# Resolving via ``importlib.resources`` yields the correct on-disk location
+# for every install shape — wheel (site-packages), editable (repo checkout),
+# and the langgraph Docker image (``/app/decepticon/skills``) — so no
+# container-specific path is hardcoded.
+SKILLS_LOCAL_PATH = str(importlib.resources.files("decepticon") / "skills")
 
 
 def make_agent_backend(sandbox):
     """Compose the runtime backend for a Decepticon agent.
 
-    Routes ``/skills/`` to a local ``FilesystemBackend`` reading from the
-    baked skill tree inside the langgraph container, and routes everything
+    Routes ``/skills/`` to a local ``FilesystemBackend`` reading the
+    package's ``decepticon/skills`` tree in-process, and routes everything
     else (notably ``/workspace/``) through the sandbox transport
     (``HTTPSandbox``). Returning a ``CompositeBackend`` lets
     ``SkillsMiddleware`` and ``FilesystemMiddleware`` share the same
     backend object while reading from different physical storage:
 
-      /skills/...   ->  /app/skills/... in the langgraph container (~5ms)
+      /skills/...   ->  decepticon/skills/... read in-process (~5ms)
       /workspace/.. ->  sandbox container via HTTP (isolated, persistent)
 
     This replaces the previous pattern where every middleware used a raw

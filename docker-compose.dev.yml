@@ -1,45 +1,31 @@
 # Docker Compose override for development workflows.
 #
 # Auto-merge behaviour:
-#   - This file is automatically merged with `docker-compose.yml` whenever
-#     `docker compose <cmd>` is run *from this directory*. It is the
+#   - This file is merged with `docker-compose.yml` only when a Makefile
+#     target passes it explicitly (`-f docker-compose.dev.yml`); it is the
 #     contributor convenience layer — `make dev`, `make cli-dev`, the
-#     benchmark harness all run from here and pick this up.
+#     benchmark harness pick it up via the COMPOSE_DEV/COMPOSE_WATCH vars.
 #   - The OSS installer (`scripts/install.sh`) does NOT download this
 #     file, so end users running the launcher (`decepticon start`) get
-#     only the base `docker-compose.yml` from `~/.decepticon/`. Skills
-#     are baked into the LANGGRAPH image (see
-#     containers/langgraph.Dockerfile) — no host-side `./skills/`
-#     directory is needed.
+#     only the base `docker-compose.yml` from `~/.decepticon/`.
+#
+# Skills now ship as package data under `decepticon/skills/` and are baked
+# into the LANGGRAPH image via `COPY decepticon/` (resolved in-process by
+# `decepticon/backends/__init__.py:SKILLS_LOCAL_PATH`). On a repo dev clone
+# (`make dev`) skill edits are hot-reloaded by the `./decepticon` sync in
+# `docker-compose.watch.yml` — no dedicated `./skills` bind is needed (the
+# old root `./skills/` directory no longer exists).
 #
 # Where to put YOUR overrides depends on which stack you are running:
 #   - **Launcher / OSS install** (`decepticon start`): drop a
-#     `docker-compose.override.yml` into `~/.decepticon/`. The launcher
-#     runs Compose from that directory and Compose will merge it.
-#     Edits to *this* file (the repo copy) will NOT affect that stack.
-#   - **Repo dev clone** (`make dev`): edit this file directly, or
-#     add a sibling override that Compose will pick up by `-f`
-#     chaining in the relevant Makefile target.
+#     `docker-compose.override.yml` into `~/.decepticon/`.
+#   - **Repo dev clone** (`make dev`): add langgraph overrides below.
 #
-# Developers who clone the repo (`make dev`, `make cli-dev`, benchmark
-# harness, etc.) get the bind mount below, which shadows the baked
-# /app/skills/ in the LANGGRAPH container with the working-tree copy.
-# That makes skill edits hot-visible to the agent without rebuilding
-# the langgraph image. Skills are READ-ONLY knowledge — the agent
-# never writes back to /app/skills/, so ``:ro`` is safe.
-#
-# To temporarily test the OSS path on a dev clone, override the merge:
-#   docker compose -f docker-compose.yml up
-# (skipping this override file).
-#
-# See also: docs/proposals/156-compose-architecture.md for the
-# proposed direction on resolving this dual-config surface.
+# See also: docs/proposals/156-compose-architecture.md.
 
 services:
-  langgraph:
-    volumes:
-      # Read-only bind: the agent never writes back into the skill library;
-      # the host is the source of truth during development. Skills are read
-      # in-process by FilesystemBackend via the CompositeBackend route in
-      # ``decepticon/backends/__init__.py:make_agent_backend``.
-      - ./skills:/app/skills:ro
+  # No langgraph overrides currently needed — skills hot-reload via the
+  # ./decepticon watch sync (docker-compose.watch.yml). Kept as a merge
+  # target so the COMPOSE_DEV/COMPOSE_WATCH `-f` chains stay valid and
+  # future dev-only overrides have a home.
+  langgraph: {}
