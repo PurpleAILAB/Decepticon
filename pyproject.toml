@@ -62,9 +62,15 @@ dependencies = [
     "xxhash>=3.0.0",
     # Security
     "defusedxml>=0.7.0",
-    # Graph memory (Neo4j attack-chain graph)
-    "neo4j>=5.0",
 ]
+
+[project.optional-dependencies]
+# Heavy / feature-specific deps kept out of the base install so
+# `pip install decepticon` stays lean for library consumers. The neo4j
+# driver is imported lazily (decepticon/tools/research/neo4j_store.py), so
+# the base install imports and runs everything except the KG graph tools.
+neo4j = ["neo4j>=5.0"]
+all = ["decepticon[neo4j]"]
 
 [dependency-groups]
 dev = [
@@ -159,6 +165,11 @@ packages = ["decepticon"]
 # scripts/build_attack_dataset.py; force-included so the wheel ships them
 # even if a checkout has them VCS-ignored.
 artifacts = ["decepticon/tools/research/attack/data/*.json"]
+# Skill markdown trees (standard/shared/plugins) ship as package data and are
+# included by default since they are VCS-tracked. Benchmark skills are
+# XBOW/CTF eval-harness conventions — kept in-repo for `make benchmark` but
+# excluded from the published wheel.
+exclude = ["decepticon/skills/benchmark/**"]
 
 [tool.ruff]
 line-length = 100

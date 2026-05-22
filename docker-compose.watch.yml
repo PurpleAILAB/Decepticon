@@ -15,9 +15,8 @@ services:
         - action: sync
           path: ./decepticon
           target: /app/decepticon
-        - action: sync
-          path: ./skills
-          target: /app/skills
+          # Skills live under ./decepticon/skills, so this sync covers them
+          # too — no dedicated ./skills entry needed.
         - action: sync
           path: ./langgraph.json
           target: /app/langgraph.json

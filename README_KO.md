@@ -55,6 +55,17 @@ decepticon           # 전체 실행: 터미널 CLI + 웹 대시보드 (http://l
 
 → **[빠른 시작](docs/getting-started.md)** · **[전체 셋업 가이드](docs/setup-guide.md)**
 
+### 라이브러리로 사용 (pip)
+
+에이전트 위에 무언가를 만드시나요 — SaaS, 연구 통합, 커스텀 오케스트레이터? SDK 를 PyPI 에서 설치하세요:
+
+```bash
+pip install decepticon              # 코어 SDK
+pip install "decepticon[neo4j]"     # + 지식그래프 공격체인 도구
+```
+
+`decepticon` 은 **클라이언트 SDK** 입니다 — 에이전트 팩토리·미들웨어·도구·스킬을 담고 있고, LLM 호출과 샌드박스 실행은 런타임 서비스로 HTTP 라우팅합니다 (`DECEPTICON_LLM__PROXY_URL`, `SAAS_SANDBOX_URL`). 에이전트를 실제로 돌리려면 그 서비스들이 필요합니다 — 위 Docker 스택을 쓰거나 URL 을 직접 가리키세요. 팩토리 오버라이드 surface, 선언적 `PluginBundle` 플러그인, 안전 게이트는 **[라이브러리로서의 Decepticon](docs/library-usage.md)** 참고.
+
 ---
 
 ## 💖 Decepticon 후원

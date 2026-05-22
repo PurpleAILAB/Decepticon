@@ -80,7 +80,6 @@ jobs:
               - 'decepticon/**'
               - 'pyproject.toml'
               - 'uv.lock'
-              - 'skills/**'
               - '.github/workflows/ci.yml'
             litellm:
               - 'containers/litellm.Dockerfile'
@@ -88,11 +87,11 @@ jobs:
               - '.github/workflows/ci.yml'
             sandbox:
               - 'containers/sandbox.Dockerfile'
-              # Skills are baked into the sandbox image (see Dockerfile),
-              # so any skill content change must rebuild the image — without
-              # this filter CI passes green while the published sandbox tag
-              # silently lags behind the skill library on disk.
-              - 'skills/**'
+              # Skills no longer ship in the sandbox image — they live under
+              # decepticon/skills and are read in-process by the langgraph
+              # service (see decepticon/backends/__init__.py). Skill changes
+              # rebuild langgraph (via the decepticon/** filter above), not
+              # the sandbox.
               - '.github/workflows/ci.yml'
             cli:
               - 'containers/cli.Dockerfile'
