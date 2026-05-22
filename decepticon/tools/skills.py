@@ -88,6 +88,60 @@ def _list_dir_via_backend(backend: Any, dir_path: str) -> list[str]:
     return sorted(n for n in names if n.endswith(".md"))
 
 
+def _validate_skill_path(skill_path: Any, sources: list[str]) -> str | None:
+    """Validate a ``load_skill`` path against the format + allowlist rules.
+
+    Returns an ``[load_skill error] ...`` string when the path is rejected,
+    or ``None`` when it passes every check. Mirrors the checks the tool
+    surfaced inline so ``load_skill`` keeps returning the exact same error
+    strings (it never raises).
+    """
+    if not isinstance(skill_path, str) or not skill_path:
+        return "[load_skill error] skill_path must be a non-empty string."
+    if not skill_path.startswith(_SKILL_PATH_PREFIX):
+        return (
+            "[load_skill error] Path must start with /skills/. "
+            "For non-skill files use read_file. "
+            f"Got: {skill_path!r}"
+        )
+    if not skill_path.endswith(".md"):
+        return f"[load_skill error] Skill files must be markdown (.md). Got: {skill_path!r}"
+    # Reject path traversal — disallow ".." segments
+    if ".." in skill_path.split("/"):
+        return f"[load_skill error] Path traversal not allowed: {skill_path!r}"
+    # Enforce agent's skill source allowlist
+    if sources and not any(skill_path.startswith(src.rstrip("/")) for src in sources):
+        allowed = ", ".join(sources)
+        return (
+            f"[load_skill error] This agent may only load skills from: {allowed}. "
+            f"Got: {skill_path!r}"
+        )
+    return None
+
+
+def _format_skill_body(skill_path: str, raw: str) -> tuple[list[str], str, str]:
+    """Build the header + body sections for a loaded skill file.
+
+    Strips frontmatter, derives the base-directory header (skill name +
+    description), and seeds the section list. Returns ``(sections, base_dir,
+    basename)`` so the caller can append the backend-dependent references /
+    siblings index.
+    """
+    body, frontmatter = _strip_frontmatter(raw)
+
+    path_parts = skill_path.rsplit("/", 1)
+    base_dir = path_parts[0] if len(path_parts) == 2 else "/"
+    stem = path_parts[-1].rsplit(".", 1)[0]
+    header_lines = [f"Base directory for this skill: {base_dir}"]
+    name = frontmatter.get("name") or stem
+    description = frontmatter.get("description", "").strip()
+    header_lines.append(f"Skill: {name}" + (f" — {description}" if description else ""))
+    header = "\n".join(header_lines)
+
+    sections: list[str] = [header, "", body.rstrip(), ""]
+    return sections, base_dir, path_parts[-1]
+
+
 def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-untyped-def]
     """Construct the ``load_skill`` LangChain tool.
 
@@ -124,43 +178,15 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
             The skill body with a header + references index. Errors are
             returned as ``[load_skill error] ...`` strings (never raised).
         """
-        if not isinstance(skill_path, str) or not skill_path:
-            return "[load_skill error] skill_path must be a non-empty string."
-        if not skill_path.startswith(_SKILL_PATH_PREFIX):
-            return (
-                "[load_skill error] Path must start with /skills/. "
-                "For non-skill files use read_file. "
-                f"Got: {skill_path!r}"
-            )
-        if not skill_path.endswith(".md"):
-            return f"[load_skill error] Skill files must be markdown (.md). Got: {skill_path!r}"
-        # Reject path traversal — disallow ".." segments
-        if ".." in skill_path.split("/"):
-            return f"[load_skill error] Path traversal not allowed: {skill_path!r}"
-        # Enforce agent's skill source allowlist
-        if sources and not any(skill_path.startswith(src.rstrip("/")) for src in sources):
-            allowed = ", ".join(sources)
-            return (
-                f"[load_skill error] This agent may only load skills from: {allowed}. "
-                f"Got: {skill_path!r}"
-            )
+        path_error = _validate_skill_path(skill_path, sources)
+        if path_error is not None:
+            return path_error
 
         raw, err = _read_via_backend(backend, skill_path)
         if raw is None:
             return f"[load_skill error] Skill not found: {skill_path} ({err})"
 
-        body, frontmatter = _strip_frontmatter(raw)
-
-        path_parts = skill_path.rsplit("/", 1)
-        base_dir = path_parts[0] if len(path_parts) == 2 else "/"
-        stem = path_parts[-1].rsplit(".", 1)[0]
-        header_lines = [f"Base directory for this skill: {base_dir}"]
-        name = frontmatter.get("name") or stem
-        description = frontmatter.get("description", "").strip()
-        header_lines.append(f"Skill: {name}" + (f" — {description}" if description else ""))
-        header = "\n".join(header_lines)
-
-        sections: list[str] = [header, "", body.rstrip(), ""]
+        sections, base_dir, basename = _format_skill_body(skill_path, raw)
 
         refs_dir = base_dir.rstrip("/") + "/references"
         refs = _list_dir_via_backend(backend, refs_dir)
@@ -171,7 +197,7 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
             sections.append("")
 
         if include_siblings:
-            sibs = [s for s in _list_dir_via_backend(backend, base_dir) if s != path_parts[-1]]
+            sibs = [s for s in _list_dir_via_backend(backend, base_dir) if s != basename]
             if sibs:
                 sections.append("---")
                 sections.append("Related sub-skills in this directory (load with `load_skill`):")

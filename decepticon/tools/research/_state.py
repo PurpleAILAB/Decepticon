@@ -38,8 +38,9 @@ def close_store() -> None:
     if _store is not None:
         try:
             _store.close()
-        except Exception:
-            pass  # Neo4j not configured — no-op
+        except Exception as exc:
+            # Neo4j not configured — no-op
+            log.debug("Neo4j store close failed (swallowed): %s", exc)
         _store = None
 
 

@@ -406,34 +406,15 @@ def scan_shard(
     )
 
 
-@tool
-def rank_candidates(shard_results: str, top_k: int = 50) -> str:
-    """Merge shard outputs, dedupe by ``(path,line,sink_kind)``, return top-k.
+def _parse_shard_blobs(raw: str) -> list[dict[str, Any]]:
+    """Parse ``rank_candidates`` input into a list of shard-output dicts.
 
-    WHEN TO USE: After fanning out N :func:`scan_shard` calls, pass the
-    concatenated JSON (newline- or comma-separated list of shard JSON
-    blobs, or a single JSON array) here to get a clean, ranked candidate
-    list for the detector stage.
-
-    The ranker does **not** write to the knowledge graph. Call
-    :func:`kg_add_candidate` per returned hit once the detector has
-    decided which ones to investigate.
-
-    Args:
-        shard_results: JSON array of shard outputs, OR a newline-separated
-            list of shard JSON blobs (the format ``scan_shard`` returns).
-        top_k: Max candidates to return (default 50).
-
-    Returns:
-        JSON with ``total_hits``, ``unique_hits``, and a ``candidates``
-        array sorted by descending score.
+    Three accepted shapes:
+      1. A single JSON object (one shard)
+      2. A JSON array of shard objects
+      3. Several JSON objects concatenated back-to-back
     """
-    raw = shard_results.strip()
     blobs: list[dict[str, Any]] = []
-    # Three accepted shapes:
-    #   1. A single JSON object (one shard)
-    #   2. A JSON array of shard objects
-    #   3. Several JSON objects concatenated back-to-back
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
@@ -464,7 +445,15 @@ def rank_candidates(shard_results: str, top_k: int = 50) -> str:
                     except json.JSONDecodeError:
                         pass
                     start = -1
+    return blobs
 
+
+def _dedupe_hits(blobs: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
+    """Merge hits across shard blobs, deduping by ``(path,line,sink_kind)``.
+
+    Returns ``(total_hits, unique_hits_sorted)`` — the raw hit count and the
+    deduped hits sorted by descending score (highest score wins on collision).
+    """
     seen: dict[tuple[str, int, str], dict[str, Any]] = {}
     total = 0
     for blob in blobs:
@@ -482,6 +471,33 @@ def rank_candidates(shard_results: str, top_k: int = 50) -> str:
                 seen[key] = hit
 
     uniq = sorted(seen.values(), key=lambda h: h.get("score", 0), reverse=True)
+    return total, uniq
+
+
+@tool
+def rank_candidates(shard_results: str, top_k: int = 50) -> str:
+    """Merge shard outputs, dedupe by ``(path,line,sink_kind)``, return top-k.
+
+    WHEN TO USE: After fanning out N :func:`scan_shard` calls, pass the
+    concatenated JSON (newline- or comma-separated list of shard JSON
+    blobs, or a single JSON array) here to get a clean, ranked candidate
+    list for the detector stage.
+
+    The ranker does **not** write to the knowledge graph. Call
+    :func:`kg_add_candidate` per returned hit once the detector has
+    decided which ones to investigate.
+
+    Args:
+        shard_results: JSON array of shard outputs, OR a newline-separated
+            list of shard JSON blobs (the format ``scan_shard`` returns).
+        top_k: Max candidates to return (default 50).
+
+    Returns:
+        JSON with ``total_hits``, ``unique_hits``, and a ``candidates``
+        array sorted by descending score.
+    """
+    blobs = _parse_shard_blobs(shard_results.strip())
+    total, uniq = _dedupe_hits(blobs)
     return _json(
         {
             "total_hits": total,
