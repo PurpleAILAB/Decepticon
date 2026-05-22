@@ -65,7 +65,7 @@ Use the [Feature Request](https://github.com/PurpleAILAB/Decepticon/issues/new?t
 - **Line length**: 100 characters
 - **Imports**: Absolute imports, public API re-exported through `__init__.py`
 - **Logging**: `from decepticon.core.logging import get_logger; log = get_logger("module.sub")`
-- **Skills**: Markdown files in `skills/` with YAML frontmatter
+- **Skills**: Markdown files in `decepticon/skills/` with YAML frontmatter
 - **CLI (TypeScript)**: Ink.js components in `clients/cli/src/`
 
 ## Project Structure
@@ -73,12 +73,16 @@ Use the [Feature Request](https://github.com/PurpleAILAB/Decepticon/issues/new?t
 ```
 decepticon/          Python agents, core logic, backends
 clients/cli/         Ink.js terminal UI (TypeScript)
-skills/              Markdown knowledge base for agents
+decepticon/skills/   Markdown knowledge base for agents
 containers/          Dockerfiles
 config/              Runtime configuration
 scripts/             Installer and utilities
 docs/                Documentation
 ```
+
+## Releases
+
+Maintainers: see [RELEASE.md](RELEASE.md) for the versioning model and the release process.
 
 ## Security
 
