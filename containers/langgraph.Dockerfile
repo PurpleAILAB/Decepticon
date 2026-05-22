@@ -30,7 +30,12 @@ RUN sed -i 's/^version = "[^"]*"/version = "'"$VERSION"'"/' pyproject.toml
 # always gets the same versions that were locked at commit time. The editable
 # install uses --no-deps because all dependencies are already installed; source
 # changes via docker compose watch are still reflected without reinstall.
-RUN uv export --no-dev --frozen -o /tmp/requirements.txt && \
+#
+# ``--extra neo4j`` is required here: neo4j is an optional extra so the PyPI SDK
+# (``pip install decepticon``) stays lean, but the full langgraph image runs the
+# Neo4j knowledge-graph feature and needs the driver. Without it the KG health
+# check fails (no ``neo4j`` module in the container).
+RUN uv export --no-dev --extra neo4j --frozen -o /tmp/requirements.txt && \
     uv pip install --system -r /tmp/requirements.txt && \
     uv pip install --system -e "." --no-deps
 
