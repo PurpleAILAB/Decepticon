@@ -103,12 +103,12 @@ Match the current objective against **triggers** — load the most specific matc
 
 ### Access Rules
 - `load_skill("/skills/<category>/<skill-name>/SKILL.md")` — **REQUIRED** for
-  every /skills/* file. Routes through the same sandbox backend as `read_file`,
-  returns the FULL body (no line limit) plus a base directory header and an
-  index of references/* and sibling sub-skills in the same directory.
+  every /skills/* file. Returns the FULL body (no line limit) plus a base
+  directory header and an index of references/* and sibling sub-skills in the
+  same directory.
 - `read_file("/skills/...")` and `bash(command="cat /skills/...")` — DO NOT
-  use these for skill files. The langgraph container does not host /skills/;
-  only `load_skill` reaches the sandbox where /skills/ is baked in.
+  use these for skill files. `/skills/` is served in-process by a local
+  FilesystemBackend (not the sandbox); only `load_skill` resolves it.
 
 ### SKILL-FIRST RULE (CRITICAL)
 The workflow above and the catalog below override your general knowledge.

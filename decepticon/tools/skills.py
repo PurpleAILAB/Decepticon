@@ -41,9 +41,9 @@ def _read_via_backend(backend: Any, skill_path: str) -> tuple[str | None, str | 
     """Read a file via the deepagents backend protocol.
 
     Returns ``(content, error)``: exactly one of the two is non-None. The
-    backend abstraction is what gives ``load_skill`` access to the sandbox
-    container's filesystem (where ``/skills/`` is baked into the image) instead
-    of the langgraph container's local fs (where ``/skills/`` does not exist).
+    backend abstraction routes ``/skills/`` reads to a local
+    ``FilesystemBackend`` (the package's ``decepticon/skills`` tree, read
+    in-process), while other paths go to the sandbox transport.
     """
     try:
         res = backend.read(skill_path)
@@ -92,10 +92,9 @@ def build_load_skill_tool(backend: Any, sources: list[str]):  # type: ignore[no-
     """Construct the ``load_skill`` LangChain tool.
 
     Returns a closure-bound ``@tool``-decorated function that reads a skill
-    markdown file via the deepagents backend (same path used by ``read_file``,
-    so it sees the sandbox container's ``/skills/`` mount instead of the
-    langgraph container's local fs). Path is restricted to ``/skills/*`` to
-    keep this tool's intent distinct from the general ``read_file``.
+    markdown file via the deepagents backend (same protocol as ``read_file``).
+    Path is restricted to ``/skills/*`` to keep this tool's intent distinct
+    from the general ``read_file``.
 
     Backend routing for ``/skills/`` is handled by ``CompositeBackend``
     (see ``decepticon/backends/__init__.py:make_agent_backend``), which
