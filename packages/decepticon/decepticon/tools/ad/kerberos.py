@@ -49,6 +49,7 @@ _HASH_PATTERNS: tuple[tuple[re.Pattern[str], str, int], ...] = (
     (re.compile(r"^\$krb5asrep\$17\$"), "asrep-aes128", 29700),
     (re.compile(r"^\$krb5asrep\$18\$"), "asrep-aes256", 29800),
     (re.compile(r"^\$krb5pa\$23\$"), "preauth-rc4", 7500),
+    (re.compile(r"^\$krb5pa\$17\$"), "preauth-aes128", 19900),
     (re.compile(r"^\$krb5pa\$18\$"), "preauth-aes256", 19800),
 )
 

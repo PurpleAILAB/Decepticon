@@ -145,28 +145,31 @@ class HTTPHistory:
     def from_dump(cls, payload: Iterable[dict[str, Any]]) -> HTTPHistory:
         hist = cls()
         for entry in payload:
-            r = entry["request"]
-            req = HTTPRequest(
-                id=r["id"],
-                method=r["method"],
-                url=r["url"],
-                headers=dict(r["headers"]),
-                body=r["body"].encode("utf-8"),
-                timestamp=r["timestamp"],
-                tag=r.get("tag", ""),
-            )
-            resp: HTTPResponse | None = None
-            if entry.get("response"):
-                rr = entry["response"]
-                resp = HTTPResponse(
-                    id=rr["id"],
-                    request_id=rr["request_id"],
-                    status=rr["status"],
-                    headers=dict(rr["headers"]),
-                    body=rr["body"].encode("utf-8"),
-                    elapsed_ms=rr["elapsed_ms"],
-                    timestamp=rr["timestamp"],
+            try:
+                r = entry["request"]
+                req = HTTPRequest(
+                    id=r["id"],
+                    method=r["method"],
+                    url=r["url"],
+                    headers=dict(r["headers"]),
+                    body=r["body"].encode("utf-8"),
+                    timestamp=r["timestamp"],
+                    tag=r.get("tag", ""),
                 )
+                resp: HTTPResponse | None = None
+                if entry.get("response"):
+                    rr = entry["response"]
+                    resp = HTTPResponse(
+                        id=rr["id"],
+                        request_id=rr["request_id"],
+                        status=rr["status"],
+                        headers=dict(rr["headers"]),
+                        body=rr["body"].encode("utf-8"),
+                        elapsed_ms=rr["elapsed_ms"],
+                        timestamp=rr["timestamp"],
+                    )
+            except KeyError as e:
+                raise ValueError(f"Malformed history entry: missing key {e}") from e
             hist.record(req, resp)
         return hist
 

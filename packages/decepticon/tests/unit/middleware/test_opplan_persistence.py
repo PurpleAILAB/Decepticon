@@ -367,9 +367,10 @@ def test_after_model_blocks_two_opplan_tools_in_same_step() -> None:
     update = middleware.after_model({"messages": [last_ai]}, runtime=None)
     assert update is not None
     msgs = update["messages"]
-    assert len(msgs) == 2
-    assert all(isinstance(m, ToolMessage) and m.status == "error" for m in msgs)
-    assert all("sequentially" in str(m.content) for m in msgs)
+    # H14: first OPPLAN call is allowed, only 2nd+ are rejected
+    assert len(msgs) == 1
+    assert isinstance(msgs[0], ToolMessage) and msgs[0].status == "error"
+    assert msgs[0].tool_call_id == "tc-y"
 
 
 def test_after_model_allows_single_opplan_tool() -> None:

@@ -30,12 +30,11 @@ class TestBloodHoundIngest:
         assert stats.users == 1
         assert stats.edges >= 1
 
-    def test_rejects_top_level_array(self) -> None:
-        import pytest
-
+    def test_empty_array_produces_zero_stats(self) -> None:
+        """BH CE format: top-level array is valid (JSONL items)."""
         g = KnowledgeGraph()
-        with pytest.raises(ValueError, match="top level"):
-            merge_bloodhound_json("[]", g)
+        stats = merge_bloodhound_json("[]", g)
+        assert stats.users == 0
 
     def test_rejects_top_level_scalar(self) -> None:
         import pytest

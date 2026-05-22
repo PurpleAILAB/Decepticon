@@ -17,7 +17,6 @@ logs) and gets a structured list of findings back.
 
 from __future__ import annotations
 
-import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -51,17 +50,9 @@ _HEX_RE = re.compile(r"^[0-9a-f]+$", re.IGNORECASE)
 
 
 def _shannon_entropy(s: str) -> float:
-    if not s:
-        return 0.0
-    freq: dict[str, int] = {}
-    for ch in s:
-        freq[ch] = freq.get(ch, 0) + 1
-    entropy = 0.0
-    length = len(s)
-    for count in freq.values():
-        p = count / length
-        entropy -= p * math.log2(p)
-    return entropy
+    from decepticon.tools.web.session import shannon_entropy
+
+    return shannon_entropy(s)
 
 
 def _qp(url: str) -> dict[str, list[str]]:
@@ -128,7 +119,7 @@ def analyze_oauth_callback(
         )
     else:
         entropy = _shannon_entropy(state)
-        if len(state) < 8:
+        if len(state) < 32:  # 128-bit minimum per RFC 6819 §5.3.5
             findings.append(
                 OAuthFinding(
                     id="oauth.state-short",
@@ -190,8 +181,8 @@ def analyze_oauth_callback(
 
     # ── PKCE ──
     if public_client:
-        code_verifier = initial_single.get("code_challenge", "")
-        if not code_verifier:
+        code_challenge_sent = initial_single.get("code_challenge", "")
+        if not code_challenge_sent:
             findings.append(
                 OAuthFinding(
                     id="oauth.pkce-missing",
@@ -207,7 +198,10 @@ def analyze_oauth_callback(
                     id="oauth.pkce-plain",
                     severity="medium",
                     title="PKCE using plain method",
-                    detail="code_challenge_method=plain is weaker than S256 and forbidden for public clients.",
+                    detail=(
+                        "code_challenge_method=plain is weaker than S256 "
+                        "and forbidden for public clients."
+                    ),
                 )
             )
 
