@@ -380,14 +380,17 @@ through real commercial integrations. Public surface listed above is
 the intended stability target; internals (`_resolve_overrides`,
 private factory helpers, etc.) may change without notice.
 
-Pin to a tag in your `pyproject.toml`:
+Install from PyPI and pin a compatible range in your `pyproject.toml`:
 
 ```toml
 [project]
 dependencies = [
-    "decepticon @ git+https://github.com/PurpleAILAB/Decepticon.git@v1.x.y",
+    "decepticon>=1.0,<2",           # core SDK
+    # "decepticon[neo4j]>=1.0,<2",  # add the extra for the KG graph tools
 ]
 ```
 
-PyPI publication is on the roadmap once the public API surface is
-stable enough to commit to.
+The published wheel bundles the `standard`/`shared`/`plugins` skill trees
+as package data; benchmark skills are intentionally excluded. Heavy
+optional dependencies (e.g. `neo4j`) live behind extras to keep the base
+install lean.
