@@ -62,9 +62,15 @@ dependencies = [
     "xxhash>=3.0.0",
     # Security
     "defusedxml>=0.7.0",
-    # Graph memory (Neo4j attack-chain graph)
-    "neo4j>=5.0",
 ]
+
+[project.optional-dependencies]
+# Heavy / feature-specific deps kept out of the base install so
+# `pip install decepticon` stays lean for library consumers. The neo4j
+# driver is imported lazily (decepticon/tools/research/neo4j_store.py), so
+# the base install imports and runs everything except the KG graph tools.
+neo4j = ["neo4j>=5.0"]
+all = ["decepticon[neo4j]"]
 
 [dependency-groups]
 dev = [
