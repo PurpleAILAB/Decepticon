@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+import posixpath
 from dataclasses import replace
 from typing import Any
 
@@ -51,7 +51,9 @@ def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
     if not path.startswith(f"{WORKSPACE}/"):
         return None
     expected = path.rstrip("/")
-    if os.path.normpath(expected) != expected:
+    # posixpath, not os.path: these are virtual POSIX paths. os.path.normpath
+    # rewrites "/" to "\" on Windows, which would reject every valid workspace.
+    if posixpath.normpath(expected) != expected:
         return None
     normalized = SandboxBase._normalize_workspace_path(path)
     return normalized if normalized == expected else None
