@@ -191,7 +191,7 @@ jobs:
         run: uv run pytest -n auto -q -m "not slow"
       - name: Pytest with coverage (main — enforces threshold)
         if: github.event_name == 'push'
-        run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30
+        run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=35
       - name: Upload coverage artifact
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
