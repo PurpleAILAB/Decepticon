@@ -33,7 +33,6 @@ STALL_SECONDS: float = 3.0
 MAX_OUTPUT_CHARS: int = 30_000
 AUTO_BACKGROUND_SECONDS: float = 60.0
 SIZE_WATCHDOG_CHARS: int = 5_000_000
-SIZE_WATCHDOG_INTERVAL: float = 5.0
 
 
 def _safe_log(value: object) -> str:
