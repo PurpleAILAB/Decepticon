@@ -138,10 +138,10 @@ export const AgentSessionGroup = React.memo(function AgentSessionGroup({
   const color = AGENT_COLORS[session.agent] ?? "white";
 
   // Filter events belonging to this session
-  const sessionEvents = useMemo(
-    () => events.filter((e) => session.eventIds.includes(e.id)),
-    [events, session.eventIds],
-  );
+  const sessionEvents = useMemo(() => {
+    const idSet = new Set(session.eventIds);
+    return events.filter((e) => idSet.has(e.id));
+  }, [events, session.eventIds]);
 
   // ── Transcript mode: full EventItem rendering ──────────────────
   if (isTranscript) {

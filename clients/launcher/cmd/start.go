@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,6 +22,13 @@ import (
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
 	"github.com/spf13/cobra"
 )
+
+func nullDevice() string {
+	if runtime.GOOS == "windows" {
+		return "NUL"
+	}
+	return "/dev/null"
+}
 
 // Indirected so tests can swap WSL detection without touching the
 // real /proc/version or /etc/resolv.conf on the host they run on.
@@ -64,6 +73,16 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Verify Docker is available
+	if _, err := exec.LookPath("docker"); err != nil {
+		return fmt.Errorf("Docker is not installed or not in PATH. Install from https://docs.docker.com/get-docker/")
+	}
+	// Verify Docker Compose V2
+	out, err := exec.Command("docker", "compose", "version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Docker Compose V2 is required. Got: %s. Upgrade Docker Desktop or install the compose plugin.", strings.TrimSpace(string(out)))
+	}
+
 	// Warn — don't block — if Ollama is selected but the URL doesn't
 	// reach a running server. We translate ``host.docker.internal`` to
 	// ``localhost`` for the host-side probe; from inside the litellm
@@ -103,37 +122,31 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// 2.6. Set CLAUDE_CREDENTIALS_VOLUME for conditional mount in docker-compose.
 	// When the credentials file exists, mount it into litellm. Otherwise mount
-	// /dev/null so docker doesn't create it as a directory.
-	credsPath := filepath.Join(os.Getenv("HOME"), ".claude", ".credentials.json")
+	// /dev/null (NUL on Windows) so docker doesn't create it as a directory.
+	userHome, _ := os.UserHomeDir()
+	credsPath := filepath.Join(userHome, ".claude", ".credentials.json")
 	if _, statErr := os.Stat(credsPath); statErr == nil {
 		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", credsPath)
 	} else {
-		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", "/dev/null")
+		_ = os.Setenv("CLAUDE_CREDENTIALS_VOLUME", nullDevice())
 	}
 
 	// Same pattern for the Codex CLI credential store at ~/.codex/auth.json.
 	// The new auth/ ChatGPT handler reads (and writes) this file directly so
 	// a host-side `codex login` flows into the container without a rebuild.
-	codexAuthPath := filepath.Join(os.Getenv("HOME"), ".codex", "auth.json")
+	codexAuthPath := filepath.Join(userHome, ".codex", "auth.json")
 	if _, statErr := os.Stat(codexAuthPath); statErr == nil {
 		_ = os.Setenv("CODEX_AUTH_VOLUME", codexAuthPath)
 	} else {
-		_ = os.Setenv("CODEX_AUTH_VOLUME", "/dev/null")
+		_ = os.Setenv("CODEX_AUTH_VOLUME", nullDevice())
 	}
 
-	// 2.5. Update prompt. When a newer release is available and stdin is
-	// a TTY, ask the operator interactively whether to apply it. On
-	// confirmation the launcher applies the update (config sync + image
-	// pull + binary replace) and re-execs itself so the rest of this
-	// ``start`` flow runs against the just-installed version — matches
-	// the Claude Code / Codex CLI "update available, restarting" UX.
-	// Non-interactive shells (CI, piped) fall back to the passive notice
-	// path inside ``PromptIfUpdateAvailable``.
-	if _, err := updater.PromptIfUpdateAvailable(version); err != nil {
-		// Non-fatal — surface as a warning and continue with the
-		// current launcher rather than aborting the start.
-		ui.Warning("Update check: " + err.Error())
-	}
+	// 2.5. Non-blocking update check. When a newer release is available
+	// the prompt runs in the background so it doesn't add latency to
+	// the start path. Non-interactive shells skip the prompt entirely.
+	go func() {
+		updater.PromptIfUpdateAvailable(version)
+	}()
 
 	// 2.6. One-time GitHub star ask. Idempotent across launches — the
 	// ack file at $DECEPTICON_HOME/.starred suppresses the prompt
@@ -190,9 +203,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 		"cli",
 		cliEnv,
 	); err != nil {
-		ui.Warning("CLI exited with error — if services just started, try 'decepticon' again.")
-		ui.DimText("Run 'decepticon logs litellm' or 'decepticon logs langgraph' to debug.")
-		return nil
+		ui.Warning("CLI exited with error: " + err.Error())
+		return fmt.Errorf("cli: %w", err)
 	}
 
 	ui.DimText("CLI exited. Services kept running — run 'decepticon stop' to shut down.")

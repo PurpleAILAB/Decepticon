@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"charm.land/huh/v2"
@@ -209,8 +210,33 @@ func backupWorkspace(src, dst string) error {
 		return nil
 	}
 	// Cross-device or other rename failure: copy then remove.
-	if out, err := exec.Command("cp", "-r", src, dst).CombinedOutput(); err != nil {
-		return fmt.Errorf("cp -r: %w (%s)", err, strings.TrimSpace(string(out)))
+	var err error
+	if runtime.GOOS == "windows" {
+		err = copyDirRecursive(src, dst)
+	} else {
+		_, err = exec.Command("cp", "-r", src, dst).CombinedOutput()
+	}
+	if err != nil {
+		return fmt.Errorf("copy %s → %s: %w", src, dst, err)
 	}
 	return os.RemoveAll(src)
+
+}
+
+func copyDirRecursive(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(src, path)
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }
