@@ -211,12 +211,20 @@ var keyFormatRules = map[string]struct {
 	"GITHUB_TOKEN":                   {Prefix: "", Hint: ""},
 	"AWS_ACCESS_KEY_ID":              {Prefix: "AKIA", Hint: "AWS access key IDs start with 'AKIA'"},
 	"AZURE_API_KEY":                  {Prefix: "", Hint: ""},
-	"GOOGLE_APPLICATION_CREDENTIALS": {Prefix: "/", Hint: "must be an absolute path to a service-account JSON file"},
+	"GOOGLE_APPLICATION_CREDENTIALS": {Prefix: "", Hint: "must be an absolute path to a service-account JSON file"},
+
 	"CUSTOM_OPENAI_API_KEY":          {Prefix: "", Hint: ""},
 }
 
 // validateKeyFormat returns an empty string if the key looks valid, or a reason if not.
 func validateKeyFormat(name, val string) string {
+	// File-path keys have different validation
+	if name == "GOOGLE_APPLICATION_CREDENTIALS" {
+		if _, err := os.Stat(val); err != nil {
+			return "file not found: " + val
+		}
+		return ""
+	}
 	if len(val) < 20 {
 		return "value is too short to be a valid API key"
 	}
@@ -574,7 +582,15 @@ func extractClaudeAccessToken(creds map[string]any) string {
 }
 
 // AppendEnvLine appends a KEY=VALUE line to an existing .env file.
+// If the key is already present, it is left unchanged.
 func AppendEnvLine(path, key, value string) error {
+	existing, _ := os.ReadFile(path)
+	// If key already present, skip
+	for _, line := range strings.Split(string(existing), "\n") {
+		if k, _, ok := parseEnvLine(strings.TrimSpace(line)); ok && k == key {
+			return nil // already set
+		}
+	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err

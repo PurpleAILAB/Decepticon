@@ -113,6 +113,8 @@ interface UseAgentReturn {
 // no CLI restart needed.
 const INITIAL_ASSISTANT_ID =
   process.env.DECEPTICON_ASSISTANT_ID || "decepticon";
+let _nextEventId = 0;
+
 
 export function useAgent({
   apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024",
@@ -177,11 +179,11 @@ export function useAgent({
     (partial: Omit<AgentEvent, "id" | "timestamp">) => {
       const newEvent: AgentEvent = {
         ...partial,
-        id: `${Date.now()}-${Math.random()}`,
+        id: `evt-${++_nextEventId}`,
         timestamp: Date.now(),
       };
-      eventsRef.current = [...eventsRef.current, newEvent];
-      setEvents(eventsRef.current);
+      eventsRef.current.push(newEvent);
+      setEvents([...eventsRef.current]);
     },
     [],
   );
@@ -230,6 +232,8 @@ export function useAgent({
       let cumTotal = 0;
       let cumPrompt = 0;
       let cumCompletion = 0;
+      let completionReceived = false;
+
 
       const handleCustomEvent = (data: SubagentCustomEvent) => {
         switch (data.type) {
@@ -504,7 +508,9 @@ export function useAgent({
               }
             } else {
               setPendingTool(null);
+              completionReceived = true;
             }
+
           } else if (msg.type === "tool") {
             const content =
               typeof msg.content === "string"
@@ -541,8 +547,17 @@ export function useAgent({
           }
         }
       }
+
+      // Detect unexpected disconnection: stream ended but no completion event
+      if (!completionReceived && !abortController.signal.aborted) {
+        addSystemEvent(
+          "\u26a0\ufe0f Connection to server lost. The run continues server-side. "
+          + "Use /resume to reconnect.",
+        );
+        setRunState("idle");
+      }
     },
-    [addEvent],
+    [addEvent, addSystemEvent, setRunState],
   );
 
   // ── Handle stream completion (shared by submit and resume) ─────

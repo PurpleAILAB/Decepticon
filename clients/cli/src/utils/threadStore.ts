@@ -21,9 +21,14 @@ export interface ThreadEntry {
 
 const MAX_ENTRIES = 20;
 
+let _client: Client | null = null;
+
 function getClient(): Client {
-  const apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024";
-  return new Client({ apiUrl });
+  if (!_client) {
+    const apiUrl = process.env.DECEPTICON_API_URL || "http://localhost:2024";
+    _client = new Client({ apiUrl });
+  }
+  return _client;
 }
 
 /** Save or update a thread's metadata on the server. */
