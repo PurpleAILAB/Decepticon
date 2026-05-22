@@ -177,7 +177,7 @@ class TestPatchVerify:
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
+        bash_mod.set_sandbox(sandbox)
 
         raw = await patch_verify.ainvoke(
             {
@@ -216,7 +216,7 @@ class TestPatchVerify:
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
+        bash_mod.set_sandbox(sandbox)
 
         raw = await patch_verify.ainvoke(
             {
@@ -251,7 +251,7 @@ class TestPatchVerify:
         import importlib
 
         bash_mod = importlib.import_module("decepticon.tools.bash.bash")
-        monkeypatch.setattr(bash_mod, "_sandbox", sandbox)
+        bash_mod.set_sandbox(sandbox)
 
         raw = await patch_verify.ainvoke(
             {

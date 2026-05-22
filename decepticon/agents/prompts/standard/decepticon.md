@@ -61,7 +61,7 @@ Classification heuristics live in the router skills, not in this prompt — that
 
 ## D. Sub-Agent Failure Handling
 
-Three distinct sub-agent fault modes — handle each differently. Same-prompt re-dispatch is FORBIDDEN in every mode (degraded context reproduces the same failure).
+Three distinct sub-agent fault modes — handle each differently. Same-prompt re-dispatch is FORBIDDEN for WANDERING faults.
 
 | Fault mode | Signal | Response |
 |---|---|---|

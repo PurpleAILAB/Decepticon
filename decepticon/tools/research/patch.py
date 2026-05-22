@@ -236,6 +236,22 @@ async def patch_verify(
             if pat.lower() in combined.lower():
                 matches.append(pat)
 
+    # Step 3: crash-vs-fix detection.
+    # If success patterns didn't match, check whether the target crashed
+    # rather than genuinely being fixed — a 5xx / traceback / non-zero
+    # exit is not proof of remediation.
+    _ERROR_INDICATORS = ("500", "Internal Server Error", "Traceback", "FATAL", "panic:")
+    if not matches:
+        looks_like_crash = p_code != 0 or any(ind in combined for ind in _ERROR_INDICATORS)
+        if looks_like_crash:
+            log.warning(
+                "patch_verify: vuln %s — PoC patterns absent but response "
+                "looks like a crash (exit=%d). Verify the fix is genuine, "
+                "not a masked failure.",
+                vuln_id,
+                p_code,
+            )
+            result["crash_warning"] = True
     still_fires = bool(matches)
     result["poc_still_fires"] = still_fires
     result["signals"] = matches

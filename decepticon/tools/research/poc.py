@@ -246,8 +246,14 @@ async def validate_poc(
             log.warning("vuln %s: negative control also matched — demoting", vuln_id)
             success = []
 
-    validated = bool(success) and not neg_hits
-    summary = f"{len(success)} success signals, {len(neg_hits)} negative hits, exit={code}"
+    # ZFP: if negative control was run, it MUST match its patterns
+    # (confirming baseline works). If it didn't run, skip the check.
+    neg_ran = bool(negative_command and negative_patterns)
+    validated = bool(success) and (not neg_ran or bool(neg_hits))
+    summary = (
+        f"{len(success)} success signals, {len(neg_hits)} negative hits, "
+        f"neg_ran={neg_ran}, exit={code}"
+    )
     cvss_vec_str: str | None = None
     cvss_score: float | None = None
     sev: str | None = None
@@ -339,7 +345,9 @@ def sandbox_runner(sandbox: Any) -> PoCRunner:
                     is_input=False,
                 )
         except Exception as e:  # pragma: no cover — defensive
-            return "", str(e), -1
+            err_msg = f"[SANDBOX_ERROR] {type(e).__name__}: {e}"
+            log.error("sandbox_runner failed: %s", err_msg)
+            return "", err_msg, -1
         code = 0
         m = re.search(r"\[Exit code:\s*(-?\d+)", out)
         if m:

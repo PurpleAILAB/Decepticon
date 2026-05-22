@@ -153,6 +153,21 @@ _SINK_PATTERNS: dict[str, tuple[re.Pattern[str], float]] = {
         ),
         0.75,
     ),
+    "xxe": (
+        re.compile(
+            r"(?:"
+            r"etree\.parse|etree\.fromstring|etree\.iterparse"
+            r"|xml\.sax\.parse|xml\.sax\.parseString"
+            r"|xml\.dom\.minidom\.parse|xml\.dom\.minidom\.parseString"
+            r"|DocumentBuilderFactory|SAXParserFactory|XMLReader"
+            r"|XMLInputFactory|TransformerFactory"
+            r"|simplexml_load_string|simplexml_load_file"
+            r"|DOMDocument\b.*loadXML|SimpleXMLElement"
+            r")",
+            re.IGNORECASE,
+        ),
+        0.75,
+    ),
 }
 
 _HOT_DIR_HINTS = {
@@ -535,7 +550,7 @@ def kg_add_candidate(
         score: Suspicion score in ``[0,1]`` from the scanner heuristic.
         sink_kind: One of the sink keys (``code_exec``, ``os_exec``, ``sql``,
             ``ssrf``, ``deserialize``, ``xss``, ``path``, ``ssti``, ``crypto``,
-            ``auth``, ``secret_hardcode``).
+            ``auth``, ``secret_hardcode``, ``xxe``).
         reason: Optional free-text justification (keep it short).
         repo: Optional repo id (graph node id) to link with a ``LOCATED_AT``
             edge. Leave empty if not yet modelled.

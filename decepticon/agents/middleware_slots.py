@@ -154,9 +154,12 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "contract_auditor": _BASH_AGENT_SLOTS,
     "cloud_hunter": _BASH_AGENT_SLOTS,
     "ad_operator": _BASH_AGENT_SLOTS,
-    # ── Plugin orchestrator (no EngagementContext per the existing
-    # vulnresearch factory — it consumes its parent's context) ──
-    "vulnresearch": _BASE_SLOTS | {MiddlewareSlot.SUBAGENT, MiddlewareSlot.OPPLAN},
+    # ── Plugin orchestrator ──
+    "vulnresearch": _BASE_SLOTS | {
+        MiddlewareSlot.ENGAGEMENT_CONTEXT,
+        MiddlewareSlot.SUBAGENT,
+        MiddlewareSlot.OPPLAN,
+    },
     # ── Plugin read-only specialist (no bash, no SandboxNotification) ──
     "detector": _BASE_SLOTS,
     # ── Plugin bash-executing specialists ──

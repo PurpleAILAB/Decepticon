@@ -10,6 +10,8 @@ They load/save through the Neo4j store instead of JSON files.
 """
 
 from __future__ import annotations
+import threading
+from contextlib import contextmanager
 
 import json
 from pathlib import Path
@@ -20,6 +22,7 @@ from decepticon.tools.research.neo4j_store import Neo4jStore
 
 log = get_logger("research.state")
 
+_GRAPH_LOCK = threading.Lock()
 _store: Neo4jStore | None = None
 
 
@@ -76,3 +79,21 @@ def _kg_backend_name() -> str:
 def _json(data: Any) -> str:
     """Compact JSON serializer for tool return values."""
     return json.dumps(data, indent=2, default=str, ensure_ascii=False)
+
+
+@contextmanager
+def graph_transaction():
+    """Load the graph, yield it for mutation, save on exit.
+
+    Thread-safe: only one transaction runs at a time.
+    Crash-safe: saves even if the body raises (best-effort).
+    """
+    with _GRAPH_LOCK:
+        graph, path = _load()
+        try:
+            yield graph
+        finally:
+            try:
+                _save(graph, path)
+            except Exception:
+                log.exception("Failed to save graph after transaction")

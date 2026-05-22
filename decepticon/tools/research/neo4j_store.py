@@ -206,24 +206,14 @@ class Neo4jStore:
     # ── Revision ─────────────────────────────────────────────────────────
 
     def revision(self) -> float:
-        """Return a monotonic-ish revision token for cache invalidation.
-
-        Scans all individual node labels rather than the old KGNode label.
-        """
-        # Build a UNION query across all known node labels to find max updated_at
-        label_clauses = " UNION ALL ".join(
-            f"MATCH (n:{label}) RETURN coalesce(max(n.updated_at), 0.0) AS rev"
-            for label in _ALL_NODE_LABELS
-        )
-        query = f"""
-        CALL {{
-          {label_clauses}
-        }}
-        WITH max(rev) AS node_rev
-        RETURN coalesce(node_rev, 0.0) AS rev
+        """Return a monotonic-ish revision token for cache invalidation."""
+        query = """
+        MATCH (n)
+        WHERE any(l IN labels(n) WHERE l IN $labels)
+        RETURN coalesce(max(n.updated_at), 0.0) AS rev
         """
         with self._driver.session(database=self._database) as session:
-            record = session.run(query).single()
+            record = session.run(query, labels=_ALL_NODE_LABELS).single()
         if record is None:
             return 0.0
         try:
@@ -494,15 +484,21 @@ class Neo4jStore:
         """
         counts: dict[str, int] = {"nodes": 0, "edges": 0}
 
-        # Count nodes per label
-        for label in _ALL_NODE_LABELS:
-            query = f"MATCH (n:{label}) RETURN count(n) AS cnt"
-            with self._driver.session(database=self._database) as session:
-                record = session.run(query).single()
-                cnt = int(record["cnt"]) if record else 0
-            if cnt > 0:
-                counts[f"node.{label}"] = cnt
-                counts["nodes"] += cnt
+        # Count nodes per label — single scan instead of per-label queries
+        node_query = """
+        MATCH (n)
+        WITH labels(n) AS lbls
+        UNWIND lbls AS label
+        WITH label WHERE label IN $labels
+        RETURN label, count(*) AS cnt
+        """
+        with self._driver.session(database=self._database) as session:
+            for row in session.run(node_query, labels=_ALL_NODE_LABELS):
+                label = row["label"]
+                cnt = int(row["cnt"])
+                if cnt > 0:
+                    counts[f"node.{label}"] = cnt
+                    counts["nodes"] += cnt
 
         # Count edges per relationship type
         edge_query = """
@@ -548,41 +544,41 @@ class Neo4jStore:
         """
         graph = KnowledgeGraph()
 
-        # Load nodes across all known labels
+        # Load nodes across all known labels — single query
         with self._driver.session(database=self._database) as session:
-            for label in _ALL_NODE_LABELS:
-                node_query = f"""
-                MATCH (n:{label})
-                RETURN n.id AS id,
-                       n.kind AS kind,
-                       n.label AS label,
-                       coalesce(n.props, '{{}}') AS props,
-                       coalesce(n.created_at, 0.0) AS created_at,
-                       coalesce(n.updated_at, 0.0) AS updated_at
-                """
-                for row in session.run(node_query):
-                    node_id = row.get("id")
-                    kind_raw = row.get("kind")
-                    if not isinstance(node_id, str) or not isinstance(kind_raw, str):
-                        continue
-                    try:
-                        kind = NodeKind(kind_raw)
-                    except ValueError:
-                        log.warning(
-                            "Skipping Neo4j node with unknown kind",
-                            extra={"id": node_id, "kind": kind_raw},
-                        )
-                        continue
-
-                    node = Node(
-                        id=node_id,
-                        kind=kind,
-                        label=str(row.get("label") or node_id),
-                        props=_decode_props(row.get("props")),
-                        created_at=float(row.get("created_at") or 0.0),
-                        updated_at=float(row.get("updated_at") or 0.0),
+            node_query = """
+            MATCH (n)
+            WHERE any(l IN labels(n) WHERE l IN $labels)
+            RETURN n.id AS id,
+                   n.kind AS kind,
+                   n.label AS label,
+                   coalesce(n.props, '{}') AS props,
+                   coalesce(n.created_at, 0.0) AS created_at,
+                   coalesce(n.updated_at, 0.0) AS updated_at
+            """
+            for row in session.run(node_query, labels=_ALL_NODE_LABELS):
+                node_id = row.get("id")
+                kind_raw = row.get("kind")
+                if not isinstance(node_id, str) or not isinstance(kind_raw, str):
+                    continue
+                try:
+                    kind = NodeKind(kind_raw)
+                except ValueError:
+                    log.warning(
+                        "Skipping Neo4j node with unknown kind",
+                        extra={"id": node_id, "kind": kind_raw},
                     )
-                    graph.nodes[node.id] = node
+                    continue
+
+                node = Node(
+                    id=node_id,
+                    kind=kind,
+                    label=str(row.get("label") or node_id),
+                    props=_decode_props(row.get("props")),
+                    created_at=float(row.get("created_at") or 0.0),
+                    updated_at=float(row.get("updated_at") or 0.0),
+                )
+                graph.nodes[node.id] = node
 
             # Load all edges (match any relationship type)
             edge_query = """

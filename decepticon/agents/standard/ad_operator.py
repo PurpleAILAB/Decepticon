@@ -55,6 +55,8 @@ from decepticon.tools.research.tools import (
     kg_neighbors,
     kg_query,
     kg_stats,
+    plan_attack_chains,
+    suggest_objectives_from_chains,
 )
 
 _STANDARD_TOOLS: dict[str, Any] = {
@@ -70,6 +72,9 @@ _STANDARD_TOOLS: dict[str, Any] = {
         kg_stats,
         kg_ingest_crackmapexec,
         kg_ingest_asrep_hashes,
+        # Attack chain planning
+        plan_attack_chains,
+        suggest_objectives_from_chains,
         # References
         killchain_lookup,
         # Execution
