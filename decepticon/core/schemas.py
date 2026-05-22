@@ -1,11 +1,16 @@
 """Red team engagement document schemas.
 
 Defines the machine-readable document set for planning and executing
-red team engagements. These map to the military-style planning hierarchy:
+red team engagements. The baseline documents map to the military-style
+planning hierarchy:
 
   RoE     → legal scope & boundaries       (guard rail, checked every iteration)
   CONOPS  → operational concept & threat    (strategic context)
   OPPLAN  → tactical objectives & status    (ralph loop task tracker)
+
+Alongside these and the DeconflictionPlan, Soundwave writes five expansion
+documents that frame an AI-autonomous engagement: ThreatProfile, ContactPlan,
+DataHandlingPlan, AbortPlan, and CleanupPlan. See EngagementBundle.
 
 The OPPLAN is the direct analogue of ralph's prd.json — it drives the
 autonomous loop, with each objective checked off as it passes validation.
@@ -1026,8 +1031,11 @@ class EngagementBundle(BaseModel):
     def save(self, engagement_dir: str) -> dict[str, str]:
         """Save all documents to an engagement workspace directory.
 
-        Layout:
-          <engagement_dir>/plan/roe.json, conops.json, opplan.json, deconfliction.json
+        Layout — under ``<engagement_dir>/plan/``: roe.json, conops.json,
+        opplan.json, and deconfliction.json are always written; the expansion
+        documents (threat-profile.json, cleanup.json, abort.json, contact.json,
+        data-handling.json) are written only when populated, so legacy callers
+        that set just the baseline four stay compatible.
 
         Phase artifact directories such as ``recon/``, ``exploit/``,
         ``post-exploit/``, ``findings/``, and ``report/`` are created lazily

@@ -695,14 +695,21 @@ Questions you'll answer:
 └── Acceptance criteria (what does "done" look like)
 ```
 
-Soundwave generates 4 documents from your answers:
+Soundwave generates an eight-document engagement bundle from your answers:
 
 | Document | Purpose |
 |----------|---------|
 | **RoE** | Legal authorization, scope, exclusions, escalation contacts |
-| **ConOps** | Threat actor profile, methodology, TTPs to emulate |
+| **Threat Profile** | MITRE-mapped adversary persona and key TTPs |
+| **CONOPS** | Threat model and kill-chain phases, scoped to the RoE |
 | **Deconfliction Plan** | Source IPs, time windows, SOC coordination codes |
-| **OPPLAN** | Full mission plan — objectives, phases, MITRE ATT&CK mapping |
+| **Contact Plan** | Operator and escalation roster, plus the abort-signal recipient |
+| **Data Handling Plan** | Evidence retention, encryption, and chain-of-custody |
+| **Abort Plan** | Halt triggers and AI-aware safety gates |
+| **Cleanup Plan** | Expected artifacts and per-phase removal commands |
+
+The orchestrator builds the **OPPLAN** (objectives, phases, MITRE ATT&CK
+mapping) from the bundle — Soundwave does not write it.
 
 ### Step 7: Autonomous Execution
 

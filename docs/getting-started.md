@@ -65,8 +65,8 @@ The web dashboard starts as part of the default stack — it's reachable at `htt
    - Target scope (IP range, URL, Git repo, file upload, or local path)
    - Threat actor profile
    - Rules of Engagement (authorized scope, timing, exclusions)
-3. Soundwave generates: **RoE → ConOps → Deconfliction Plan → OPPLAN**
-4. You review and approve the OPPLAN
+3. Soundwave writes the eight-document engagement bundle (RoE, Threat Profile, CONOPS, Deconfliction, Contact, Data Handling, Abort, Cleanup)
+4. The orchestrator builds the OPPLAN from the bundle — you review and approve it
 5. The autonomous loop begins
 
 > **Important**: Only run Decepticon against systems you own or have explicit written authorization to test. See the disclaimer in the main README.

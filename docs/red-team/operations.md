@@ -28,7 +28,7 @@
 - 이해관계자 합의, 위협 모델링, RoE 작성
 - 성공 기준/범위/디컨플릭션 정의
 - 산업별 위협 환경 기반 적대자 프로필 선택
-- **Decepticon**: Planning Agent → RoE → CONOPS → OPPLAN → Deconfliction Plan
+- **Decepticon**: Soundwave가 8개 계획 문서(RoE, Threat Profile, CONOPS, Deconfliction, Contact, Data Handling, Abort, Cleanup)를 작성 → 오케스트레이터가 OPPLAN 구성
 
 ### Phase 1: Reconnaissance (TA0043)
 - Passive: OSINT, DNS, 소셜 미디어, 유출 자격증명, CT 로그
@@ -238,7 +238,7 @@
 
 | Phase | 상태 | 커버리지 |
 |-------|------|---------|
-| Planning | ✅ 완전 | RoE, Threat Profile, CONOPS, OPPLAN |
+| Planning | ✅ 완전 | 8개 문서 번들(RoE, Threat Profile, CONOPS, Deconfliction, Contact, Data Handling, Abort, Cleanup) + OPPLAN |
 | Reconnaissance | ✅ 대부분 | Passive, OSINT, Cloud, Active, Web |
 | OPSEC | ✅ 완전 | 네트워크/HTTP/도구/소스 관리 |
 | Initial Access | ❌ 미구현 | 피싱, 페이로드, 소셜 엔지니어링 없음 |
