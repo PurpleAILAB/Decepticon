@@ -138,8 +138,7 @@ def adjudicate(
     The base score is nudged by ±0.1 scaled by the lower of the two
     confidences — a confident upholding rises, a confident refutation falls.
     """
-    refuted = not (skeptic.reachable and skeptic.exploitable)
-    if not refuted:
+    if skeptic.reachable and skeptic.exploitable:
         verdict = DebateVerdict.UPHELD
         credibility = 1.0
     elif rebuttal is None:
@@ -217,7 +216,12 @@ async def run_debate(
         cvss_vector=cvss_vector or "(not provided)",
     )
     skeptic: SkepticOpinion = await skeptic_invoke(skeptic_prompt, SkepticOpinion)
-    refuted = not (skeptic.reachable and skeptic.exploitable)
+    # Explicit two-branch assignment so every path provably initializes
+    # `refuted` (keeps CodeQL's uninitialized-variable analysis happy).
+    if skeptic.reachable and skeptic.exploitable:
+        refuted = False
+    else:
+        refuted = True
 
     rounds: list[DebateRound] = [
         DebateRound(
