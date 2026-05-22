@@ -79,12 +79,16 @@ demo.tape
 workspace/
 .bg-shell/
 
+# Local reference corpus — dev-only, ~34 MB (PayloadsAllTheThings + OWASP WSTG).
+# Runtime corpora are fetched into ~/.decepticon/references/ by
+# decepticon/tools/references/fetch.py. Real skill bundles live in decepticon/skills/.
+skills/_corpus/
+
 .langgraph_api/
 .omc/
 .ouroboros/
 .gstack/
 .claude/
-clients/ee/
 
 # Project-specific Claude Code instructions (private)
 CLAUDE.md

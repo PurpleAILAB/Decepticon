@@ -52,10 +52,3 @@ workspace
 
 # ── Client package caches ───────────────────────────────────
 clients/web/.next
-
-# ── Private / EE code — MUST NOT ship in OSS images ─────────
-# The ee/ folder is a private SaaS package linked via `make web-ee`.
-# .gitignore already excludes it from git, but Docker build context
-# scans the working tree directly, so we must exclude it here too.
-clients/ee
-clients/ee/
