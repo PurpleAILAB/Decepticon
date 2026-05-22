@@ -231,7 +231,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: package-lock.json
-      - run: npm ci
+      # `npm install`, not `npm ci`: on the macOS/Windows matrix legs the
+      # strict lockfile replay of `npm ci` hits npm's optional-dependency
+      # bug (npm/cli#4828) and skips the platform-specific rollup native
+      # binary, breaking vitest. `npm install` does a clean per-platform
+      # resolution and installs the right `@rollup/rollup-<os>-<arch>`.
+      - run: npm install --no-audit --no-fund
       # @decepticon/streaming now ships as a built ESM package
       # (package.json main → dist/index.js). cli's tsc + web's next build
       # resolve the workspace by walking that main, so the dist has to

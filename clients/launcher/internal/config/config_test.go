@@ -8,6 +8,15 @@ import (
 	"testing"
 )
 
+// setHomeDir points OS home-directory resolution at dir. os.UserHomeDir()
+// reads $HOME on Unix and %USERPROFILE% on Windows, so both are set — these
+// tests run on the Windows CI runner too.
+func setHomeDir(t *testing.T, dir string) {
+	t.Helper()
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+}
+
 func TestParseEnvLine(t *testing.T) {
 	tests := []struct {
 		line    string
@@ -164,7 +173,7 @@ func TestValidateAuth_OAuthSubscriptions(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.envName+" via env", func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			setHomeDir(t, home)
 			env := map[string]string{c.toggle: "true", c.envName: "anything-not-empty"}
 			if err := ValidateAuth(env); err != nil {
 				t.Errorf("expected env-token to satisfy %s: %v", c.toggle, err)
@@ -172,7 +181,7 @@ func TestValidateAuth_OAuthSubscriptions(t *testing.T) {
 		})
 		t.Run(c.envName+" via tokens.json", func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			setHomeDir(t, home)
 			dir := filepath.Join(home, ".config", c.configDir)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
@@ -187,7 +196,7 @@ func TestValidateAuth_OAuthSubscriptions(t *testing.T) {
 		})
 		t.Run(c.envName+" toggle on but no creds fails", func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("HOME", home)
+			setHomeDir(t, home)
 			env := map[string]string{c.toggle: "true"}
 			err := ValidateAuth(env)
 			if err == nil {
@@ -200,7 +209,7 @@ func TestValidateAuth_OAuthSubscriptions(t *testing.T) {
 func TestValidateAuth_ChatGPTNativeOAuth(t *testing.T) {
 	t.Run("toggle on allows native device login without session cookie", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setHomeDir(t, home)
 		env := map[string]string{"DECEPTICON_AUTH_CHATGPT": "true"}
 		if err := ValidateAuth(env); err != nil {
 			t.Errorf("expected native ChatGPT OAuth to pass without launcher-side token input: %v", err)
@@ -209,7 +218,7 @@ func TestValidateAuth_ChatGPTNativeOAuth(t *testing.T) {
 
 	t.Run("uses codex auth.json path", func(t *testing.T) {
 		home := t.TempDir()
-		t.Setenv("HOME", home)
+		setHomeDir(t, home)
 		got := subscriptionTokenPaths(map[string]string{}, home, oauthSubscriptions["chatgpt"])
 		want := []string{filepath.Join(home, ".codex", "auth.json")}
 		if !reflect.DeepEqual(got, want) {
@@ -223,7 +232,7 @@ func TestValidateAuth_ChatGPTNativeOAuth(t *testing.T) {
 // previous gate rejected this because it only checked API-key columns.
 func TestValidateAuth_OllamaLocal(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 
 	t.Run("priority+base passes", func(t *testing.T) {
 		env := map[string]string{
@@ -258,7 +267,7 @@ func TestValidateAuth_OllamaLocal(t *testing.T) {
 
 func TestValidateAuth_OAuth(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 	// OAuth requested, no API keys configured.
 	env := map[string]string{"DECEPTICON_AUTH_CLAUDE_CODE": "true"}
 
@@ -321,7 +330,7 @@ func TestValidateAuth_OAuthFallsBackToAPIKey(t *testing.T) {
 	// OAuth requested but file missing; a valid API key satisfies the
 	// "at least one method works" rule.
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 	env := map[string]string{
 		"DECEPTICON_AUTH_CLAUDE_CODE": "true",
 		"ANTHROPIC_API_KEY":           "sk-ant-api03-realkeythatislongenough",
@@ -333,7 +342,7 @@ func TestValidateAuth_OAuthFallsBackToAPIKey(t *testing.T) {
 
 func TestValidateAuth_NeitherConfigured(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("HOME", home)
+	setHomeDir(t, home)
 	// No OAuth, no real API keys.
 	env := map[string]string{
 		"ANTHROPIC_API_KEY": "your-anthropic-key-here",

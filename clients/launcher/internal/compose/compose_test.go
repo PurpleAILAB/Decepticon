@@ -1,20 +1,24 @@
 package compose
 
 import (
+	"path/filepath"
 	"testing"
 )
 
 func TestNew(t *testing.T) {
-	t.Setenv("DECEPTICON_HOME", "/tmp/test-decepticon")
+	home := filepath.Join(t.TempDir(), "test-decepticon")
+	t.Setenv("DECEPTICON_HOME", home)
 	c := New()
-	if c.Home != "/tmp/test-decepticon" {
-		t.Errorf("Home = %q, want /tmp/test-decepticon", c.Home)
+	if c.Home != home {
+		t.Errorf("Home = %q, want %q", c.Home, home)
 	}
-	if c.ComposeFile != "/tmp/test-decepticon/docker-compose.yml" {
-		t.Errorf("ComposeFile = %q", c.ComposeFile)
+	// New() builds these via filepath.Join, so the expected values must
+	// use the OS-native separator too (this test runs on Windows in CI).
+	if want := filepath.Join(home, "docker-compose.yml"); c.ComposeFile != want {
+		t.Errorf("ComposeFile = %q, want %q", c.ComposeFile, want)
 	}
-	if c.EnvFile != "/tmp/test-decepticon/.env" {
-		t.Errorf("EnvFile = %q", c.EnvFile)
+	if want := filepath.Join(home, ".env"); c.EnvFile != want {
+		t.Errorf("EnvFile = %q, want %q", c.EnvFile, want)
 	}
 }
 
