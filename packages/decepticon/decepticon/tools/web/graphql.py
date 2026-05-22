@@ -16,8 +16,16 @@ introspection blob and we handle it.
 
 from __future__ import annotations
 
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+_IDOR_ARG_PATTERN = re.compile(
+    r"^(?:id|.*_id|.*Id|.*ID)$"  # exact 'id' or ending in _id/Id/ID after a separator
+)
 
 # The canonical introspection query GraphQL servers respond to.
 INTROSPECTION_QUERY = """
@@ -126,6 +134,11 @@ class GraphQLSchema:
         root = data
         if "data" in data:
             root = data["data"]
+        if "__schema" not in root and "data" not in data and "schema" not in root:
+            logger.warning(
+                "Introspection response missing __schema — introspection may be disabled",
+            )
+            return cls(query_type=None, mutation_type=None, subscription_type=None, types={})
         schema = root.get("__schema") or root.get("schema") or {}
         q = (schema.get("queryType") or {}).get("name")
         m = (schema.get("mutationType") or {}).get("name")
@@ -184,7 +197,7 @@ class GraphQLSchema:
         ):
             for fld in fields:
                 for arg_name in fld.args:
-                    if arg_name == "id" or arg_name.lower().endswith("id"):
+                    if _IDOR_ARG_PATTERN.match(arg_name):
                         candidates.append((kind, fld))
                         break
         return candidates

@@ -8,6 +8,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from decepticon.tools.web.graphql import GraphQLSchema
+from decepticon.tools.web.http import HTTPSession
 from decepticon.tools.web.jwt import (
     DEFAULT_WEAK_SECRETS,
     crack_hs_secret,
@@ -152,4 +153,102 @@ def cookie_audit(
     return _json(analysis.to_dict())
 
 
-WEB_TOOLS = [jwt_parse, jwt_forge, jwt_crack, graphql_plan, oauth_audit, cookie_audit]
+_session: HTTPSession | None = None
+
+
+def _get_session() -> HTTPSession:
+    global _session
+    if _session is None:
+        _session = HTTPSession(verify=False)  # Red-team default: skip TLS verify
+    return _session
+
+
+@tool
+def http_request(
+    method: str,
+    url: str,
+    headers_json: str = "{}",
+    body: str = "",
+    tag: str = "",
+) -> str:
+    """Send an HTTP request and return the response.
+
+    Args:
+        method: HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS)
+        url: Target URL
+        headers_json: JSON string of headers dict
+        body: Request body (for POST/PUT/PATCH)
+        tag: Optional tag for organizing requests in history
+
+    Returns:
+        JSON with status, headers, body (truncated), elapsed_ms, request_id
+    """
+    import asyncio
+
+    try:
+        headers = json.loads(headers_json) if headers_json else {}
+    except json.JSONDecodeError:
+        return _json({"error": "Invalid headers JSON"})
+
+    async def _do():
+        session = _get_session()
+        resp = await session.request(
+            method=method.upper(),
+            url=url,
+            headers=headers,
+            body=body.encode() if body else None,
+            tag=tag,
+        )
+        return resp
+
+    try:
+        resp = asyncio.get_event_loop().run_until_complete(_do())
+        return _json(
+            {
+                "status": resp.status,
+                "headers": dict(resp.headers),
+                "body": resp.text(),
+                "elapsed_ms": resp.elapsed_ms,
+                "request_id": resp.request_id,
+            }
+        )
+    except Exception as e:
+        return _json({"error": f"{type(e).__name__}: {e}"})
+
+
+@tool
+def http_history(query: str = "", last_n: int = 10) -> str:
+    """Search or list recent HTTP request/response history.
+
+    Args:
+        query: Search term (matches URL, method, status, tag). Empty = list recent.
+        last_n: Number of recent entries to return (default 10)
+
+    Returns:
+        JSON list of {id, method, url, status, tag, elapsed_ms}
+    """
+    session = _get_session()
+    if query:
+        matches = session.history.search(url_substr=query)
+    else:
+        matches = list(session.history._entries)[-last_n:]
+    entries = []
+    for pair in matches:
+        req, resp = pair if isinstance(pair, tuple) else (pair, None)
+        entry = {"id": req.id, "method": req.method, "url": req.url, "tag": req.tag}
+        if resp:
+            entry.update({"status": resp.status, "elapsed_ms": resp.elapsed_ms})
+        entries.append(entry)
+    return _json(entries[-last_n:])
+
+
+WEB_TOOLS = [
+    jwt_parse,
+    jwt_forge,
+    jwt_crack,
+    graphql_plan,
+    oauth_audit,
+    cookie_audit,
+    http_request,
+    http_history,
+]

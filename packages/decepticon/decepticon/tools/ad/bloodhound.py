@@ -216,6 +216,22 @@ def merge_bloodhound_json(
             data = json.loads(data)
         except json.JSONDecodeError as exc:
             raise ValueError(f"bloodhound: invalid JSON payload: {exc}") from exc
+    # BH-CE JSONL-style top-level list. Each item carries its own ``kind``
+    # discriminator; iterate and recursively merge. An empty list is valid
+    # and produces zero stats — the test in tests/unit/ad/test_ad.py
+    # ``test_empty_array_produces_zero_stats`` pins this contract.
+    if isinstance(data, list):
+        stats = ImportStats()
+        for item in data:
+            if isinstance(item, (dict, str, bytes)):
+                inc = merge_bloodhound_json(item, graph, type_hint=type_hint)
+                stats.users += inc.users
+                stats.computers += inc.computers
+                stats.groups += inc.groups
+                stats.gpos += inc.gpos
+                stats.ous += inc.ous
+                stats.edges += inc.edges
+        return stats
     if not isinstance(data, dict):
         raise ValueError(
             f"bloodhound: expected a JSON object at the top level, got {type(data).__name__}"

@@ -40,7 +40,10 @@ from decepticon.sandbox_kernel.tmux import _interpret_exit_code
 
 log = logging.getLogger("decepticon.tools.bash.bash")
 
-_sandbox: HTTPSandbox | None = None
+_sandbox_var: contextvars.ContextVar[HTTPSandbox | None] = contextvars.ContextVar(
+    "decepticon_bash_sandbox",
+    default=None,
+)
 _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
     "decepticon_bash_workspace_path",
     default="/workspace",
@@ -173,15 +176,18 @@ def _sanitize_output(text: str) -> str:
     return text
 
 
-def set_sandbox(sandbox: HTTPSandbox) -> None:
-    """Inject the shared HTTPSandbox instance (called from recon.py)."""
-    global _sandbox
-    _sandbox = sandbox
+def set_sandbox(sandbox: HTTPSandbox) -> contextvars.Token:
+    """Inject the shared HTTPSandbox instance for the current context.
+
+    Returns a token that can be passed to ``_sandbox_var.reset()`` to
+    restore the previous value — useful for scoped per-agent isolation.
+    """
+    return _sandbox_var.set(sandbox)
 
 
 def get_sandbox() -> HTTPSandbox | None:
     """Return the current HTTPSandbox instance (for wiring progress callbacks)."""
-    return _sandbox
+    return _sandbox_var.get()
 
 
 def _workspace_path_from_config(config: RunnableConfig | None) -> str:
@@ -231,15 +237,17 @@ async def _prune_old_scratch(workspace_path: str = "/workspace") -> None:
     path pays for cleanup at most every ~10 minutes per process. Best-effort:
     a failure here must never block the agent's command.
     """
-    if _sandbox is None or workspace_path == "/workspace":
+    sandbox = _sandbox_var.get()
+    if sandbox is None or workspace_path == "/workspace":
         return
+
     now = time.monotonic()
     if now - _scratch_prune_state.get(workspace_path, 0.0) < SCRATCH_PRUNE_INTERVAL:
         return
     _scratch_prune_state[workspace_path] = now
     try:
         await asyncio.to_thread(
-            _sandbox.execute,
+            sandbox.execute,
             f"find {workspace_path}/.scratch -type f -mmin +{SCRATCH_TTL_MINUTES} "
             "-delete 2>/dev/null || true",
             timeout=5,
@@ -261,7 +269,8 @@ async def _offload_large_output(
     - Return preview (head 2K + tail 1K) + file path reference
     - Agent can use read_file or grep to access specific parts later
     """
-    assert _sandbox is not None
+    sandbox = _sandbox_var.get()
+    assert sandbox is not None
 
     if workspace_path == "/workspace":
         head_preview = output[:2000].strip()
@@ -282,8 +291,8 @@ async def _offload_large_output(
     filename = f"{workspace_path}/.scratch/{session}_{ts}_{cmd_hash}.txt"
 
     # Write via upload_files (docker cp) to avoid shell injection from output content
-    await asyncio.to_thread(_sandbox.execute, f"mkdir -p {workspace_path}/.scratch")
-    await asyncio.to_thread(_sandbox.upload_files, [(filename, output.encode("utf-8"))])
+    await asyncio.to_thread(sandbox.execute, f"mkdir -p {workspace_path}/.scratch")
+    await asyncio.to_thread(sandbox.upload_files, [(filename, output.encode("utf-8"))])
 
     # Build compact summary with generous preview (Claude Code: ~10KB preview)
     line_count = output.count("\n") + 1
@@ -326,12 +335,13 @@ async def bash(
             session name (not "main"). Check results later with bash_output.
         description: Short label for UI display.
     """
+    _sandbox = _sandbox_var.get()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized. Call set_sandbox() first.")
 
     workspace_path = _workspace_path_from_config(config)
-
     # Best-effort TTL prune of <engagement>/.scratch/ (throttled internally)
+
     await _prune_old_scratch(workspace_path)
 
     # Background mode: send command and return immediately
@@ -400,10 +410,12 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
     Args:
         session: Session name passed to bash(..., background=True).
     """
+    _sandbox = _sandbox_var.get()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
+
     job = await asyncio.to_thread(
         _sandbox.poll_completion,
         session,
@@ -425,6 +437,7 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
     if job.status == "done":
         _sandbox._jobs.mark_consumed(session, key=job.key)
         _reset_passive_read(workspace_path, session)
+
         hint = _interpret_exit_code(job.exit_code) if job.exit_code is not None else ""
         body = diff if diff else "(no new output)"
         return (
@@ -458,13 +471,16 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
     Args:
         session: Session name to terminate.
     """
+    _sandbox = _sandbox_var.get()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
+
     await asyncio.to_thread(
         _sandbox.kill_session, session, **_with_workspace_kwargs(workspace_path)
     )
+
     _reset_passive_read(workspace_path, session)
     log_path = _sandbox.session_log_path(session, workspace_path)
     return f"[KILLED] session '{session}' terminated. Log preserved at {log_path}."
@@ -477,10 +493,12 @@ async def bash_status(config: RunnableConfig | None = None) -> str:
     Use before launching a new background job to spot conflicts, or to
     detect stale sessions for cleanup.
     """
+    _sandbox = _sandbox_var.get()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
     workspace_path = _workspace_path_from_config(config)
+
     # Poll all known running jobs first, then take ONE snapshot for the table.
     for job in _sandbox._jobs.all_jobs():
         if job.status == "running" and job.workspace_path == workspace_path:

@@ -1,22 +1,25 @@
-"""Active Directory Certificate Services — ESC1-ESC15 scanner.
+"""Active Directory Certificate Services — ESC1-ESC13 scanner.
 
 The agent runs ``certipy find --json`` and pastes the output in; this
 module scores every template against the SpecterOps ADCS abuse matrix
 and returns findings per ESC class.
 
-We cover the widely-abused entries:
+Implemented checks:
 
-- ESC1: ENROLLEE_SUPPLIES_SUBJECT + Client Authentication EKU
-        + Low-priv enrollment rights
-- ESC2: Any Purpose EKU + low-priv enrollment
-- ESC3: Enrollment Agent template abuse
-- ESC4: Vulnerable template ACL (GenericAll / WriteDacl for low-priv)
-- ESC6: EDITF_ATTRIBUTESUBJECTALTNAME2 CA flag
-- ESC7: Vulnerable CA ACL
-- ESC8: NTLM relay to CA Web Enrollment
-- ESC9/10: Weak certificate mapping + UPN / DNS rewriting
-- ESC11: NTLM relay to ICPR
-- ESC13/14/15: Issuance policy to OID group link / schema v1 ambiguity
+- ESC1:  ENROLLEE_SUPPLIES_SUBJECT + Client Authentication EKU
+         + Low-priv enrollment rights
+- ESC2:  Any Purpose EKU + low-priv enrollment
+- ESC3:  Enrollment Agent template abuse (Certificate Request Agent EKU
+         with low-priv enrollment)
+- ESC4:  Vulnerable template ACL (GenericAll / WriteDacl for low-priv)
+- ESC6:  EDITF_ATTRIBUTESUBJECTALTNAME2 CA flag
+- ESC7:  Vulnerable CA ACL (ManageCA / ManageCertificates for low-priv)
+- ESC8:  NTLM relay to CA Web Enrollment (HTTP endpoint)
+- ESC9:  CT_FLAG_NO_SECURITY_EXTENSION + authentication EKU (weak
+         certificate mapping)
+- ESC10: Weak CertificateMappingMethods at CA level (UPN mapping)
+- ESC11: NTLM relay to RPC enrollment (ICPR without encryption)
+- ESC13: Issuance policy OID linked to group via msDS-OIDToGroupLink
 """
 
 from __future__ import annotations
@@ -24,7 +27,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-_LOW_PRIV_NAMES = {"domain users", "authenticated users", "everyone", "domain computers"}
+_LOW_PRIV_NAMES = {
+    "domain users",
+    "authenticated users",
+    "everyone",
+    "domain computers",
+    "users",
+    "pre-windows 2000 compatible access",
+}
 
 
 @dataclass
@@ -110,15 +120,20 @@ def _template_analysis(name: str, template: dict[str, Any]) -> list[ADCSFinding]
                 ),
             )
         )
-    if any("certificate request agent" in e for e in ekus):
+    enrollment_flags = template.get("msPKI-Enrollment-Flag", 0)
+    if isinstance(enrollment_flags, str):
+        enrollment_flags = int(enrollment_flags, 0)
+    if any("certificate request agent" in e for e in ekus) and _has_low_priv(enroll_rights):
         findings.append(
             ADCSFinding(
                 template=name,
                 esc="ESC3",
                 severity="high",
-                detail="Certificate Request Agent EKU — enrollment agent abuse candidate.",
+                detail="Certificate Request Agent EKU with low-priv enrollment — "
+                "enrollment agent abuse candidate.",
             )
         )
+
     if (
         _has_low_priv(write_dacl_rights)
         or _has_low_priv(write_owner_rights)
@@ -135,6 +150,43 @@ def _template_analysis(name: str, template: dict[str, Any]) -> list[ADCSFinding]
                 ),
             )
         )
+    # ESC9: No security extension + weak mapping
+    if template.get("no_security_extension") or (enrollment_flags & 0x80000):
+        if _has_auth_eku(template):
+            findings.append(
+                ADCSFinding(
+                    template=name,
+                    esc="ESC9",
+                    severity="high",
+                    detail="CT_FLAG_NO_SECURITY_EXTENSION set with authentication EKU — "
+                    "certificate mapping may allow UPN/DNS impersonation when "
+                    "StrongCertificateBindingEnforcement < 2",
+                )
+            )
+    # ESC13: Issuance policy OID linked to group
+    issuance_policies = template.get(
+        "issuance_policies",
+        template.get("msPKI-Certificate-Policy", []),
+    )
+    if isinstance(issuance_policies, str):
+        issuance_policies = [issuance_policies]
+    enroll = template.get(
+        "enrollment_rights",
+        template.get("Enrollment Rights"),
+    )
+    if issuance_policies and _has_low_priv(enroll):
+        oid_to_group = template.get("oid_group_link", template.get("msDS-OIDToGroupLink"))
+        if oid_to_group:
+            findings.append(
+                ADCSFinding(
+                    template=name,
+                    esc="ESC13",
+                    severity="high",
+                    detail=f"Issuance policy OID linked to group '{oid_to_group}' — "
+                    f"enrolling in this template grants group membership via OID link",
+                )
+            )
+
     return findings
 
 
@@ -166,14 +218,62 @@ def _ca_analysis(name: str, ca: dict[str, Any]) -> list[ADCSFinding]:
                 ),
             )
         )
+    # ESC7: Vulnerable CA ACL — distinguish ManageCA vs ManageCertificates
+    manage_ca = ca.get("ManageCA Principals") or []
+    manage_certs = ca.get("ManageCertificates Principals") or []
     ca_write = ca.get("Access Rights") or []
-    if _has_low_priv(ca_write):
+    if _has_low_priv(manage_ca):
         findings.append(
             ADCSFinding(
                 template=name,
                 esc="ESC7",
                 severity="high",
-                detail="Vulnerable CA ACL — low-priv principal has ManageCA or ManageCertificates.",
+                detail="Vulnerable CA ACL — low-priv principal has ManageCA rights. "
+                "Attacker can flip EDITF_ATTRIBUTESUBJECTALTNAME2 or add new officers.",
+            )
+        )
+    if _has_low_priv(manage_certs):
+        findings.append(
+            ADCSFinding(
+                template=name,
+                esc="ESC7",
+                severity="high",
+                detail="Vulnerable CA ACL — low-priv principal has ManageCertificates rights. "
+                "Attacker can approve pending certificate requests.",
+            )
+        )
+    if _has_low_priv(ca_write) and not _has_low_priv(manage_ca) and not _has_low_priv(manage_certs):
+        findings.append(
+            ADCSFinding(
+                template=name,
+                esc="ESC7",
+                severity="high",
+                detail="Vulnerable CA ACL — low-priv principal has CA access rights.",
+            )
+        )
+    # ESC10: Weak certificate mapping at CA level
+    mapping = ca.get("certificate_mapping_methods", ca.get("CertificateMappingMethods"))
+    if mapping is not None and (int(mapping) & 0x4):
+        findings.append(
+            ADCSFinding(
+                template=name,
+                esc="ESC10",
+                severity="high",
+                detail=(
+                    "CertificateMappingMethods includes UPN mapping (0x4) — "
+                    "allows certificate-based impersonation via UPN mismatch"
+                ),
+            )
+        )
+    # ESC11: NTLM relay to RPC enrollment (ICPR)
+    if_enabled = ca.get("enforce_encryption_icpr", ca.get("IF_ENFORCEENCRYPTICERTREQUEST"))
+    if if_enabled is not None and not if_enabled:
+        findings.append(
+            ADCSFinding(
+                template=name,
+                esc="ESC11",
+                severity="high",
+                detail="IF_ENFORCEENCRYPTICERTREQUEST disabled — NTLM relay to ICPR endpoint possible",
             )
         )
     return findings
@@ -182,7 +282,11 @@ def _ca_analysis(name: str, ca: dict[str, Any]) -> list[ADCSFinding]:
 def analyze_adcs_templates(certipy_output: dict[str, Any]) -> list[ADCSFinding]:
     """Run every ESC check against a Certipy JSON output.
 
-    Expected shape: ``{"Certificate Templates": {<name>: {...}}, "Certificate Authorities": {<name>: {...}}}``.
+    Expected shape::
+
+        {"Certificate Templates": {<name>: {...}},
+         "Certificate Authorities": {<name>: {...}}}
+
     Unknown shapes return an empty list rather than raising.
     """
     findings: list[ADCSFinding] = []

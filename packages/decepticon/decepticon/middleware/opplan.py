@@ -418,19 +418,21 @@ class OPPLANMiddleware(AgentMiddleware):
 
         opplan_calls = [tc for tc in last_ai.tool_calls if tc["name"] in OPPLAN_TOOL_NAMES]
         if len(opplan_calls) > 1:
-            names = ", ".join(sorted({tc["name"] for tc in opplan_calls}))
+            # Allow the first OPPLAN call to execute normally; reject
+            # only the 2nd+ parallel calls so the model re-issues them
+            # sequentially after observing the first result.
+            names = ", ".join(sorted({tc["name"] for tc in opplan_calls[1:]}))
             return {
                 "messages": [
                     ToolMessage(
                         content=(
-                            f"Error: OPPLAN tools ({names}) must be called sequentially, "
-                            "one per model step. Each tool needs to observe the result of "
-                            "the previous one before the next call. Re-issue them one at a time."
+                            f"Error: parallel OPPLAN calls ({names}) rejected — "
+                            "re-issue one at a time after the first completes."
                         ),
                         tool_call_id=tc["id"],
                         status="error",
                     )
-                    for tc in opplan_calls
+                    for tc in opplan_calls[1:]
                 ]
             }
 

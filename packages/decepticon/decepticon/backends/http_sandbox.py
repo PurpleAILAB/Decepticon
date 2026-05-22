@@ -48,7 +48,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from typing import ClassVar
+import logging
+import time
 
 import httpx
 from deepagents.backends.protocol import (
@@ -59,6 +60,35 @@ from deepagents.backends.protocol import (
 from deepagents.backends.sandbox import BaseSandbox
 
 from decepticon.sandbox_kernel import BackgroundJob, BackgroundJobTracker
+
+log = logging.getLogger(__name__)
+
+
+class SandboxError(RuntimeError):
+    """Domain error for sandbox HTTP failures."""
+
+    pass
+
+
+def _retry_on_connection_error(fn, max_retries=3, base_delay=0.5):
+    """Retry a function on httpx connection errors with exponential backoff."""
+    last_exc = None
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            last_exc = exc
+            if attempt < max_retries - 1:
+                delay = base_delay * (2**attempt)
+                log.warning(
+                    "Sandbox connection failed (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    max_retries,
+                    delay,
+                    exc,
+                )
+                time.sleep(delay)
+    raise last_exc
 
 
 class HTTPSandbox(BaseSandbox):
@@ -83,13 +113,6 @@ class HTTPSandbox(BaseSandbox):
             long-running commands.
     """
 
-    # Mirrors `DockerSandbox._jobs` so SandboxNotificationMiddleware can
-    # read backed-up background jobs via `sandbox._jobs.all_jobs()`. The
-    # registry is local — the actual job execution lives on the daemon
-    # side — but `start_background` + `poll_completion` keep the local
-    # mirror in sync with the daemon's view.
-    _jobs: ClassVar[BackgroundJobTracker] = BackgroundJobTracker()
-
     def __init__(
         self,
         base_url: str,
@@ -101,6 +124,10 @@ class HTTPSandbox(BaseSandbox):
         self._token = token
         self._timeout = timeout
         self._client: httpx.Client | None = None
+        # Instance-level job tracker — mirrors daemon-side state for
+        # SandboxNotificationMiddleware. Previously a ClassVar, now
+        # per-instance so multiple sandbox instances don't collide.
+        self._jobs = BackgroundJobTracker()
 
     @property
     def id(self) -> str:
@@ -134,6 +161,17 @@ class HTTPSandbox(BaseSandbox):
             finally:
                 self._client = None
 
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Send an HTTP request with retry on transient errors and domain error wrapping."""
+        resp = _retry_on_connection_error(lambda: getattr(self._http(), method)(path, **kwargs))
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise SandboxError(
+                f"Sandbox returned {exc.response.status_code}: {exc.response.text[:200]}"
+            ) from exc
+        return resp
+
     # ── BaseSandbox abstract methods ───────────────────────────────────
     def execute(
         self,
@@ -146,13 +184,14 @@ class HTTPSandbox(BaseSandbox):
         # timeout fires. Without this margin, httpx would abort just as
         # the remote was sending the truncated-but-valid response.
         request_timeout = (timeout + 10) if timeout is not None else None
-        response = self._http().post(
+        response = self._request(
+            "post",
             "/execute",
             json={"command": command, "timeout": timeout},
             timeout=request_timeout if request_timeout is not None else self._timeout,
         )
-        response.raise_for_status()
         data = response.json()
+
         return ExecuteResponse(
             output=data["output"],
             exit_code=data.get("exit_code"),
@@ -169,17 +208,17 @@ class HTTPSandbox(BaseSandbox):
                 for path, data in files
             ]
         }
-        response = self._http().post("/upload_files", json=payload)
-        response.raise_for_status()
+        response = self._request("post", "/upload_files", json=payload)
         data = response.json()
+
         return [
             FileUploadResponse(path=item["path"], error=item.get("error")) for item in data["files"]
         ]
 
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
-        response = self._http().post("/download_files", json={"paths": paths})
-        response.raise_for_status()
+        response = self._request("post", "/download_files", json={"paths": paths})
         data = response.json()
+
         out: list[FileDownloadResponse] = []
         for item in data["files"]:
             content_b64 = item.get("data_b64")
@@ -215,7 +254,8 @@ class HTTPSandbox(BaseSandbox):
         after 60 s, output truncation at 30 K chars).
         """
         request_timeout = (timeout + 10) if timeout is not None else None
-        response = self._http().post(
+        response = self._request(
+            "post",
             "/execute_tmux",
             json={
                 "command": command,
@@ -226,7 +266,6 @@ class HTTPSandbox(BaseSandbox):
             },
             timeout=request_timeout if request_timeout is not None else self._timeout,
         )
-        response.raise_for_status()
         return response.json()["output"]
 
     async def execute_tmux_async(
@@ -272,7 +311,8 @@ class HTTPSandbox(BaseSandbox):
         workspace_path: str | None = None,
     ) -> None:
         """Launch `command` in the background; register a local mirror job."""
-        response = self._http().post(
+        self._request(
+            "post",
             "/start_background",
             json={
                 "command": command,
@@ -280,7 +320,6 @@ class HTTPSandbox(BaseSandbox):
                 "workspace_path": workspace_path,
             },
         )
-        response.raise_for_status()
         # The daemon owns the canonical BackgroundJob (it just stamped
         # `initial_markers` from the live tmux pane state, which we
         # don't have visibility into). Drop a provisional entry into
@@ -301,12 +340,13 @@ class HTTPSandbox(BaseSandbox):
         workspace_path: str | None = None,
     ) -> BackgroundJob | None:
         """Return the latest BackgroundJob for `session` (None if missing)."""
-        response = self._http().post(
+        response = self._request(
+            "post",
             "/poll_completion",
             json={"session": session, "workspace_path": workspace_path},
         )
-        response.raise_for_status()
         data = response.json()
+
         if data.get("job") is None:
             return None
         j = data["job"]
@@ -358,22 +398,22 @@ class HTTPSandbox(BaseSandbox):
         session: str = "main",
         workspace_path: str | None = None,
     ) -> None:
-        response = self._http().post(
+        self._request(
+            "post",
             "/kill_session",
             json={"session": session, "workspace_path": workspace_path},
         )
-        response.raise_for_status()
 
     def read_session_log_diff(
         self,
         session: str = "main",
         workspace_path: str | None = None,
     ) -> str:
-        response = self._http().post(
+        response = self._request(
+            "post",
             "/read_session_log_diff",
             json={"session": session, "workspace_path": workspace_path},
         )
-        response.raise_for_status()
         return response.json()["diff"]
 
     def reset_session_log_offset(
@@ -381,20 +421,20 @@ class HTTPSandbox(BaseSandbox):
         session: str = "main",
         workspace_path: str | None = None,
     ) -> None:
-        response = self._http().post(
+        self._request(
+            "post",
             "/reset_session_log_offset",
             json={"session": session, "workspace_path": workspace_path},
         )
-        response.raise_for_status()
 
     def session_log_path(
         self,
         session: str = "main",
         workspace_path: str | None = None,
     ) -> str:
-        response = self._http().post(
+        response = self._request(
+            "post",
             "/session_log_path",
             json={"session": session, "workspace_path": workspace_path},
         )
-        response.raise_for_status()
         return response.json()["path"]
