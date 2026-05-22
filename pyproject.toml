@@ -158,6 +158,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["decepticon"]
+# Skill markdown trees (standard/shared/plugins) ship as package data and are
+# included by default since they are VCS-tracked. Benchmark skills are
+# XBOW/CTF eval-harness conventions — kept in-repo for `make benchmark` but
+# excluded from the published wheel.
+exclude = ["decepticon/skills/benchmark/**"]
 
 [tool.ruff]
 line-length = 100
