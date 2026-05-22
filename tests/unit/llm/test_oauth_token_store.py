@@ -87,6 +87,7 @@ def test_read_json_file_returns_none_when_top_level_is_not_dict(tmp_path: Path) 
 # ── write_json_atomic ──────────────────────────────────────────────────
 
 
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file mode 0o600 is not enforced on Windows")
 def test_write_json_atomic_writes_payload_with_secure_mode(tmp_path: Path) -> None:
     path = tmp_path / "tokens.json"
     payload = {"access": "abc"}
@@ -110,6 +111,7 @@ def test_write_json_atomic_uses_atomic_temp_then_rename(tmp_path: Path) -> None:
     assert json.loads(path.read_text()) == {"v": "second"}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="chmod-based directory locking is a no-op on Windows")
 def test_write_json_atomic_returns_false_when_target_dir_unwritable(tmp_path: Path) -> None:
     locked = tmp_path / "locked"
     locked.mkdir()
