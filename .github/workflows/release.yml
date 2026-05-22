@@ -40,6 +40,12 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Idempotent re-runs: if the version is already on PyPI (e.g. a
+          # partial-failure re-tag after Docker jobs needed to rebuild),
+          # skip the upload instead of failing the workflow. PyPI itself
+          # still forbids overwriting an existing version's files.
+          skip-existing: true
 
   # Source-tree version fields (pyproject.toml, package.json) carry a "0.0.0"
   # sentinel — the real release version is stamped into images at Docker
