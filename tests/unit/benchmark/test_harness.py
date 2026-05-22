@@ -21,6 +21,19 @@ from benchmark.schemas import Challenge, SetupResult
 pytestmark = pytest.mark.slow
 
 
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirect ``Path.home()`` to a per-test directory.
+
+    Every test here builds a challenge with the same hardcoded id, and the
+    harness derives its workspace from
+    ``Path.home() / .decepticon/workspace/benchmark-<id>``. Without this
+    isolation the tests share one workspace directory and race when run
+    under ``pytest -n auto``.
+    """
+    monkeypatch.setattr(Path, "home", lambda *_args, **_kwargs: tmp_path)
+
+
 def _make_challenge(tmp_path: Path) -> Challenge:
     return Challenge(
         id="XBEN-001-24",
