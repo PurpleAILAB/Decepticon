@@ -7,7 +7,14 @@ import (
 
 var logsCmd = &cobra.Command{
 	Use:   "logs [service]",
-	Short: "Follow service logs (default: langgraph)",
+	Short: "Follow service logs",
+	Long: `Follow service logs. Available services:
+  langgraph  (default)
+  litellm
+  postgres
+  neo4j
+  sandbox
+  web`,
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		service := "langgraph"

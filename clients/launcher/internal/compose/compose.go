@@ -247,8 +247,15 @@ func (c *Compose) CleanScratch() {
 
 // RemoveOrphanedCLI removes any leftover CLI containers.
 func (c *Compose) RemoveOrphanedCLI() {
-	// Best-effort cleanup of orphaned CLI containers
-	out, err := exec.Command("docker", "ps", "-aq", "--filter", "name=decepticon.*cli").Output()
+	// Best-effort cleanup of orphaned CLI containers.
+	// Anchor the filter to the stack naming convention used by ContainerName
+	// so we don't accidentally match unrelated containers.
+	stack := strings.TrimSpace(os.Getenv("DECEPTICON_STACK_NAME"))
+	prefix := "decepticon"
+	if stack != "" {
+		prefix = "decepticon-" + stack
+	}
+	out, err := exec.Command("docker", "ps", "-aq", "--filter", fmt.Sprintf("name=^%s-cli", prefix)).Output()
 	if err != nil || len(out) == 0 {
 		return
 	}

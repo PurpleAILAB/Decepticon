@@ -6,15 +6,17 @@
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
-marked.use(
-  markedTerminal({
-    showSectionPrefix: false,
-    reflowText: true,
-    width: (process.stdout.columns || 80) - 4,
-  }),
-);
+
 
 export function renderMarkdown(text: string): string {
+  const width = (process.stdout.columns || 80) - 4;
+  marked.use(
+    markedTerminal({
+      showSectionPrefix: false,
+      reflowText: true,
+      width,
+    }),
+  );
   try {
     return (marked.parse(text) as string).trimEnd();
   } catch {

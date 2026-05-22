@@ -10,7 +10,8 @@
  *   /file ~/engagement-brief.txt
  */
 
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import type { Command } from "./types.js";
@@ -20,7 +21,8 @@ const file: Command = {
   description: "Load a prompt from a file and send it",
   aliases: ["f"],
   argumentHint: "<path>",
-  execute(args, ctx) {
+  async execute(args, ctx) {
+
     const raw = args.trim();
     if (!raw) {
       ctx.addSystemEvent(
@@ -30,12 +32,18 @@ const file: Command = {
     }
 
     // Expand ~ to home directory
-    const expanded = raw.startsWith("~")
-      ? resolve(homedir(), raw.slice(2))
-      : resolve(raw);
+    let expanded: string;
+    if (raw === "~") {
+      expanded = homedir();
+    } else if (raw.startsWith("~/") || raw.startsWith("~\\")) {
+      expanded = resolve(homedir(), raw.slice(2));
+    } else {
+      expanded = resolve(raw);
+    }
+
 
     try {
-      const content = readFileSync(expanded, "utf-8").trim();
+      const content = (await readFile(expanded, "utf-8")).trim();
       if (!content) {
         ctx.addSystemEvent(`File is empty: ${expanded}`);
         return;

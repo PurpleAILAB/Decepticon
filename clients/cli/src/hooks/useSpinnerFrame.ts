@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const INTERVAL_MS = 80;
+const INTERVAL_MS = 150; // ~6.7 FPS — visually smooth, half the re-renders
 
 export interface SpinnerState {
   frame: string;

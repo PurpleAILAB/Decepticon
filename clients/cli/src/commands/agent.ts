@@ -3,11 +3,9 @@
  *
  * Only orchestration agents are surfaced here. Sub-agents (recon,
  * exploit, postexploit, …) are invoked via the orchestrator's task()
- * tool and shouldn't be selected directly. The whitelist below pins the
- * two orchestrators OSS ships:
- *
- *   - decepticon   — standard bundle. Always available.
- *   - vulnresearch — plugins bundle. Available once enabled via /plugins.
+ * tool and shouldn't be selected directly. Available orchestrators are
+ * discovered dynamically from the langgraph runtime via
+ * POST /assistants/search.
  *
  * Selection writes to the per-process assistant override (see
  * commands/assistantOverride.ts) which useAgent reads on every submit()
@@ -27,9 +25,6 @@ import {
   setAssistantOverride,
 } from "./assistantOverride.js";
 
-const ORCHESTRATOR_ALLOWLIST = ["decepticon", "vulnresearch"] as const;
-type Orchestrator = (typeof ORCHESTRATOR_ALLOWLIST)[number];
-
 interface AssistantRow {
   assistant_id: string;
   graph_id: string;
@@ -40,7 +35,11 @@ function apiBase(): string {
   return process.env.DECEPTICON_API_URL || "http://localhost:2024";
 }
 
-async function listOrchestrators(): Promise<Orchestrator[]> {
+/**
+ * Discover orchestrators dynamically from the agent runtime.
+ * Returns deduplicated graph_ids registered on the server.
+ */
+async function listOrchestrators(): Promise<string[]> {
   const res = await fetch(`${apiBase()}/assistants/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -50,8 +49,9 @@ async function listOrchestrators(): Promise<Orchestrator[]> {
     throw new Error(`assistants/search HTTP ${res.status}: ${await res.text()}`);
   }
   const data = (await res.json()) as AssistantRow[];
-  const registered = new Set(data.map((a) => a.graph_id));
-  return ORCHESTRATOR_ALLOWLIST.filter((g) => registered.has(g));
+  // Deduplicate by graph_id — the server may return multiple assistants
+  // sharing the same graph (e.g. per-thread forks).
+  return [...new Set(data.map((a) => a.graph_id))];
 }
 
 const agent: Command = {
@@ -85,12 +85,6 @@ const agent: Command = {
               lines.push(`  ${mark} ${o}`);
             }
           }
-          if (!orchestrators.includes("vulnresearch")) {
-            lines.push("");
-            lines.push(
-              "Tip: vulnresearch ships in the 'plugins' bundle. Enable with `/plugins enable plugins`.",
-            );
-          }
           lines.push("");
           lines.push("Usage:");
           lines.push("  /agent <name>     Switch (e.g. /agent vulnresearch)");
@@ -117,23 +111,16 @@ const agent: Command = {
       return;
     }
 
-    // Switch
-    if (!ORCHESTRATOR_ALLOWLIST.includes(arg as Orchestrator)) {
-      ctx.addSystemEvent(
-        `'${arg}' is not a known orchestrator. Valid options: ${ORCHESTRATOR_ALLOWLIST.join(", ")}.`,
-      );
-      return;
-    }
-
+    // Switch — validate against server-registered orchestrators
     void (async () => {
       try {
         const orchestrators = await listOrchestrators();
-        if (!orchestrators.includes(arg as Orchestrator)) {
+        if (!orchestrators.includes(arg)) {
+          const available = orchestrators.length > 0
+            ? `Available: ${orchestrators.join(", ")}.`
+            : "No orchestrators registered — is the langgraph stack up?";
           ctx.addSystemEvent(
-            `'${arg}' isn't currently registered with the agent runtime. ` +
-              (arg === "vulnresearch"
-                ? "Enable its bundle first: /plugins enable plugins"
-                : "Check that the agent stack is running."),
+            `'${arg}' isn't currently registered with the agent runtime. ${available}`,
           );
           return;
         }

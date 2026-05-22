@@ -38,5 +38,5 @@ export interface Command {
   /** Whether the command is hidden from autocomplete. */
   isHidden?: boolean;
   /** Execute the command. */
-  execute: (args: string, context: CommandContext) => CommandResult | void;
+  execute: (args: string, context: CommandContext) => CommandResult | void | Promise<CommandResult | void>;
 }
