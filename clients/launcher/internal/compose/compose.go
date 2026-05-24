@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/runtime"
 )
 
 // Compose wraps Docker Compose commands for Decepticon services.
@@ -16,15 +17,32 @@ type Compose struct {
 	Home        string
 	ComposeFile string
 	EnvFile     string
+	// Runtime is the container runtime selected at construction time
+	// (docker / podman / nerdctl). Stored so every call uses the same
+	// binary + socket and we don't re-probe on every invocation.
+	Runtime runtime.Runtime
 }
 
 // New creates a Compose instance using the Decepticon home directory.
+// The container runtime is detected at construction time so every
+// subsequent call uses the same binary. Falls back to "docker" if no
+// runtime is reachable so existing tests and dev workflows that don't
+// have Podman installed keep working unchanged.
 func New() *Compose {
 	home := config.DecepticonHome()
+	rt, err := runtime.Detect()
+	if err != nil {
+		// No runtime available right now — fall back to assuming
+		// docker. The user will get a clear error from the first
+		// `docker` exec if it's really missing, and the onboard
+		// System Check surfaces it well before reaching here.
+		rt = runtime.Runtime{Name: "docker", Bin: "docker", ComposeArgs: []string{"compose"}}
+	}
 	return &Compose{
 		Home:        home,
 		ComposeFile: filepath.Join(home, "docker-compose.yml"),
 		EnvFile:     filepath.Join(home, ".env"),
+		Runtime:     rt,
 	}
 }
 
@@ -45,9 +63,22 @@ func AllProfiles() []string {
 	}
 }
 
-// baseArgs returns the common compose arguments.
+// baseArgs returns the common compose arguments for the detected
+// runtime. For Docker this is ["compose", "-f", ...]; for Podman 4.4+
+// it's the same shape; for the podman-compose wrapper the leading
+// "compose" is omitted because the wrapper IS the compose tool.
+//
+// Defaults to ["compose"] when c.Runtime is the zero value so tests
+// that instantiate Compose{} directly (without going through New())
+// still produce the Docker-shaped argv.
 func (c *Compose) baseArgs() []string {
-	return []string{"compose", "-f", c.ComposeFile, "--env-file", c.EnvFile}
+	prefix := c.Runtime.ComposeArgs
+	if prefix == nil && c.Runtime.Bin == "" {
+		prefix = []string{"compose"}
+	}
+	args := append([]string{}, prefix...)
+	args = append(args, "-f", c.ComposeFile, "--env-file", c.EnvFile)
+	return args
 }
 
 // ContainerName builds the docker container name for a Decepticon
@@ -78,7 +109,8 @@ func (c *Compose) readVersion() string {
 }
 
 // composeEnv returns the parent environment with DECEPTICON_VERSION pinned
-// from the .version file. docker compose treats the process environment as
+// from the .version file plus any runtime-derived env (DOCKER_HOST for
+// Podman, etc.). docker compose treats the process environment as
 // higher precedence than --env-file, so this overrides any stale value the
 // user may have written into .env and avoids the silent `:latest` drift
 // that occurs when the variable is unset.
@@ -87,13 +119,17 @@ func (c *Compose) composeEnv() []string {
 	if v := c.readVersion(); v != "" {
 		env = append(env, "DECEPTICON_VERSION="+imageTag(v))
 	}
+	// Inject DOCKER_HOST for Podman so nested Docker-API clients in
+	// containers (testcontainers, kubectl-with-docker-shim) find the
+	// Podman socket. No-op for Docker.
+	env = c.Runtime.Apply(env)
 	return env
 }
 
-// run executes a docker compose command and returns its output.
+// run executes a compose command via the detected runtime.
 func (c *Compose) run(args []string, interactive bool) error {
-	cmdArgs := append([]string{"compose", "-f", c.ComposeFile, "--env-file", c.EnvFile}, args...)
-	cmd := exec.Command("docker", cmdArgs...)
+	cmdArgs := append(c.baseArgs(), args...)
+	cmd := exec.Command(c.Runtime.Bin, cmdArgs...)
 	cmd.Env = c.composeEnv()
 	if interactive {
 		cmd.Stdin = os.Stdin
@@ -104,7 +140,7 @@ func (c *Compose) run(args []string, interactive bool) error {
 		cmd.Stderr = os.Stderr
 	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker compose %s: %w", strings.Join(args, " "), err)
+		return fmt.Errorf("%s compose %s: %w", c.Runtime.Name, strings.Join(args, " "), err)
 	}
 	return nil
 }
@@ -158,16 +194,17 @@ func (c *Compose) DownAndPurge() error {
 // argument overrides the .version file (used by the updater right after a
 // new release lands). Empty version → fall back to whatever .version says.
 func (c *Compose) Pull(version string) error {
-	cmd := exec.Command("docker", append(c.baseArgs(), "pull")...)
+	cmd := exec.Command(c.Runtime.Bin, append(c.baseArgs(), "pull")...)
 	if version != "" {
-		cmd.Env = append(os.Environ(), "DECEPTICON_VERSION="+imageTag(version))
+		env := append(os.Environ(), "DECEPTICON_VERSION="+imageTag(version))
+		cmd.Env = c.Runtime.Apply(env)
 	} else {
 		cmd.Env = c.composeEnv()
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker compose pull: %w", err)
+		return fmt.Errorf("%s compose pull: %w", c.Runtime.Name, err)
 	}
 	return nil
 }
@@ -215,13 +252,13 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 	cmdArgs = append(cmdArgs, service)
 	cmdArgs = append(cmdArgs, command...)
 
-	cmd := exec.Command("docker", cmdArgs...)
+	cmd := exec.Command(c.Runtime.Bin, cmdArgs...)
 	cmd.Env = c.composeEnv()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("docker compose run %s: %w", service, err)
+		return fmt.Errorf("%s compose run %s: %w", c.Runtime.Name, service, err)
 	}
 	return nil
 }
@@ -232,7 +269,7 @@ func (c *Compose) RunInteractive(profiles []string, service string, env map[stri
 // versions.
 func (c *Compose) CleanScratch() {
 	cmd := exec.Command(
-		"docker",
+		c.Runtime.Bin,
 		"exec",
 		ContainerName("sandbox"),
 		"rm",
@@ -240,6 +277,7 @@ func (c *Compose) CleanScratch() {
 		"/workspace/.scratch",
 		"/workspace/.sessions",
 	)
+	cmd.Env = c.composeEnv()
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	_ = cmd.Run()
@@ -249,18 +287,23 @@ func (c *Compose) CleanScratch() {
 func (c *Compose) RemoveOrphanedCLI() {
 	// Best-effort cleanup of orphaned CLI containers.
 	// Anchor the filter to the stack naming convention used by ContainerName
-	// so we don't accidentally match unrelated containers.
+	// so we don't accidentally match unrelated containers. Use the detected
+	// runtime binary (docker / podman / nerdctl) and its env.
 	stack := strings.TrimSpace(os.Getenv("DECEPTICON_STACK_NAME"))
 	prefix := "decepticon"
 	if stack != "" {
 		prefix = "decepticon-" + stack
 	}
-	out, err := exec.Command("docker", "ps", "-aq", "--filter", fmt.Sprintf("name=^%s-cli", prefix)).Output()
+	ps := exec.Command(c.Runtime.Bin, "ps", "-aq", "--filter", fmt.Sprintf("name=^%s-cli", prefix))
+	ps.Env = c.composeEnv()
+	out, err := ps.Output()
 	if err != nil || len(out) == 0 {
 		return
 	}
 	ids := strings.Fields(strings.TrimSpace(string(out)))
 	for _, id := range ids {
-		_ = exec.Command("docker", "rm", "-f", id).Run()
+		rm := exec.Command(c.Runtime.Bin, "rm", "-f", id)
+		rm.Env = c.composeEnv()
+		_ = rm.Run()
 	}
 }

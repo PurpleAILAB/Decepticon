@@ -386,6 +386,48 @@ jobs:
           path: trivy-${{ matrix.image }}.sarif
           if-no-files-found: ignore
 
+  # Cross-architecture (linux/arm64) smoke build for Raspberry Pi /
+  # Apple Silicon targets. Releases already build multi-arch images, but
+  # we want PR-time signal so an arm64 break doesn't only surface at
+  # release time. Limited to the two images that are smallest under
+  # QEMU (cli + langgraph build in ~3-5 min; sandbox/web take 20+ min
+  # under QEMU and would dominate PR CI wall time — they're validated
+  # via the release pipeline only).
+  #
+  # No Trivy step here: `load: false` means the foreign-arch image stays
+  # in the buildx cache and isn't materialized into the host Docker, so
+  # there's nothing for Trivy to scan. The release pipeline scans the
+  # arm64 images post-push.
+  docker-build-arm64:
+    name: Docker arm64 smoke (${{ matrix.image }})
+    needs: changes
+    if: needs.changes.outputs.docker-images != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [cli, langgraph]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build linux/arm64 image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: containers/${{ matrix.image }}.Dockerfile
+          push: false
+          # `load: false` with --platform linux/arm64 keeps the image in
+          # the buildx cache without trying to load a foreign-arch image
+          # into the host's local Docker (which would error on amd64
+          # runners). The build itself still validates the entire
+          # Dockerfile path on the target arch.
+          load: false
+          platforms: linux/arm64
+          tags: decepticon-${{ matrix.image }}:ci-arm64
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,mode=${{ github.event_name == 'push' && 'max' || 'min' }},scope=arm64
+
   # Security scans always run regardless of which paths changed —
   # vulnerability databases update independently of repo state.
   security:

@@ -27,7 +27,7 @@ Complete installation, authentication, and configuration reference.
 | Requirement | Minimum | Recommended |
 |-------------|---------|-------------|
 | OS | Linux (x86_64, arm64), macOS (arm64, x86_64), WSL2 on Windows | Ubuntu 22.04+ / Kali 2024+ / macOS 14+ / WSL2 with Ubuntu or Kali |
-| Docker | Docker Engine 24+ with Compose v2 | Docker Desktop or Colima |
+| Container runtime | Docker Engine 24+ with Compose v2 **OR** Podman 4.4+ with `podman compose` **OR** nerdctl with compose plugin | Docker Desktop / Colima / Podman Desktop |
 | RAM | 8 GB | 16 GB |
 | Disk | 10 GB free | 20 GB free |
 | Network | Outbound HTTPS | Low-latency connection |
@@ -189,6 +189,35 @@ curl -fsSL https://decepticon.red/install | bash
 ```
 
 This downloads the `decepticon` CLI binary for your platform and places it in your PATH.
+
+### Using Podman instead of Docker
+
+Decepticon detects Podman 4.4+ automatically. The launcher prefers Docker when both are available; set `DECEPTICON_CONTAINER_RUNTIME=podman` to force Podman:
+
+```bash
+# Linux (rootless Podman, recommended)
+systemctl --user enable --now podman.socket          # enable the API socket
+export DECEPTICON_CONTAINER_RUNTIME=podman           # force Podman selection
+decepticon start                                      # launcher detects + uses podman compose
+```
+
+What the launcher handles for you:
+- Selects `podman` if `docker` is absent (or if you set the override).
+- Auto-discovers the Podman API socket (`$XDG_RUNTIME_DIR/podman/podman.sock` or `/run/user/$UID/podman/podman.sock` for rootless; `/run/podman/podman.sock` for rootful) and exports `DOCKER_HOST` so any nested Docker-API tooling (testcontainers, etc.) keeps working.
+- Uses `podman compose` (Podman 4.4+ built-in); falls back to the `podman-compose` Python wrapper on older Podman.
+
+Rootless Podman caveats:
+- The `c2-sliver` profile binds privileged ports (443, 53). On rootless Podman you need either `sudo setcap CAP_NET_BIND_SERVICE=+eip $(which podman)` or add `net.ipv4.ip_unprivileged_port_start = 53` to `/etc/sysctl.conf`. Or just run rootful.
+- Bind mounts under your home directory work transparently. Mounting `/var/run/...` requires `--security-opt label=disable` on SELinux distros (Fedora, RHEL).
+
+### Using nerdctl
+
+```bash
+export DECEPTICON_CONTAINER_RUNTIME=nerdctl
+decepticon start
+```
+
+Requires nerdctl ≥ 0.16 (built-in compose) and a running containerd (`containerd` or `Rancher Desktop` with the containerd engine).
 
 ### Manual Install (from source)
 
