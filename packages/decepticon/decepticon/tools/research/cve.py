@@ -150,7 +150,10 @@ class _Cache:
 
             atexit.register(self._save_if_dirty)
         except Exception:  # pragma: no cover — atexit always available
-            pass
+            # If atexit registration ever fails (frozen interpreter,
+            # finalizer-only mode), surface it at debug so cache
+            # persistence loss has a trace.
+            log.debug("cve._Cache: atexit.register failed", exc_info=True)
 
     def _load(self) -> None:
         if not self.path.exists():
@@ -382,7 +385,12 @@ async def lookup_cve(
         return exp
 
     own_client = client is None
-    client = client or httpx.AsyncClient()
+    # NVD's public API is intermittently slow (rate-limit windows, regional
+    # CDN slow paths). httpx's 5s default per-stage timeout was tripping
+    # false-negatives on legitimate CVE lookups. 30s end-to-end is the
+    # documented NVD service-level expectation. EPSS is faster but on the
+    # same client so we use the larger envelope.
+    client = client or httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0))
     try:
         nvd_task = asyncio.create_task(_fetch_nvd(client, cve_id))
         epss_task = asyncio.create_task(_fetch_epss(client, cve_id))
@@ -421,7 +429,8 @@ async def lookup_cves(
     cache = _Cache()
     semaphore = asyncio.Semaphore(concurrency)
 
-    async with httpx.AsyncClient() as client:
+    # See lookup_cve for the timeout rationale — NVD is slow under load.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0)) as client:
 
         async def _one(cve_id: str) -> Exploitability:
             async with semaphore:
@@ -446,7 +455,9 @@ async def lookup_package(
     Returns a list of CVE/GHSA IDs (may contain both). Empty list on failure.
     """
     own_client = client is None
-    client = client or httpx.AsyncClient()
+    # OSV is reliably fast but we still cap so a network hiccup doesn't
+    # hang the caller indefinitely.
+    client = client or httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0))
     try:
         data = await _fetch_osv(client, package, version, ecosystem)
     finally:
