@@ -8,6 +8,7 @@ import (
 
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
 	"github.com/spf13/cobra"
@@ -34,37 +35,37 @@ func init() {
 
 // AuthMethod identifiers — must match decepticon/llm/models.py::AuthMethod.
 const (
-	methodAnthropicOAuth   = "anthropic_oauth"
-	methodAnthropicAPI     = "anthropic_api"
-	methodOpenAIOAuth      = "openai_oauth"
-	methodOpenAIAPI        = "openai_api"
-	methodGoogleOAuth      = "google_oauth"
-	methodGoogleAPI        = "google_api"
-	methodMiniMaxAPI       = "minimax_api"
-	methodDeepSeekAPI      = "deepseek_api"
-	methodXAIAPI           = "xai_api"
-	methodGrokOAuth        = "grok_oauth"
-	methodMistralAPI       = "mistral_api"
-	methodOpenRouterAPI    = "openrouter_api"
-	methodNvidiaAPI        = "nvidia_api"
-	methodCopilotOAuth     = "copilot_oauth"
-	methodPerplexityOAuth  = "perplexity_oauth"
-	methodOllamaLocal      = "ollama_local"
-	methodOllamaCloud      = "ollama_cloud"
+	methodAnthropicOAuth  = "anthropic_oauth"
+	methodAnthropicAPI    = "anthropic_api"
+	methodOpenAIOAuth     = "openai_oauth"
+	methodOpenAIAPI       = "openai_api"
+	methodGoogleOAuth     = "google_oauth"
+	methodGoogleAPI       = "google_api"
+	methodMiniMaxAPI      = "minimax_api"
+	methodDeepSeekAPI     = "deepseek_api"
+	methodXAIAPI          = "xai_api"
+	methodGrokOAuth       = "grok_oauth"
+	methodMistralAPI      = "mistral_api"
+	methodOpenRouterAPI   = "openrouter_api"
+	methodNvidiaAPI       = "nvidia_api"
+	methodCopilotOAuth    = "copilot_oauth"
+	methodPerplexityOAuth = "perplexity_oauth"
+	methodOllamaLocal     = "ollama_local"
+	methodOllamaCloud     = "ollama_cloud"
 	// Cloud gateways added in the OpenClaude provider migration.
-	methodBedrockAPI       = "bedrock_api"
-	methodVertexAPI        = "vertex_api"
-	methodAzureAPI         = "azure_api"
-	methodGroqAPI          = "groq_api"
-	methodTogetherAPI      = "together_api"
-	methodFireworksAPI     = "fireworks_api"
-	methodCohereAPI        = "cohere_api"
-	methodMoonshotAPI      = "moonshot_api"
-	methodZaiAPI           = "zai_api"
-	methodDashscopeAPI     = "dashscope_api"
-	methodGitHubModelsAPI  = "github_models_api"
-	methodLMStudioLocal    = "lmstudio_local"
-	methodCustomOpenAIAPI  = "custom_openai_api"
+	methodBedrockAPI      = "bedrock_api"
+	methodVertexAPI       = "vertex_api"
+	methodAzureAPI        = "azure_api"
+	methodGroqAPI         = "groq_api"
+	methodTogetherAPI     = "together_api"
+	methodFireworksAPI    = "fireworks_api"
+	methodCohereAPI       = "cohere_api"
+	methodMoonshotAPI     = "moonshot_api"
+	methodZaiAPI          = "zai_api"
+	methodDashscopeAPI    = "dashscope_api"
+	methodGitHubModelsAPI = "github_models_api"
+	methodLMStudioLocal   = "lmstudio_local"
+	methodCustomOpenAIAPI = "custom_openai_api"
 )
 
 // Defaults shown in form placeholders for the new providers.
@@ -138,6 +139,49 @@ var methodOrder = []string{
 	methodCustomOpenAIAPI,
 }
 
+// systemCheckGroup renders the host-environment snapshot as the first
+// step of onboarding. It detects OS/architecture (so the user sees the
+// machine is recognized — be it Windows, macOS, a Linux pentest distro,
+// or a Raspberry Pi) and the Docker readiness state, with OS-specific
+// remediation when something is missing. It never blocks: credentials
+// can be configured before Docker is sorted out.
+func systemCheckGroup(sys platform.SystemInfo) *huh.Group {
+	var b strings.Builder
+
+	osLine := sys.OSLabel() + "  (" + sys.Arch + ")"
+	if sys.IsWSL {
+		osLine += " · WSL2"
+	}
+	b.WriteString("OS       " + osLine + "\n")
+
+	docker := "not installed"
+	if sys.DockerInstalled {
+		docker = "installed"
+		if sys.DockerRunning {
+			docker += " · running"
+		} else {
+			docker += " · stopped"
+		}
+		if sys.ComposeAvailable {
+			docker += " · compose v2"
+		}
+	}
+	b.WriteString("Docker   " + docker + "\n\n")
+
+	if sys.Ready() {
+		b.WriteString("This system is ready to run Decepticon.")
+	} else {
+		b.WriteString(sys.DockerHint() + "\n")
+		b.WriteString("You can still configure credentials now and sort out Docker before launching.")
+	}
+
+	return huh.NewGroup(
+		huh.NewNote().
+			Title("System Check").
+			Description(b.String()),
+	)
+}
+
 func runOnboard(cmd *cobra.Command, args []string) error {
 	if config.EnvExists() && !resetFlag {
 		ui.Info(".env already configured at " + config.EnvPath())
@@ -171,38 +215,38 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		ollamaAPIBase          = defaultOllamaAPIBase
 		ollamaModel            = defaultOllamaModel
 		// Cloud gateways
-		awsAccessKeyID         string
-		awsSecretAccessKey     string
-		awsRegion              = "us-east-1"
-		vertexCredsPath        string
-		vertexProject          string
-		vertexLocation         = "us-central1"
-		azureAPIKey            string
-		azureAPIBase           string
-		azureAPIVersion        = defaultAzureAPIVersion
-		groqKey                string
-		togetherKey            string
-		fireworksKey           string
-		cohereKey              string
-		moonshotKey            string
-		zaiKey                 string
-		dashscopeKey           string
-		githubToken            string
+		awsAccessKeyID     string
+		awsSecretAccessKey string
+		awsRegion          = "us-east-1"
+		vertexCredsPath    string
+		vertexProject      string
+		vertexLocation     = "us-central1"
+		azureAPIKey        string
+		azureAPIBase       string
+		azureAPIVersion    = defaultAzureAPIVersion
+		groqKey            string
+		togetherKey        string
+		fireworksKey       string
+		cohereKey          string
+		moonshotKey        string
+		zaiKey             string
+		dashscopeKey       string
+		githubToken        string
 		// Cloud Ollama
-		ollamaCloudAPIBase     string
-		ollamaCloudAPIKey      string
-		ollamaCloudModel       string
+		ollamaCloudAPIBase string
+		ollamaCloudAPIKey  string
+		ollamaCloudModel   string
 		// LM Studio (local OpenAI-compatible)
-		lmStudioAPIBase        = defaultLMStudioAPIBase
-		lmStudioModel          = defaultLMStudioModel
+		lmStudioAPIBase = defaultLMStudioAPIBase
+		lmStudioModel   = defaultLMStudioModel
 		// Custom OpenAI-compatible endpoint
-		customOpenAIAPIBase    string
-		customOpenAIAPIKey     string
-		customOpenAIModel      string
-		profile                string
-		language               = "en"
-		useLangSmith           bool
-		langSmithKey           string
+		customOpenAIAPIBase string
+		customOpenAIAPIKey  string
+		customOpenAIModel   string
+		profile             string
+		language            = "en"
+		useLangSmith        bool
+		langSmithKey        string
 	)
 	// Block on the probe (zero-value result on timeout means
 	// "unreachable" — drops through to the remediation Note).
@@ -217,7 +261,16 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	}
 	ollamaModelField := buildOllamaModelField(ollamaProbe, &ollamaModel)
 
+	// Probe the host environment so the wizard can confirm — up front —
+	// that this machine (whatever OS/arch it is) can actually run the
+	// Docker stack, and surface remediation before the user spends time
+	// entering credentials.
+	sysInfo := platform.Detect()
+
 	form := huh.NewForm(
+		// Step 0: system check.
+		systemCheckGroup(sysInfo),
+
 		// Intro
 		huh.NewGroup(
 			huh.NewNote().

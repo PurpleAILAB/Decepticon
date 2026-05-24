@@ -119,6 +119,9 @@ COPY --from=build --chown=nextjs:nodejs /app/clients/web/.next/static ./clients/
 WORKDIR /app/clients/web
 
 COPY --chmod=755 containers/web-entrypoint.sh /web-entrypoint.sh
+# Strip any CR so the image builds correctly even from a Windows host
+# whose checkout introduced CRLF line endings.
+RUN sed -i 's/\r$//' /web-entrypoint.sh
 
 USER nextjs
 

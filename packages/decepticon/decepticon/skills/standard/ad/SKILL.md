@@ -14,6 +14,7 @@ description: Active Directory attack lane — BloodHound ingestion, Kerberoastin
 | `/skills/standard/ad/adcs-esc1/SKILL.md`        | ESC1 template abuse → domain admin |
 | `/skills/standard/ad/dcsync/SKILL.md`           | Replication rights → krbtgt dump |
 | `/skills/standard/ad/laps/SKILL.md`             | LAPS local admin password extraction |
+| `/skills/standard/ad/netexec/SKILL.md`          | NetExec (formerly CrackMapExec) cheatsheet — SMB/WinRM/LDAP/MSSQL modules |
 
 ## Workflow
 1. Collect: `bash("bloodhound-python -u user -p pass -d DOMAIN -c all --zip")`

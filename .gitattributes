@@ -1,0 +1,77 @@
+# Normalize text by default — auto-detect, store LF in the repo.
+* text=auto eol=lf
+
+# ── Shell scripts: always LF ────────────────────────────────────────
+# The `RUN sed -i 's/\r$//'` patches in containers/*-entrypoint.sh
+# Dockerfiles are a downstream safety net. This file is the root-cause
+# fix: forces LF in the working tree on every platform, including
+# Windows hosts, so a `docker build` from a Windows clone never produces
+# an image whose entrypoint refuses to execute.
+*.sh                 text eol=lf
+*.bash               text eol=lf
+*.zsh                text eol=lf
+containers/*entrypoint*  text eol=lf
+scripts/*.sh         text eol=lf
+clients/launcher/scripts/*.sh  text eol=lf
+
+# ── Dockerfiles ─────────────────────────────────────────────────────
+# Same reasoning: a Dockerfile with CRLF can still build, but every
+# `RUN`/`COPY` line is wrapped with a stray \r that breaks shell parsing
+# inside the container.
+*.Dockerfile         text eol=lf
+Dockerfile           text eol=lf
+docker-compose*.yml  text eol=lf
+
+# ── Python / TS / Go source ────────────────────────────────────────
+# Force LF — pre-commit + ruff + gofmt all assume LF; CRLF in a single
+# file silently flips every line in `git diff` and breaks blame.
+*.py                 text eol=lf
+*.pyi                text eol=lf
+*.ts                 text eol=lf
+*.tsx                text eol=lf
+*.js                 text eol=lf
+*.jsx                text eol=lf
+*.go                 text eol=lf
+*.md                 text eol=lf
+*.yml                text eol=lf
+*.yaml               text eol=lf
+*.toml               text eol=lf
+*.json               text eol=lf
+
+# ── PowerShell: CRLF is convention on Windows ──────────────────────
+*.ps1                text eol=crlf
+*.psm1               text eol=crlf
+*.psd1               text eol=crlf
+*.bat                text eol=crlf
+*.cmd                text eol=crlf
+
+# ── Binary / opaque ────────────────────────────────────────────────
+*.png                binary
+*.jpg                binary
+*.jpeg               binary
+*.gif                binary
+*.ico                binary
+*.svg                text eol=lf
+*.pdf                binary
+*.zip                binary
+*.tar                binary
+*.tar.gz             binary
+*.tgz                binary
+*.gz                 binary
+*.7z                 binary
+*.exe                binary
+*.dll                binary
+*.so                 binary
+*.dylib              binary
+*.woff               binary
+*.woff2              binary
+*.ttf                binary
+*.otf                binary
+*.eot                binary
+
+# ── Lockfiles: managed by tooling, no merge ────────────────────────
+package-lock.json    text eol=lf -diff
+uv.lock              text eol=lf -diff
+go.sum               text eol=lf
+yarn.lock            text eol=lf -diff
+pnpm-lock.yaml       text eol=lf -diff

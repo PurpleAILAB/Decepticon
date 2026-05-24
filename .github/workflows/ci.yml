@@ -143,10 +143,22 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml config > /dev/null
 
   python:
-    name: Python (lint + typecheck + test)
+    # Matrix runs the full lint + typecheck + test suite on Linux and macOS.
+    # `shell: bash` is forced on every step so identical scripts run on both
+    # runners. Windows runner is intentionally deferred until the Windows
+    # test-suite fixes from #279 land — adding it here without those fixes
+    # would put the CI red on every PR. Track in #279.
+    name: Python (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -176,10 +188,10 @@ jobs:
         run: |
           # Fail on errors only — pre-existing warnings on langchain dynamic
           # interfaces are tracked but non-blocking. Ratchet up over time.
-          uv run basedpyright --outputjson > /tmp/bp.json || true
-          python3 -c "
+          uv run basedpyright --outputjson > bp.json || true
+          uv run python -c "
           import json, sys
-          d = json.load(open('/tmp/bp.json'))
+          d = json.load(open('bp.json'))
           s = d['summary']
           print(f\"basedpyright: {s['errorCount']} errors, {s['warningCount']} warnings, {s['informationCount']} info\")
           if s['errorCount']:
@@ -221,15 +233,26 @@ jobs:
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml
+          name: coverage-xml-${{ matrix.os }}
           path: coverage.xml
           if-no-files-found: ignore
 
   cli:
-    name: CLI (typecheck + test)
+    # Matrix mirrors the python job — Linux + macOS. Windows runner is
+    # deferred until the cli test suite is verified on Windows in a
+    # follow-up PR (the launcher already runs on Windows below since
+    # platform/system.go introduces the OS-specific code in this PR).
+    name: CLI (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.cli == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v6
@@ -238,6 +261,22 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # ── rollup native-binary workaround for npm/cli#4828 ────────────
+      # `npm ci` from a Linux-generated lock file silently skips the
+      # platform-specific optional deps that rollup uses for its native
+      # parser. vitest (rollup-based) then crashes at startup on
+      # macOS/Windows with `Cannot find module @rollup/rollup-<os>-<arch>`.
+      # Force-install the matching binary so the lock file stays
+      # canonical but the test runner can resolve its native dep.
+      - name: Repair rollup native binary on non-Linux runners
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          case "${{ runner.os }}-${{ runner.arch }}" in
+            macOS-ARM64) npm install --no-save @rollup/rollup-darwin-arm64 ;;
+            macOS-X64)   npm install --no-save @rollup/rollup-darwin-x64 ;;
+            Windows-X64) npm install --no-save @rollup/rollup-win32-x64-msvc ;;
+          esac
       # @decepticon/streaming now ships as a built ESM package
       # (package.json main → dist/index.js). cli's tsc + web's next build
       # resolve the workspace by walking that main, so the dist has to
@@ -276,13 +315,20 @@ jobs:
   # builds the binaries on tag push, so a broken `go test ./...` is caught
   # at PR time instead of blocking the release pipeline.
   launcher:
-    # Matrix exercises both Linux and macOS so OS-specific code paths
-    # (the WSL2 detection in internal/platform, file path handling,
-    # /proc/version reads) don't silently regress on one OS while passing
-    # on the other. WSL itself isn't a separate runner — IsWSL() returns
-    # false on macOS and on the Linux runner, and unit tests stub the
-    # /proc/version + /etc/resolv.conf inputs to cover the WSL branches
-    # deterministically on every platform.
+    # Matrix exercises Linux and macOS so OS-specific code paths in the
+    # new internal/platform package (Detect(), DockerHint(), LinuxDistro
+    # parser, WSL2 IsWSL() branch) don't silently regress on one OS
+    # while passing on the other. WSL itself isn't a separate runner —
+    # IsWSL() returns false on macOS and on the Linux runner, and unit
+    # tests stub the /proc/version + /etc/resolv.conf inputs to cover
+    # the WSL branches deterministically on every platform.
+    #
+    # Windows runner is intentionally deferred: it surfaces pre-existing
+    # path-handling assumptions in internal/config and internal/compose
+    # (OAuth subscription test fixtures hardcoded to ~/.config paths,
+    # Claude credentials at ~/.claude/.credentials.json) that are
+    # unrelated to this PR. They land alongside the Python test-suite
+    # Windows fixes in the follow-up split of #279.
     name: Launcher (${{ matrix.os }})
     needs: changes
     if: needs.changes.outputs.launcher == 'true'
