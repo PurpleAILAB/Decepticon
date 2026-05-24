@@ -103,32 +103,37 @@ def _iter_override_bundles(role: str) -> Iterator[PluginBundle]:
 
     for ep in eps:
         try:
-            obj = ep.load()
+            loaded: Any = ep.load()
         except Exception:  # noqa: BLE001
             logger.exception("failed to load %s:%s", BUNDLES_GROUP, ep.name)
             continue
         # Accept either a PluginBundle instance or a zero-arg factory
         # returning one — mirrors the dual shape ``_discover`` already
-        # accepts for the additive groups.
-        if callable(obj) and not isinstance(obj, PluginBundle):
+        # accepts for the additive groups. Resolve into a dedicated
+        # ``bundle`` name so the isinstance-narrow below cleanly types
+        # the value as PluginBundle (reassigning the loop's loaded
+        # value confused basedpyright into a FunctionType union after
+        # the Phase 1 cross-package import move).
+        if callable(loaded) and not isinstance(loaded, PluginBundle):
             try:
-                obj = obj()
+                loaded = loaded()
             except Exception:  # noqa: BLE001
                 logger.exception("override bundle factory %s raised", ep.name)
                 continue
-        if not isinstance(obj, PluginBundle):
+        if not isinstance(loaded, PluginBundle):
             logger.warning(
                 "entry-point %s:%s did not return a PluginBundle (got %r); skipping",
                 BUNDLES_GROUP,
                 ep.name,
-                type(obj).__name__,
+                type(loaded).__name__,
             )
             continue
-        if not is_bundle_enabled(obj.bundle):
+        bundle: PluginBundle = loaded
+        if not is_bundle_enabled(bundle.bundle):
             continue
-        if not obj.matches_role(role):
+        if not bundle.matches_role(role):
             continue
-        yield obj
+        yield bundle
 
 
 # ─────────────────────────────────────────────────────────────────────
