@@ -39,7 +39,11 @@ def close_store() -> None:
         try:
             _store.close()
         except Exception:
-            pass  # Neo4j not configured — no-op
+            # Best-effort cleanup: a Neo4j driver may already be torn
+            # down (process exit, network drop). Log at debug so
+            # operators investigating teardown order can see it without
+            # cluttering normal-flow output.
+            log.debug("close_store: Neo4j driver close failed", exc_info=True)
         _store = None
 
 

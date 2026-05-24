@@ -30,10 +30,13 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
+
+log = logging.getLogger("decepticon.agents.prompts")
 
 _PROMPTS_DIR = Path(__file__).parent
 
@@ -458,7 +461,14 @@ def load_prompt(
         prompt = apply_compat_for_role(prompt, name)
     except Exception:
         # Fail soft: never break prompt loading because of the compat shim.
-        pass
+        # A failure here is recoverable — the prompt simply ships without
+        # the Claude-4 compat tweaks. Log at debug so the divergent prompt
+        # is traceable when diagnosing model-specific behavioral drift.
+        log.debug(
+            "prompts.load_prompt(%r): claude4_compat shim failed; shipping uncorrected prompt",
+            name,
+            exc_info=True,
+        )
 
     # Plugin + explicit prompt overrides apply last so prepend/append wrap
     # the fully-assembled prompt (language policy + compat shim included).

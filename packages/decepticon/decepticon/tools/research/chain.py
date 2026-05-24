@@ -343,7 +343,15 @@ def critical_path_score(chain: Chain) -> float:
                 if score > worst_sev:
                     worst_sev = score
         except Exception:
-            pass  # APOC unavailable — fall back to shortestPath
+            # APOC procedure unavailable — fall back to shortestPath.
+            # Log at debug so the operator can correlate a graph that
+            # silently degrades to a cheaper plan with a missing
+            # apoc.path.expandConfig install, but don't crowd the
+            # primary log channel for an expected fallback.
+            log.debug(
+                "chain.compute_path_score: APOC query failed; using shortestPath fallback",
+                exc_info=True,
+            )
 
     inv_cost = 1.0 / max(chain.total_cost, 0.1)
     return round(0.6 * inv_cost * 10 + 0.4 * worst_sev, 2)
