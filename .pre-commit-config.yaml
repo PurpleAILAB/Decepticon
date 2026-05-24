@@ -1,22 +1,45 @@
 # Pre-commit hooks — install with: uvx pre-commit install
 # Run on demand: uvx pre-commit run --all-files
+#
+# CI runs a curated subset via the `pre-commit` job in
+# .github/workflows/ci.yml. The subset excludes hooks that need a
+# language toolchain (basedpyright, gofmt) — those run in their own CI
+# job already.
+
+minimum_pre_commit_version: "3.5.0"
+default_stages: [pre-commit]
+
 repos:
+  # ── Generic file hygiene ────────────────────────────────────────
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^(assets/|reference/)
+        # Markdown line-break uses trailing 2-space; preserve that.
+        exclude: ^(assets/|reference/|.*\.md$)
       - id: end-of-file-fixer
         exclude: ^(assets/|reference/)
       - id: check-yaml
+        # docker-compose.yml uses anchors + multi-doc in some files.
+        args: ["--allow-multiple-documents"]
       - id: check-toml
+      - id: check-json
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ["--maxkb=512"]
       - id: detect-private-key
       - id: mixed-line-ending
         args: ["--fix=lf"]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      # check-case-conflict matters for cross-platform: macOS + Windows
+      # default to case-insensitive filesystems, so foo.py + Foo.py in
+      # the repo silently collide for those contributors.
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: destroyed-symlinks
 
+  # ── Python ──────────────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
@@ -24,13 +47,55 @@ repos:
         args: [--fix]
       - id: ruff-format
 
+  # ── Shell ───────────────────────────────────────────────────────
+  # shellcheck catches POSIX-shell bugs (uninitialized variables,
+  # word-splitting traps, [[ vs [ semantics on busybox sh, etc.).
+  # Severity=warning + selected excludes keeps this PR mergeable
+  # without a mass cleanup of pre-existing style issues.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args:
+          - "--severity=warning"
+          - "--exclude=SC1091"    # can't follow non-constant source — false positive on optional includes
+          - "--exclude=SC2155"    # declare and assign separately — pre-existing pattern in install.sh
+          - "--exclude=SC2086"    # word-splitting — pre-existing throughout; tracked follow-up
+
+  # ── Dockerfiles ─────────────────────────────────────────────────
+  # hadolint catches: missing USER, COPY without --chown, apt-get
+  # without --no-install-recommends, etc.
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
+        args:
+          - "--ignore=DL3008"   # pin apt-get versions — we use base image's repo pinning
+          - "--ignore=DL3018"   # pin apk versions — Alpine doesn't expose snapshot URLs
+          - "--ignore=DL3015"   # always use --no-install-recommends — many cases need them
+          - "--ignore=DL3059"   # multiple consecutive RUN — combined deliberately for cache control
+        files: ^containers/.*\.Dockerfile$
+
+  # ── Typo checker ────────────────────────────────────────────────
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.28.4
+    hooks:
+      - id: typos
+        # Per-repo allowlist for offensive-security jargon that typos
+        # flags by default (Mimikatz commands, base64 noise, etc.) lives
+        # in .typos.toml at the repo root.
+
+  # ── Secrets scan ────────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
       - id: gitleaks
 
+  # ── Project-local hooks (require toolchain) ─────────────────────
   - repo: local
     hooks:
+      # basedpyright + go vet + go test are gated to pre-push so
+      # contributors without uv / go installed can still commit.
       - id: basedpyright
         name: basedpyright
         entry: uv run basedpyright
@@ -38,3 +103,13 @@ repos:
         types: [python]
         pass_filenames: false
         require_serial: true
+        stages: [pre-push]
+
+      - id: go-vet
+        name: go vet (launcher)
+        entry: bash -c 'cd clients/launcher && go vet ./...'
+        language: system
+        types: [go]
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-push]

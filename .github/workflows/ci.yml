@@ -382,3 +382,34 @@ jobs:
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Pre-commit hook gate — runs the curated hook subset declared in
+  # .pre-commit-config.yaml across the whole tree. Language-toolchain
+  # hooks (basedpyright, gofmt) stay in their own jobs above; this gate
+  # covers file hygiene, shellcheck, hadolint, typos, ruff format/lint,
+  # and (no-op-when-license-missing) gitleaks. Runs on every PR
+  # regardless of which paths changed because most of these hooks check
+  # invariants across the whole tree (no .editorconfig drift, no
+  # case-sensitivity collisions, no shellcheck regressions).
+  pre-commit:
+    name: Pre-commit hooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Install pre-commit
+        run: pip install pre-commit==3.8.0
+      - name: Run pre-commit
+        # `--all-files` runs hooks against every tracked file, not just
+        # changed ones. SKIP=basedpyright,go-vet ensures we don't fail
+        # for missing local toolchains — those run in their own CI jobs.
+        env:
+          SKIP: basedpyright,go-vet
+        run: pre-commit run --all-files --show-diff-on-failure
