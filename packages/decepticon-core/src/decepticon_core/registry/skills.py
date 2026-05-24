@@ -39,9 +39,7 @@ class SkillSourceRegistry:
                 f"skill source must start with '/skills/'; got {source!r} from {owner!r}"
             )
         if not source.endswith("/"):
-            raise ValueError(
-                f"skill source must end with '/'; got {source!r} from {owner!r}"
-            )
+            raise ValueError(f"skill source must end with '/'; got {source!r} from {owner!r}")
 
         previous_owner = cls._entries.get(source)
         if previous_owner is not None and previous_owner != owner:

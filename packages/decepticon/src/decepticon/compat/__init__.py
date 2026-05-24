@@ -27,13 +27,16 @@ import warnings
 _REGISTERED: bool = False
 
 _LEGACY_PATH_NOTES: tuple[tuple[str, str], ...] = (
-    ("decepticon.core.schemas",            "decepticon_core.types.engagement"),
-    ("decepticon.llm.models",              "decepticon_core.types.llm"),
-    ("decepticon.tools.research.graph",    "decepticon_core.types.kg"),
-    ("decepticon.plugin_loader",           "decepticon_core.plugin_loader"),
-    ("decepticon.core.config",             "decepticon_core.utils.config"),
-    ("decepticon.core.logging",            "decepticon_core.utils.logging"),
-    ("decepticon.agents.middleware_slots", "decepticon_core.contracts.slots (enum/SLOTS_PER_ROLE only)"),
+    ("decepticon.core.schemas", "decepticon_core.types.engagement"),
+    ("decepticon.llm.models", "decepticon_core.types.llm"),
+    ("decepticon.tools.research.graph", "decepticon_core.types.kg"),
+    ("decepticon.plugin_loader", "decepticon_core.plugin_loader"),
+    ("decepticon.core.config", "decepticon_core.utils.config"),
+    ("decepticon.core.logging", "decepticon_core.utils.logging"),
+    (
+        "decepticon.agents.middleware_slots",
+        "decepticon_core.contracts.slots (enum/SLOTS_PER_ROLE only)",
+    ),
 )
 
 

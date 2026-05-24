@@ -535,9 +535,7 @@ def load_plugin_role_specs() -> list[Any]:
         try:
             obj = ep.load()
         except Exception:  # noqa: BLE001
-            logger.exception(
-                "failed to load role plugin %s from group %s", ep.name, ROLES_GROUP
-            )
+            logger.exception("failed to load role plugin %s from group %s", ep.name, ROLES_GROUP)
             continue
         if callable(obj) and not hasattr(obj, "slots"):
             # zero-arg factory shape

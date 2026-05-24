@@ -61,6 +61,7 @@ def test_dunder_lookup_does_not_warn() -> None:
         warnings.simplefilter("always")
         # Trigger a __path__ probe by importing from the shim module.
         import decepticon.core.schemas as _shim
+
         # Access a dunder explicitly through the module.
         try:
             _shim.__path__  # noqa: B018
@@ -69,10 +70,7 @@ def test_dunder_lookup_does_not_warn() -> None:
             pass
 
     dunder_warnings = [
-        w
-        for w in ws
-        if issubclass(w.category, DeprecationWarning)
-        and "__" in str(w.message)
+        w for w in ws if issubclass(w.category, DeprecationWarning) and "__" in str(w.message)
     ]
     assert dunder_warnings == [], (
         f"shim must not emit DeprecationWarning for dunder lookups; "

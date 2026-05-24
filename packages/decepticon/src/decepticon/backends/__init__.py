@@ -38,9 +38,7 @@ def _validate_extra_route_key(prefix: str) -> None:
       * keys containing ``..`` — path traversal attempt.
     """
     if not isinstance(prefix, str):
-        raise ValueError(
-            f"extra_routes keys must be str, got {type(prefix).__name__}"
-        )
+        raise ValueError(f"extra_routes keys must be str, got {type(prefix).__name__}")
     if prefix in _RESERVED_PREFIXES:
         raise ValueError(
             f"extra_routes key {prefix!r} is reserved; "
@@ -54,8 +52,7 @@ def _validate_extra_route_key(prefix: str) -> None:
         )
     if ".." in prefix:
         raise ValueError(
-            f"extra_routes key {prefix!r} contains '..' — path "
-            f"traversal patterns are not allowed"
+            f"extra_routes key {prefix!r} contains '..' — path traversal patterns are not allowed"
         )
 
 
@@ -113,9 +110,7 @@ def make_agent_backend(
     # Longest-prefix-wins: sort by len(prefix) descending so a tenant
     # path like ``/skills/tenant/<id>/`` always matches before the
     # generic ``/skills/`` default.
-    sorted_routes = dict(
-        sorted(merged.items(), key=lambda kv: len(kv[0]), reverse=True)
-    )
+    sorted_routes = dict(sorted(merged.items(), key=lambda kv: len(kv[0]), reverse=True))
     return CompositeBackend(default=sandbox, routes=sorted_routes)
 
 

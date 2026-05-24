@@ -47,8 +47,7 @@ def test_example_declares_correct_entry_point_group(kind: str) -> None:
     expected_group = KIND_TO_ENTRY_POINT_GROUP[kind]
     entry_points = data.get("project", {}).get("entry-points", {})
     assert expected_group in entry_points, (
-        f"example {kind!r} missing entry-points.{expected_group}; "
-        f"got {sorted(entry_points)}"
+        f"example {kind!r} missing entry-points.{expected_group}; got {sorted(entry_points)}"
     )
     # Module name matches kind: decepticon-example-tool -> decepticon_example_tool
     expected_module = f"decepticon_example_{kind}"

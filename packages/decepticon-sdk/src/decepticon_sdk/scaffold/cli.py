@@ -61,9 +61,7 @@ def plugin_new(
 ) -> None:
     """Scaffold a new Decepticon plugin package."""
     if kind not in TEMPLATES:
-        raise typer.BadParameter(
-            f"unknown --kind={kind!r}; expected one of {sorted(TEMPLATES)}"
-        )
+        raise typer.BadParameter(f"unknown --kind={kind!r}; expected one of {sorted(TEMPLATES)}")
     template = TEMPLATES[kind]
     module_name = _normalize_module_name(name)
 
@@ -74,9 +72,7 @@ def plugin_new(
     init_path = src_dir / "__init__.py"
 
     if not force and pyproject_path.exists():
-        raise typer.BadParameter(
-            f"{pyproject_path} already exists; pass --force to overwrite"
-        )
+        raise typer.BadParameter(f"{pyproject_path} already exists; pass --force to overwrite")
 
     src_dir.mkdir(parents=True, exist_ok=True)
 
@@ -107,7 +103,9 @@ def plugin_new(
     typer.echo(f"  entry-point:  {template.entry_point_group}")
     typer.echo("")
     typer.echo("Next steps:")
-    typer.echo(f"  cd {target.relative_to(Path.cwd()) if target.is_relative_to(Path.cwd()) else target}")
+    typer.echo(
+        f"  cd {target.relative_to(Path.cwd()) if target.is_relative_to(Path.cwd()) else target}"
+    )
     typer.echo("  uv build")
     typer.echo("  pip install dist/*.whl")
 

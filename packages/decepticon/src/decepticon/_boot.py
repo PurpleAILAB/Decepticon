@@ -152,8 +152,7 @@ def run() -> None:
     PluginRegistry.load()
     _push_role_resolutions()
     logger.debug(
-        "decepticon framework boot complete (%d OSS + N plugin roles registered, "
-        "%d resolutions)",
+        "decepticon framework boot complete (%d OSS + N plugin roles registered, %d resolutions)",
         len(SLOTS_PER_ROLE),
         len(SLOTS_PER_ROLE),
     )

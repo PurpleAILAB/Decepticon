@@ -119,8 +119,7 @@ def test_compat_register_legacy_imports_idempotent() -> None:
     # here.
     boot_warnings = [w for w in ws if "Phase 1 compat shims" in str(w.message)]
     assert boot_warnings == [], (
-        f"register_legacy_imports() should be idempotent; got "
-        f"{len(boot_warnings)} repeat warnings"
+        f"register_legacy_imports() should be idempotent; got {len(boot_warnings)} repeat warnings"
     )
 
 

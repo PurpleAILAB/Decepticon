@@ -123,17 +123,11 @@ class PluginRegistry:
             try:
                 eps = list(entry_points(group=group))
             except Exception:  # pragma: no cover — importlib quirks
-                logger.exception(
-                    "PluginRegistry: entry-point lookup failed for group %s", group
-                )
+                logger.exception("PluginRegistry: entry-point lookup failed for group %s", group)
                 continue
 
             for ep in eps:
-                package = (
-                    ep.dist.name
-                    if ep.dist is not None and ep.dist.name
-                    else "<unknown>"
-                )
+                package = ep.dist.name if ep.dist is not None and ep.dist.name else "<unknown>"
                 key = (ep.name, group)
                 previous = seen.get(key)
                 if previous is not None and previous != package:

@@ -74,9 +74,16 @@ class TestKgIngestDnsx:
         assert payload["hosts_added"] == 2
         graph = fake.load_graph()
         labels = {n.label for n in graph.by_kind(NodeKind.HOST)}
-        assert "api.example.com" in labels
-        assert "web.example.com" in labels
-        assert "edge.cdn.example.net" in labels
+        # ``labels`` is a set of exact strings — ``>=`` is set superset
+        # (every expected hostname present). Phrased this way instead of
+        # ``"api.example.com" in labels`` so CodeQL doesn't misread the
+        # exact-membership check as a URL substring-sanitization vulnerability
+        # (py/incomplete-url-substring-sanitization false positive).
+        assert labels >= {
+            "api.example.com",
+            "web.example.com",
+            "edge.cdn.example.net",
+        }
 
     def test_missing_file(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         _configure_kg(monkeypatch, tmp_path)
