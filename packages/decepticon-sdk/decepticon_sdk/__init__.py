@@ -24,6 +24,9 @@ Deferred from Phase 3 (follow-up commits):
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
 # Re-export the decepticon-core contracts so plugin authors only need
 # a single import line:
 #
@@ -68,7 +71,13 @@ from decepticon_core.registry import (
     SkillSourceRegistry,
 )
 
-__version__ = "0.0.0"
+# Read the installed distribution version — release.yml stamps the git
+# tag into wheel metadata at build time; local checkouts read 0.0.0.
+# Mirrors decepticon-core / decepticon so all three report consistently.
+try:
+    __version__ = _version("decepticon-sdk")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 __all__ = [
     # Protocols (decepticon_core.protocols)

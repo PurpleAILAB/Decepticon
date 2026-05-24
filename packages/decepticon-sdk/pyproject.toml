@@ -27,7 +27,10 @@ classifiers = [
 
 dependencies = [
     "decepticon-core",
-    "typer[all]>=0.9.0",
+    # Modern typer (>=0.12) bundles rich + shellingham by default and
+    # dropped the ``[all]`` extra; depending on ``typer[all]`` only emits
+    # a "no extra named all" warning at install time.
+    "typer>=0.9.0",
 ]
 
 [project.optional-dependencies]
