@@ -45,26 +45,47 @@ preflight() {
         exit 1
     fi
 
-    # Docker
-    if ! command -v docker >/dev/null 2>&1; then
-        error "Error: Docker is required but not installed."
-        echo -e "${DIM}Install Docker: ${NC}https://docs.docker.com/get-docker/"
+    # Container runtime — Docker (preferred) OR Podman 4.4+ (compose v2
+    # compatible). Honor explicit DECEPTICON_CONTAINER_RUNTIME override
+    # if the user is on a non-default setup (e.g. nerdctl, Rancher Desktop).
+    local rt="${DECEPTICON_CONTAINER_RUNTIME:-}"
+    if [[ -z "$rt" ]]; then
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            rt="docker"
+        elif command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+            rt="podman"
+        else
+            error "Error: no container runtime found."
+            echo -e "${DIM}Install one of:${NC}"
+            echo -e "${DIM}  Docker:  ${NC}https://docs.docker.com/get-docker/"
+            echo -e "${DIM}  Podman:  ${NC}https://podman.io/docs/installation"
+            echo -e "${DIM}  …or set DECEPTICON_CONTAINER_RUNTIME=nerdctl${NC}"
+            exit 1
+        fi
+    elif ! command -v "$rt" >/dev/null 2>&1 || ! "$rt" info >/dev/null 2>&1; then
+        error "Error: DECEPTICON_CONTAINER_RUNTIME=$rt requested but unusable."
         exit 1
     fi
+    info "Container runtime: $rt"
+    DECEPTICON_RUNTIME="$rt"
 
-    # Docker daemon
-    if ! docker info >/dev/null 2>&1; then
-        error "Error: Docker daemon is not running."
-        echo -e "${DIM}Start Docker and re-run the installer.${NC}"
-        exit 1
-    fi
-
-    # Docker Compose v2
-    if ! docker compose version >/dev/null 2>&1; then
-        error "Error: Docker Compose v2 is required."
-        echo -e "${DIM}Docker Compose is included with Docker Desktop.${NC}"
-        echo -e "${DIM}For Linux: ${NC}https://docs.docker.com/compose/install/linux/"
-        exit 1
+    # Compose v2 — required for the multi-file `docker compose up --wait`
+    # pattern. Docker Desktop ships it; Podman 4.4+ ships `podman compose`
+    # built-in (fallback: the podman-compose Python wrapper).
+    if [[ "$rt" == "docker" ]]; then
+        if ! docker compose version >/dev/null 2>&1; then
+            error "Error: Docker Compose v2 is required."
+            echo -e "${DIM}Docker Compose is included with Docker Desktop.${NC}"
+            echo -e "${DIM}For Linux: ${NC}https://docs.docker.com/compose/install/linux/"
+            exit 1
+        fi
+    elif [[ "$rt" == "podman" ]]; then
+        if ! podman compose --help >/dev/null 2>&1 \
+            && ! command -v podman-compose >/dev/null 2>&1; then
+            error "Error: 'podman compose' (Podman 4.4+) or 'podman-compose' is required."
+            echo -e "${DIM}Install: ${NC}https://github.com/containers/podman-compose"
+            exit 1
+        fi
     fi
 
     # sha256 tool — required for download integrity verification. Linux
