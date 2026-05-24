@@ -379,7 +379,7 @@ nmap -PR -sn <target_network>/24
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| nmap "host seems down" | ICMP filtered | Add `-Pn` (skip host discovery) |
+| nmap "host seems down" | ICMP filtered | Add `-On` (skip host discovery) |
 | nmap extremely slow | Too many ports + version detection | Split: port discovery first (`-sS`), then `-sV` on open ports only |
 | ffuf 429 responses | Rate limited by WAF | Reduce `-rate` to 5, add `-p 1-3` for random delay |
 | nuclei template errors | Outdated templates | Run `nuclei -update-templates` first |

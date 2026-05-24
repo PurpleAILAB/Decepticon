@@ -16,6 +16,10 @@ extend-ignore-re = [
     "[a-f0-9]{40,64}",
     # Mimikatz / Impacket command excerpts
     "lsadump::|sekurlsa::|kerberos::|misc::",
+    # Hyphenated mis-* compound words — typos splits on the hyphen and
+    # flags the "mis" token as a typo of miss/mist. The whole compound
+    # is correct (mis-fire, mis-split, mis-configure, mis-allocation).
+    "mis-[a-z]+",
 ]
 
 [default.extend-words]

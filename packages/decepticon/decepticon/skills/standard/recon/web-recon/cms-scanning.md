@@ -17,7 +17,7 @@ Once tech fingerprinting (or HTML inspection) confirms a CMS, switch from generi
 
 ```bash
 # wpscan (comprehensive)
-wpscan --url https://<target> --enumerate vp,vt,u,dbe --api-token <WP_API_TOKEN>
+wpscan --url https://<target> --enumerate vp,vt,u,be --api-token <WP_API_TOKEN>
 
 # Quick checks
 curl -s "https://<target>/wp-json/wp/v2/users" | python3 -m json.tool

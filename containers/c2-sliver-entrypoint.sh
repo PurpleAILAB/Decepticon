@@ -26,7 +26,7 @@ DAEMON_PID=$!
 
 # Wait for daemon to finish initialization (cert generation, DB setup on first run)
 echo "[c2-sliver] Waiting for daemon to initialize..."
-for i in $(seq 1 24); do
+for _ in $(seq 1 24); do
   if run_as_sliver sliver-server operator --name _probe --lhost localhost --permissions all --save /dev/null 2>/dev/null; then
     echo "[c2-sliver] Daemon ready."
     break

@@ -1052,7 +1052,7 @@ class MHBenchProvider(BaseBenchmarkProvider):
             f"ssh -F {config_path} foothold 'hostname; whoami; ip -4 addr'\n\n"
             "# 2. Scan the victim FROM the foothold\n"
             f"ssh -F {config_path} foothold "
-            f"'nmap -sS -Pn -p- --min-rate=1000 {victim_internal_ip}'\n\n"
+            f"'nmap -sS -On -p- --min-rate=1000 {victim_internal_ip}'\n\n"
             "# 3. Pivot from the foothold to the victim and read the flag\n"
             "#    (the foothold already has SSH credentials to the victim — \n"
             "#    upstream's addSSHKey playbook installed perry_key on root's\n"
