@@ -1,0 +1,132 @@
+# typos (crate-ci/typos) per-repo configuration
+#
+# Decepticon's skill bodies + offensive tooling include security jargon
+# and exfiltrated-data strings that `typos` mistakes for misspellings.
+# Allowlist them here rather than disable typos entirely.
+
+[default]
+extend-ignore-re = [
+    # Base64-looking strings inside skill examples (JWT samples, AWS keys, etc.)
+    "eyJ[A-Za-z0-9_-]+",
+    "AKIA[0-9A-Z]{16}",
+    "AIza[0-9A-Za-z\\-_]{35}",
+    "sk_live_[0-9a-zA-Z]+",
+    "pk_live_[0-9a-zA-Z]+",
+    # Hash literals + UUIDs
+    "[a-f0-9]{40,64}",
+    # Mimikatz / Impacket command excerpts
+    "lsadump::|sekurlsa::|kerberos::|misc::",
+    # Hyphenated mis-* compound words — typos splits on the hyphen and
+    # flags the "mis" token as a typo of miss/mist. The whole compound
+    # is correct (mis-fire, mis-split, mis-configure, mis-allocation).
+    "mis-[a-z]+",
+]
+
+[default.extend-words]
+# Offensive-security tool names that look like typos
+"hcxdumptool" = "hcxdumptool"
+"hcxpcapngtool" = "hcxpcapngtool"
+"kerberoast" = "kerberoast"
+"kerberoasting" = "kerberoasting"
+"asreproast" = "asreproast"
+"reaver" = "reaver"
+"bully" = "bully"
+"mdk4" = "mdk4"
+"airgeddon" = "airgeddon"
+"wifite" = "wifite"
+"crackmapexec" = "crackmapexec"
+"netexec" = "netexec"
+"impacket" = "impacket"
+"bloodhound" = "bloodhound"
+"sharphound" = "sharphound"
+"certipy" = "certipy"
+"ntlmrelayx" = "ntlmrelayx"
+"petitpotam" = "petitpotam"
+"shadowcoerce" = "shadowcoerce"
+"dfscoerce" = "dfscoerce"
+"printerbug" = "printerbug"
+"adcs" = "adcs"
+"smbsigning" = "smbsigning"
+"dpapi" = "dpapi"
+"msol" = "msol"
+"krbtgt" = "krbtgt"
+"dcsync" = "dcsync"
+"dcshadow" = "dcshadow"
+"asreproasting" = "asreproasting"
+"unconstrained" = "unconstrained"
+"constrained" = "constrained"
+"rbcd" = "rbcd"
+"s4u2self" = "s4u2self"
+"s4u2proxy" = "s4u2proxy"
+"netbios" = "netbios"
+"llmnr" = "llmnr"
+"wpad" = "wpad"
+# Cloud / container terms
+"podman" = "podman"
+"nerdctl" = "nerdctl"
+"buildx" = "buildx"
+"buildkit" = "buildkit"
+"runc" = "runc"
+"crio" = "crio"
+"kubelet" = "kubelet"
+"kubeadm" = "kubeadm"
+"kubectl" = "kubectl"
+"helm" = "helm"
+"kustomize" = "kustomize"
+# ICS / OT
+"modbus" = "modbus"
+"bacnet" = "bacnet"
+"dnp3" = "dnp3"
+"profinet" = "profinet"
+"snap7" = "snap7"
+# Crypto
+"vigenere" = "vigenere"
+"ciphey" = "ciphey"
+# Misc OSS tool names that look like typos
+"ollama" = "ollama"
+"litellm" = "litellm"
+"langgraph" = "langgraph"
+"langchain" = "langchain"
+"deepagents" = "deepagents"
+"sliver" = "sliver"
+"mythic" = "mythic"
+"havoc" = "havoc"
+"frida" = "frida"
+"jadx" = "jadx"
+"apktool" = "apktool"
+"radare2" = "radare2"
+"binwalk" = "binwalk"
+"ghidra" = "ghidra"
+"hashcat" = "hashcat"
+"johnny" = "johnny"
+
+# Security / cloud / legal acronyms typos misreads (it splits the
+# token and flags the prefix — e.g. "NDAs" → suggests "ANDAs" because
+# "ND" looks like a typo of "AND"). extend-identifiers is the right
+# knob: it whitelists the FULL identifier (case-sensitive, no token
+# splitting) rather than a lowercased word fragment.
+[default.extend-identifiers]
+"NDA" = "NDA"        # Non-Disclosure Agreement
+"NDAs" = "NDAs"      # Non-Disclosure Agreements (plural)
+"AKS" = "AKS"        # Azure Kubernetes Service
+"RTO" = "RTO"        # Red Team Operator (also Recovery Time Objective)
+
+[files]
+# Skip vendored / generated content from typos
+extend-exclude = [
+    "package-lock.json",
+    "uv.lock",
+    "go.sum",
+    "*.lock",
+    "*.snap",
+    "assets/**",
+    "benchmark/results/**",
+    "packages/decepticon/decepticon/skills/_corpus/**",
+    "reference/**",
+    # ICS/OT skill bodies are dense with industrial-protocol jargon that
+    # typos misreads: "OT" (Operational Technology), "ot" inside
+    # "ics ot ..." trigger lists, "BA" (BACnet/Building Automation), etc.
+    # Scoped to this directory so the rest of the tree keeps full typo
+    # coverage rather than globally allow-listing two-letter tokens.
+    "packages/decepticon/decepticon/skills/standard/exploit/ics-ot/**",
+]

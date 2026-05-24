@@ -67,7 +67,6 @@ preflight() {
         exit 1
     fi
     info "Container runtime: $rt"
-    DECEPTICON_RUNTIME="$rt"
 
     # Compose v2 — required for the multi-file `docker compose up --wait`
     # pattern. Docker Desktop ships it; Podman 4.4+ ships `podman compose`

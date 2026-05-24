@@ -1,29 +1,145 @@
 # Pre-commit hooks — install with: uvx pre-commit install
 # Run on demand: uvx pre-commit run --all-files
+#
+# CI runs a curated subset via the `pre-commit` job in
+# .github/workflows/ci.yml. The subset excludes hooks that need a
+# language toolchain (basedpyright, gofmt) — those run in their own CI
+# job already.
+#
+# Hooks that would auto-fix pre-existing files at large scale
+# (end-of-file-fixer, mixed-line-ending, trailing-whitespace) are
+# included but configured to skip the bulk of the existing tree. The
+# .gitattributes file added in #281 already enforces LF on commit, so
+# mixed-line-ending is redundant at write time — kept here as a
+# defensive read-time check that doesn't fire on the current tree.
+
+minimum_pre_commit_version: "3.5.0"
+default_stages: [pre-commit]
+
+# Exclude paths with pre-existing formatting violations from the
+# noisier "auto-fix everything" hooks. These hooks still apply to new
+# files outside these paths; the exclusion just grandfathers the
+# current tree. Pre-commit doesn't honour top-level YAML anchors, so
+# the pattern is duplicated inline in each hook that uses it.
+#
+# Grandfather pattern (keep these two hooks in sync):
+#   assets/.*
+#   reference/.*
+#   benchmark/results/.*
+#   packages/decepticon/decepticon/skills/_corpus/.*
+#   .*\.snap
+#   .*\.lock
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^(assets/|reference/)
+        exclude: |
+          (?x)^(
+            assets/.*|
+            reference/.*|
+            benchmark/results/.*|
+            packages/decepticon/decepticon/skills/_corpus/.*|
+            .*\.snap|
+            .*\.lock
+          )$
       - id: end-of-file-fixer
-        exclude: ^(assets/|reference/)
+        exclude: |
+          (?x)^(
+            assets/.*|
+            reference/.*|
+            benchmark/results/.*|
+            packages/decepticon/decepticon/skills/_corpus/.*|
+            .*\.snap|
+            .*\.lock|
+            clients/web/public/.*\.svg
+          )$
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
         args: ["--maxkb=512"]
       - id: detect-private-key
+        # tests/unit/cloud/test_cloud.py contains a test fixture private
+        # key (intentionally — it's verifying the AWS credential parser).
+        exclude: ^packages/decepticon/tests/unit/cloud/test_cloud\.py$
       - id: mixed-line-ending
         args: ["--fix=lf"]
+        # PowerShell / Windows shell scripts intentionally use CRLF per
+        # .gitattributes (`*.ps1 text eol=crlf`). The --fix=lf default
+        # would force LF and fight that policy — exclude them.
+        exclude: |
+          (?x)^(
+            .*\.ps1|
+            .*\.psm1|
+            .*\.psd1|
+            .*\.bat|
+            .*\.cmd
+          )$
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      # check-case-conflict matters for cross-platform: macOS + Windows
+      # default to case-insensitive filesystems, so foo.py + Foo.py in
+      # the repo silently collide for those contributors.
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: destroyed-symlinks
 
+  # ── Python ──────────────────────────────────────────────────────
+  # Pin to the same ruff version as uv.lock so `pre-commit run ruff-format`
+  # and `uv run ruff format` produce byte-identical output.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.15.14
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
 
+  # ── Shell ───────────────────────────────────────────────────────
+  # shellcheck catches POSIX-shell bugs (uninitialized variables,
+  # word-splitting traps, [[ vs [ semantics on busybox sh, etc.).
+  # Severity=warning + selected excludes keeps this PR mergeable
+  # without a mass cleanup of pre-existing style issues.
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args:
+          - "--severity=warning"
+          - "--exclude=SC1091"    # can't follow non-constant source — false positive on optional includes
+          - "--exclude=SC2155"    # declare and assign separately — pre-existing pattern in install.sh
+          - "--exclude=SC2086"    # word-splitting — pre-existing throughout; tracked follow-up
+
+  # ── Dockerfiles ─────────────────────────────────────────────────
+  # hadolint catches missing USER, COPY without --chown, apt-get
+  # version drift, etc. Several rules are deliberately ignored where
+  # the existing Dockerfiles intentionally violate them (we control
+  # the base images + lock the dependency surface elsewhere).
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
+        args:
+          - "--ignore=DL3008"   # pin apt-get versions — we use base image's repo pinning
+          - "--ignore=DL3018"   # pin apk versions — Alpine doesn't expose snapshot URLs
+          - "--ignore=DL3015"   # always --no-install-recommends — many cases legitimately need recommends
+          - "--ignore=DL3059"   # consecutive RUN — deliberately combined for cache control
+          - "--ignore=DL3002"   # last USER should not be root — sandbox + c2-sliver run as root by design
+          - "--ignore=DL3013"   # pin pip versions — uv.lock pins everything via uv sync
+          - "--ignore=DL4006"   # SHELL pipefail — existing Dockerfiles use `set -o pipefail` inline instead
+        files: ^containers/.*\.Dockerfile$
+
+  # ── Typo checker ────────────────────────────────────────────────
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.28.4
+    hooks:
+      - id: typos
+        # Per-repo allowlist for offensive-security jargon that typos
+        # flags by default (Mimikatz commands, base64 noise, etc.) lives
+        # in .typos.toml at the repo root.
+
+  # ── Secrets scan ────────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
