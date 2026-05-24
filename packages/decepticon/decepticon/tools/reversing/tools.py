@@ -9,6 +9,12 @@ from typing import Any
 from langchain_core.tools import tool
 
 from decepticon.tools.reversing.binary import identify_binary
+from decepticon.tools.reversing.ghidra import (
+    ghidra_analyze_binary,
+    ghidra_available,
+    ghidra_decompile_function,
+    ghidra_get_xrefs,
+)
 from decepticon.tools.reversing.packer import detect_packer
 from decepticon.tools.reversing.rop import filter_gadgets_by_pattern, find_rop_gadgets
 from decepticon.tools.reversing.scripts import ghidra_recon_script, r2_recon_script
@@ -107,14 +113,76 @@ def bin_ghidra_script(binary: str, script_name: str = "decepticon_recon.py") -> 
 def bin_r2_script(binary: str) -> str:
     """Emit a radare2 recon script body the agent can feed via ``r2 -i``."""
     return _json({"source": r2_recon_script(binary)})
+    return _json({"source": r2_recon_script(binary)})
+
+
+# ---------------------------------------------------------------------------
+# Ghidra deep-analysis tools
+# ---------------------------------------------------------------------------
+
+
+@tool
+def ghidra_analyze(binary: str) -> str:
+    """Run full Ghidra analysis on a binary — functions, imports, exports.
+
+    Auto-selects backend: Ghidra MCP if a server is running, headless
+    ``analyzeHeadless`` otherwise.  Returns structured JSON with up to
+    500 functions, 500 imports, and 200 exports.
+    """
+    result = ghidra_analyze_binary(binary)
+    return _json(result.to_dict())
+
+
+@tool
+def ghidra_decompile(binary: str, function: str) -> str:
+    """Decompile a single function from a binary using Ghidra.
+
+    ``function`` can be a symbol name (e.g. ``main``) or a hex address
+    (e.g. ``0x401000``).  Returns C pseudocode from the Ghidra
+    decompiler.
+    """
+    result = ghidra_decompile_function(binary, function)
+    return _json(result.to_dict())
+
+
+@tool
+def ghidra_xrefs(binary: str, address: str) -> str:
+    """Get cross-references to an address or symbol in a Ghidra-analyzed binary.
+
+    Requires a running Ghidra MCP server.  Returns up to 200 xrefs
+    with source function context.
+    """
+    xrefs = ghidra_get_xrefs(binary, address)
+    return _json({"count": len(xrefs), "xrefs": [x.to_dict() for x in xrefs]})
+
+
+@tool
+def ghidra_status() -> str:
+    """Check Ghidra availability — headless install and MCP server."""
+    return _json(ghidra_available())
+
+
+@tool
+def re_status() -> str:
+    """Report which reverse engineering backends are available."""
+    return _json({"ghidra": ghidra_available()})
 
 
 REVERSING_TOOLS = [
+    # Core triage
     bin_identify,
     bin_strings,
     bin_packer,
     bin_rop,
     bin_symbols_report,
+    # Script generators
     bin_ghidra_script,
     bin_r2_script,
+    # Ghidra deep analysis
+    ghidra_analyze,
+    ghidra_decompile,
+    ghidra_xrefs,
+    ghidra_status,
+    # Availability probe
+    re_status,
 ]

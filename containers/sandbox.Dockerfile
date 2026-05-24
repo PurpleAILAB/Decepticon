@@ -59,8 +59,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         # ── C2 client (connects to the separate c2-sliver server container) ──
         sliver
 
-# Configure tmux: 50K line scrollback buffer to prevent output truncation
-RUN echo "set-option -g history-limit 50000" > /root/.tmux.conf
+# Configure tmux: 20K line scrollback buffer. The Python-side output
+# truncation (MAX_OUTPUT_CHARS = 30_000 chars) means the agent reads at
+# most ~500 lines, but the tmux PS1-marker detection
+# (TmuxSessionManager._wait_for_completion) counts ALL markers in the
+# scrollback via capture-pane. Commands that produce >N lines cause old
+# markers to scroll off, which breaks the count check. 20K handles
+# realistic red-team tool output (nmap /24 ≈ 5–25K lines) while cutting
+# per-session RSS by ~60% vs the previous 50K.
+RUN echo "set-option -g history-limit 20000" > /root/.tmux.conf
 
 # Optional HTTP sandbox daemon — see decepticon/sandbox_server/.
 #
@@ -80,6 +87,54 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     "fastapi>=0.115.0" \
     "uvicorn>=0.30.0" \
     "deepagents>=0.5.0"
+
+# ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
+#
+# Gated by a build ARG so the default sandbox image stays lean
+# (~500 MB lighter without JDK 21 + Ghidra). Enable with:
+#   docker build --build-arg INSTALL_REVERSING=true ...
+# or, via docker-compose, set INSTALL_REVERSING=true in .env when running
+# with COMPOSE_PROFILES=reversing. The ghidra-mcp sidecar service in
+# docker-compose.yml builds this image with the ARG set to true.
+#
+# When disabled (default), ghidra_available() returns False and the
+# tools/reversing/tools.py @tool wrappers surface a clean "Ghidra not
+# installed — enable the reversing profile" error to the agent rather
+# than crashing. The MCP path (http://ghidra-mcp:8089) is still wired
+# up — agents can use the sidecar without the host sandbox having
+# Ghidra installed locally.
+#
+# Pinned to the 20260513 build of Ghidra 12.1 so the image is
+# reproducible. To upgrade: bump the URL + verify the SHA-256 against
+# the GitHub release page, then bump GHIDRA_SHA256 below.
+ARG INSTALL_REVERSING=false
+ARG GHIDRA_VERSION=12.1
+ARG GHIDRA_BUILD_DATE=20260513
+ARG GHIDRA_SHA256=""
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=sandbox-apt-lists \
+    if [ "$INSTALL_REVERSING" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends --no-install-suggests \
+            openjdk-21-jdk-headless \
+            radare2 \
+            binwalk \
+            unzip && \
+        curl -fsSL -o /tmp/ghidra.zip \
+            "https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_${GHIDRA_VERSION}_build/ghidra_${GHIDRA_VERSION}_PUBLIC_${GHIDRA_BUILD_DATE}.zip" && \
+        if [ -n "$GHIDRA_SHA256" ]; then \
+            echo "$GHIDRA_SHA256  /tmp/ghidra.zip" | sha256sum -c - ; \
+        fi && \
+        unzip -q /tmp/ghidra.zip -d /opt && \
+        mv "/opt/ghidra_${GHIDRA_VERSION}_PUBLIC" /opt/ghidra && \
+        rm /tmp/ghidra.zip ; \
+    else \
+        echo "INSTALL_REVERSING=false — skipping JDK 21 + Ghidra + radare2 + binwalk" ; \
+    fi
+
+ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
+    GHIDRA_MCP_URL=http://ghidra-mcp:8089 \
+    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 
 # Ship only the modules the daemon actually imports:
 #   - decepticon/__init__.py     — package marker (light-weight, just reads __version__)

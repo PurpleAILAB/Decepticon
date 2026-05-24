@@ -1,6 +1,6 @@
 ---
 name: reverser-overview
-description: Root pointer for the binary reversing lane. Covers triage, string extraction, packer unpacking, symbol risk, ROP, Ghidra/r2 recon, and firmware extraction.
+description: Root pointer for the binary reversing lane. Covers triage, string extraction, packer unpacking, symbol risk, ROP, Ghidra deep analysis, and firmware extraction.
 ---
 
 # Reverser Skill Catalog
@@ -13,13 +13,16 @@ description: Root pointer for the binary reversing lane. Covers triage, string e
 | `/skills/standard/reverser/packer-unpacking/SKILL.md`  | UPX / ASPack / Themida / VMProtect |
 | `/skills/standard/reverser/rop-chain/SKILL.md`         | Gadget hunting for exploit dev |
 | `/skills/standard/reverser/anti-debug-bypass/SKILL.md` | IsDebuggerPresent, ptrace, NtGlobalFlag |
+| `/skills/standard/reverser/ghidra/SKILL.md`            | Deep Ghidra analysis — decompile, xrefs, imports, P-code |
 
 ## Workflow
-1. `bin_identify` — format, arch, NX/PIE
-2. `bin_packer` — entropy + signature
-3. If packed → follow the packer-unpacking skill, re-identify after unpack
-4. `bin_strings` — category=url/ip/crypto/secret/version to seed the graph
-5. `bin_symbols_report` — risk bucket classification
-6. Version strings → `cve_lookup` + `cve_by_package`
-7. For deeper analysis: `bin_ghidra_script` or `bin_r2_script`, write to disk, run via bash
-8. Record every observation in the knowledge graph
+1. `ghidra_status` — check Ghidra MCP bridge and headless availability
+2. `bin_identify` — format, arch, NX/PIE
+3. `bin_packer` — entropy + signature
+4. If packed → follow the packer-unpacking skill, re-identify after unpack
+5. `bin_strings` — category=url/ip/crypto/secret/version to seed the graph
+6. `bin_symbols_report` — risk bucket classification
+7. Version strings → `cve_lookup` + `cve_by_package`
+8. `ghidra_analyze` for full analysis, or `bin_ghidra_script` / `bin_r2_script` as fallback
+9. `ghidra_decompile` on interesting functions, `ghidra_xrefs` on dangerous imports
+10. Record every observation in the knowledge graph
