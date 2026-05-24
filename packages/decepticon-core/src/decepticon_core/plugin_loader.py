@@ -40,7 +40,10 @@ import tomllib
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from decepticon_core.protocols.agent import AgentProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,8 @@ AGENTS_GROUP = "decepticon.agents"
 SUBAGENTS_GROUP = "decepticon.subagents"
 CALLBACKS_GROUP = "decepticon.callbacks"
 SKILLS_GROUP = "decepticon.skills"
+PROMPTS_GROUP = "decepticon.prompts"  # Spec §7.2 Principle 7 — prompt-only plugins
+ROLES_GROUP = "decepticon.roles"  # Spec §7.2 Principle 4 — custom agent roles
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -338,7 +343,13 @@ class SubAgentSpec:
 
     name: str
     description: str
-    factory: Callable[[], Any]
+    # ``factory`` returns a compiled agent (langchain ``Runnable`` /
+    # langgraph ``CompiledStateGraph``). Spec §6.1 + §8 gap #9 narrows
+    # this from ``Any`` to the ``AgentProtocol`` declared in
+    # ``decepticon_core.protocols.agent``; the import is local to keep
+    # plugin_loader's top-level imports lean (Protocols already pin
+    # ``typing.runtime_checkable``, no langchain pulled in).
+    factory: Callable[[], "AgentProtocol"]
     parent_agents: tuple[str, ...] = ()
     bundle: str | None = None
     priority: int = 100
@@ -443,6 +454,109 @@ def load_plugin_skill_sources(role: str | None = None) -> list[str]:
     """
     raw = _discover(SKILLS_GROUP, role=role)
     return [p for p in raw if isinstance(p, str) and p]
+
+
+def load_plugin_prompts(role: str) -> list[Any]:
+    """Discover ``PromptContribution`` instances scoped to ``role``.
+
+    Spec §7.2 Principle 7 + §8 gap #8 — plugins ship prompt-only
+    contributions via the ``decepticon.prompts`` entry-point group,
+    without wrapping in a full ``PluginBundle``. Each entry-point
+    returns either a ``PromptContribution`` instance or a zero-arg
+    factory.
+
+    Returns the filtered list of contributions whose ``roles`` tuple
+    includes ``role``. The framework merges their fragments into the
+    role's prompt build at agent construction time.
+    """
+    found: list[Any] = []
+    try:
+        eps = list(entry_points(group=PROMPTS_GROUP))
+    except Exception:  # pragma: no cover — importlib quirks
+        logger.exception("plugin discovery failed for group %s", PROMPTS_GROUP)
+        return found
+
+    for ep in eps:
+        try:
+            obj = ep.load()
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "failed to load prompt plugin %s from group %s",
+                ep.name,
+                PROMPTS_GROUP,
+            )
+            continue
+        if callable(obj):
+            try:
+                obj = obj()
+            except Exception:  # noqa: BLE001
+                logger.exception("prompt contribution factory %s raised", ep.name)
+                continue
+        # Duck-typed PromptContribution check — avoid importing the
+        # framework-layer dataclass here (already in contracts/).
+        if not hasattr(obj, "fragments") or not hasattr(obj, "roles"):
+            logger.warning(
+                "%s:%s did not return a PromptContribution (got %r); skipping",
+                PROMPTS_GROUP,
+                ep.name,
+                type(obj).__name__,
+            )
+            continue
+        roles = getattr(obj, "roles", ())
+        if roles and role not in roles:
+            continue
+        bundle = getattr(obj, "bundle", None)
+        if not is_bundle_enabled(bundle if isinstance(bundle, str) else None):
+            continue
+        found.append(obj)
+    return found
+
+
+def load_plugin_role_specs() -> list[Any]:
+    """Discover custom role specs contributed under ``decepticon.roles``.
+
+    Spec §7.2 Principle 4 + §8 gap #5 — plugins declare new agent roles
+    (e.g. SaaS ``apt`` orchestrator) so the framework's middleware
+    assembler and ``LLMFactory`` see them as first-class. Each
+    entry-point returns either a ``RoleSpec`` instance or a zero-arg
+    factory.
+
+    The framework's ``_boot.run()`` calls ``RoleRegistry.register()``
+    on each returned spec.
+    """
+    found: list[Any] = []
+    try:
+        eps = list(entry_points(group=ROLES_GROUP))
+    except Exception:  # pragma: no cover
+        logger.exception("plugin discovery failed for group %s", ROLES_GROUP)
+        return found
+
+    for ep in eps:
+        try:
+            obj = ep.load()
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "failed to load role plugin %s from group %s", ep.name, ROLES_GROUP
+            )
+            continue
+        if callable(obj) and not hasattr(obj, "slots"):
+            # zero-arg factory shape
+            try:
+                obj = obj()
+            except Exception:  # noqa: BLE001
+                logger.exception("role spec factory %s raised", ep.name)
+                continue
+        # Duck-typed RoleSpec check
+        if not hasattr(obj, "name") or not hasattr(obj, "slots"):
+            logger.warning(
+                "%s:%s did not return a RoleSpec (got %r); skipping",
+                ROLES_GROUP,
+                ep.name,
+                type(obj).__name__,
+            )
+            continue
+        found.append(obj)
+    return found
 
 
 def _discover_subagent_specs() -> list[SubAgentSpec]:

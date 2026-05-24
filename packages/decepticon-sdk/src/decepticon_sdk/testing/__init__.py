@@ -35,17 +35,29 @@ class FakeBackend:
     def __init__(self, files: dict[str, str | bytes] | None = None) -> None:
         self._files: dict[str, str | bytes] = dict(files or {})
 
-    def read(self, path: str) -> str | bytes:
-        return self._files[path]
+    def read(self, path: str, **kwargs: Any) -> str | bytes:
+        # Accept deepagents' ``offset`` / ``limit`` kwargs (passed through
+        # by CompositeBackend.read) so the fake composes cleanly with the
+        # real router. Slicing semantics mirror the canonical backend's
+        # contract: offset is char/byte count from the start, limit caps
+        # the returned slice.
+        content = self._files[path]
+        offset = kwargs.get("offset")
+        limit = kwargs.get("limit")
+        if offset is not None:
+            content = content[offset:]
+        if limit is not None:
+            content = content[:limit]
+        return content
 
-    def write(self, path: str, content: str | bytes) -> None:
+    def write(self, path: str, content: str | bytes, **_: Any) -> None:
         self._files[path] = content
 
-    def list(self, path: str) -> list[str]:
+    def list(self, path: str, **_: Any) -> list[str]:
         prefix = path if path.endswith("/") else path + "/"
         return sorted(p for p in self._files if p.startswith(prefix))
 
-    def exists(self, path: str) -> bool:
+    def exists(self, path: str, **_: Any) -> bool:
         return path in self._files
 
 

@@ -12,6 +12,9 @@ Phase 1.A status: ``types`` submodule extracted from the framework
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
 from decepticon_core import (
     contracts,
     plugin_loader,
@@ -21,7 +24,13 @@ from decepticon_core import (
     utils,
 )
 
-__version__ = "0.0.0"
+try:
+    # pyproject carries a "0.0.0" sentinel; release.yml stamps the real
+    # tag into the wheel metadata at build time, and importlib.metadata
+    # reads it back here. Local checkouts read 0.0.0.
+    __version__ = _version("decepticon-core")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 __all__ = [
     "__version__",

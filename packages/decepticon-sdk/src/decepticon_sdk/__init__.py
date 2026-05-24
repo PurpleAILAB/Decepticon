@@ -9,7 +9,9 @@ Phase 3 surface:
 
   * ``decepticon_sdk`` (this module) — re-exports the public
     ``decepticon-core`` API (types, protocols, contracts, registries,
-    plugin loader). Stable per SemVer once 1.0.0 ships.
+    plugin loader). Tracks the framework's release version (current
+    series: 1.1.x → 1.1.2 with this redesign; shim removal at 2.0.0).
+    Public names listed in ``__all__`` are SemVer-stable.
   * ``decepticon_sdk.testing`` — pytest fixtures and fakes
     (``FakeBackend``, ``FakeLLM``, ``FakeSandbox``) for hermetic
     plugin tests that don't need a live framework.

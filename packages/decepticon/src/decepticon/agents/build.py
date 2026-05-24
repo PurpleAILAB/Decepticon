@@ -159,19 +159,58 @@ def _resolve_overrides(
     """Walk plugin bundles + merge with explicit kwargs.
 
     Explicit wins on conflict. Plugin bundles for the same component
-    likewise resolve via last-write-wins (we don't try to detect plugin
-    A vs plugin B conflict — that's a future enhancement).
+    resolve via last-write-wins; conflicts between bundles surface as
+    ``PluginConflictWarning`` so operators see attribution at boot
+    (closes spec §8 #4 across the framework-side override path).
     """
+    import warnings as _warnings
+
+    from decepticon_core.registry import PluginConflictWarning
+
     mw_replace: dict[str, Callable[..., Any]] = {}
     mw_disable: set[str] = set()
     tool_replace: dict[str, Any] = {}
     tool_disable: set[str] = set()
     prompt: dict[str, str] = {}
+    # Track (key) -> owner for collision attribution
+    mw_owner: dict[str, str] = {}
+    tool_owner: dict[str, str] = {}
 
     for bundle in _iter_override_bundles(role):
-        mw_replace.update(bundle.replaced_middleware)
+        owner = bundle.bundle or bundle.name or "<unknown>"
+        for slot_name, factory in bundle.replaced_middleware.items():
+            previous = mw_owner.get(slot_name)
+            if previous is not None and previous != owner:
+                _warnings.warn(
+                    PluginConflictWarning(
+                        f"middleware slot {slot_name!r} for role {role!r} replaced "
+                        f"by both {previous!r} and {owner!r}",
+                        key=slot_name,
+                        owner=owner,
+                        previous_owner=previous,
+                        kind="middleware",
+                    ),
+                    stacklevel=2,
+                )
+            mw_replace[slot_name] = factory
+            mw_owner[slot_name] = owner
         mw_disable.update(bundle.disabled_middleware)
-        tool_replace.update(bundle.replaced_tools)
+        for tool_name, replacement in bundle.replaced_tools.items():
+            previous = tool_owner.get(tool_name)
+            if previous is not None and previous != owner:
+                _warnings.warn(
+                    PluginConflictWarning(
+                        f"tool {tool_name!r} for role {role!r} replaced by both "
+                        f"{previous!r} and {owner!r}",
+                        key=tool_name,
+                        owner=owner,
+                        previous_owner=previous,
+                        kind="tool",
+                    ),
+                    stacklevel=2,
+                )
+            tool_replace[tool_name] = replacement
+            tool_owner[tool_name] = owner
         tool_disable.update(bundle.disabled_tools)
         bundle_prompt = bundle.prompts.get(role) or {}
         for k in ("prepend", "append", "replace"):

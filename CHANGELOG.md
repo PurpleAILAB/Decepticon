@@ -6,7 +6,14 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per
 [spec §13.4](docs/superpowers/specs/2026-05-23-core-framework-sdk-split-design.md)).
 
-## [Unreleased]
+## [Unreleased] — targets v1.1.2
+
+This release introduces the three-package split (additive — every
+legacy import path keeps working via compat shims). Targets
+``v1.1.2`` against the OSS series currently at ``v1.1.1``. Removal of
+the compat shims, ``PluginBundle`` aggregate shape, and the legacy
+``decepticon.agents.middleware_slots.MiddlewareSlot`` re-export is
+deferred to ``2.0.0`` (see "Deprecated" table below).
 
 ### Added — three-package split (core / framework / sdk)
 

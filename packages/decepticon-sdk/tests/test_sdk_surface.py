@@ -37,7 +37,15 @@ def test_protocols_importable() -> None:
 
 
 def test_contributions_importable() -> None:
-    """All 5 contribution dataclasses reachable via single SDK import."""
+    """All 5 contribution dataclasses reachable via single SDK import.
+
+    The four role-scoped contributions (Tool / Middleware / Prompt /
+    SubAgent) now enforce explicit ``roles=`` / ``parent_agents=`` at
+    construction time (spec §8 gap #6 — implicit all-roles forbidden).
+    SafetyDeclaration has no role-scope field and constructs freely.
+    """
+    import pytest
+
     from decepticon_sdk import (
         MiddlewareContribution,
         PromptContribution,
@@ -46,12 +54,21 @@ def test_contributions_importable() -> None:
         ToolContribution,
     )
 
-    # Defaults match spec §7.2 Principle 3.
-    assert PromptContribution().mode == "append"
-    assert ToolContribution().roles == ()
+    # Constructing role-scoped contributions WITHOUT roles= raises (gap #6).
+    for cls in (ToolContribution, MiddlewareContribution, PromptContribution):
+        with pytest.raises(ValueError, match=r"roles="):
+            cls()
+    with pytest.raises(ValueError, match=r"parent_agents="):
+        SubAgentContribution()
+
+    # SafetyDeclaration has no role scope; default construction OK.
     assert SafetyDeclaration().tools == ()
-    assert MiddlewareContribution().items == ()
-    assert SubAgentContribution().parent_agents == ()
+
+    # Explicit roles= constructs successfully + defaults apply.
+    assert PromptContribution(roles=("recon",)).mode == "append"
+    assert ToolContribution(roles=("recon",)).items == ()
+    assert MiddlewareContribution(roles=("recon",)).items == ()
+    assert SubAgentContribution(parent_agents=("decepticon",)).items == ()
 
 
 def test_fake_backend_satisfies_protocol() -> None:

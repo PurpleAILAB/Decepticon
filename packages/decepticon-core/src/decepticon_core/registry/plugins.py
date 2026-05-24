@@ -10,6 +10,7 @@ the future B2B Enterprise API tier).
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 
@@ -17,6 +18,21 @@ from decepticon_core.registry.conflict import PluginConflictWarning
 from decepticon_core.registry.resolution import RoleResolution
 
 logger = logging.getLogger(__name__)
+
+# When set to a truthy value (``1`` / ``true`` / ``yes``),
+# ``PluginRegistry.load()`` raises ``PluginConflictWarning`` (as an
+# exception via ``warnings.warn(..., stacklevel=2)`` + filter) on the
+# first collision instead of accumulating warnings. Production
+# deployments that don't want last-write-wins resolution flip this on.
+_STRICT_REGISTRY_ENV = "DECEPTICON_STRICT_REGISTRY"
+
+
+def _strict_registry_enabled() -> bool:
+    return os.environ.get(_STRICT_REGISTRY_ENV, "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 @dataclass(frozen=True)
@@ -121,16 +137,22 @@ class PluginRegistry:
                 key = (ep.name, group)
                 previous = seen.get(key)
                 if previous is not None and previous != package:
-                    collisions.append(
-                        PluginConflictWarning(
-                            f"entry-point {ep.name!r} in group {group!r} registered "
-                            f"by both {previous!r} and {package!r}",
-                            key=ep.name,
-                            owner=package,
-                            previous_owner=previous,
-                            kind=group,
-                        )
+                    conflict = PluginConflictWarning(
+                        f"entry-point {ep.name!r} in group {group!r} registered "
+                        f"by both {previous!r} and {package!r}",
+                        key=ep.name,
+                        owner=package,
+                        previous_owner=previous,
+                        kind=group,
                     )
+                    if _strict_registry_enabled():
+                        # Strict mode (DECEPTICON_STRICT_REGISTRY=1): a
+                        # collision is fatal. Production deployments
+                        # that want deterministic plugin resolution
+                        # flip this so misconfigured installs fail at
+                        # boot instead of last-write-wins resolution.
+                        raise conflict
+                    collisions.append(conflict)
                 seen[key] = package
                 by_owner.setdefault((ep.name, package), set()).add(group)
 

@@ -17,7 +17,8 @@ Neo4j) see the umbrella [`README.md`](../README.md).
 ## 2. Use the public API
 
 Spec §6.2 defines the SemVer-stable surface plugin authors and
-library consumers can rely on at v1.0:
+library consumers can rely on from v1.1.2 onward (the current
+release series — see CHANGELOG):
 
 ```python
 from decepticon.agents import (

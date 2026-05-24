@@ -11,7 +11,8 @@ where new code lives and how to keep the dependency graph clean.
 *can be*: protocols it implements, dataclasses it parametrizes,
 registry it appears in. Imports only `pydantic`, `typing_extensions`,
 `importlib.metadata`. Roughly 3,000 LOC target. Versioned strictly
-per SemVer once 1.0.0; breaking changes here mean a major bump for
+per SemVer (current series 1.1.x → 1.2.0 with this redesign;
+shim removal at 2.0.0). Breaking changes here mean a major bump for
 the entire ecosystem.
 
 `decepticon` is the **framework**. Implements the current agent
@@ -68,7 +69,8 @@ the canonical guard.
 
 2. **Adding a new public name to core = minor bump.** Adding a new
    plugin contract surface (a Protocol, a Contribution, a registry
-   class) is additive and SemVer-minor at 1.0+. Renaming or
+   class) is additive and SemVer-minor (e.g. 1.1.x → 1.1.2 / 1.2.0).
+   Renaming or
    removing one is major.
 
 3. **Framework `_internal/` is freely mutable.** The framework

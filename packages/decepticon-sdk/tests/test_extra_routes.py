@@ -109,3 +109,29 @@ def test_valid_subprefix_passes() -> None:
     overlay = FakeBackend({"/skills/tenant/abc/skill.md": "tenant"})
     backend = make_agent_backend(sandbox, extra_routes={"/skills/tenant/abc/": overlay})
     assert "/skills/tenant/abc/" in backend.routes
+
+
+def test_extra_routes_actually_serves_content() -> None:
+    """Spec §14 acceptance #11 literal text: the test reads from
+    ``/foo/x.txt`` through the composed backend and gets the
+    extra_routes-supplied content.
+
+    The previous ordering-only test verified the route LIST; this one
+    verifies the runtime DISPATCH — proving longest-prefix routing
+    actually delivers caller-mounted content for filesystem-shaped
+    operations.
+
+    Note: ``CompositeBackend`` strips the matching prefix before
+    delegating to the sub-backend (deepagents convention), so the
+    FakeBackend stores the suffix key ``/x.txt`` even though the
+    composite call uses the full ``/skills/plugins/apt/x.txt``.
+    """
+    sandbox = FakeSandbox()
+    overlay = FakeBackend({"/x.txt": "overlay-content"})
+    backend = make_agent_backend(
+        sandbox,
+        extra_routes={"/skills/plugins/apt/": overlay},
+    )
+    # CompositeBackend's read dispatch hits the matching prefix backend.
+    content = backend.read("/skills/plugins/apt/x.txt")
+    assert content == "overlay-content"
