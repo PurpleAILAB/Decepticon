@@ -8,7 +8,11 @@ import logging
 
 import pytest
 
-from decepticon.core import logging as dlog
+# Import the canonical module directly (not the decepticon.core.logging
+# shim): this test mutates + asserts module-level state (``_CONFIGURED``),
+# and the PEP 562 shim delegates attribute reads but keeps its own module
+# object, so shim-vs-canonical state would diverge.
+from decepticon_core.utils import logging as dlog
 
 
 @pytest.fixture(autouse=True)

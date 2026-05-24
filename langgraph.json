@@ -1,21 +1,21 @@
 {
   "dependencies": ["./packages/decepticon"],
   "graphs": {
-    "decepticon": "./packages/decepticon/src/decepticon/agents/standard/decepticon.py:graph",
-    "recon": "./packages/decepticon/src/decepticon/agents/standard/recon.py:graph",
-    "soundwave": "./packages/decepticon/src/decepticon/agents/standard/soundwave.py:graph",
-    "exploit": "./packages/decepticon/src/decepticon/agents/standard/exploit.py:graph",
-    "postexploit": "./packages/decepticon/src/decepticon/agents/standard/postexploit.py:graph",
-    "analyst": "./packages/decepticon/src/decepticon/agents/standard/analyst.py:graph",
-    "reverser": "./packages/decepticon/src/decepticon/agents/standard/reverser.py:graph",
-    "contract_auditor": "./packages/decepticon/src/decepticon/agents/standard/contract_auditor.py:graph",
-    "cloud_hunter": "./packages/decepticon/src/decepticon/agents/standard/cloud_hunter.py:graph",
-    "ad_operator": "./packages/decepticon/src/decepticon/agents/standard/ad_operator.py:graph"
+    "decepticon": "./packages/decepticon/decepticon/agents/standard/decepticon.py:graph",
+    "recon": "./packages/decepticon/decepticon/agents/standard/recon.py:graph",
+    "soundwave": "./packages/decepticon/decepticon/agents/standard/soundwave.py:graph",
+    "exploit": "./packages/decepticon/decepticon/agents/standard/exploit.py:graph",
+    "postexploit": "./packages/decepticon/decepticon/agents/standard/postexploit.py:graph",
+    "analyst": "./packages/decepticon/decepticon/agents/standard/analyst.py:graph",
+    "reverser": "./packages/decepticon/decepticon/agents/standard/reverser.py:graph",
+    "contract_auditor": "./packages/decepticon/decepticon/agents/standard/contract_auditor.py:graph",
+    "cloud_hunter": "./packages/decepticon/decepticon/agents/standard/cloud_hunter.py:graph",
+    "ad_operator": "./packages/decepticon/decepticon/agents/standard/ad_operator.py:graph"
   },
   "env": ".env",
   "python_version": "3.13",
   "http": {
     "multitask_strategy": "interrupt",
-    "app": "./packages/decepticon/src/decepticon/server/plugins_api.py:app"
+    "app": "./packages/decepticon/decepticon/server/plugins_api.py:app"
   }
 }

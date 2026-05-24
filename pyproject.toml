@@ -112,6 +112,18 @@ known-first-party = ["decepticon", "decepticon_core", "decepticon_sdk"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Explicit sys.path entries (rootdir-relative) so test collection
+# resolves the three workspace packages from their src trees plus the
+# repo-root ``benchmark`` package — independent of whether the editable
+# install's .pth is active in the pytest process. CI's fresh runner
+# env doesn't reliably surface uv's editable finder to the pytest
+# subprocess, so this is the deterministic path.
+pythonpath = [
+    ".",
+    "packages/decepticon-core",
+    "packages/decepticon",
+    "packages/decepticon-sdk",
+]
 testpaths = [
     "packages/decepticon-core/tests",
     "packages/decepticon/tests",
@@ -128,11 +140,11 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = ["packages/decepticon/src/decepticon"]
+source = ["packages/decepticon/decepticon"]
 branch = true
 omit = [
-    "packages/decepticon/src/decepticon/__main__.py",
-    "packages/decepticon/src/decepticon/auth/providers/*",
+    "packages/decepticon/decepticon/__main__.py",
+    "packages/decepticon/decepticon/auth/providers/*",
 ]
 
 [tool.coverage.html]
@@ -152,11 +164,11 @@ skip_covered = false
 [tool.basedpyright]
 pythonVersion = "3.13"
 include = [
-    "packages/decepticon-core/src",
+    "packages/decepticon-core",
     "packages/decepticon-core/tests",
-    "packages/decepticon/src",
+    "packages/decepticon",
     "packages/decepticon/tests",
-    "packages/decepticon-sdk/src",
+    "packages/decepticon-sdk",
     "packages/decepticon-sdk/tests",
     "benchmark",
 ]
@@ -164,7 +176,7 @@ exclude = [
     "**/__pycache__",
     "**/node_modules",
     "reference",
-    "packages/decepticon/src/decepticon/auth/providers",
+    "packages/decepticon/decepticon/auth/providers",
     "benchmark/xbow-validation-benchmarks",
     "benchmark/MHBench",
     "benchmark/results",

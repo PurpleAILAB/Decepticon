@@ -14,19 +14,19 @@ services:
       watch:
         - action: sync
           # Phase 0 of the core/framework/sdk split relocated the source
-          # tree to packages/decepticon/src/decepticon/. The Dockerfile
+          # tree to packages/decepticon/decepticon/. The Dockerfile
           # COPY now pulls packages/, and uv sync installs editable from
           # there — hot-reload mirrors the same path inside the image.
-          # Skills live under packages/decepticon/src/decepticon/skills,
+          # Skills live under packages/decepticon/decepticon/skills,
           # so this sync covers them too — no dedicated entry needed.
-          path: ./packages/decepticon/src/decepticon
-          target: /app/packages/decepticon/src/decepticon
+          path: ./packages/decepticon/decepticon
+          target: /app/packages/decepticon/decepticon
         - action: sync
           # decepticon-core changes also live-sync into the editable
           # install so plugin registry / role registry tweaks land
           # without a full image rebuild.
-          path: ./packages/decepticon-core/src/decepticon_core
-          target: /app/packages/decepticon-core/src/decepticon_core
+          path: ./packages/decepticon-core/decepticon_core
+          target: /app/packages/decepticon-core/decepticon_core
         - action: sync
           path: ./langgraph.json
           target: /app/langgraph.json

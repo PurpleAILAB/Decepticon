@@ -17,7 +17,7 @@ from typing import Any
 
 import pytest
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "config" / "ollama_probe.py"
+_MODULE_PATH = Path(__file__).resolve().parents[5] / "config" / "ollama_probe.py"
 _MODULE_NAME = "decepticon_ollama_probe"
 _spec = importlib.util.spec_from_file_location(_MODULE_NAME, _MODULE_PATH)
 assert _spec is not None

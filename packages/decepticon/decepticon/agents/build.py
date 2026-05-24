@@ -182,7 +182,11 @@ def _resolve_overrides(
     tool_owner: dict[str, str] = {}
 
     for bundle in _iter_override_bundles(role):
-        owner = bundle.bundle or bundle.name or "<unknown>"
+        # ``PluginBundle.bundle`` is the activation label used for
+        # owner attribution in conflict warnings. (The spec's rebuilt
+        # PluginBundle adds a required ``name`` field; until that lands
+        # the activation label is the best available identifier.)
+        owner = bundle.bundle or "<unknown>"
         for slot_name, factory in bundle.replaced_middleware.items():
             previous = mw_owner.get(slot_name)
             if previous is not None and previous != owner:

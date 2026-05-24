@@ -41,7 +41,7 @@ if "litellm" not in sys.modules:
 
 import litellm  # noqa: E402  — resolved via the stub above
 
-_MODULE_PATH = Path(__file__).resolve().parents[3] / "config" / "oauth_token_store.py"
+_MODULE_PATH = Path(__file__).resolve().parents[5] / "config" / "oauth_token_store.py"
 _spec = importlib.util.spec_from_file_location("decepticon_oauth_token_store", _MODULE_PATH)
 assert _spec is not None
 assert _spec.loader is not None

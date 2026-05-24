@@ -96,13 +96,13 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 # so the sandbox image doesn't bloat for the >95% of users who never
 # enable the daemon and so the dependency surface stays minimal.
 # Phase 0 of the core/framework/sdk split relocated the framework
-# source tree to packages/decepticon/src/decepticon/. The sandbox
+# source tree to packages/decepticon/decepticon/. The sandbox
 # image stays an exec-only daemon — it only needs ``sandbox_kernel``
 # + ``sandbox_server`` + the bare ``__init__.py`` so they can be
 # imported as a Python package under PYTHONPATH=/opt.
-COPY packages/decepticon/src/decepticon/__init__.py /opt/decepticon/__init__.py
-COPY packages/decepticon/src/decepticon/sandbox_kernel /opt/decepticon/sandbox_kernel
-COPY packages/decepticon/src/decepticon/sandbox_server /opt/decepticon/sandbox_server
+COPY packages/decepticon/decepticon/__init__.py /opt/decepticon/__init__.py
+COPY packages/decepticon/decepticon/sandbox_kernel /opt/decepticon/sandbox_kernel
+COPY packages/decepticon/decepticon/sandbox_server /opt/decepticon/sandbox_server
 ENV PYTHONPATH=/opt
 
 # Skip the framework boot path on this image — the sandbox container
