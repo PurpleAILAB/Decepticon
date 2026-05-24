@@ -182,8 +182,29 @@ jobs:
           d = json.load(open('/tmp/bp.json'))
           s = d['summary']
           print(f\"basedpyright: {s['errorCount']} errors, {s['warningCount']} warnings, {s['informationCount']} info\")
-          sys.exit(1 if s['errorCount'] > 0 else 0)
+          if s['errorCount']:
+              print()
+              print('=== error-level diagnostics ===')
+              for diag in d.get('generalDiagnostics', []):
+                  if diag.get('severity') != 'error':
+                      continue
+                  loc = diag.get('range', {}).get('start', {})
+                  line = loc.get('line', 0)
+                  if isinstance(line, int):
+                      line += 1
+                  print(f\"  {diag.get('file', '?')}:{line}\")
+                  print(f\"    {diag.get('message', '')}\")
+                  if diag.get('rule'):
+                      print(f\"    rule: {diag['rule']}\")
+              sys.exit(1)
           "
+      - name: Upload basedpyright JSON (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: basedpyright-${{ github.run_id }}
+          path: /tmp/bp.json
+          retention-days: 7
       # PRs run tests without coverage instrumentation — coverage adds ~3x
       # runtime and PR feedback latency matters more than coverage tracking
       # on every change. Coverage is enforced on main pushes (next step).
