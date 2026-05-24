@@ -50,7 +50,10 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - decepticon-net
+    mem_limit: 1g
+    cpus: 1.0
     restart: unless-stopped
+
   # PostgreSQL — Persistent storage for LiteLLM
   # Stores: virtual keys, spend logs, user budgets, rate limits
   postgres:
@@ -60,6 +63,22 @@ services:
       POSTGRES_DB: litellm
       POSTGRES_USER: decepticon
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-decepticon}
+      # Keep shared_buffers small — Decepticon stores only LiteLLM spend
+      # logs and web dashboard state; the working set fits in 32MB.
+      # Default (128MB) wastes RAM in this context. work_mem is lowered
+      # from the 4MB default because queries are simple key-value lookups.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=32MB"
+      - "-c"
+      - "work_mem=2MB"
+      - "-c"
+      - "effective_cache_size=128MB"
+      - "-c"
+      - "maintenance_work_mem=32MB"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Auto-create decepticon_web DB on first startup (empty volume only).
@@ -69,7 +88,10 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     networks:
       - decepticon-net
+    mem_limit: 512m
+    cpus: 0.5
     restart: unless-stopped
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U decepticon -d litellm"]
       interval: 10s
@@ -84,9 +106,10 @@ services:
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-neo4j
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-decepticon-graph}
-      NEO4J_server_memory_heap_initial__size: 128m
-      NEO4J_server_memory_heap_max__size: 384m
-      NEO4J_server_memory_pagecache_size: 128m
+      NEO4J_server_memory_heap_initial__size: 64m
+      NEO4J_server_memory_heap_max__size: 256m
+      NEO4J_server_memory_pagecache_size: 64m
+
       NEO4J_PLUGINS: '["apoc"]'
       NEO4J_dbms_security_procedures_unrestricted: apoc.*
       NEO4J_apoc_export_file_enabled: "true"
@@ -106,7 +129,10 @@ services:
       timeout: 5s
       retries: 12
       start_period: 90s
+    mem_limit: 768m
+    cpus: 1.0
     restart: unless-stopped
+
 
   # Evasive Red Team Sandbox
   # Isolated container for executing red-team tools (nmap, whois, etc.)
@@ -141,6 +167,8 @@ services:
       - NEO4J_URI=bolt://neo4j:7687
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
+      - GHIDRA_INSTALL_DIR=/opt/ghidra
+      - GHIDRA_MCP_URL=http://ghidra-mcp:8089
     volumes:
       # Bind is engagement-scoped. The launcher sets DECEPTICON_ENGAGEMENT_WORKSPACE
       # to <home>/workspace/<slug> after the engagement picker, so the agent only
@@ -160,6 +188,38 @@ services:
       neo4j:
         condition: service_started
     restart: unless-stopped
+
+
+  # Ghidra MCP — 245-tool reverse engineering bridge for the Reverser agent.
+  # Runs the bethington/ghidra-mcp Python bridge (bridge_mcp_ghidra.py) which
+  # dynamically registers every endpoint from the Ghidra plugin's /mcp/schema.
+  # The sandbox container talks to it at http://ghidra-mcp:8089 via ghidra.py.
+  # Full coverage: decompilation, xrefs, function/data analysis, scripting,
+  # batch operations, P-code emulation, convention enforcement, and more.
+  ghidra-mcp:
+    image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-ghidra-mcp
+    # The Ghidra plugin starts an HTTP server on port 8089 inside Ghidra.
+    # analyzeHeadless runs Ghidra in headless mode with the MCP plugin loaded;
+    # the plugin auto-starts its HTTP listener on boot.
+    entrypoint:
+      - /opt/ghidra/support/analyzeHeadless
+      - /tmp/ghidra_project
+      - dcp
+      - -scriptPath
+      - /opt/ghidra/Ghidra/Extensions/GhidraMCP/ghidra_scripts
+      - -preScript
+      - GhidraMCPPlugin.java
+    environment:
+      - GHIDRA_MCP_PORT=8089
+      - JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+    networks:
+      - sandbox-net
+    mem_limit: 4g
+    cpus: 2.0
+    restart: unless-stopped
+    profiles:
+      - reversing
 
   # LangGraph Platform — Agent API Server
   # Exposes all agents (decepticon, soundwave, recon, exploit, postexploit)
@@ -230,7 +290,10 @@ services:
       # keeping the sandbox itself isolated from the infra plane.
       - decepticon-net
       - sandbox-net
+    mem_limit: 2g
+    cpus: 2.0
     restart: unless-stopped
+
 
   # Web Dashboard — Next.js UI
   # Migrations run automatically at startup via web-entrypoint.sh (prisma migrate deploy).
@@ -273,6 +336,8 @@ services:
       start_period: 90s
     networks:
       - decepticon-net
+    mem_limit: 1g
+    cpus: 1.0
     restart: unless-stopped
 
   # Ink CLI — Interactive terminal UI

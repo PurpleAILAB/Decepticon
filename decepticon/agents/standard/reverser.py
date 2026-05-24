@@ -180,7 +180,9 @@ SUBAGENT_SPEC = SubAgentSpec(
     description=(
         "Binary reversing specialist. Use for ELF/PE/Mach-O/firmware triage, "
         "packer detection, classified string extraction, symbol risk reports, "
-        "ROP gadget inventories, and Ghidra/radare2 recon script generation. "
+        "ROP gadget inventories, Ghidra/radare2 recon script generation, "
+        "and deep analysis via Ghidra headless + MCP bridge (decompilation, "
+        "cross-references, P-code emulation, batch analysis, 245 tools). "
         "Ideal for thick clients, IoT firmware, game cheats, malware triage, "
         "and exploit dev hand-offs."
     ),
