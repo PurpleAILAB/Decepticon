@@ -16,6 +16,49 @@ from .http_sandbox import HTTPSandbox
 SKILLS_LOCAL_PATH = str(importlib.resources.files("decepticon") / "skills")
 
 
+# Caller-supplied ``extra_routes`` keys are rejected if they match any
+# of these — preserving the OSS skill tree and preventing root-prefix
+# shadowing that would route every request through the caller's backend.
+# Spec §16.4 #5: longest-prefix-wins gives the intended override semantics
+# only when callers mount under a SUB-prefix of OSS defaults, never at or
+# above them. SaaS overlays use ``/skills/tenant/<id>/`` etc.
+_RESERVED_PREFIXES: frozenset[str] = frozenset({"/skills/", "/", ""})
+
+
+def _validate_extra_route_key(prefix: str) -> None:
+    """Reject keys that would shadow OSS defaults or traverse paths.
+
+    Raises ``ValueError`` on:
+      * empty string or bare ``/`` — would route ALL paths through the
+        caller's backend, bypassing the sandbox transport.
+      * ``/skills/`` exactly — would replace the OSS skill tree wholesale
+        (substituting attacker-controlled context into every model turn).
+      * keys missing the leading or trailing slash — ambiguous prefix
+        semantics; longest-prefix-wins assumes ``/foo/`` form.
+      * keys containing ``..`` — path traversal attempt.
+    """
+    if not isinstance(prefix, str):
+        raise ValueError(
+            f"extra_routes keys must be str, got {type(prefix).__name__}"
+        )
+    if prefix in _RESERVED_PREFIXES:
+        raise ValueError(
+            f"extra_routes key {prefix!r} is reserved; "
+            f"mount tenant/plugin overlays under a sub-prefix such as "
+            f"'/skills/tenant/<id>/' or '/skills/plugins/<name>/'"
+        )
+    if not prefix.startswith("/") or not prefix.endswith("/"):
+        raise ValueError(
+            f"extra_routes key {prefix!r} must be an absolute prefix in "
+            f"'/.../' form (leading + trailing slash required)"
+        )
+    if ".." in prefix:
+        raise ValueError(
+            f"extra_routes key {prefix!r} contains '..' — path "
+            f"traversal patterns are not allowed"
+        )
+
+
 def make_agent_backend(
     sandbox: Any,
     *,
@@ -46,14 +89,27 @@ def make_agent_backend(
             match wins deterministically — a tenant-specific
             ``/skills/tenant/<id>/`` route overrides the default
             ``/skills/`` prefix.
+
+            Reserved prefixes ``""`` / ``"/"`` / ``"/skills/"`` and any
+            key not in ``"/.../"`` form (or containing ``..``) are
+            rejected with ``ValueError`` — preventing root shadowing and
+            wholesale OSS skill-tree substitution.
+
+    Raises:
+        ValueError: when an ``extra_routes`` key violates the prefix
+            rules above.
     """
+    routes = dict(extra_routes or {})
+    for prefix in routes:
+        _validate_extra_route_key(prefix)
+
     base: dict[str, Any] = {
         "/skills/": FilesystemBackend(
             root_dir=SKILLS_LOCAL_PATH,
             virtual_mode=True,
         ),
     }
-    merged: dict[str, Any] = {**base, **dict(extra_routes or {})}
+    merged: dict[str, Any] = {**base, **routes}
     # Longest-prefix-wins: sort by len(prefix) descending so a tenant
     # path like ``/skills/tenant/<id>/`` always matches before the
     # generic ``/skills/`` default.

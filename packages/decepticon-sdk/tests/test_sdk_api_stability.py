@@ -38,13 +38,14 @@ SDK_PUBLIC_API: tuple[tuple[str, str], ...] = (
     ("decepticon_sdk", "PluginBundle"),
     ("decepticon_sdk", "SubAgentSpec"),
     ("decepticon_sdk", "is_bundle_enabled"),
-    # Registry (7)
+    # Registry (8)
     ("decepticon_sdk", "PluginRegistry"),
     ("decepticon_sdk", "PluginInfo"),
     ("decepticon_sdk", "PluginConflictWarning"),
     ("decepticon_sdk", "RoleRegistry"),
     ("decepticon_sdk", "RoleSpec"),
     ("decepticon_sdk", "RoleResolution"),
+    ("decepticon_sdk", "SafetyRegistry"),
     ("decepticon_sdk", "SkillSourceRegistry"),
     # Testing fakes (3)
     ("decepticon_sdk.testing", "FakeBackend"),
@@ -67,7 +68,7 @@ def test_sdk_public_name_importable(module_name: str, attr: str) -> None:
 
 def test_sdk_manifest_count_unchanged() -> None:
     """Snapshot the manifest size."""
-    expected = 29
+    expected = 30
     actual = len(SDK_PUBLIC_API)
     assert actual == expected, (
         f"SDK_PUBLIC_API has {actual} entries, expected {expected}. "

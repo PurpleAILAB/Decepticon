@@ -62,6 +62,7 @@ from decepticon_core.registry import (
     RoleRegistry,
     RoleResolution,
     RoleSpec,
+    SafetyRegistry,
     SkillSourceRegistry,
 )
 
@@ -97,6 +98,7 @@ __all__ = [
     "RoleRegistry",
     "RoleResolution",
     "RoleSpec",
+    "SafetyRegistry",
     "SkillSourceRegistry",
     # Version
     "__version__",

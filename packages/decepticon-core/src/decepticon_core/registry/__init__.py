@@ -15,6 +15,11 @@ Submodules:
     ``default_role="decepticon"``).
   * ``skills``   — ``SkillSourceRegistry`` validating ``/skills/<.../>``
     paths and warning on collisions (closes gap §8 #12).
+  * ``safety``   — ``SafetyRegistry`` for plugin-extended safety-critical
+    tool / middleware names. Framework's ``_check_safety_gate`` consults
+    the merged accessors so plugin declarations participate in the
+    env-gated override check (closes gap §8 #10, spec §16.4 #4 —
+    additive-only).
   * ``plugins``  — ``PluginRegistry`` central read-only view; primary
     API is ``introspect_role(role) -> RoleResolution`` (closes gap §8
     #7) and ``detect_collisions() -> list[PluginConflictWarning]``
@@ -32,6 +37,7 @@ from decepticon_core.registry.resolution import (
     ToolInfo,
 )
 from decepticon_core.registry.roles import RoleRegistry, RoleSpec
+from decepticon_core.registry.safety import SafetyRegistry
 from decepticon_core.registry.skills import SkillSourceRegistry
 
 __all__ = [
@@ -43,6 +49,7 @@ __all__ = [
     "RoleRegistry",
     "RoleResolution",
     "RoleSpec",
+    "SafetyRegistry",
     "SkillSourceRegistry",
     "ToolInfo",
 ]

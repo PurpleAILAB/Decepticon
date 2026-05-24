@@ -48,6 +48,7 @@ from decepticon_core.plugin_loader import (
     load_plugin_middleware,
     load_plugin_tools,
 )
+from decepticon_core.registry import SafetyRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -208,13 +209,27 @@ def _check_safety_gate(
     tool_disable: frozenset[str],
 ) -> None:
     """Raise ``SafetyOverrideViolation`` when a safety-critical
-    slot/tool is being overridden without the env gate."""
+    slot/tool is being overridden without the env gate.
+
+    The safety-critical set is the union of:
+      * OSS baseline (``SAFETY_CRITICAL_SLOTS`` / ``SAFETY_CRITICAL_TOOLS``)
+      * plugin-declared additions via
+        ``decepticon_core.registry.SafetyRegistry.register(decl, owner=...)``
+
+    Plugins ship ``SafetyDeclaration`` contributions and register them
+    at boot time; the merged set is consulted here so a plugin's
+    declared safety-critical names participate in the env-gated
+    override check (spec §16.4 #4 — additive-only; the merge never
+    weakens the OSS baseline).
+    """
     if os.environ.get(SAFETY_OVERRIDE_ENV, "").strip().lower() in {"1", "true", "yes"}:
         return
 
-    safety_slots = {s.value for s in SAFETY_CRITICAL_SLOTS}
+    oss_slots = frozenset(s.value for s in SAFETY_CRITICAL_SLOTS)
+    safety_slots = SafetyRegistry.merged_critical_slots(oss_slots)
+    safety_tools = SafetyRegistry.merged_critical_tools(SAFETY_CRITICAL_TOOLS)
     mw_breach = (set(mw_replace.keys()) | mw_disable) & safety_slots
-    tool_breach = (set(tool_replace.keys()) | tool_disable) & SAFETY_CRITICAL_TOOLS
+    tool_breach = (set(tool_replace.keys()) | tool_disable) & safety_tools
 
     if not mw_breach and not tool_breach:
         return

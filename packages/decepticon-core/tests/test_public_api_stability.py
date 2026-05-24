@@ -82,6 +82,7 @@ CORE_PUBLIC_API: tuple[tuple[str, str], ...] = (
     ("decepticon_core.registry", "MiddlewareInfo"),
     ("decepticon_core.registry", "ToolInfo"),
     ("decepticon_core.registry", "OverrideInfo"),
+    ("decepticon_core.registry", "SafetyRegistry"),
     ("decepticon_core.registry", "SkillSourceRegistry"),
     # decepticon_core.plugin_loader (still here for back-compat;
     # contracts will eventually split into contracts/, registry/ per
@@ -128,7 +129,7 @@ def test_manifest_count_unchanged() -> None:
     a major-version bump is an audit signal.
     """
     # Update this number deliberately when adding/removing public names.
-    expected = 68
+    expected = 69
     actual = len(CORE_PUBLIC_API)
     assert actual == expected, (
         f"CORE_PUBLIC_API has {actual} entries, expected {expected}. "
