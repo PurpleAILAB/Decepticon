@@ -84,7 +84,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 
 _ROLE = "ad_operator"
-_RECURSION_LIMIT = 250
+_RECURSION_LIMIT = 1000
 
 
 def create_ad_operator_agent(

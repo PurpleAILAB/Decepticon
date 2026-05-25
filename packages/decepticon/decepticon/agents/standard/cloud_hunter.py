@@ -75,7 +75,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 
 _ROLE = "cloud_hunter"
-_RECURSION_LIMIT = 250
+_RECURSION_LIMIT = 1000
 
 
 def create_cloud_hunter_agent(

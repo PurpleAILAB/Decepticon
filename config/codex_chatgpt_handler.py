@@ -343,13 +343,29 @@ def _completed_payload(resp: httpx.Response) -> dict[str, Any]:
             delta = event.get("delta")
             if isinstance(delta, str):
                 text_parts.append(delta)
+        elif event_type == "response.output_item.added":
+            # FIX: capture the function_call name + call_id from the
+            # ``output_item.added`` event. The ``function_call_arguments.delta``
+            # events that follow only carry ``item_id`` + arguments, NOT the
+            # name. Without this, synthesized function_calls have name="" and
+            # the model loops because tool_results can't be linked to the
+            # original tool_call.
+            item = event.get("item") or {}
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                item_id = item.get("id") or item.get("call_id") or "tool_call"
+                function_calls[item_id] = {
+                    "type": "function_call",
+                    "call_id": item.get("call_id") or item_id,
+                    "name": item.get("name") or "",
+                    "arguments": item.get("arguments") or "",
+                }
         elif event_type == "response.function_call_arguments.delta":
-            call_id = event.get("item_id") or event.get("call_id") or "tool_call"
+            item_id = event.get("item_id") or event.get("call_id") or "tool_call"
             entry = function_calls.setdefault(
-                call_id,
+                item_id,
                 {
                     "type": "function_call",
-                    "call_id": call_id,
+                    "call_id": item_id,
                     "name": event.get("name") or "",
                     "arguments": "",
                 },
@@ -357,6 +373,25 @@ def _completed_payload(resp: httpx.Response) -> dict[str, Any]:
             delta = event.get("delta")
             if isinstance(delta, str):
                 entry["arguments"] += delta
+        elif event_type == "response.output_item.done":
+            # Backfill name/call_id if the ``output_item.added`` event was
+            # missed (defensive — some upstream variants only emit ``done``).
+            item = event.get("item") or {}
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                item_id = item.get("id") or item.get("call_id") or "tool_call"
+                entry = function_calls.setdefault(
+                    item_id,
+                    {
+                        "type": "function_call",
+                        "call_id": item.get("call_id") or item_id,
+                        "name": item.get("name") or "",
+                        "arguments": item.get("arguments") or "",
+                    },
+                )
+                if not entry.get("name") and item.get("name"):
+                    entry["name"] = item["name"]
+                if not entry.get("call_id") and item.get("call_id"):
+                    entry["call_id"] = item["call_id"]
         elif event_type == "response.completed" and isinstance(event.get("response"), dict):
             completed = event["response"]
         elif event_type in {"response.failed", "error"}:

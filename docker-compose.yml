@@ -175,7 +175,7 @@ services:
       # ``containers/langgraph.Dockerfile``) and are read in-process by
       # ``FilesystemBackend`` via ``CompositeBackend``. The sandbox only
       # owns ``/workspace/`` from here on.
-    pids_limit: 1024
+    pids_limit: 4096
     depends_on:
       neo4j:
         condition: service_started

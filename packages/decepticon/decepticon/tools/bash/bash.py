@@ -482,7 +482,11 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
     )
 
     _reset_passive_read(workspace_path, session)
-    log_path = _sandbox.session_log_path(session, workspace_path)
+    log_path = await asyncio.to_thread(
+        _sandbox.session_log_path,
+        session,
+        workspace_path,
+    )
     return f"[KILLED] session '{session}' terminated. Log preserved at {log_path}."
 
 

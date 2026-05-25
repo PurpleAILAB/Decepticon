@@ -42,6 +42,7 @@ model_list:
       model: anthropic/claude-opus-4-7
       api_key: os.environ/ANTHROPIC_API_KEY
       additional_drop_params: ["temperature"]
+      max_tokens: 128000
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
@@ -50,6 +51,7 @@ model_list:
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
@@ -58,6 +60,7 @@ model_list:
     litellm_params:
       model: anthropic/claude-haiku-4-5-20251001
       api_key: os.environ/ANTHROPIC_API_KEY
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005
@@ -182,6 +185,7 @@ model_list:
     litellm_params:
       model: auth/claude-opus-4-7
       additional_drop_params: ["temperature"]
+      max_tokens: 128000
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
@@ -189,6 +193,7 @@ model_list:
   - model_name: auth/claude-sonnet-4-6
     litellm_params:
       model: auth/claude-sonnet-4-6
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
@@ -196,6 +201,7 @@ model_list:
   - model_name: auth/claude-haiku-4-5
     litellm_params:
       model: auth/claude-haiku-4-5
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005
@@ -298,6 +304,7 @@ model_list:
       model: openrouter/anthropic/claude-opus-4-7
       api_key: os.environ/OPENROUTER_API_KEY
       additional_drop_params: ["temperature"]
+      max_tokens: 128000
     model_info:
       input_cost_per_token: 0.000005
       output_cost_per_token: 0.000025
@@ -306,6 +313,7 @@ model_list:
     litellm_params:
       model: openrouter/anthropic/claude-sonnet-4-6
       api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
@@ -314,6 +322,7 @@ model_list:
     litellm_params:
       model: openrouter/anthropic/claude-haiku-4-5
       api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 64000
     model_info:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005

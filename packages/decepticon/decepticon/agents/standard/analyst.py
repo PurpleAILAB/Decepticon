@@ -72,7 +72,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 
 _ROLE = "analyst"
-_RECURSION_LIMIT = 250
+_RECURSION_LIMIT = 1000
 
 
 def create_analyst_agent(

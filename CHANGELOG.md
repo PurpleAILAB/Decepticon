@@ -6,6 +6,100 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per
 [spec §13.4](docs/superpowers/specs/2026-05-23-core-framework-sdk-split-design.md)).
 
+## [1.1.2-localfixes.1] — 2026-05-25 (fork — mohamedq9900/Decepticon)
+
+Runtime-stability fork of upstream `v1.1.2` carrying four targeted fixes
+that surfaced under sustained engagement load (multi-hour audits, large
+report writes, parallel sub-agent fan-out). All changes are minimal and
+preserve upstream contracts.
+
+### Fixed
+
+- **`bash_kill` BlockingError under `langgraph dev`** —
+  `_sandbox.session_log_path()` was called synchronously inside the
+  ASGI event loop, tripping `blockbuster`'s detector with
+  `BlockingError: socket.socket.send`. Wrapped in `asyncio.to_thread`
+  to match the pattern already used for the surrounding `kill_session`
+  call. The CLI previously surfaced this as "An internal error
+  occurred" on every successful session kill.
+  ([`packages/decepticon/decepticon/tools/bash/bash.py`](packages/decepticon/decepticon/tools/bash/bash.py))
+
+- **`GraphRecursionError: Recursion limit of 250 reached`** —
+  bumped `_RECURSION_LIMIT` from `250` to `1000` on seven sub-agents
+  that genuinely need deeper graphs for large engagements (recon
+  sweeps with many candidates, parallel CVE probes, multi-target
+  static analysis): `analyst`, `cloud_hunter`, `contract_auditor`,
+  `ad_operator`, `reverser`, `exploiter`, `vulnresearch`. Other
+  agents (`recon`, `exploit`, `postexploit`, `soundwave`,
+  orchestrator) were already sized at ≥400 and remain unchanged.
+  Cap of 1000 was chosen to cover observed worst-case depth without
+  unbounded headroom.
+  ([`packages/decepticon/decepticon/agents/standard/*.py`,
+  `packages/decepticon/decepticon/agents/plugins/*.py`](packages/decepticon/decepticon/agents/))
+
+- **`auth/gpt-*` Codex OAuth handler dropped tool names mid-stream** —
+  the streaming handler only processed
+  `response.function_call_arguments.delta` events, which carry the
+  arguments fragment but NOT the function `name`. Synthesized
+  function_calls ended up with `name=""`; on the next turn the model
+  saw a history full of mis-named tool_calls and looped re-calling
+  the same tool (e.g. `load_skill`) because tool_results couldn't be
+  linked back to the original call. Added handlers for
+  `response.output_item.added` (primary path, captures `name` +
+  `call_id` when the function_call item starts) and
+  `response.output_item.done` (defensive backfill for upstream
+  variants that emit only `done`).
+  ([`config/codex_chatgpt_handler.py`](config/codex_chatgpt_handler.py))
+
+- **LiteLLM truncated `tool_use` JSON mid-`content` field** —
+  `litellm_params` for every Claude model omitted `max_tokens`, so
+  LiteLLM defaulted Anthropic requests to its 4096-token OpenAI
+  fallback. Long `write_file` calls (a typical 30-50 KB markdown
+  report ≈ 10-15 K output tokens) were cut off mid-stream and the
+  `content` field arrived missing from the parsed tool_use, yielding
+  `content: Field required` validation errors. Set `max_tokens`
+  explicitly per model to match Claude Code's canonical caps:
+  Opus 4.7/4.6 → 128000, Sonnet 4.6 → 64000, Haiku 4.5 → 64000.
+  Applied to all three groups (`anthropic/`, `auth/`,
+  `openrouter/anthropic/`).
+  ([`config/litellm.yaml`](config/litellm.yaml))
+
+### Changed
+
+- **`sandbox.pids_limit`: `1024` → `4096`** — analyst sub-agents that
+  drive Go/Rust toolchains in parallel (`gosec` + `cargo` + `semgrep`
+  × fan-out) blow through the 1024-pid cgroup cap, then
+  `subprocess.run()` in the sandbox FastAPI daemon fails with
+  `BlockingIOError: [Errno 11] Resource temporarily unavailable`,
+  which the daemon surfaces as HTTP 500 and the CLI prints as "An
+  internal error occurred". 4096 has held under multi-hour Cosmos
+  and Web3 audits.
+  ([`docker-compose.yml`](docker-compose.yml))
+
+- **Default `DECEPTICON_LLM__TIMEOUT`: `120` → `600` (10 min)** —
+  with `max_tokens` bumped to 128K (fix above), long Opus generations
+  with extended thinking + large tool_use payloads routinely exceed
+  120s mid-stream. The langgraph httpx client aborted the connection
+  while LiteLLM proxy kept streaming successfully (200 OK in proxy
+  logs), surfacing in the CLI as `APITimeoutError: Request timed
+  out`. Documented in `.env.example`; defaults pass through via the
+  `DECEPTICON_LLM__*` Pydantic settings.
+  ([`.env.example`](.env.example))
+
+### Compatibility
+
+- Patches apply on top of upstream `v1.1.2` commit `e1afba6`.
+- No API or import surface changed; downstream code that imports
+  any of the modified modules works unchanged.
+- Reverting any single fix is a one-line revert against this branch.
+
+### Tested against
+
+Fedora 43, Docker 27.x, SELinux permissive. Engagement workload:
+sustained multi-hour Cosmos / Web3 / Web2 bug-bounty audits with
+parallel sub-agent fan-out, large recon outputs, and 30-50 KB
+report writes on `auth/claude-opus-4-7` and `auth/gpt-5.5`.
+
 ## [Unreleased] — targets v1.1.2
 
 This release introduces the three-package split (additive — every
