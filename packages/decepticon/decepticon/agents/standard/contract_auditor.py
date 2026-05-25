@@ -82,7 +82,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 
 _ROLE = "contract_auditor"
-_RECURSION_LIMIT = 250
+_RECURSION_LIMIT = 1000
 
 
 def create_contract_auditor_agent(

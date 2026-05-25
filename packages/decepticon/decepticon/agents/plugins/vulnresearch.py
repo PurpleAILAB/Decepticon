@@ -70,7 +70,7 @@ from decepticon_core.plugin_loader import (
 )
 
 _ROLE = "vulnresearch"
-_RECURSION_LIMIT = 250
+_RECURSION_LIMIT = 1000
 
 # Name-keyed baseline tools (tiny surface — read the graph only).
 _STANDARD_TOOLS: dict[str, Any] = {
