@@ -143,22 +143,19 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.watch.yml config > /dev/null
 
   python:
-    # Matrix runs the full lint + typecheck + test suite on Linux and macOS.
-    # `shell: bash` is forced on every step so identical scripts run on both
-    # runners. Windows runner is intentionally deferred until the Windows
-    # test-suite fixes from #279 land — adding it here without those fixes
-    # would put the CI red on every PR. Track in #279.
-    name: Python (${{ matrix.os }})
+    # ubuntu-only by design: the Python backend ships and runs inside the
+    # langgraph Docker image (python:3.13-slim — Linux), never natively on
+    # a developer's macOS/Windows host. The pip-installable `decepticon`
+    # SDK is a thin client that routes execution to those Linux services
+    # over HTTP, so there is no macOS/Windows Python runtime to validate.
+    # Testing Python on macOS only bought 10x CI minutes, flakiness, and a
+    # docker-not-available failure on the slow benchmark suite. The Go
+    # launcher and the TS CLI DO run on the host, so those jobs keep their
+    # macOS (+ Windows for launcher) matrices below.
+    name: Python (lint + typecheck + test)
     needs: changes
     if: needs.changes.outputs.python == 'true'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    defaults:
-      run:
-        shell: bash
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -215,7 +212,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: basedpyright-${{ github.run_id }}
-          path: /tmp/bp.json
+          path: bp.json
           retention-days: 7
       # PRs run tests without coverage instrumentation — coverage adds ~3x
       # runtime and PR feedback latency matters more than coverage tracking
@@ -226,23 +223,14 @@ jobs:
         # timeout cases) so PR feedback stays under a minute. Main coverage
         # lane below still runs them.
         run: uv run pytest -n auto -q -m "not slow"
-      - name: Pytest with coverage (Linux push — full suite, enforces threshold)
-        if: github.event_name == 'push' && runner.os == 'Linux'
+      - name: Pytest with coverage (main — enforces threshold)
+        if: github.event_name == 'push'
         run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=35
-      - name: Pytest cross-platform sanity (macOS push — skip docker-bound slow tests)
-        # macOS GitHub runners don't have Docker installed; the harness's
-        # `slow` tests call `docker compose restart sandbox` directly and
-        # fail there. The PR fast lane already deselects `slow`; mirror
-        # that on push so macOS validates cross-platform Python without
-        # blocking main on Docker availability. Linux remains the canonical
-        # coverage lane (full suite + threshold).
-        if: github.event_name == 'push' && runner.os == 'macOS'
-        run: uv run pytest -n auto -q -m "not slow"
       - name: Upload coverage artifact
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-xml-${{ matrix.os }}
+          name: coverage-xml
           path: coverage.xml
           if-no-files-found: ignore
 
