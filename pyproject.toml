@@ -128,6 +128,7 @@ testpaths = [
     "packages/decepticon-core/tests",
     "packages/decepticon/tests",
     "packages/decepticon-sdk/tests",
+    "tests",  # repo-root tests: stack-level concerns like docker-compose rendering
 ]
 markers = [
     "asyncio: mark test as async (pytest-asyncio)",
