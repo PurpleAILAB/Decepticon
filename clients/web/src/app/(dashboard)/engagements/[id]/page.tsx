@@ -6,7 +6,18 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileWarning, Network, Play, ArrowRight, ClipboardList, Download, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { FileWarning, Network, Play, ArrowRight, ClipboardList, Download, Clock, Trash2 } from "lucide-react";
 
 interface Objective {
   id: string;
@@ -37,6 +48,26 @@ export default function EngagementOverviewPage() {
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [graphNodeCount, setGraphNodeCount] = useState(0);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/engagements/${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setDeleteError(data.error ?? `Delete failed (HTTP ${res.status})`);
+        return;
+      }
+      router.replace("/engagements");
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -198,6 +229,46 @@ export default function EngagementOverviewPage() {
         <a href={`/api/engagements/${id}/export?format=markdown`} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs transition-colors hover:bg-accent">
           <Download className="h-3 w-3" /> Export Markdown
         </a>
+        <Dialog>
+          <DialogTrigger
+            render={
+              <button
+                type="button"
+                className="ml-auto flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/10"
+              />
+            }
+          >
+            <Trash2 className="h-3 w-3" /> Move to Trash
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Move engagement to Trash?</DialogTitle>
+              <DialogDescription>
+                The engagement workspace will be moved to your
+                {" "}
+                <strong>Trash</strong> on macOS (restorable from Finder), or to
+                {" "}
+                <code>~/.decepticon/.trash/</code> on Linux/Windows where it is
+                kept for 30 days before automatic pruning.
+              </DialogDescription>
+            </DialogHeader>
+            {deleteError && (
+              <p className="text-xs text-red-400">{deleteError}</p>
+            )}
+            <DialogFooter>
+              <DialogClose render={<Button variant="outline" />}>
+                Cancel
+              </DialogClose>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting ? "Moving..." : "Move to Trash"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Recent findings */}
