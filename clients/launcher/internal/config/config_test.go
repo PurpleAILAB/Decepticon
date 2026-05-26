@@ -415,3 +415,8 @@ func TestGet(t *testing.T) {
 		t.Error("expected default")
 	}
 }
+func TestDefaultHomeDefaultsToDotDecepticon(t *testing.T) {
+	if DefaultHome != ".decepticon" {
+		t.Fatalf("expected DefaultHome default %q, got %q", ".decepticon", DefaultHome)
+	}
+}

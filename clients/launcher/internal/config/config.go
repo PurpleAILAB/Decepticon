@@ -13,8 +13,18 @@ import (
 //go:embed env.example
 var EnvTemplate string
 
+// DefaultHome is the default home-dir basename used by `DecepticonHome()`
+// when DECEPTICON_HOME is unset. Defined as a var (not const) so it can
+// be overridden at build time via Go ldflags, paired with cmd.ProductName:
+//
+//	go build -ldflags="-X 'github.com/PurpleAILAB/Decepticon/clients/launcher/cmd.ProductName=decepticon-mac' \
+//	                   -X 'github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config.DefaultHome=.decepticon-mac'"
+//
+// Default behavior preserves "~/.decepticon" so unstamped builds are
+// byte-identical to upstream.
+var DefaultHome = ".decepticon"
+
 const (
-	DefaultHome       = ".decepticon"
 	EnvFileName       = ".env"
 	EnvExampleName    = ".env.example"
 	PlaceholderSuffix = "-key-here"
