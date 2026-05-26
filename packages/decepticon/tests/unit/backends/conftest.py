@@ -1,6 +1,6 @@
 """Per-test isolation for process-wide sandbox class state.
 
-``SandboxBase._log_offsets`` and ``_jobs`` are deliberately class-level ΓÇö
+``SandboxBase._log_offsets`` and ``_jobs`` are deliberately class-level —
 shared by every agent factory in a process (see ``SandboxBase``'s docstring).
 That contract is correct for production but leaks across tests: one test's
 ``read_session_log_diff`` call populates ``_log_offsets``, and a later test
