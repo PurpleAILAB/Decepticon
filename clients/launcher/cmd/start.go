@@ -141,12 +141,18 @@ func runStart(cmd *cobra.Command, args []string) error {
 		_ = os.Setenv("CODEX_AUTH_VOLUME", nullDevice())
 	}
 
-	// 2.5. Non-blocking update check. When a newer release is available
-	// the prompt runs in the background so it doesn't add latency to
-	// the start path. Non-interactive shells skip the prompt entirely.
-	go func() {
-		updater.PromptIfUpdateAvailable(version)
-	}()
+	// 2.5. Update check. Must run synchronously: on a TTY,
+	// PromptIfUpdateAvailable asks the operator and, on confirmation,
+	// applies the update and re-execs into the new version before the
+	// rest of `start` proceeds — so this can't be backgrounded without
+	// losing the update-and-restart flow (and racing stdout with the
+	// main path). Non-interactive shells fall through to a passive
+	// notice inside the call, and the GitHub fetch fails fast so a slow
+	// network never blocks startup.
+	if _, err := updater.PromptIfUpdateAvailable(version); err != nil {
+		// Non-fatal — warn and continue on the current launcher.
+		ui.Warning("Update check: " + err.Error())
+	}
 
 	// 2.6. One-time GitHub star ask. Idempotent across launches — the
 	// ack file at $DECEPTICON_HOME/.starred suppresses the prompt
