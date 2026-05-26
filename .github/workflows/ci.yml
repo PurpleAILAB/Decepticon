@@ -226,9 +226,18 @@ jobs:
         # timeout cases) so PR feedback stays under a minute. Main coverage
         # lane below still runs them.
         run: uv run pytest -n auto -q -m "not slow"
-      - name: Pytest with coverage (main — enforces threshold)
-        if: github.event_name == 'push'
+      - name: Pytest with coverage (Linux push — full suite, enforces threshold)
+        if: github.event_name == 'push' && runner.os == 'Linux'
         run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=30
+      - name: Pytest cross-platform sanity (macOS push — skip docker-bound slow tests)
+        # macOS GitHub runners don't have Docker installed; the harness's
+        # `slow` tests call `docker compose restart sandbox` directly and
+        # fail there. The PR fast lane already deselects `slow`; mirror
+        # that on push so macOS validates cross-platform Python without
+        # blocking main on Docker availability. Linux remains the canonical
+        # coverage lane (full suite + threshold).
+        if: github.event_name == 'push' && runner.os == 'macOS'
+        run: uv run pytest -n auto -q -m "not slow"
       - name: Upload coverage artifact
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4
