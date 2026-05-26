@@ -413,3 +413,52 @@ def test_token_set_correct_bearer_is_200() -> None:
         )
     assert resp.status_code == 200
     assert resp.json()["output"] == "hello\n"
+
+
+# ── Zombie reaper / shutdown cleanup ─────────────────────────────────────
+
+
+def test_lifespan_installs_sigchld_reaper() -> None:
+    """The startup hook must install the SIGCHLD reaper BEFORE the backend warms.
+
+    Asserts ``install_sigchld_reaper`` was called inside ``lifespan``; the
+    reaper module itself owns the actual signal-handler-installation
+    contract (covered by ``test_reaper.py``).
+    """
+    backend = _make_backend()
+    with patch.object(app_module, "install_sigchld_reaper") as install_mock:
+        with _client(backend) as _client_ctx:
+            # Lifespan startup runs on TestClient context-enter.
+            pass
+    install_mock.assert_called_once()
+
+
+def test_lifespan_shutdown_kills_all_tmux_sessions() -> None:
+    """The shutdown hook must drain every tmux session via kill_all_sessions
+    so tmux servers do not outlive the daemon and leak zombies."""
+    backend = _make_backend()
+    backend.kill_all_sessions.return_value = 3
+    with _client(backend) as _client_ctx:
+        pass  # context exit triggers lifespan shutdown
+    backend.kill_all_sessions.assert_called_once()
+
+
+def test_lifespan_shutdown_drains_zombies() -> None:
+    """The shutdown hook must call ``reap_zombies`` after killing sessions
+    so the process exits with no defunct children."""
+    backend = _make_backend()
+    with patch.object(app_module, "reap_zombies") as reap_mock:
+        with _client(backend) as _client_ctx:
+            pass
+    # Called at least once on shutdown — may also be wired into the
+    # asyncio loop as a signal handler, so we don't pin call_count.
+    assert reap_mock.called
+
+
+def test_lifespan_shutdown_swallows_kill_all_sessions_errors() -> None:
+    """A failure tearing down tmux must not crash the daemon shutdown."""
+    backend = _make_backend()
+    backend.kill_all_sessions.side_effect = RuntimeError("tmux server dead")
+    # If the lifespan re-raises, _client's __exit__ would propagate.
+    with _client(backend) as _client_ctx:
+        pass

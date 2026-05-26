@@ -356,5 +356,48 @@ class SandboxBase(BaseSandbox):
             self.reset_session_log_offset(session, effective_workspace)
             self._jobs.remove(session, key=manager_key)
 
+    def kill_all_sessions(self) -> int:
+        """Kill every tmux session this sandbox has handed out a manager for.
+
+        Returns the number of sessions kill-session was invoked on. Used by
+        the sandbox daemon's shutdown hook to make sure tmux servers don't
+        outlive the daemon process and leave behind zombie ``bash``/``tmux``
+        children when their parent disappears.
+
+        Best-effort: every kill is wrapped in try/except so one stuck
+        session doesn't block the rest from being torn down.
+        """
+        with self._managers_lock:
+            managers = list(self._managers.values())
+            keys = list(self._managers.keys())
+            self._managers.clear()
+        killed = 0
+        for mgr in managers:
+            try:
+                # Each TmuxSessionManager runs its own ``tmux -L <name>``
+                # socket (see TmuxSessionManager._tmux), so kill-server
+                # terminates exactly the tmux process backing this session
+                # — including reaping the bash child the new-session
+                # command spawned. This is more thorough than kill-session
+                # for the shutdown path: even if the session was already
+                # detached, the tmux server itself exits.
+                mgr._tmux(["kill-server"], timeout=5)
+                killed += 1
+            except (RuntimeError, subprocess.TimeoutExpired, OSError) as e:
+                log.debug(
+                    "kill-server failed for session '%s' during shutdown: %s",
+                    _safe_log(mgr.session),
+                    _safe_log(e),
+                )
+        # Reset all per-session tracking state alongside the manager
+        # cache so a subsequent restart starts from a clean slate.
+        with TmuxSessionManager._init_lock:
+            for mgr in managers:
+                TmuxSessionManager._initialized.discard(mgr.session)
+        for key in keys:
+            with self._log_offsets_lock:
+                self._log_offsets.pop(key, None)
+        return killed
+
 
 # ─── Pre-flight check ────────────────────────────────────────────────────

@@ -326,6 +326,69 @@ def test_kill_session_swallows_errors():
     assert sandbox._jobs.get("flaky") is None
 
 
+def test_kill_all_sessions_kills_every_manager_and_clears_caches():
+    sandbox = DaemonSandbox(container_name="test")
+    # Populate three independent sessions across two workspaces so we
+    # exercise both the root-workspace and engagement-scoped manager keys.
+    mgrs = [
+        sandbox._get_manager("alpha"),
+        sandbox._get_manager("beta"),
+        sandbox._get_manager("gamma", workspace_path="/workspace/eng-1"),
+    ]
+    TmuxSessionManager._initialized.update(m.session for m in mgrs)
+    sandbox._log_offsets["alpha"] = 1
+    sandbox._log_offsets["beta"] = 2
+
+    # Patch every manager's _tmux to record kill-server calls.
+    with (
+        patch.object(mgrs[0], "_tmux") as t0,
+        patch.object(mgrs[1], "_tmux") as t1,
+        patch.object(mgrs[2], "_tmux") as t2,
+    ):
+        killed = sandbox.kill_all_sessions()
+
+    assert killed == 3, "every active session should have kill-server invoked"
+    for t in (t0, t1, t2):
+        sent = [c.args[0] for c in t.call_args_list]
+        assert ["kill-server"] in sent, f"kill-server not invoked for one of the sessions: {sent}"
+
+    # Manager cache fully drained.
+    assert sandbox._managers == {}
+    # _initialized set drained of every session we created.
+    for mgr in mgrs:
+        assert mgr.session not in TmuxSessionManager._initialized
+    # Log offsets for the cleared manager keys are gone.
+    assert "alpha" not in sandbox._log_offsets
+    assert "beta" not in sandbox._log_offsets
+
+
+def test_kill_all_sessions_continues_past_individual_failures():
+    """One stuck session must not block the rest from being torn down."""
+    sandbox = DaemonSandbox(container_name="test")
+    m1 = sandbox._get_manager("good-1")
+    m2 = sandbox._get_manager("bad")
+    m3 = sandbox._get_manager("good-2")
+
+    with (
+        patch.object(m1, "_tmux") as t1,
+        patch.object(m2, "_tmux", side_effect=RuntimeError("tmux server gone")) as t2,
+        patch.object(m3, "_tmux") as t3,
+    ):
+        killed = sandbox.kill_all_sessions()
+
+    # Only the two healthy sessions count as successfully killed.
+    assert killed == 2
+    # All three were attempted.
+    assert t1.called and t2.called and t3.called
+    # Manager cache cleared regardless of per-session failures.
+    assert sandbox._managers == {}
+
+
+def test_kill_all_sessions_is_noop_when_no_managers():
+    sandbox = DaemonSandbox(container_name="test")
+    assert sandbox.kill_all_sessions() == 0
+
+
 def test_read_screen_handles_capture_timeout_gracefully():
     """read_screen() must NOT crash on subprocess.TimeoutExpired from capture-pane."""
     mgr = TmuxSessionManager("hung", "decepticon-sandbox")
