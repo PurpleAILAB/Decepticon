@@ -183,7 +183,7 @@ def test_auto_background_path_registers_job():
         mgr._capture.side_effect = captures + ["[DCPTN:0:/workspace] sleep 99999\nrunning\n"] * 5
         mgr.initialize = MagicMock()
         mgr._send = MagicMock()
-        mgr._docker_tmux = MagicMock()
+        mgr._tmux = MagicMock()
         mgr._clear_screen = MagicMock()
         mock_get.return_value = mgr
 

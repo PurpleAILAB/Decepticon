@@ -71,15 +71,12 @@ class SandboxBase(BaseSandbox):
         self._workspace_path = self._normalize_workspace_path(workspace_path)
         self._managers: dict[str, TmuxSessionManager] = {}
         self._managers_lock = threading.RLock()
-        # When None: keep the default `docker exec <ctn>` prefix so
-        # nothing changes for existing callers. The HTTP sandbox daemon
-        # — which runs *inside* the sandbox container — passes
-        # `exec_prefix=[]` (or instantiates LocalSandbox) so the
-        # same tmux/exec/upload code path is reused without a nested
-        # docker daemon.
-        self._exec_prefix: list[str] = (
-            list(exec_prefix) if exec_prefix is not None else ["docker", "exec", container_name]
-        )
+        # Default to `[]` (local execution): the HTTP sandbox daemon runs
+        # *inside* the sandbox container and drives tmux/exec directly.
+        # The old `["docker", "exec", container_name]` default served the
+        # retired DockerSandbox transport and is no longer reachable from
+        # any production caller (HTTPSandbox is the agent-side client).
+        self._exec_prefix: list[str] = list(exec_prefix) if exec_prefix is not None else []
 
     @staticmethod
     def _normalize_workspace_path(workspace_path: str | None) -> str:
@@ -343,11 +340,11 @@ class SandboxBase(BaseSandbox):
         try:
             mgr = self._get_manager(session, effective_workspace)
             try:
-                mgr._docker_tmux(["send-keys", "-t", mgr.session, "C-c"])
+                mgr._tmux(["send-keys", "-t", mgr.session, "C-c"])
             except RuntimeError as e:
                 log.debug("send-keys C-c failed for '%s': %s", _safe_log(session), _safe_log(e))
             try:
-                mgr._docker_tmux(["kill-session", "-t", mgr.session])
+                mgr._tmux(["kill-session", "-t", mgr.session])
             except RuntimeError as e:
                 log.warning("kill-session failed for '%s': %s", _safe_log(session), _safe_log(e))
         finally:

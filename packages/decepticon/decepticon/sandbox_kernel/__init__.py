@@ -1,34 +1,38 @@
-"""Shared sandbox kernel — utilities used by BOTH the agent-side transport
-backends and the in-container HTTP daemon.
+"""Shared sandbox kernel — utilities used by the agent-side HTTP client
+and the in-container HTTP daemon.
 
 Layering: this package is the lowest layer of the sandbox stack. It
 contains the tmux session manager, the background-job tracker, and the
-docker-less ``DaemonSandbox`` class. Everything else hangs off of it:
-
-  ``decepticon.backends.docker_sandbox.DockerSandbox`` — agent-side,
-      uses ``docker exec`` as transport. Imports ``TmuxSessionManager``
-      from this package via the ``exec_prefix=["docker", "exec", ...]``
-      configuration knob.
+``DaemonSandbox`` class that the daemon wraps. Two consumers hang off it:
 
   ``decepticon.backends.http_sandbox.HTTPSandbox`` — agent-side,
       uses HTTP as transport. Imports ``BackgroundJob`` and
       ``BackgroundJobTracker`` from this package so the
-      ``SandboxNotificationMiddleware`` mirror pattern works
-      identically across the two backends.
+      ``SandboxNotificationMiddleware`` mirror pattern works against
+      the remote daemon's state.
 
   ``decepticon.sandbox_server.app`` — sandbox-side, FastAPI daemon.
       Imports ``DaemonSandbox`` from this package and exposes its
-      methods over HTTP.
+      methods over HTTP. Instantiates ``DaemonSandbox(exec_prefix=[])``
+      so tmux is driven by local subprocesses inside the container.
+
+Historical note: an earlier ``DockerSandbox`` ran the same machinery
+from the agent host via ``exec_prefix=["docker", "exec", <ctn>]``. That
+transport was retired in favor of ``HTTPSandbox`` + the in-container
+daemon (see ``backends/factory.py`` — "there is no longer a docker-exec
+transport"). ``TmuxSessionManager`` still accepts a non-empty
+``exec_prefix`` for parity with the old wire format, but no production
+caller exercises that branch.
 
 Why a separate package: the OSS sandbox container image is a *passive*
 container (Kali Linux + red-team tools + tmux); historically it shipped
-zero decepticon Python code. Adding the daemon to the same image
-required *some* in-container Python, but the agent-side transport
-classes (``DockerSandbox``, ``HTTPSandbox``, ``factory``) have no
-business inside the sandbox. Splitting the shared utilities out keeps
-the original "agent has everything, sandbox has nothing" boundary
-intact: the sandbox image now ships only ``sandbox_kernel`` + ``sandbox_server``,
-the agent (langgraph image) keeps ``backends`` + everything else.
+zero decepticon Python code. Adding the daemon required *some* in-
+container Python, but the agent-side transport (``HTTPSandbox``,
+``factory``) has no business inside the sandbox. Splitting the shared
+utilities out keeps the original "agent has everything, sandbox has
+nothing" boundary intact: the sandbox image ships only
+``sandbox_kernel`` + ``sandbox_server``; the agent (langgraph image)
+keeps ``backends`` + everything else.
 """
 
 from decepticon.sandbox_kernel.jobs import BackgroundJob, BackgroundJobTracker

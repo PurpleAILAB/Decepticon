@@ -1,15 +1,17 @@
-"""TmuxSessionManager + execution helpers — shared between DockerSandbox
-(agent-side, via `exec_prefix=["docker", "exec", <ctn>]`) and the in-
-container HTTP daemon (sandbox-side, via `exec_prefix=[]`).
+"""TmuxSessionManager + execution helpers — drives tmux from inside the
+sandbox container via `exec_prefix=[]` (local subprocess). The HTTP
+sandbox daemon (`sandbox_server/`) is the only production caller.
 
-Extracted from `decepticon/backends/docker_sandbox.py` so the daemon
-can import the tmux machinery without pulling in agent-side transport
-classes. See `sandbox_kernel/__init__.py` for the layering rationale.
+Historical note: the original implementation lived in
+`decepticon/backends/docker_sandbox.py` and ran from the agent host via
+`exec_prefix=["docker", "exec", <ctn>]`. That `DockerSandbox` transport
+has been retired in favor of `HTTPSandbox` + the in-container daemon,
+so the docker-exec branch is no longer reachable from any production
+caller (`exec_prefix` defaults to `[]`).
 
 The semantics — PS1 marker parsing, polling cadence, stall detection,
 size watchdog, output truncation, auto-background after 60 s — are
-unchanged from the docker_sandbox.py original. Only the import site
-moved.
+unchanged from the docker_sandbox.py original.
 """
 
 from __future__ import annotations
@@ -87,10 +89,13 @@ def _interpret_exit_code(code: int) -> str:
 
 
 class TmuxSessionManager:
-    """Manages a single named tmux session inside the Docker container.
+    """Manages a single named tmux session inside the sandbox container.
 
-    Transplanted from tools/bash/tool.py; docker exec calls now go directly
-    through subprocess instead of the old run_in_sandbox() helper.
+    Runs tmux subcommands via ``subprocess.run([*self._exec_prefix, "tmux", …])``.
+    In production ``_exec_prefix`` is empty — the daemon process lives in
+    the sandbox container, next to tmux — so subprocess invokes tmux
+    directly. The arg supports a non-empty prefix for parity with the
+    retired DockerSandbox transport, which is no longer used in production.
 
     Thread-safety: ``_initialized`` is process-wide shared state. The
     ``_init_lock`` (threading.RLock) guards add/discard/clear so concurrent
@@ -113,24 +118,23 @@ class TmuxSessionManager:
         self._workspace_path = workspace_path.rstrip("/") or "/workspace"
         self._log_name = log_name or session
         self._pane_id: str | None = None
-        # When None, default to the existing docker-exec pattern so
-        # nothing changes for DockerSandbox callers. The HTTP sandbox
-        # daemon (which runs *inside* the sandbox container and talks
-        # to the local tmux directly) passes `exec_prefix=[]` so the
-        # same TmuxSessionManager logic is reused without spawning a
-        # nested docker daemon.
-        self._exec_prefix: list[str] = (
-            list(exec_prefix) if exec_prefix is not None else ["docker", "exec", container_name]
-        )
+        # Default to `[]` (local execution): the HTTP sandbox daemon runs
+        # *inside* the sandbox container and drives tmux directly. The old
+        # `["docker", "exec", container_name]` default served the
+        # retired DockerSandbox transport and is no longer reachable from
+        # any production caller (HTTPSandbox is the agent-side client).
+        self._exec_prefix: list[str] = list(exec_prefix) if exec_prefix is not None else []
 
-    # ── docker / tmux helpers ──
+    # ── tmux helpers ──
 
-    def _docker_tmux(self, args: list[str], timeout: int = 10) -> str:
+    def _tmux(self, args: list[str], timeout: int = 10) -> str:
         """Run a tmux subcommand against the session's target.
 
-        The prefix in `_exec_prefix` is the only thing that distinguishes
-        in-container (host-side, via `docker exec`) from inside-container
-        (no prefix) execution — every other tmux semantic is identical.
+        Production prefixes the command with an empty list — tmux runs as
+        a local subprocess inside the sandbox container (the daemon's
+        process tree). A non-empty `_exec_prefix` would route through a
+        remote transport instead; that branch existed for the retired
+        DockerSandbox path and is no longer reachable in production.
         """
         result = subprocess.run(
             [*self._exec_prefix, "tmux", "-L", self.session, *args],
@@ -156,14 +160,14 @@ class TmuxSessionManager:
 
     def _resolve_pane_id(self) -> str:
         try:
-            return self._docker_tmux(
+            return self._tmux(
                 ["display-message", "-p", "-t", self.session, "#{pane_id}"],
                 timeout=5,
             ).strip()
         except subprocess.TimeoutExpired:
             self._forget_cached_state()
             time.sleep(1.0)
-            return self._docker_tmux(
+            return self._tmux(
                 ["display-message", "-p", "-t", self.session, "#{pane_id}"],
                 timeout=10,
             ).strip()
@@ -178,7 +182,7 @@ class TmuxSessionManager:
                 self._forget_cached_state()
                 return False
         try:
-            self._docker_tmux(
+            self._tmux(
                 ["display-message", "-p", "-t", self._pane_id, "#{pane_id}"],
                 timeout=5,
             )
@@ -187,7 +191,7 @@ class TmuxSessionManager:
             self._forget_cached_state()
             time.sleep(1.0)
             try:
-                self._docker_tmux(
+                self._tmux(
                     ["display-message", "-p", "-t", self._pane_id, "#{pane_id}"],
                     timeout=10,
                 )
@@ -204,21 +208,21 @@ class TmuxSessionManager:
     def _send(self, text: str, enter: bool = True) -> None:
         """Send keystrokes using -l (literal) to prevent tmux escaping bugs."""
         target = self._target()
-        self._docker_tmux(["send-keys", "-t", target, "-l", text])
+        self._tmux(["send-keys", "-t", target, "-l", text])
         if enter:
-            self._docker_tmux(["send-keys", "-t", target, "Enter"])
+            self._tmux(["send-keys", "-t", target, "Enter"])
 
     def _clear_screen(self) -> None:
         target = self._target()
         try:
-            self._docker_tmux(["send-keys", "-t", target, "C-l"])
+            self._tmux(["send-keys", "-t", target, "C-l"])
             time.sleep(0.1)
-            self._docker_tmux(["clear-history", "-t", target])
+            self._tmux(["clear-history", "-t", target])
         except (TmuxCommandError, subprocess.TimeoutExpired, OSError) as e:
             log.warning("_clear_screen failed for '%s': %s", target, e)
 
     def _capture(self) -> str:
-        return self._docker_tmux(
+        return self._tmux(
             [
                 "capture-pane",
                 "-J",
@@ -243,7 +247,7 @@ class TmuxSessionManager:
         """
         session_exists = False
         try:
-            self._docker_tmux(["has-session", "-t", self.session], timeout=5)
+            self._tmux(["has-session", "-t", self.session], timeout=5)
             session_exists = True
         except RuntimeError:
             session_exists = False
@@ -258,7 +262,7 @@ class TmuxSessionManager:
                         timeout=5,
                         check=True,
                     )
-                pane_id = self._docker_tmux(
+                pane_id = self._tmux(
                     [
                         "new-session",
                         "-d",
@@ -274,7 +278,7 @@ class TmuxSessionManager:
                 self._pane_id = pane_id or self.session
             except RuntimeError:
                 try:
-                    self._docker_tmux(["has-session", "-t", self.session], timeout=5)
+                    self._tmux(["has-session", "-t", self.session], timeout=5)
                     self._pane_id = self._resolve_pane_id()
                     session_exists = True
                     log.debug("Session %s already exists (race), reusing", self.session)
@@ -311,7 +315,7 @@ class TmuxSessionManager:
                 timeout=5,
                 check=True,
             )
-            self._docker_tmux(
+            self._tmux(
                 [
                     "pipe-pane",
                     "-t",
@@ -385,7 +389,7 @@ class TmuxSessionManager:
             try:
                 if is_input:
                     if command in ("C-c", "C-z", "C-d"):
-                        self._docker_tmux(["send-keys", "-t", self._target(), command])
+                        self._tmux(["send-keys", "-t", self._target(), command])
                     else:
                         self._send(command, enter=True)
                 else:
@@ -443,7 +447,7 @@ class TmuxSessionManager:
                     _safe_log(command[:50]),
                 )
                 try:
-                    self._docker_tmux(["send-keys", "-t", self._target(), "C-c"])
+                    self._tmux(["send-keys", "-t", self._target(), "C-c"])
                 except RuntimeError as interrupt_err:
                     log.debug("Failed to interrupt oversized tmux command: %s", interrupt_err)
                 output = _extract_interactive_output(screen, baseline)
@@ -542,7 +546,7 @@ class TmuxSessionManager:
                 if is_input:
                     if command in ("C-c", "C-z", "C-d"):
                         await asyncio.to_thread(
-                            self._docker_tmux, ["send-keys", "-t", self._target(), command]
+                            self._tmux, ["send-keys", "-t", self._target(), command]
                         )
                     else:
                         await asyncio.to_thread(self._send, command, True)
@@ -601,9 +605,7 @@ class TmuxSessionManager:
                     _safe_log(command[:50]),
                 )
                 try:
-                    await asyncio.to_thread(
-                        self._docker_tmux, ["send-keys", "-t", self._target(), "C-c"]
-                    )
+                    await asyncio.to_thread(self._tmux, ["send-keys", "-t", self._target(), "C-c"])
                 except RuntimeError as interrupt_err:
                     log.debug("Failed to interrupt oversized tmux command: %s", interrupt_err)
                 output = _extract_interactive_output(screen, baseline)

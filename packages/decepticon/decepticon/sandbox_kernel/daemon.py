@@ -39,9 +39,11 @@ validation to ``upload_files`` / ``download_files`` before shipping.
       heavy bash tool path is reserved for silo plane.
 
   Dev (single-machine docker compose)
-      ``SANDBOX_DAEMON=0`` by default — the OSS path is unchanged
-      (``DockerSandbox`` + ``docker exec``). Enabling the daemon on
-      a shared dev machine voids the trust model; don't.
+      The sandbox container's entrypoint starts the daemon
+      (``SANDBOX_DAEMON=1``) so the local stack uses the same HTTP
+      transport as production. The historical no-daemon path
+      (``DockerSandbox`` + ``docker exec`` from the agent host) has
+      been retired; ``HTTPSandbox`` is the only agent-side client now.
 
 Class-level state inheritance
 -----------------------------

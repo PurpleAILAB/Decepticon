@@ -17,7 +17,7 @@ def test_initialize_does_not_create_root_workspace_sessions_log():
     TmuxSessionManager._initialized.discard("scan-1")
 
     with (
-        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch.object(mgr, "_tmux") as mock_tmux,
         patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
@@ -47,7 +47,7 @@ def test_initialize_pipes_pane_to_engagement_scoped_sessions_log():
     TmuxSessionManager._initialized.discard("dcptn_test-main")
 
     with (
-        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch.object(mgr, "_tmux") as mock_tmux,
         patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
@@ -83,7 +83,7 @@ def test_initialize_creates_sessions_directory_inside_engagement_workspace():
     TmuxSessionManager._initialized.discard("dcptn_test-scan-2")
 
     with (
-        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch.object(mgr, "_tmux") as mock_tmux,
         patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
@@ -116,7 +116,7 @@ def test_initialize_warns_when_mkdir_fails(caplog):
     decepticon_logger.propagate = True
     try:
         with (
-            patch.object(mgr, "_docker_tmux") as mock_tmux,
+            patch.object(mgr, "_tmux") as mock_tmux,
             patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
             patch("time.sleep"),
         ):
@@ -292,7 +292,7 @@ def test_kill_session_sends_ctrl_c_then_kill_session_then_clears_caches():
     mgr = sandbox._get_manager("scan")  # populate the cache
     TmuxSessionManager._initialized.add("scan")
 
-    with patch.object(mgr, "_docker_tmux") as mock_tmux:
+    with patch.object(mgr, "_tmux") as mock_tmux:
         sandbox.kill_session("scan")
 
     sent_calls = [c.args[0] for c in mock_tmux.call_args_list]
@@ -316,7 +316,7 @@ def test_kill_session_swallows_errors():
     mgr = sandbox._get_manager("flaky")
     TmuxSessionManager._initialized.add("flaky")
 
-    with patch.object(mgr, "_docker_tmux", side_effect=RuntimeError("boom")):
+    with patch.object(mgr, "_tmux", side_effect=RuntimeError("boom")):
         sandbox.kill_session("flaky")  # must not raise
 
     # Caches still cleared even when tmux ops failed
@@ -436,7 +436,7 @@ def test_initialize_recreates_stale_cached_pane_without_error_string_matching():
     TmuxSessionManager._initialized.add("stale")
 
     with (
-        patch.object(mgr, "_docker_tmux") as mock_tmux,
+        patch.object(mgr, "_tmux") as mock_tmux,
         patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
