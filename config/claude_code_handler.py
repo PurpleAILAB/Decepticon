@@ -62,6 +62,12 @@ CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
 OAUTH_TOKEN_PATTERN = "sk-ant-oat01-"
 
+# Env vars recognized by ``_env_override_tokens`` in precedence order.
+# CLAUDE_CODE_OAUTH_TOKEN is the official Claude Code CLI name produced
+# by ``claude setup-token`` and takes precedence over the legacy
+# Decepticon-internal ``ANTHROPIC_OAUTH_TOKEN`` alias.
+OAUTH_TOKEN_ENV_VARS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN")
+
 
 def _is_valid_oauth_token(token: str) -> bool:
     """Validate that a token looks like a Claude OAuth token."""
@@ -115,19 +121,34 @@ _credentials_cache = FileBackedCache(CREDENTIALS_PATH, _load_credentials_from_di
 
 
 def _env_override_tokens() -> dict[str, Any] | None:
-    """Honor ``ANTHROPIC_OAUTH_TOKEN`` as a synthetic credentials dict.
+    """Honor ``CLAUDE_CODE_OAUTH_TOKEN`` (official Claude Code CLI env var
+    produced by ``claude setup-token``) or ``ANTHROPIC_OAUTH_TOKEN`` (legacy
+    Decepticon name) as a synthetic credentials dict.
 
     The synthetic dict carries ``expiresAt: 0`` so ``is_timestamp_expired``
     returns False and the refresh path never fires for env-provided tokens.
+    This is the race-free auth path: a long-lived token from
+    ``claude setup-token`` (valid ~1 year) feeds straight into LiteLLM
+    with no refresh, eliminating any contention with the host Claude Code
+    CLI that may be using the same Anthropic account.
+
+    Precedence: ``CLAUDE_CODE_OAUTH_TOKEN`` (upstream-official name) wins
+    over ``ANTHROPIC_OAUTH_TOKEN`` (legacy alias) when both are set.
+
+    Caveat: if ``CLAUDE_CODE_OAUTH_TOKEN`` happens to be set in your shell
+    environment from another tool (CI runner, another Claude wrapper),
+    Decepticon will silently use it in preference to ``~/.claude/.credentials.json``.
+    Unset it if that override is unintended.
     """
-    env_token = os.environ.get("ANTHROPIC_OAUTH_TOKEN", "").strip()
-    if env_token and _is_valid_oauth_token(env_token):
-        return {
-            "accessToken": env_token,
-            "refreshToken": None,
-            "expiresAt": 0,  # No expiry info — never auto-refresh
-            "scopes": ["user:inference"],
-        }
+    for var_name in OAUTH_TOKEN_ENV_VARS:
+        env_token = os.environ.get(var_name, "").strip()
+        if env_token and _is_valid_oauth_token(env_token):
+            return {
+                "accessToken": env_token,
+                "refreshToken": None,
+                "expiresAt": 0,  # No expiry info — never auto-refresh
+                "scopes": ["user:inference"],
+            }
     return None
 
 
@@ -173,7 +194,8 @@ def get_access_token(force_refresh: bool = False) -> str:
     """Return a valid access token, refreshing on demand.
 
     Resolution order:
-      1. ``ANTHROPIC_OAUTH_TOKEN`` env override (never refreshed).
+      1. ``CLAUDE_CODE_OAUTH_TOKEN`` (or ``ANTHROPIC_OAUTH_TOKEN`` legacy)
+         env override — never refreshed.
       2. Cached / on-disk tokens; if expired or ``force_refresh`` is True,
          call the platform refresh endpoint and persist the new tokens.
 
@@ -193,7 +215,7 @@ def get_access_token(force_refresh: bool = False) -> str:
             llm_provider="auth",
         )
 
-    # ANTHROPIC_OAUTH_TOKEN override carries expiresAt=0 → never expires.
+    # Env-override tokens (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_OAUTH_TOKEN) carry expiresAt=0 → never expires.
     if force_refresh and tokens.get("refreshToken"):
         tokens = _refresh_token(tokens)
     elif is_timestamp_expired(
