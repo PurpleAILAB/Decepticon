@@ -1,9 +1,9 @@
 ---
 name: ad-coercer
 description: "Authentication coercion against Windows / AD — PetitPotam (MS-EFSR), PrinterBug (MS-RPRN), DFSCoerce (MS-DFSNM), ShadowCoerce (MS-FSRVP), Coercer.py meta-tool. Force a Windows machine to NTLM-authenticate to attacker, then relay or crack offline."
-when_to_use: "petitpotam printerbug dfscoerce shadowcoerce coercer msefsr msrprn msdfsnm msfsrvp authentication coercion ntlm relay"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "petitpotam printerbug dfscoerce shadowcoerce coercer msefsr msrprn msdfsnm msfsrvp authentication coercion ntlm relay"
   subdomain: ad
   tags: ad, coercion, ntlm-relay, petitpotam
   mitre_attack: T1187, T1557.001

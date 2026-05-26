@@ -1,9 +1,9 @@
 ---
 name: contracts-mev-sandwich
 description: "MEV sandwich attacks — front-run + back-run a victim swap on Uniswap V2/V3, Curve, Balancer; mempool monitoring via Flashbots / private RPC, slippage tolerance exploitation, JIT liquidity sandwich, multi-block MEV."
-when_to_use: "mev sandwich front-run back-run uniswap v2 v3 curve balancer slippage flashbots private mempool jit liquidity searcher"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "mev sandwich front-run back-run uniswap v2 v3 curve balancer slippage flashbots private mempool jit liquidity searcher"
   subdomain: contracts
   tags: defi, mev, front-running, dex
   mitre_attack: T1565.002

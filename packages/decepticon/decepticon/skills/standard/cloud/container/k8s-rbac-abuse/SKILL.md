@@ -1,9 +1,9 @@
 ---
 name: k8s-rbac-abuse
 description: "Kubernetes RBAC privilege escalation paths — ClusterRole/Role enumeration via `kubectl auth can-i --list`, abuse of pods/exec, pods/portforward, secrets get, escalate verb, bind verb, impersonate verb, system:masters group abuse, ServiceAccount token theft and reuse."
-when_to_use: "kubernetes k8s rbac role privilege escalation can-i pods/exec secrets list escalate bind impersonate serviceaccount cluster-admin system:masters"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "kubernetes k8s rbac role privilege escalation can-i pods/exec secrets list escalate bind impersonate serviceaccount cluster-admin system:masters"
   subdomain: cloud-native
   tags: kubernetes, rbac, privilege-escalation, authorization
   mitre_attack: T1078.004, T1098.003, T1552.005

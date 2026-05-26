@@ -1,9 +1,9 @@
 ---
 name: reverser-yara-hunting
 description: "YARA rule authoring + hunting — `condition:` syntax, hex patterns with wildcards, `for`/`any of them`, PE module, ELF module, hash module, math module. Build per-family signatures, hunt at scale via VT/MalwareBazaar/Hybrid Analysis. Avoid common pitfalls (collisions, slow rules, regex traps)."
-when_to_use: "yara rule signature hunting virustotal vt malshare malwarebazaar hybrid analysis pe elf hash condition any all of"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "yara rule signature hunting virustotal vt malshare malwarebazaar hybrid analysis pe elf hash condition any all of"
   subdomain: reverser
   tags: yara, malware, hunting, signatures
   mitre_attack: T1518.001

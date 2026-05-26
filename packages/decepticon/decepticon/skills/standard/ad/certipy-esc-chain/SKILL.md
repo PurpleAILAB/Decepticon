@@ -1,9 +1,9 @@
 ---
 name: ad-certipy-esc-chain
 description: "ADCS abuse via Certipy — find vulnerable templates (ESC1-ESC15), request a certificate, authenticate as the target, dump the krbtgt. Full chain in 4 commands. Covers ESC1 (any SAN), ESC2 (any-purpose EKU), ESC3 (enrollment-agent), ESC4 (vulnerable ACL), ESC8 (NTLM relay to CA), ESC9/10/11/13."
-when_to_use: "certipy adcs ad cs esc1 esc2 esc3 esc4 esc6 esc7 esc8 esc9 esc10 esc11 esc13 certificate template enrollment agent ntlm relay"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "certipy adcs ad cs esc1 esc2 esc3 esc4 esc6 esc7 esc8 esc9 esc10 esc11 esc13 certificate template enrollment agent ntlm relay"
   subdomain: ad
   tags: ad, adcs, certificate, privilege-escalation
   mitre_attack: T1649, T1078.002

@@ -1,9 +1,9 @@
 ---
 name: aws-iam-passrole-chain
 description: "AWS IAM privilege escalation via `iam:PassRole` chains — Lambda/Glue/Sagemaker/EC2/ECS PassRole to a higher-priv role, AssumeRole chains across accounts, sts:GetCallerIdentity recon, account hijack via legacy root-mfa-bypass."
-when_to_use: "aws iam passrole assumerole privilege escalation lambda glue sagemaker ec2 ecs role chain account pivot sts getcalleridentity"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "aws iam passrole assumerole privilege escalation lambda glue sagemaker ec2 ecs role chain account pivot sts getcalleridentity"
   subdomain: cloud
   tags: aws, iam, privilege-escalation, passrole
   mitre_attack: T1078.004, T1098, T1550.001

@@ -1,9 +1,9 @@
 ---
 name: k8s-pod-escape
 description: "Kubernetes pod escape to node — privileged container abuse, hostPath mount escape, hostPID/hostIPC, capability misuse (SYS_ADMIN, SYS_PTRACE), runC CVE chains. Pivots from RCE-in-pod to full node compromise."
-when_to_use: "kubernetes k8s pod escape container break out hostpath privileged hostpid hostipc capabilities cgroups runc cve-2022-0185 cve-2024-21626 leaky vessels"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "kubernetes k8s pod escape container break out hostpath privileged hostpid hostipc capabilities cgroups runc cve-2022-0185 cve-2024-21626 leaky vessels"
   subdomain: cloud-native
   tags: kubernetes, container-escape, privilege-escalation, hostpath
   mitre_attack: T1611, T1068, T1610

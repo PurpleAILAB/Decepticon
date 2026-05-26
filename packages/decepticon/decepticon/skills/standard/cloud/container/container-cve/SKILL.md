@@ -1,9 +1,9 @@
 ---
 name: container-cve
 description: "High-impact container-runtime CVE catalog — runC Leaky Vessels (CVE-2024-21626/-23651/-23652/-23653), CVE-2022-0185 (FUSE/legacy-fs), CVE-2019-5736 (runC binary replace), CRI-O Dirty COW analogs, Kubernetes API server CVE-2019-11247 (custom-resource RBAC bypass). Fingerprint → match → exploit."
-when_to_use: "container cve runc cve-2024-21626 leaky vessels cve-2019-5736 cve-2022-0185 fuse symlink containerd cri-o k8s api server"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "container cve runc cve-2024-21626 leaky vessels cve-2019-5736 cve-2022-0185 fuse symlink containerd cri-o k8s api server"
   subdomain: cloud-native
   tags: container-runtime, cve, exploit
   mitre_attack: T1068, T1190, T1611

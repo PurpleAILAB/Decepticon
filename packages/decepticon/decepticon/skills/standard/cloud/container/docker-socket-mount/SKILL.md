@@ -1,9 +1,9 @@
 ---
 name: docker-socket-mount
 description: "Docker / containerd socket mounted into a container → host RCE. Common in CI runners, GitOps controllers (ArgoCD, Flux), and 'Docker-in-Docker' setups. Single-command escape via `docker run --rm --privileged -v /:/host alpine chroot /host`."
-when_to_use: "docker.sock containerd.sock dind docker-in-docker mounted socket /var/run host escape ci runner argocd flux jenkins gitlab"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "docker.sock containerd.sock dind docker-in-docker mounted socket /var/run host escape ci runner argocd flux jenkins gitlab"
   subdomain: cloud-native
   tags: docker, containerd, container-escape, ci-cd
   mitre_attack: T1611, T1610

@@ -1,9 +1,9 @@
 ---
 name: ad-ntlm-relay
 description: "NTLM relay deep-dive — `ntlmrelayx` configuration matrix (SMB, LDAP, LDAPS, HTTP, RPC, IMAP, MSSQL), SMB-signing bypass, target selection (DC for DCSync, ADCS for cert, LAPS reader for cleartext), session relay vs cracking trade-off, multi-relay (forward auth from one victim to many)."
-when_to_use: "ntlm relay ntlmrelayx smb signing ldap ldaps adcs mssql relay multi-relay impacket"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "ntlm relay ntlmrelayx smb signing ldap ldaps adcs mssql relay multi-relay impacket"
   subdomain: ad
   tags: ad, ntlm-relay, mitm, impacket
   mitre_attack: T1557.001, T1550.002

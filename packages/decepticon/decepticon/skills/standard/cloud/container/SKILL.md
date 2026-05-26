@@ -1,9 +1,9 @@
 ---
 name: container-overview
 description: "Container / Kubernetes attack category — pod escape, RBAC abuse, runtime CVE exploitation, socket-mount escape. Routing skill: identify the surface (pod-internal RCE vs API-level vs build-pipeline), then load the matching sub-skill."
-when_to_use: "container kubernetes k8s docker podman containerd cri-o pod rbac runtime escape supply chain image registry helm"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "container kubernetes k8s docker podman containerd cri-o pod rbac runtime escape supply chain image registry helm"
   subdomain: cloud-native
   tags: kubernetes, container, cloud-native
   mitre_attack: T1611, T1078.004, T1190

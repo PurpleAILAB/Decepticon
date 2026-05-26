@@ -1,9 +1,9 @@
 ---
 name: azure-managed-identity
 description: "Azure Managed Identity abuse — IMDS at 169.254.169.254 from compromised VM / App Service / Function, token exchange for Graph/ARM/KeyVault, federated workload identity abuse, hybrid AAD Connect MSOL credential extraction."
-when_to_use: "azure managed identity msi imds 169.254 system-assigned user-assigned graph arm keyvault workload identity aad connect msol federated"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "azure managed identity msi imds 169.254 system-assigned user-assigned graph arm keyvault workload identity aad connect msol federated"
   subdomain: cloud
   tags: azure, managed-identity, cloud-credential
   mitre_attack: T1552.005, T1078.004

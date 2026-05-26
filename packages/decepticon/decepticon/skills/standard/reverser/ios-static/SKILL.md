@@ -1,9 +1,9 @@
 ---
 name: reverser-ios-static
 description: "iOS IPA static analysis — class-dump-z / class-dump-ng, Hopper / IDA / Ghidra for Mach-O ARM64, Objective-C runtime introspection, Swift demangling, App Transport Security check, plist analysis, embedded provisioning profile parse. For dynamic Frida/Objection see mobile/SKILL.md."
-when_to_use: "ios ipa ios app mach-o arm64 class-dump objective-c swift hopper ghidra plist provisioning profile entitlements"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "ios ipa ios app mach-o arm64 class-dump objective-c swift hopper ghidra plist provisioning profile entitlements"
   subdomain: reverser
   tags: ios, mach-o, mobile, static-analysis
   mitre_attack: T1518.001

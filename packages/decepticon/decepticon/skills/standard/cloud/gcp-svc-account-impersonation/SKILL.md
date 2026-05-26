@@ -1,9 +1,9 @@
 ---
 name: gcp-svc-account-impersonation
 description: "GCP service account impersonation chain — IAM `roles/iam.serviceAccountTokenCreator`, `roles/iam.serviceAccountUser`, `actAs` on Cloud Functions / Cloud Run / Compute Engine. Pivot from low-priv SA to org-admin via chained impersonation."
-when_to_use: "gcp google cloud service account impersonation token creator actAs roles/iam compute cloud functions cloud run workload identity"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "gcp google cloud service account impersonation token creator actAs roles/iam compute cloud functions cloud run workload identity"
   subdomain: cloud
   tags: gcp, iam, service-account, privilege-escalation
   mitre_attack: T1078.004, T1098, T1550.001

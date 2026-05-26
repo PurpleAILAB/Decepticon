@@ -1,9 +1,9 @@
 ---
 name: contracts-governance-attack
 description: "DAO governance attack — flash-loan-backed vote manipulation, delegation hijack, quorum dilution, proposal-spam DoS, time-lock bypass via emergency multisig, snapshot vs. on-chain vote desync, Compound/Aave/Uniswap-style GovernorBravo abuse."
-when_to_use: "dao governance vote proposal governorbravo compound aave uniswap snapshot timelock multisig delegation flash loan quorum"
 allowed-tools: Bash Read Write
 metadata:
+  when_to_use: "dao governance vote proposal governorbravo compound aave uniswap snapshot timelock multisig delegation flash loan quorum"
   subdomain: contracts
   tags: defi, dao, governance, flash-loan
   mitre_attack: T1565.001, T1190
