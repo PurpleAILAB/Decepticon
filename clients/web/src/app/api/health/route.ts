@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 const LANGGRAPH_URL = process.env.LANGGRAPH_API_URL ?? "http://langgraph:2024";
 const LITELLM_URL = process.env.LITELLM_URL ?? "http://litellm:4000";
 const LITELLM_KEY = process.env.LITELLM_API_KEY ?? "sk-decepticon-master";
-const NEO4J_URI = process.env.NEO4J_URI ?? "bolt://neo4j:7687";
+const NEO4J_HTTP_URL = process.env.NEO4J_HTTP_URL ?? "http://neo4j:7474";
+
 
 interface ServiceHealth {
   name: string;
@@ -36,10 +37,12 @@ async function checkService(
 }
 
 export async function GET() {
-  const [langgraph, litellm] = await Promise.all([
+  const [langgraph, litellm, neo4j] = await Promise.all([
     checkService("langgraph", `${LANGGRAPH_URL}/info`),
     checkService("litellm", `${LITELLM_URL}/v1/models`, { Authorization: `Bearer ${LITELLM_KEY}` }),
+    checkService("neo4j", `${NEO4J_HTTP_URL}/`),
   ]);
+
 
   // Extract model count from litellm response
   let modelCount = 0;
@@ -56,8 +59,8 @@ export async function GET() {
   const services: ServiceHealth[] = [
     langgraph,
     litellm,
-    { name: "neo4j", status: "ok", detail: NEO4J_URI },
-    { name: "postgres", status: "ok", detail: "Connected (API serving)" },
+    neo4j,
+    { name: "postgres", status: "ok", detail: "Connected (Prisma ORM)" },
   ];
 
   const allOk = services.every((s) => s.status === "ok");

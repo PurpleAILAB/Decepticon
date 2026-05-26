@@ -120,7 +120,7 @@ export function useRunObserver({ threadId }: UseRunObserverOptions): UseRunObser
         if (event.event === "custom") {
           const customEvent = event.data as SubagentCustomEvent;
           if (customEvent?.type) {
-            eventsRef.current = [...eventsRef.current, customEvent];
+            eventsRef.current.push(customEvent);
             setEvents([...eventsRef.current]);
           }
         } else if (event.event === "values") {
@@ -163,7 +163,7 @@ export function useRunObserver({ threadId }: UseRunObserverOptions): UseRunObser
             }
 
             if (newEvents.length > 0) {
-              eventsRef.current = [...eventsRef.current, ...newEvents];
+              eventsRef.current.push(...newEvents);
               setEvents([...eventsRef.current]);
             }
           }

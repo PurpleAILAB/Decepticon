@@ -103,6 +103,15 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const existing = await prisma.engagement.findFirst({
+      where: { name, userId },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: `An engagement named '${name}' already exists` },
+        { status: 409 },
+      );
+    }
     const wsPath = path.join(WORKSPACE, name);
 
     const engagement = await prisma.engagement.create({

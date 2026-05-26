@@ -46,7 +46,12 @@ export default function EngagementOverviewPage() {
         const opplanRes = await fetch(`/api/engagements/${id}/opplan`);
         if (!active) return;
         if (!opplanRes.ok) {
-          router.replace(`/engagements/${id}/live?new=true`);
+          if (opplanRes.status === 404) {
+            router.replace(`/engagements/${id}/live?new=true`);
+            return;
+          }
+          // Other errors — show empty state
+          if (active) setLoading(false);
           return;
         }
         const opplanData = await opplanRes.json();
@@ -76,7 +81,8 @@ export default function EngagementOverviewPage() {
           setGraphNodeCount(g.nodes?.length ?? 0);
         }
       } catch {
-        if (active) router.replace(`/engagements/${id}/live?new=true`);
+        // Network error — don't redirect, just show empty state
+        if (active) setLoading(false);
         return;
       }
       if (active) setLoading(false);

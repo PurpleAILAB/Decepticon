@@ -180,8 +180,8 @@ export function useAgent({
         id: `${Date.now()}-${Math.random()}`,
         timestamp: Date.now(),
       };
-      eventsRef.current = [...eventsRef.current, newEvent];
-      setEvents(eventsRef.current);
+      eventsRef.current.push(newEvent);
+      setEvents([...eventsRef.current]);
     },
     [],
   );
@@ -796,7 +796,7 @@ export function useAgent({
       addEvent({
         type: "ask_user_answer",
         content: display,
-        subagent: "soundwave",
+        subagent: assistantIdRef.current,
         sourceId: current.sourceId,
       });
       setActiveQuestion(null);

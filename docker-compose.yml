@@ -158,7 +158,7 @@ services:
     pids_limit: 1024
     depends_on:
       neo4j:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   # LangGraph Platform — Agent API Server

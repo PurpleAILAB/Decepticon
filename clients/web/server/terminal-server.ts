@@ -272,7 +272,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
 function wireWsToSession(ws: WebSocket, session: Session): void {
   // Send initial resize
-  ws.once("message", () => {}); // absorb first resize if needed
 
   ws.on("message", (raw: Buffer | string) => {
     const msg = raw.toString();

@@ -124,12 +124,7 @@ export const Prompt = React.memo(function Prompt({
 
   // Reorder suggestions so selected dropdown item is first
   const suggestionList = showMenu
-    ? [
-        filteredCommands[selectedIdx]?.cmd,
-        ...commandEntries.map((c) => c.cmd).filter(
-          (c) => c !== filteredCommands[selectedIdx]?.cmd,
-        ),
-      ].filter((c): c is string => c != null)
+    ? filteredCommands.map((c) => c.cmd)
     : commandEntries.map((c) => c.cmd);
 
   // Reset selection on input change

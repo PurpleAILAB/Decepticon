@@ -30,9 +30,11 @@ const file: Command = {
     }
 
     // Expand ~ to home directory
-    const expanded = raw.startsWith("~")
+    const expanded = raw.startsWith("~/")
       ? resolve(homedir(), raw.slice(2))
-      : resolve(raw);
+      : raw === "~"
+        ? homedir()
+        : resolve(raw);
 
     try {
       const content = readFileSync(expanded, "utf-8").trim();

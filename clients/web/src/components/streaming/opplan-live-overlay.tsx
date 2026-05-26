@@ -69,6 +69,98 @@ const statusConfig: Record<
   },
 };
 
+// ── Objective Row ────────────────────────────────────────────────
+
+interface ObjectiveRowProps {
+  obj: Objective;
+  expandedObjectiveId: string | null;
+  onToggleExpand: (id: string | null) => void;
+}
+
+function ObjectiveRow({ obj, expandedObjectiveId, onToggleExpand }: ObjectiveRowProps) {
+  const config = statusConfig[obj.status] ?? statusConfig.pending;
+  const StatusIcon = config.icon;
+  const isInProgress = obj.status === "in-progress" || obj.status === "in_progress";
+  const isExpanded = expandedObjectiveId === obj.id;
+  const hasDetails = obj.description || (obj.acceptanceCriteria && obj.acceptanceCriteria.length > 0);
+
+  return (
+    <div
+      className={cn(
+        "border-l-2 transition-colors",
+        isInProgress ? "border-l-amber-400/60" : "border-l-transparent",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() =>
+          onToggleExpand(isExpanded ? null : obj.id)
+        }
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
+      >
+        <StatusIcon
+          className={cn(
+            "h-3.5 w-3.5 shrink-0",
+            config.color,
+            isInProgress && "animate-spin",
+          )}
+        />
+        <Badge
+          variant="outline"
+          className="shrink-0 px-1.5 py-0 font-mono text-[10px]"
+        >
+          {obj.id}
+        </Badge>
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
+          {obj.title}
+        </span>
+        {hasDetails && (
+          isExpanded ? (
+            <ChevronDown className="h-3 w-3 shrink-0 text-zinc-600" />
+          ) : (
+            <ChevronRight className="h-3 w-3 shrink-0 text-zinc-600" />
+          )
+        )}
+      </button>
+
+      {/* Expanded detail */}
+      <div
+        className={cn(
+          "grid transition-all duration-200 ease-in-out",
+          isExpanded && hasDetails
+            ? "grid-rows-[1fr] opacity-100"
+            : "grid-rows-[0fr] opacity-0",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="px-3 pb-2 pl-[2.125rem]">
+            {obj.description && (
+              <p className="text-[11px] leading-relaxed text-zinc-500">
+                {obj.description}
+              </p>
+            )}
+            {obj.acceptanceCriteria &&
+              obj.acceptanceCriteria.length > 0 && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {obj.acceptanceCriteria.map((c, i) => (
+                    <li
+                      key={i}
+                      className="flex items-start gap-1.5 text-[11px] text-zinc-500"
+                    >
+                      <span className="mt-px shrink-0 text-zinc-600">•</span>
+                      <span>{c}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ── Component ───────────────────────────────────────────────────
 
 export function OpplanLiveOverlay({
@@ -151,90 +243,7 @@ export function OpplanLiveOverlay({
     );
   }
 
-  // ── Objective row ──
-
-  function ObjectiveRow({ obj }: { obj: Objective }) {
-    const config = statusConfig[obj.status] ?? statusConfig.pending;
-    const StatusIcon = config.icon;
-    const isInProgress = obj.status === "in-progress" || obj.status === "in_progress";
-    const isExpanded = expandedObjectiveId === obj.id;
-    const hasDetails = obj.description || (obj.acceptanceCriteria && obj.acceptanceCriteria.length > 0);
-
-    return (
-      <div
-        className={cn(
-          "border-l-2 transition-colors",
-          isInProgress ? "border-l-amber-400/60" : "border-l-transparent",
-        )}
-      >
-        <button
-          type="button"
-          onClick={() =>
-            setExpandedObjectiveId(isExpanded ? null : obj.id)
-          }
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-white/[0.03]"
-        >
-          <StatusIcon
-            className={cn(
-              "h-3.5 w-3.5 shrink-0",
-              config.color,
-              isInProgress && "animate-spin",
-            )}
-          />
-          <Badge
-            variant="outline"
-            className="shrink-0 px-1.5 py-0 font-mono text-[10px]"
-          >
-            {obj.id}
-          </Badge>
-          <span className="min-w-0 flex-1 truncate text-xs text-zinc-300">
-            {obj.title}
-          </span>
-          {hasDetails && (
-            isExpanded ? (
-              <ChevronDown className="h-3 w-3 shrink-0 text-zinc-600" />
-            ) : (
-              <ChevronRight className="h-3 w-3 shrink-0 text-zinc-600" />
-            )
-          )}
-        </button>
-
-        {/* Expanded detail */}
-        <div
-          className={cn(
-            "grid transition-all duration-200 ease-in-out",
-            isExpanded && hasDetails
-              ? "grid-rows-[1fr] opacity-100"
-              : "grid-rows-[0fr] opacity-0",
-          )}
-        >
-          <div className="overflow-hidden">
-            <div className="px-3 pb-2 pl-[2.125rem]">
-              {obj.description && (
-                <p className="text-[11px] leading-relaxed text-zinc-500">
-                  {obj.description}
-                </p>
-              )}
-              {obj.acceptanceCriteria &&
-                obj.acceptanceCriteria.length > 0 && (
-                  <ul className="mt-1.5 space-y-0.5">
-                    {obj.acceptanceCriteria.map((c, i) => (
-                      <li
-                        key={i}
-                        className="flex items-start gap-1.5 text-[11px] text-zinc-500"
-                      >
-                        <span className="mt-px shrink-0 text-zinc-600">•</span>
-                        <span>{c}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ── Main render ──
 
   // ── Main render ──
 
@@ -297,7 +306,7 @@ export function OpplanLiveOverlay({
             <ScrollArea className="max-h-[300px]">
               <div className="divide-y divide-white/[0.04]">
                 {objectives.map((obj) => (
-                  <ObjectiveRow key={obj.id} obj={obj} />
+                  <ObjectiveRow key={obj.id} obj={obj} expandedObjectiveId={expandedObjectiveId} onToggleExpand={setExpandedObjectiveId} />
                 ))}
               </div>
             </ScrollArea>
