@@ -182,6 +182,7 @@ Configure via `decepticon onboard`. → **[Full model reference & fallback examp
 | Neo4j knowledge graph | [Knowledge Graph](docs/knowledge-graph.md) |
 | End-to-end engagement workflow | [Engagement Workflow](docs/engagement-workflow.md) |
 | Offensive Vaccine loop | [Offensive Vaccine](docs/offensive-vaccine.md) |
+| Optional LangGraph Platform runtime (durable threads, queue) | [Platform Mode](docs/runtime/platform-mode.md) |
 | Contributing to Decepticon | [Contributing](docs/contributing.md) |
 
 ---

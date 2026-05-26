@@ -1,0 +1,93 @@
+# Optional overlay: swap the default `langgraph dev` runtime for the
+# commercial LangGraph Platform server (Self-Hosted Lite or Enterprise).
+#
+# Usage:
+#     docker compose -f docker-compose.yml -f docker-compose.platform.yml up
+#
+# What this gives you:
+#   - PostgresSaver checkpointer (threads survive container restart;
+#     `docker compose restart langgraph` no longer wipes chat history).
+#   - Redis-backed queue (multi-worker scheduling, prerequisite for
+#     scaling langgraph horizontally).
+#   - The same `LANGSERVE_GRAPHS` set as dev mode; agents and plugin
+#     contributions are unchanged.
+#
+# What this costs you:
+#   - A LangSmith account + API key (free tier OK for Self-Hosted Lite).
+#     Set `LANGSMITH_API_KEY` in `.env` BEFORE bringing this up - the
+#     base image refuses to boot without it.
+#   - Phone-home traffic to `beacon.langchain.com` on every startup.
+#   - 1,000,000 node executions / year on the Lite tier (Decepticon
+#     engagements consume thousands per run - monitor your budget at
+#     `https://smith.langchain.com/o/<org>/settings/usage`).
+#   - Air-gap / unlimited execution requires Self-Hosted Enterprise
+#     (paid, set `LANGGRAPH_CLOUD_LICENSE_KEY` instead).
+#
+# Full trade-off discussion: docs/runtime/platform-mode.md
+#
+# The default `docker-compose.yml` remains the canonical OSS path
+# (langgraph dev, free, in-memory, no phone-home). This file is a pure
+# overlay: it only redefines the `langgraph` service plus the new
+# `langgraph-redis` it depends on, and reuses the `postgres` service
+# already in the base stack for the checkpoint database.
+
+services:
+
+  langgraph:
+    image: ghcr.io/purpleailab/decepticon-langgraph-platform:${DECEPTICON_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: containers/langgraph.platform.Dockerfile
+      args:
+        VERSION: ${VERSION:-0.0.0}
+        LANGGRAPH_API_VERSION: ${LANGGRAPH_API_VERSION:-3.13}
+    environment:
+      # License gate. EXACTLY ONE of these must be set in .env, else the
+      # base image exits at boot with `License verification failed`.
+      #   LANGSMITH_API_KEY            -> Self-Hosted Lite (1M nodes/yr)
+      #   LANGGRAPH_CLOUD_LICENSE_KEY  -> Self-Hosted Enterprise
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGGRAPH_CLOUD_LICENSE_KEY=${LANGGRAPH_CLOUD_LICENSE_KEY:-}
+      # PostgresSaver target. Reuses the base stack's `postgres` service
+      # (running on `decepticon-net`); the `langgraph_cp` database is
+      # auto-created by `containers/postgres-init/02-create-langgraph-cp.sql`.
+      - POSTGRES_URI=postgres://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/langgraph_cp?sslmode=disable
+      # Queue / pubsub backend. New redis service below; not shared with
+      # any other component so a `docker compose down` of the overlay
+      # doesn't impact the rest of the stack.
+      - REDIS_URI=redis://langgraph-redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      langgraph-redis:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+
+  # Postgres in the base stack already runs at decepticon-net:5432. The
+  # overlay adds an init script (mounted alongside the existing initdb
+  # scripts) that creates the `langgraph_cp` database on first volume
+  # mount. Existing deployments with a populated postgres_data volume
+  # must create the database manually:
+  #     docker compose exec postgres \
+  #         psql -U decepticon -c 'CREATE DATABASE langgraph_cp;'
+  postgres:
+    volumes:
+      - ./containers/postgres-init/02-create-langgraph-cp.sql:/docker-entrypoint-initdb.d/02-create-langgraph-cp.sql:ro
+
+  # Dedicated redis for the LangGraph Platform queue. Not shared with
+  # any LiteLLM / Decepticon component, so footprint stays bounded and
+  # the overlay is self-contained.
+  langgraph-redis:
+    image: redis:7.4-alpine
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-langgraph-redis
+    networks:
+      - decepticon-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
