@@ -240,6 +240,25 @@ services:
   # as a streaming API on port 2024. Ink CLI connects here.
   langgraph:
     image: ghcr.io/purpleailab/decepticon-langgraph:${DECEPTICON_VERSION:-latest}
+    # Append --allow-blocking by default so blockbuster doesn't fatally
+    # abort runs on sync I/O in third-party deps (e.g. deepagents'
+    # subagents.py uses a sync httpx send in its atask path). Decepticon's
+    # own sync calls have been structurally fixed (see #325), but the
+    # third-party calls remain. Set LANGGRAPH_STRICT_ASYNC=1 in .env to
+    # opt out and reinstate the fatal-on-sync behavior (useful for
+    # debugging async issues in your own code).
+    # Note: $$ escapes compose interpolation so the literal $LANGGRAPH_STRICT_ASYNC
+    # reaches the shell — the env var is set on the container via env_file:.env,
+    # and the if/else decision happens at container start, not at compose render.
+    command:
+      - sh
+      - -c
+      - >
+        if [ -z "$${LANGGRAPH_STRICT_ASYNC:-}" ]; then
+          exec langgraph dev --host 0.0.0.0 --port 2024 --no-browser --n-jobs-per-worker 10 --allow-blocking;
+        else
+          exec langgraph dev --host 0.0.0.0 --port 2024 --no-browser --n-jobs-per-worker 10;
+        fi
     build:
       context: .
       dockerfile: containers/langgraph.Dockerfile
