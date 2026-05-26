@@ -40,6 +40,13 @@ function StatusDot({ status }: { status: "ok" | "error" | "loading" }) {
   return <div className="h-2.5 w-2.5 rounded-full bg-red-400 shadow-sm shadow-red-400/50" />;
 }
 
+const SERVICE_NAME_MAP: Record<string, string> = {
+  langgraph: "LangGraph API",
+  litellm: "LiteLLM Proxy",
+  neo4j: "Neo4j",
+  postgres: "PostgreSQL",
+};
+
 export default function SettingsPage() {
   const [services, setServices] = useState<ServiceStatus[]>([
     { name: "LangGraph API", status: "loading", detail: "Checking...", icon: Activity },
@@ -52,15 +59,19 @@ export default function SettingsPage() {
   const [engagements, setEngagements] = useState<Engagement[]>([]);
   const [loadingAgents, setLoadingAgents] = useState(true);
   // Check all services via server-side health API
+
   useEffect(() => {
+    let active = true;
     fetch("/api/health", { signal: AbortSignal.timeout(10000) })
       .then(async (res) => {
+        if (!active) return;
         if (!res.ok) throw new Error("Health API failed");
         const data = await res.json();
+        if (!active) return;
         setServices((prev) =>
           prev.map((s) => {
-            const match = (data.services ?? []).find((r: { name: string }) =>
-              s.name.toLowerCase().includes(r.name) || r.name.includes(s.name.toLowerCase().split(" ")[0])
+            const match = (data.services ?? []).find(
+              (r: { name: string }) => SERVICE_NAME_MAP[r.name] === s.name
             );
             if (match) return { ...s, status: match.status as "ok" | "error", detail: match.detail ?? "" };
             return s;
@@ -68,27 +79,35 @@ export default function SettingsPage() {
         );
       })
       .catch(() => {
+        if (!active) return;
         setServices((prev) =>
           prev.map((s) => s.status === "loading" ? { ...s, status: "error" as const, detail: "Unreachable" } : s)
         );
       });
+    return () => { active = false; };
   }, []);
+
 
   // Fetch agents
   useEffect(() => {
+    let active = true;
     fetch("/api/agents")
       .then((res) => res.json())
-      .then((data: AgentConfig[]) => setAgents(data))
+      .then((data: AgentConfig[]) => { if (active) setAgents(data); })
       .catch(() => {})
-      .finally(() => setLoadingAgents(false));
+      .finally(() => { if (active) setLoadingAgents(false); });
+    return () => { active = false; };
   }, []);
+
 
   // Fetch engagements
   useEffect(() => {
+    let active = true;
     fetch("/api/engagements")
       .then((res) => res.json())
-      .then((data: Engagement[]) => setEngagements(data))
+      .then((data: Engagement[]) => { if (active) setEngagements(data); })
       .catch(() => {});
+    return () => { active = false; };
   }, []);
 
   const statusCounts = {

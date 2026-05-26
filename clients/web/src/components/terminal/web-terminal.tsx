@@ -292,11 +292,13 @@ export function WebTerminal({
       const resizeObserver = new ResizeObserver(() => {
         if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
         resizeTimerRef.current = setTimeout(() => {
+          const el = containerRef.current;
+          if (!el || el.clientWidth === 0 || el.clientHeight === 0) return;
           try {
             fitRef.current?.fit();
             const ws = wsRef.current;
             const t = termRef.current;
-            if (ws?.readyState === WebSocket.OPEN && t) {
+            if (ws?.readyState === WebSocket.OPEN && t && t.cols > 0 && t.rows > 0) {
               ws.send(JSON.stringify({ type: "resize", cols: t.cols, rows: t.rows }));
             }
           } catch {
@@ -335,6 +337,7 @@ export function WebTerminal({
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       try {
         ws.send(JSON.stringify({ type: "ping" }));
+        clearTimeout(pongTimer);
         pongTimer = setTimeout(() => {
           // If WS is still the same instance and still "open", it's half-open — kill it
           if (wsRef.current === ws && ws.readyState === WebSocket.OPEN) {

@@ -811,7 +811,7 @@ export function useAgent({
       addEvent({
         type: "ask_user_answer",
         content: display,
-        subagent: "soundwave",
+        subagent: assistantIdRef.current,
         sourceId: current.sourceId,
       });
       setActiveQuestion(null);

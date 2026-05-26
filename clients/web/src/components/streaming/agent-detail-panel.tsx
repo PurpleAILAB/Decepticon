@@ -7,7 +7,7 @@
  * derives current status, and renders a mini-feed of recent tool calls and messages.
  */
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import type { SubagentCustomEvent } from "@decepticon/streaming";
 import type { AgentConfig } from "@/lib/agents";
 import { AGENT_DISPLAY_CONFIG } from "@/lib/agents";
@@ -122,8 +122,6 @@ export function AgentDetailPanel({
     [agentEvents],
   );
 
-  // Elapsed time since last event
-  const feedRef = useRef<HTMLDivElement>(null);
 
   // Derive status
   const status = useMemo(() => deriveStatus(agentEvents), [agentEvents]);
@@ -198,7 +196,7 @@ export function AgentDetailPanel({
         </div>
 
         <ScrollArea className="flex-1 min-h-0">
-          <div ref={feedRef} className="space-y-1 px-4 pb-3">
+          <div className="space-y-1 px-4 pb-3">
             {recentEvents.length === 0 ? (
               agent.id === "decepticon" ? (
                 <div className="py-4 text-center text-xs text-zinc-500 space-y-2">

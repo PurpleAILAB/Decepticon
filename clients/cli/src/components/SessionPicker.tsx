@@ -57,7 +57,9 @@ export const SessionPicker = React.memo(function SessionPicker({
       return;
     }
     if (key.downArrow) {
-      setSelectedIdx((prev) => Math.min(filtered.length - 1, prev + 1));
+      if (filtered.length > 0) {
+        setSelectedIdx((prev) => Math.min(filtered.length - 1, prev + 1));
+      }
       return;
     }
     if (key.backspace || key.delete) {
@@ -84,7 +86,7 @@ export const SessionPicker = React.memo(function SessionPicker({
       {/* Header */}
       <Box marginLeft={1}>
         <Text bold>Resume Session</Text>
-        <Text dimColor>{` (${selectedIdx + 1} of ${total})`}</Text>
+        <Text dimColor>{` (${filtered.length > 0 ? selectedIdx + 1 : 0} of ${total})`}</Text>
       </Box>
 
       {/* Search box */}

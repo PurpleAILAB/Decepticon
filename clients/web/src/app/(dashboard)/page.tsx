@@ -91,6 +91,8 @@ const statusBadge: Record<string, string> = {
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [engagements, setEngagements] = useState<Engagement[]>([]);
   const [allFindings, setAllFindings] = useState<Finding[]>([]);
 
@@ -104,8 +106,9 @@ export default function DashboardPage() {
         if (!active) return;
         setEngagements(engs);
 
-        // Fetch findings for each engagement
-        const findingsPromises = engs.map(async (eng) => {
+        // Fetch findings only for engagements that may have results
+        const activeEngs = engs.filter(e => e.status !== "draft" && e.status !== "planning");
+        const findingsPromises = activeEngs.map(async (eng) => {
           try {
             const res = await fetch(`/api/engagements/${eng.id}/findings`);
             if (!res.ok) return [];
@@ -119,7 +122,8 @@ export default function DashboardPage() {
         if (!active) return;
         setAllFindings(results.flat());
       } catch {
-        // ignore
+        if (active) setError("Failed to load dashboard data");
+
       } finally {
         if (active) setLoading(false);
       }
@@ -151,7 +155,7 @@ export default function DashboardPage() {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
 
-  const latestFindings = allFindings.slice(-5).reverse();
+  const latestFindings = allFindings.slice(0, 5);
 
   if (loading) {
     return (
@@ -176,6 +180,11 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Overview of your security testing operations</p>
       </div>
+      {error && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
 
       {/* Metric Cards — CTEM style with gradient backgrounds */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

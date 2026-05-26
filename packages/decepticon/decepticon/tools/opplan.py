@@ -652,7 +652,7 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
                 children = [o for o in objectives if o.get("parent_id") == objective_id]
                 if children:
                     unresolved_kids = [
-                        c["id"]
+                        c.get("id", "<?>")
                         for c in children
                         if c.get("status") not in {"completed", "cancelled"}
                     ]

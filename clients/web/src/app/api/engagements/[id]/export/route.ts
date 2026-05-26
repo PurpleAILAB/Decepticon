@@ -25,7 +25,7 @@ export async function GET(
   }
 
   const format = req.nextUrl.searchParams.get("format") ?? "json";
-  const WORKSPACE = process.env.WORKSPACE_PATH ?? "/workspace";
+  const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
   const wsPath = path.join(WORKSPACE, engagement.name);
 
   // Collect all engagement data
