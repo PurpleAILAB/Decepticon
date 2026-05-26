@@ -977,6 +977,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  └──────────────────────────────────┘"))
 	fmt.Println()
 
+	// macOS-specific: when the user picked the Claude Code OAuth method,
+	// surface guidance about the Keychain ↔ credentials-file split that
+	// otherwise causes silent 401s or periodic refresh-token races. The
+	// probe is a no-op on non-darwin builds (see onboard_keychain_other.go).
+	if contains(methods, methodAnthropicOAuth) {
+		printClaudeOAuthGuidance()
+	}
+
 	// One-time GitHub star ask — the natural post-onboarding moment.
 	// Suppressed on subsequent runs by the ack file at
 	// $DECEPTICON_HOME/.starred, so a re-run of `decepticon onboard
@@ -989,6 +997,55 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 func contains(haystack []string, needle string) bool {
 	return slices.Contains(haystack, needle)
+}
+
+// printClaudeOAuthGuidance prints macOS-specific guidance about the
+// Keychain ↔ credentials-file split that affects users who picked the
+// Claude Code OAuth method during onboard.
+//
+// On macOS the Claude Code CLI stores OAuth credentials in the system
+// Keychain (service "Claude Code-credentials"), but Decepticon's
+// LiteLLM custom handler reads from ~/.claude/.credentials.json. Three
+// outcomes from the probe each get tailored guidance:
+//
+//   - Item not found: nothing to say (either non-macOS or no Claude Code
+//     CLI session). probeClaudeCredentials always returns this on
+//     non-darwin builds, so this function emits zero output there.
+//   - Item present, file absent: WARN — the silent-401 case. Recommend
+//     the long-lived-token path (CLAUDE_CODE_OAUTH_TOKEN via
+//     `claude setup-token`, which fix/oauth-token-env-var honors) or a
+//     one-time `security ... -w >` export as a fallback.
+//   - Item present AND file present: INFO — the refresh-race case.
+//     Both sides will race the refresh token and periodically hit
+//     invalid_grant 401s; recommend CLAUDE_CODE_OAUTH_TOKEN to eliminate
+//     the race.
+func printClaudeOAuthGuidance() {
+	switch probeClaudeCredentials() {
+	case keychainItemPresentFileAbsent:
+		ui.Warning("macOS Keychain has Claude Code credentials, but ~/.claude/.credentials.json is absent.")
+		ui.DimText("  The OAuth handler reads the file, not Keychain, so authentication will fail with 401.")
+		fmt.Println()
+		ui.DimText("  Recommended (permanent fix, no refresh race):")
+		ui.DimText("    claude setup-token")
+		ui.DimText("    # then set CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-... in")
+		ui.DimText("    # ~/.decepticon/.env after onboard finishes.")
+		fmt.Println()
+		ui.DimText("  Alternative (works but requires periodic re-export):")
+		ui.DimText(`    security find-generic-password -s "Claude Code-credentials" -w \`)
+		ui.DimText("      > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json")
+		fmt.Println()
+	case keychainItemPresentFilePresent:
+		ui.Info("Both ~/.claude/.credentials.json and macOS Keychain have Claude Code credentials.")
+		ui.DimText("  If the host Claude Code CLI is in use, both sides will race refresh-tokens")
+		ui.DimText("  against the same account, causing periodic invalid_grant 401s.")
+		fmt.Println()
+		ui.DimText("  To eliminate the race, set CLAUDE_CODE_OAUTH_TOKEN in ~/.decepticon/.env")
+		ui.DimText("  to a long-lived token from:")
+		ui.DimText("    claude setup-token")
+		fmt.Println()
+	default:
+		// keychainItemNotFound — emit nothing.
+	}
 }
 
 func nonEmpty(s string) error {
