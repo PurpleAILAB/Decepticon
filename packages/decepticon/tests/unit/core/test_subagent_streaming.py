@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import Runnable
 
 from decepticon.core.subagent_streaming import (
     StreamingRunnable,
@@ -23,8 +24,13 @@ from decepticon.core.subagent_streaming import (
 )
 
 
-class CountingRunnable:
-    """Minimal fake LangGraph runnable for side-effect counting."""
+class CountingRunnable(Runnable):
+    """Minimal fake LangGraph runnable for side-effect counting.
+
+    Subclasses Runnable so StreamingRunnable (a RunnableBinding subclass) accepts
+    it as ``bound``. The wrapper now mirrors how a real compiled subagent looks
+    to deepagents — bare ducktypes are no longer enough.
+    """
 
     def __init__(self, stream_items: list[Any], invoke_payload: Any | None = None):
         self._stream_items = stream_items

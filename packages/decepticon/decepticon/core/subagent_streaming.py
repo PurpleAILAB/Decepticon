@@ -16,10 +16,15 @@ Architecture:
   → emits events via both channels
   → returns same result as invoke() for SubAgentMiddleware compatibility
 
-IMPORTANT: LangGraph runs the agent graph asynchronously (all middleware uses
-awrap_* methods). SubAgentMiddleware's atask() calls subagent.ainvoke(), so
-the ainvoke() method MUST be implemented here — otherwise __getattr__ delegates
-to the underlying runnable's ainvoke(), bypassing all streaming logic.
+Why a RunnableBinding subclass:
+  deepagents.middleware.subagents._get_subagents() normalises every spec by
+  calling `compiled["runnable"].with_config({"metadata":..., "run_name":...})`
+  and stores the *returned* object as the subagent. If StreamingRunnable were
+  a plain class with __getattr__ forwarding, with_config would fall through
+  to the inner compiled graph and return a RunnableBinding wrapping the bare
+  graph — silently dropping this wrapper before dispatch. RunnableBinding's
+  built-in with_config() reconstructs `self.__class__(...)`, so subclassing
+  preserves the wrapper across deepagents' registration step.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage
 from langchain_core.messages.tool import ToolCall
+from langchain_core.runnables import Runnable, RunnableBinding
 
 log = logging.getLogger("decepticon.subagent_streaming")
 
@@ -64,7 +70,7 @@ def _get_writer() -> Callable | None:
         return None
 
 
-class StreamingRunnable:
+class StreamingRunnable(RunnableBinding):
     """Wraps a compiled LangGraph agent to stream events during invoke()/ainvoke().
 
     Drop-in replacement for the runnable field in CompiledSubAgent.
@@ -75,15 +81,55 @@ class StreamingRunnable:
 
     If neither channel is available, falls back to plain invoke()/ainvoke().
 
-    IMPORTANT: Both invoke() AND ainvoke() must be implemented because LangGraph
-    runs agent graphs asynchronously — SubAgentMiddleware's atask() calls
-    subagent.ainvoke(). Without ainvoke() here, __getattr__ would delegate to
-    the underlying runnable's ainvoke(), bypassing all streaming event emission.
+    Subclasses ``RunnableBinding`` so deepagents' SubAgentMiddleware._get_subagents()
+    call to ``compiled["runnable"].with_config(...)`` reconstructs a StreamingRunnable
+    (via ``self.__class__``) rather than collapsing back to the bare inner graph.
+    Without this, the wrapper's invoke/ainvoke would be silently bypassed at
+    dispatch time and zero ``subagent_*`` custom events would reach the LangGraph
+    Platform HTTP stream.
     """
 
-    def __init__(self, runnable: Any, name: str):
-        self._runnable = runnable
-        self._name = name
+    # Legacy positional constructor: ``StreamingRunnable(runnable, name)``.
+    # Also supports the keyword-only construction RunnableBinding.with_config()
+    # uses internally (``bound=...``, ``config=...``, ``kwargs=...``, etc.).
+    def __init__(
+        self,
+        runnable: Runnable | None = None,
+        name: str | None = None,
+        **data: Any,
+    ) -> None:
+        if runnable is not None and "bound" not in data:
+            data["bound"] = runnable
+        if name is not None and "name" not in data:
+            data["name"] = name
+        super().__init__(**data)
+
+    # ── Back-compat aliases for OSS callers / tests ────────────────────
+    # Internal code (and unit tests) refer to ``self._runnable`` / ``self._name``;
+    # surface them as read-only views on the RunnableBinding fields.
+
+    @property
+    def _runnable(self) -> Runnable:
+        return self.bound
+
+    @property
+    def _name(self) -> str:
+        """Agent name for event emission.
+
+        Construction sets ``self.name`` directly. After deepagents calls
+        with_config({"run_name": ...}), ``self.name`` is still preserved by
+        RunnableBinding.with_config (it copies via ``self.__class__(...)``);
+        fall back to ``config["run_name"]`` then ``metadata["lc_agent_name"]``
+        for robustness if a future caller drops ``name``.
+        """
+        if self.name:
+            return self.name
+        cfg = self.config or {}
+        run_name = cfg.get("run_name")
+        if run_name:
+            return run_name
+        md = cfg.get("metadata") or {}
+        return md.get("lc_agent_name") or "subagent"
 
     def _get_channels(self) -> tuple[Any, bool, Callable | None]:
         """Get renderer and writer channels. Returns (renderer, has_renderer, writer)."""
@@ -385,7 +431,3 @@ class StreamingRunnable:
             }
 
         return last_state
-
-    def __getattr__(self, name: str) -> Any:
-        """Delegate all other attribute access to the underlying runnable."""
-        return getattr(self._runnable, name)
