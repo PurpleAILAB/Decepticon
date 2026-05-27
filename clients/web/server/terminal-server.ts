@@ -29,6 +29,9 @@ import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { parseAuthMode, type AuthMode } from "../src/lib/auth-mode";
+import { deriveWsToken, extractWsToken, tokensEqual } from "../src/lib/auth-token";
+import { assertLoopbackHost, isLoopbackHost } from "../src/lib/bind-public";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -40,6 +43,32 @@ const LANGGRAPH_API_URL = process.env.LANGGRAPH_API_URL ?? "http://localhost:202
 const ORPHAN_TTL = 60_000; // Kill orphaned PTYs after 60s with no WS
 const SCROLLBACK_LIMIT = 50_000; // chars of recent output to buffer for reattach
 
+// Auth mode is parsed once at startup. Bad values throw — fail loud, never
+// silently degrade to no-auth.
+const AUTH_MODE: AuthMode = parseAuthMode(process.env.DECEPTICON_WEB_AUTH);
+
+// The host the WS server listens on. Default behavior is unchanged:
+// `new WebSocketServer({ port })` binds to all interfaces, matching upstream.
+// `disable-bind-public` mode forces 127.0.0.1.
+const TERMINAL_HOST_RAW = process.env.TERMINAL_HOST ?? "";
+
+let LISTEN_HOST: string | undefined;
+if (AUTH_MODE.kind === "disable-bind-public") {
+  // Hard-fail if the operator asked for loopback-only but also set
+  // TERMINAL_HOST to something public — we won't silently override their
+  // intent in either direction, just refuse to start.
+  if (TERMINAL_HOST_RAW && !isLoopbackHost(TERMINAL_HOST_RAW)) {
+    assertLoopbackHost(TERMINAL_HOST_RAW, "TERMINAL_HOST"); // throws
+  }
+  LISTEN_HOST = TERMINAL_HOST_RAW || "127.0.0.1";
+} else if (TERMINAL_HOST_RAW) {
+  LISTEN_HOST = TERMINAL_HOST_RAW;
+}
+
+// WS handshake token (only computed when password mode is on).
+const EXPECTED_WS_TOKEN =
+  AUTH_MODE.kind === "password" ? deriveWsToken(AUTH_MODE.hash.raw) : null;
+
 const ALLOWED_ORIGINS = new Set(
   (process.env.TERMINAL_ALLOWED_ORIGINS ?? `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`)
     .split(",")
@@ -47,8 +76,11 @@ const ALLOWED_ORIGINS = new Set(
     .filter(Boolean),
 );
 
-const wss = new WebSocketServer({ port: PORT });
-console.log(`[terminal-server] Listening on ws://localhost:${PORT}`);
+const wss = new WebSocketServer(LISTEN_HOST ? { port: PORT, host: LISTEN_HOST } : { port: PORT });
+console.log(
+  `[terminal-server] Listening on ws://${LISTEN_HOST ?? "0.0.0.0"}:${PORT} ` +
+    `(auth=${AUTH_MODE.kind})`,
+);
 
 // ── Session Pool ─────────────────────────────────────────────────
 
@@ -133,6 +165,18 @@ wss.on("connection", async (ws: WebSocket, req) => {
   }
 
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
+  // ── Token check (password mode only) ──
+  // In `none` / `disable-bind-public` modes, EXPECTED_WS_TOKEN is null
+  // and we skip — preserving today's behavior exactly.
+  if (EXPECTED_WS_TOKEN) {
+    const provided = extractWsToken(req.headers.authorization, url);
+    if (!provided || !tokensEqual(provided, EXPECTED_WS_TOKEN)) {
+      ws.close(1008, "Unauthorized");
+      return;
+    }
+  }
+
   const engagementId = url.searchParams.get("engagementId") ?? "";
   const engagementSlug = url.searchParams.get("engagementSlug") ?? "";
   const agentId = url.searchParams.get("agentId") ?? "soundwave";
