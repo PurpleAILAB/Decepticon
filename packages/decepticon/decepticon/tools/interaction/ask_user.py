@@ -25,6 +25,32 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 HEADER_MAX_CHARS = 60
+RECOMMENDED_SUFFIX = " (Recommended)"
+
+
+def _strip_recommended_suffix(value: Any) -> Any:
+    """Strip the ``" (Recommended)"`` UI marker from operator answers.
+
+    Option labels surface the marker so the operator sees which choice the
+    agent recommends in the picker; the marker is purely a display hint and
+    must never reach the agent's tool-result content. Without stripping, the
+    model treats the marker as part of the answer (e.g. ``"Internal Network
+    Audit (Recommended)"`` becomes the engagement name), decides the
+    parenthetical meta-text is not a valid value, and re-asks the same
+    question — the Soundwave interview loop bug from issue #328.
+
+    Operates on single-select strings and multi-select string lists; any
+    other shape is returned unchanged.
+    """
+
+    def _strip(v: Any) -> Any:
+        if isinstance(v, str) and v.endswith(RECOMMENDED_SUFFIX):
+            return v[: -len(RECOMMENDED_SUFFIX)]
+        return v
+
+    if isinstance(value, list):
+        return [_strip(v) for v in value]
+    return _strip(value)
 
 
 def _coerce_options_list(value: Any) -> list[Any]:
@@ -157,4 +183,4 @@ def ask_user_question(
     if writer is not None:
         writer(payload)
 
-    return interrupt(payload)
+    return _strip_recommended_suffix(interrupt(payload))

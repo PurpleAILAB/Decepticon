@@ -180,7 +180,10 @@ def test_coerces_options_json_string_from_local_models():
             return_value="External Web (Recommended)",
         ),
     ):
-        assert _invoke(options=options) == "External Web (Recommended)"
+        # The emitted event preserves the operator-facing label (with the
+        # marker) so the picker can render the recommendation hint, but the
+        # tool return value has the marker stripped — see issue #328.
+        assert _invoke(options=options) == "External Web"
 
     assert captured[0]["options"] == [
         {"label": "External Web (Recommended)", "description": "Public website"}
@@ -254,6 +257,75 @@ def test_rejects_option_without_label_or_description():
         ]
         with pytest.raises(ValidationError):
             _invoke(options=bad)
+
+
+def test_strips_recommended_suffix_from_single_select_return():
+    """Regression for issue #328 — the picker's ' (Recommended)' UI marker
+    must never reach the agent's tool result. Without stripping, the model
+    treats the parenthetical meta-text as part of the answer, rejects it,
+    and locks the Soundwave interview in a loop."""
+    with (
+        patch(
+            "decepticon.tools.interaction.ask_user.get_stream_writer",
+            return_value=lambda _evt: None,
+        ),
+        patch(
+            "decepticon.tools.interaction.ask_user.interrupt",
+            return_value="Internal Network Audit (Recommended)",
+        ),
+    ):
+        assert _invoke() == "Internal Network Audit"
+
+
+def test_strips_recommended_suffix_from_multi_select_return():
+    """Multi-select returns a list of labels; every entry must be stripped."""
+    chosen = ["Recon (Recommended)", "Exploitation", "Post-exploit (Recommended)"]
+    with (
+        patch(
+            "decepticon.tools.interaction.ask_user.get_stream_writer",
+            return_value=lambda _evt: None,
+        ),
+        patch(
+            "decepticon.tools.interaction.ask_user.interrupt",
+            return_value=chosen,
+        ),
+    ):
+        assert _invoke(multi_select=True) == ["Recon", "Exploitation", "Post-exploit"]
+
+
+def test_preserves_free_text_without_recommended_suffix():
+    """Operator-typed answers via the Other fallback never carry the marker;
+    the stripper is a no-op for them."""
+    typed = "Acme Q1-2026 Adversary Sim"
+    with (
+        patch(
+            "decepticon.tools.interaction.ask_user.get_stream_writer",
+            return_value=lambda _evt: None,
+        ),
+        patch(
+            "decepticon.tools.interaction.ask_user.interrupt",
+            return_value=typed,
+        ),
+    ):
+        assert _invoke(allow_other=True) == typed
+
+
+def test_does_not_strip_recommended_when_not_a_trailing_suffix():
+    """Only the trailing marker is a UI hint. A label that genuinely embeds
+    ' (Recommended)' mid-string is not a picker artifact and must survive
+    intact — the strip is suffix-only, not substring-wide."""
+    embedded = "Mode (Recommended) for review"
+    with (
+        patch(
+            "decepticon.tools.interaction.ask_user.get_stream_writer",
+            return_value=lambda _evt: None,
+        ),
+        patch(
+            "decepticon.tools.interaction.ask_user.interrupt",
+            return_value=embedded,
+        ),
+    ):
+        assert _invoke() == embedded
 
 
 def test_rejects_option_with_extra_fields():
