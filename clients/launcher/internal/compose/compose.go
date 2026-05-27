@@ -82,11 +82,11 @@ func (c *Compose) baseArgs() []string {
 }
 
 // ContainerName builds the docker container name for a Decepticon
-// service, mirroring the ``${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}``
+// service, mirroring the “${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}“
 // template used by docker-compose.yml (#216). Unset/empty → today's
-// ``decepticon-<svc>`` name verbatim; ``stack2`` → ``decepticon-stack2-<svc>``.
+// “decepticon-<svc>“ name verbatim; “stack2“ → “decepticon-stack2-<svc>“.
 // Keeps the Go launcher and YAML naming convention in lockstep so
-// ``docker exec``/``logs``/``stop`` resolve the right container in
+// “docker exec“/“logs“/“stop“ resolve the right container in
 // dual-stack runs.
 func ContainerName(svc string) string {
 	stack := strings.TrimSpace(os.Getenv("DECEPTICON_STACK_NAME"))
@@ -118,6 +118,19 @@ func (c *Compose) composeEnv() []string {
 	env := os.Environ()
 	if v := c.readVersion(); v != "" {
 		env = append(env, "DECEPTICON_VERSION="+imageTag(v))
+	}
+	// Ensure DECEPTICON_STACK_NAME is always *set* (empty when the
+	// operator didn't choose a stack) so docker compose's interpolation
+	// of ${DECEPTICON_STACK_NAME:+...} in container_name never emits a
+	// `The "DECEPTICON_STACK_NAME" variable is not set` warning. Compose
+	// versions before ~2.24 warn on the nested reference even though the
+	// `:+` form leaves it unused — an empty-but-set value is
+	// interpolation-equivalent to unset for `:+`. The .env.example
+	// declaration (#238) only covers fresh installs from that release on;
+	// this also silences the warning for users whose pre-#238 .env
+	// predates the declaration, without forcing a re-onboard.
+	if _, ok := os.LookupEnv("DECEPTICON_STACK_NAME"); !ok {
+		env = append(env, "DECEPTICON_STACK_NAME=")
 	}
 	// Inject DOCKER_HOST for Podman so nested Docker-API clients in
 	// containers (testcontainers, kubectl-with-docker-shim) find the
@@ -195,12 +208,14 @@ func (c *Compose) DownAndPurge() error {
 // new release lands). Empty version → fall back to whatever .version says.
 func (c *Compose) Pull(version string) error {
 	cmd := exec.Command(c.Runtime.Bin, append(c.baseArgs(), "pull")...)
+	// Base off composeEnv so the stack-name + runtime injections apply
+	// here too; an explicit version arg overrides the .version-derived
+	// DECEPTICON_VERSION (later entries win in the child process env).
+	env := c.composeEnv()
 	if version != "" {
-		env := append(os.Environ(), "DECEPTICON_VERSION="+imageTag(version))
-		cmd.Env = c.Runtime.Apply(env)
-	} else {
-		cmd.Env = c.composeEnv()
+		env = append(env, "DECEPTICON_VERSION="+imageTag(version))
 	}
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
