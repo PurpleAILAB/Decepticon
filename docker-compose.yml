@@ -176,6 +176,14 @@ services:
       # ``FilesystemBackend`` via ``CompositeBackend``. The sandbox only
       # owns ``/workspace/`` from here on.
     pids_limit: 4096
+    # Run an init process (tini) as PID 1 inside the container. The
+    # daemon spawns tmux servers and bash shells; when a tmux server
+    # exits, its bash grandchildren are reparented to PID 1. tini reaps
+    # those orphans, preventing the <defunct> zombie accumulation that
+    # eventually exhausts the PID table (fork() -> EAGAIN). This replaces
+    # an in-process SIGCHLD reaper that raced with the daemon's own
+    # ``subprocess.run`` calls and clobbered command exit codes to 0.
+    init: true
     depends_on:
       neo4j:
         condition: service_healthy

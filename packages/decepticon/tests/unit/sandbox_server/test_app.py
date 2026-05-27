@@ -415,22 +415,12 @@ def test_token_set_correct_bearer_is_200() -> None:
     assert resp.json()["output"] == "hello\n"
 
 
-# ── Zombie reaper / shutdown cleanup ─────────────────────────────────────
-
-
-def test_lifespan_installs_sigchld_reaper() -> None:
-    """The startup hook must install the SIGCHLD reaper BEFORE the backend warms.
-
-    Asserts ``install_sigchld_reaper`` was called inside ``lifespan``; the
-    reaper module itself owns the actual signal-handler-installation
-    contract (covered by ``test_reaper.py``).
-    """
-    backend = _make_backend()
-    with patch.object(app_module, "install_sigchld_reaper") as install_mock:
-        with _client(backend) as _client_ctx:
-            # Lifespan startup runs on TestClient context-enter.
-            pass
-    install_mock.assert_called_once()
+# ── Shutdown cleanup ─────────────────────────────────────────────────────
+#
+# Zombie reaping is delegated to the container init process (``init: true``
+# on the sandbox compose service), NOT a process-wide SIGCHLD handler — the
+# latter races with ``subprocess.run`` and clobbers exit codes to 0. So
+# there is no reaper to assert on at startup; only the tmux-session teardown.
 
 
 def test_lifespan_shutdown_kills_all_tmux_sessions() -> None:
@@ -441,18 +431,6 @@ def test_lifespan_shutdown_kills_all_tmux_sessions() -> None:
     with _client(backend) as _client_ctx:
         pass  # context exit triggers lifespan shutdown
     backend.kill_all_sessions.assert_called_once()
-
-
-def test_lifespan_shutdown_drains_zombies() -> None:
-    """The shutdown hook must call ``reap_zombies`` after killing sessions
-    so the process exits with no defunct children."""
-    backend = _make_backend()
-    with patch.object(app_module, "reap_zombies") as reap_mock:
-        with _client(backend) as _client_ctx:
-            pass
-    # Called at least once on shutdown — may also be wired into the
-    # asyncio loop as a signal handler, so we don't pin call_count.
-    assert reap_mock.called
 
 
 def test_lifespan_shutdown_swallows_kill_all_sessions_errors() -> None:

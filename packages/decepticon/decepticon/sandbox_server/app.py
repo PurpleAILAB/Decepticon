@@ -39,11 +39,9 @@ the right thing to ship as the default.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import os
-import signal
 from contextlib import asynccontextmanager
 from typing import Annotated, AsyncIterator
 
@@ -51,7 +49,6 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 from decepticon.sandbox_kernel.daemon import DaemonSandbox
-from decepticon.sandbox_server.reaper import install_sigchld_reaper, reap_zombies
 
 log = logging.getLogger("decepticon.sandbox_server")
 
@@ -214,29 +211,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global _required_token
     _required_token = os.environ.get("SAAS_SANDBOX_TOKEN") or None
 
-    # Install a SIGCHLD reaper BEFORE the backend warms up (which is
-    # the first thing that spawns subprocesses). Without this, every
-    # tmux server / bash grandchild that gets reparented to the daemon
-    # process becomes a zombie that lingers for the daemon's lifetime.
-    # See ``reaper.py`` for the full rationale.
-    install_sigchld_reaper()
-    # Also wire the reaper onto the asyncio event loop. The plain
-    # ``signal.signal`` handler is interrupt-driven and may race with
-    # CPython's GIL acquisition on some kernels; the loop-level
-    # handler is a belt-and-braces drain that runs in the event loop
-    # thread between iterations.
-    if hasattr(signal, "SIGCHLD"):
-        try:
-            asyncio.get_running_loop().add_signal_handler(
-                signal.SIGCHLD,
-                reap_zombies,
-            )
-        except (NotImplementedError, RuntimeError, ValueError) as e:
-            # NotImplementedError on Windows (no SIGCHLD).
-            # RuntimeError if no loop is running.
-            # ValueError when not on the main thread (anyio test workers).
-            # All are non-fatal — the signal.signal handler above still works.
-            log.debug("loop-level SIGCHLD handler not installed: %s", e)
+    # Zombie reaping is delegated to the container init process (tini),
+    # enabled via ``init: true`` on the sandbox compose service. tini
+    # runs as PID 1 and reaps the tmux server / bash grandchildren that
+    # get reparented to it when their tmux parent exits.
+    #
+    # The daemon deliberately does NOT install a process-wide
+    # ``waitpid(-1)`` SIGCHLD handler. Such a handler races with the
+    # ``subprocess.run`` calls the daemon uses to run commands: it steals
+    # their children, so ``Popen.wait`` hits ECHILD and CPython reports a
+    # bogus exit code of 0, clobbering real non-zero exits. Letting
+    # ``subprocess.run`` reap its own children — and tini reap the
+    # reparented orphans — keeps exit codes correct.
 
     # Warm the backend so the first agent request doesn't pay the
     # init cost on its critical path.
@@ -244,7 +230,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
     # Shutdown: kill every tmux session we ever handed out so the tmux
     # servers don't outlive the daemon and leave bash zombies behind.
-    # Then drain any final zombies so the process exits clean.
     try:
         backend = _get_backend()
         killed = backend.kill_all_sessions()
@@ -252,7 +237,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.info("shutdown: killed %d tmux session(s)", killed)
     except Exception:
         log.exception("shutdown: kill_all_sessions raised")
-    reap_zombies()
 
 
 app = FastAPI(
