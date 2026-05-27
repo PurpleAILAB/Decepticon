@@ -29,7 +29,6 @@ import { CoordinatorPanel } from "../components/agents/CoordinatorPanel.js";
 import { ScreenProvider } from "../components/shell/ScreenContext.js";
 import { ExpandOutputProvider } from "../components/shell/ExpandOutputContext.js";
 import { SubAgentProvider } from "../components/shell/SubAgentContext.js";
-import { CtrlOToExpand } from "../components/shell/CtrlOToExpand.js";
 import { parseSlashCommand, findCommand } from "../commands/registry.js";
 import { groupConsecutiveTools } from "../utils/groupEvents.js";
 import { formatDuration } from "../utils/format.js";
@@ -275,10 +274,12 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
 
           {agent.error && <ErrorMessage content={agent.error} />}
 
-          {/* Transcript mode hint */}
-          {agent.runState === "idle" && agent.events.length > 0 && (
-            <CtrlOToExpand />
-          )}
+          {/* No global "(ctrl+o to expand)" hint here: the Prompt footer
+              already shows "ctrl+o: expand" persistently while idle, and
+              truncated/collapsed items (BashResult, ToolGroupSummary, …)
+              render their own hint inline. A blanket hint below the Static
+              region duplicated whichever hint the last item already showed,
+              producing two identical "(ctrl+o to expand)" lines. */}
 
           {showSessionPicker ? (
             <SessionPicker
