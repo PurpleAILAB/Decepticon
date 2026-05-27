@@ -90,6 +90,12 @@ export type MockClient = {
   };
   runs: {
     stream: ReturnType<typeof vi.fn>;
+    /**
+     * runs.joinStream is the LangGraph SDK's "re-attach to an existing run"
+     * entry point. The CLI's reconnect loop uses it after a WebSocket drop
+     * so the original POST /runs/stream is never repeated.
+     */
+    joinStream: ReturnType<typeof vi.fn>;
     cancel: ReturnType<typeof vi.fn>;
   };
 };
@@ -105,6 +111,7 @@ export function createMockClient(): MockClient {
     },
     runs: {
       stream: vi.fn(() => createMockStream([])),
+      joinStream: vi.fn(() => createMockStream([])),
       cancel: vi.fn(async () => {}),
     },
   };

@@ -26,6 +26,7 @@ import {
 } from "@decepticon/streaming";
 import { getModelOverride } from "../commands/modelOverride.js";
 import { getAssistantOverride } from "../commands/assistantOverride.js";
+import { nextBackoffMs, MAX_RECONNECT_ATTEMPTS } from "./useReconnect.js";
 
 interface LangChainMessage {
   type: string; // "human", "ai", "tool"
@@ -68,6 +69,33 @@ export interface StreamStats {
 /** Agent run lifecycle state. */
 export type RunState = "idle" | "connecting" | "streaming" | "paused";
 
+/**
+ * Stream connection health. Independent from RunState: a run may still be
+ * `"streaming"` while the underlying WebSocket bounces in the background, and
+ * an `"idle"` run is `"connected"` simply by virtue of no failed attempts.
+ *
+ * - `"connected"`: the stream is open OR the hook is between runs cleanly.
+ * - `"reconnecting"`: a stream drop was detected, we are inside the backoff
+ *   loop trying to re-attach to the same run via `runs.joinStream`.
+ * - `"disconnected"`: the backoff loop exhausted MAX_RECONNECT_ATTEMPTS and
+ *   surfaced a hard error. The operator can issue a fresh /resume to recover.
+ */
+export type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
+
+/** Snapshot of the reconnect loop's state, surfaced for the status UI. */
+export interface ConnectionState {
+  status: ConnectionStatus;
+  /** 1-based attempt counter; 0 when not reconnecting. */
+  attempt: number;
+  /** Epoch ms at which the next attempt will fire; 0 when not waiting. */
+  nextRetryAt: number;
+  /**
+   * Toggled briefly (~2s) to `true` after a successful reconnect so the UI
+   * can flash a "Reconnected" notice. Cleared back to `false` automatically.
+   */
+  justRecovered: boolean;
+}
+
 interface UseAgentReturn {
   submit: (message: string) => void;
   /** Pause the current run at checkpoint (Ctrl+C single). State preserved. */
@@ -98,6 +126,12 @@ interface UseAgentReturn {
   /** Submit a structured answer to the current ask_user_question prompt. */
   answerQuestion: (value: string | string[]) => void;
   error: string | null;
+  /**
+   * Health of the underlying LangGraph stream. The REPL renders an inline
+   * notice off this — see ConnectionStatus.tsx — so a transient WebSocket
+   * drop doesn't surface as a generic error or force the operator to Ctrl+C.
+   */
+  connectionState: ConnectionState;
   clearEvents: () => void;
   addSystemEvent: (content: string) => void;
 }
@@ -133,6 +167,15 @@ export function useAgent({
 
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [runState, setRunState] = useState<RunState>("idle");
+  const [connectionState, setConnectionState] = useState<ConnectionState>({
+    status: "connected",
+    attempt: 0,
+    nextRetryAt: 0,
+    justRecovered: false,
+  });
+  // Timer that auto-clears the brief "Reconnected" flash. Kept on a ref so
+  // back-to-back reconnects don't dismiss the latest flash too early.
+  const justRecoveredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingTool, setPendingTool] = useState<PendingTool | null>(null);
   const [streamStats, setStreamStats] = useState<StreamStats | null>(null);
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
@@ -173,6 +216,17 @@ export function useAgent({
         threadIdRef.current = saved.threadId;
       }
     }).catch(() => {});
+  }, []);
+
+  // Clear the "Reconnected" flash timer if the hook unmounts mid-flash so we
+  // don't leak the timer or fire setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (justRecoveredTimerRef.current) {
+        clearTimeout(justRecoveredTimerRef.current);
+        justRecoveredTimerRef.current = null;
+      }
+    };
   }, []);
 
   const addEvent = useCallback(
@@ -220,11 +274,33 @@ export function useAgent({
 
   // ── Stream event processing (shared by submit and resume) ──────
 
+  /**
+   * Outcome of a single pass through the LangGraph event stream. The
+   * reconnect loop in `runWithReconnect` decides what to do next:
+   * - "complete": run reached natural end (AI message with no tool calls).
+   *               Caller exits the loop, clears refs, transitions to idle.
+   * - "paused": backend tool called langgraph.interrupt() (ask_user_question
+   *             or operator pause). Caller exits the loop, keeps run state.
+   * - "aborted": local AbortController fired — operator cancelled/interrupted.
+   *              Caller exits silently.
+   * - "dropped": stream ended early or threw an error. Caller backs off and
+   *              calls runs.joinStream(threadId, runId) to re-attach to the
+   *              SAME server-side run — no new run is dispatched.
+   */
+  type StreamOutcome = {
+    kind: "complete" | "paused" | "aborted" | "dropped";
+    /** True if the consumer received any event before this outcome — used
+     *  by the reconnect loop to reset the consecutive-failure counter. */
+    receivedAnyEvent: boolean;
+    /** Error message when kind === "dropped". */
+    errorMessage?: string;
+  };
+
   const processStream = useCallback(
     async (
       stream: AsyncIterable<{ event: string; data: unknown }>,
       abortController: AbortController,
-    ) => {
+    ): Promise<StreamOutcome> => {
       // Capture run_id from the first metadata event for interrupt/cancel
       // LangGraph SDK emits: { event: "metadata", data: { run_id, thread_id } }
       const toolCallArgs = new Map<string, Record<string, unknown>>();
@@ -400,8 +476,12 @@ export function useAgent({
         }
       };
 
-      for await (const event of stream) {
+      let receivedAnyEvent = false;
+      let pausedByInterrupt = false;
+      try {
+        for await (const event of stream) {
         if (abortController.signal.aborted) break;
+        receivedAnyEvent = true;
 
         // Capture run_id from metadata event for precise interrupt/cancel
         if (event.event === "metadata") {
@@ -546,18 +626,221 @@ export function useAgent({
             }
           }
         }
+        }
+      } catch (err) {
+        if (abortController.signal.aborted) {
+          return { kind: "aborted", receivedAnyEvent };
+        }
+        // Stream iteration threw \u2014 most commonly a WebSocket close or a fetch
+        // error from the SDK transport. Let the reconnect loop handle it.
+        const msg = err instanceof Error ? err.message : String(err);
+        return { kind: "dropped", receivedAnyEvent, errorMessage: msg };
       }
 
-      // Detect unexpected disconnection: stream ended but no completion event
-      if (!completionReceived && !abortController.signal.aborted) {
-        addSystemEvent(
-          "\u26a0\ufe0f Connection to server lost. The run continues server-side. "
-          + "Use /resume to reconnect.",
-        );
-        setRunState("idle");
+      // The ask_user_question handler sets activeQuestion when the backend
+      // calls langgraph.interrupt(). Check that as a more reliable signal than
+      // the local flag, since the picker can come from either a custom event
+      // or the __interrupt__ updates path.
+      if (activeQuestionRef.current) {
+        pausedByInterrupt = true;
+      }
+
+      if (abortController.signal.aborted) {
+        return { kind: "aborted", receivedAnyEvent };
+      }
+      if (pausedByInterrupt) {
+        return { kind: "paused", receivedAnyEvent };
+      }
+      if (completionReceived) {
+        return { kind: "complete", receivedAnyEvent };
+      }
+      // Stream ended cleanly but without a terminal AI message \u2014 the WebSocket
+      // closed mid-run. Reconnect loop will try to re-attach.
+      return {
+        kind: "dropped",
+        receivedAnyEvent,
+        errorMessage: "Stream ended before run completion",
+      };
+    },
+    [addEvent],
+  );
+
+  // ── Reconnect loop ─────────────────────────────────────────────
+  //
+  // Wraps an initial stream factory in a backoff-driven retry loop. When the
+  // stream drops mid-run, we:
+  //   1. Note the failure (increment counter, set status = "reconnecting").
+  //   2. Sleep for nextBackoffMs(failures) — interruptible via the abort signal.
+  //   3. Refresh local state from the thread (so we don't replay messages we
+  //      already showed), then call client.runs.joinStream(threadId, runId).
+  //      This RE-ATTACHES to the same server-side run. No new run is created.
+  //   4. First event on the new stream resets the failure counter and flips
+  //      status back to "connected" with a brief "Reconnected" flash.
+  //
+  // The loop exits on `complete`, `paused`, or `aborted`. After
+  // MAX_RECONNECT_ATTEMPTS consecutive failures, it gives up and surfaces a
+  // hard error so the operator can /resume manually.
+
+  /** Promise wrapper around setTimeout that resolves early when aborted. */
+  const sleepUntilOrAbort = useCallback(
+    (ms: number, signal: AbortSignal): Promise<void> => {
+      return new Promise((resolve) => {
+        if (signal.aborted) {
+          resolve();
+          return;
+        }
+        const t = setTimeout(() => {
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        }, ms);
+        const onAbort = () => {
+          clearTimeout(t);
+          signal.removeEventListener("abort", onAbort);
+          resolve();
+        };
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+    },
+    [],
+  );
+
+  const markReconnected = useCallback(() => {
+    if (justRecoveredTimerRef.current) {
+      clearTimeout(justRecoveredTimerRef.current);
+    }
+    setConnectionState({
+      status: "connected",
+      attempt: 0,
+      nextRetryAt: 0,
+      justRecovered: true,
+    });
+    justRecoveredTimerRef.current = setTimeout(() => {
+      setConnectionState((s) =>
+        s.justRecovered ? { ...s, justRecovered: false } : s,
+      );
+      justRecoveredTimerRef.current = null;
+    }, 2000);
+  }, []);
+
+  /**
+   * Run the initial stream factory and then keep re-attaching on drops until
+   * the run completes, pauses, the user aborts, or we exhaust attempts.
+   *
+   * `initialStream` is invoked once. After a drop, we use joinStream against
+   * the captured run_id — so the caller's POST /runs (which spawned the run)
+   * is NEVER repeated. This is the invariant the spec calls out as critical.
+   */
+  const runWithReconnect = useCallback(
+    async (
+      initialStream: () => AsyncIterable<{ event: string; data: unknown }>,
+      abortController: AbortController,
+    ): Promise<void> => {
+      let stream = initialStream();
+      let consecutiveFailures = 0;
+
+      // Top of the consume-then-maybe-reconnect loop. Each iteration consumes
+      // one stream pass; the outcome decides whether to break or re-attach.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const outcome = await processStream(stream, abortController);
+
+        if (outcome.receivedAnyEvent && consecutiveFailures > 0) {
+          // Successful resume — reset failure counter and flash the notice.
+          consecutiveFailures = 0;
+          markReconnected();
+          addSystemEvent("Reconnected to LangGraph stream.");
+        }
+
+        if (outcome.kind === "complete" || outcome.kind === "paused") {
+          // Clean end of stream — ensure connection state is "connected".
+          setConnectionState((s) =>
+            s.status === "connected" ? s : { ...s, status: "connected", attempt: 0, nextRetryAt: 0 },
+          );
+          return;
+        }
+        if (outcome.kind === "aborted") {
+          return;
+        }
+
+        // outcome.kind === "dropped" — schedule a reconnect attempt.
+        const threadId = threadIdRef.current;
+        const runId = runIdRef.current;
+        if (!threadId || !runId) {
+          // We never got a run_id — can't re-attach. Surface as a hard error.
+          setError(outcome.errorMessage ?? "Stream connection lost");
+          setConnectionState({
+            status: "disconnected",
+            attempt: consecutiveFailures,
+            nextRetryAt: 0,
+            justRecovered: false,
+          });
+          return;
+        }
+
+        consecutiveFailures += 1;
+        if (consecutiveFailures > MAX_RECONNECT_ATTEMPTS) {
+          setError(
+            `Stream disconnected — gave up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts. ` +
+              "Use /resume to try again.",
+          );
+          setConnectionState({
+            status: "disconnected",
+            attempt: consecutiveFailures - 1,
+            nextRetryAt: 0,
+            justRecovered: false,
+          });
+          return;
+        }
+
+        const delay = nextBackoffMs(consecutiveFailures);
+        setConnectionState({
+          status: "reconnecting",
+          attempt: consecutiveFailures,
+          nextRetryAt: Date.now() + delay,
+          justRecovered: false,
+        });
+
+        await sleepUntilOrAbort(delay, abortController.signal);
+        if (abortController.signal.aborted) return;
+
+        // Refresh `lastCountRef` from the server so we don't re-emit messages
+        // we already rendered before the drop. This is the "query thread state
+        // and resume from latest checkpoint" step from the spec.
+        try {
+          const state = await clientRef.current.threads.getState(threadId);
+          const msgs = (state.values as { messages?: unknown[] })?.messages;
+          if (msgs) lastCountRef.current = msgs.length;
+        } catch {
+          // Non-fatal — joinStream will still work, we may just re-emit one
+          // or two messages. Better than failing the whole reconnect.
+        }
+        if (abortController.signal.aborted) return;
+
+        // Re-attach to the SAME run. Critically: this is `runs.joinStream`,
+        // NOT `runs.stream` — joinStream does not create a new run, it
+        // streams the existing one. The server-side run keeps executing
+        // even while we were disconnected (LangGraph's onDisconnect=continue
+        // semantics) so we just pick up where it is now.
+        try {
+          stream = clientRef.current.runs.joinStream(threadId, runId, {
+            signal: abortController.signal,
+            cancelOnDisconnect: false,
+          });
+        } catch (err) {
+          // Could not even build the joinStream call — count this as another
+          // failure and let the loop retry (or give up at the cap).
+          const msg = err instanceof Error ? err.message : String(err);
+          // Replace the iterator with one that immediately throws so the next
+          // pass through processStream returns "dropped" with this message.
+          stream = (async function* () {
+            throw new Error(msg);
+            // eslint-disable-next-line no-unreachable
+            yield undefined as unknown as { event: string; data: unknown };
+          })();
+        }
       }
     },
-    [addEvent, addSystemEvent, setRunState],
+    [processStream, sleepUntilOrAbort, markReconnected, addSystemEvent],
   );
 
   // ── Handle stream completion (shared by submit and resume) ─────
@@ -761,19 +1044,25 @@ export function useAgent({
         const streamConfig = hasConfigurable ? { configurable } : undefined;
 
         try {
-          const stream = client.runs.stream(
-            threadIdRef.current!,
-            getAssistantOverride() || assistantIdRef.current,
-            {
-              input,
-              ...(streamConfig ? { config: streamConfig } : {}),
-              ...STREAM_OPTIONS,
-              onDisconnect: "continue",
-              signal: abortController.signal,
-            },
+          // The initial stream factory is invoked exactly once by
+          // runWithReconnect. On a drop, the loop switches to joinStream
+          // against the captured run_id — so this `runs.stream` call
+          // (which POSTs a new run) is NEVER repeated.
+          await runWithReconnect(
+            () =>
+              client.runs.stream(
+                threadIdRef.current!,
+                getAssistantOverride() || assistantIdRef.current,
+                {
+                  input,
+                  ...(streamConfig ? { config: streamConfig } : {}),
+                  ...STREAM_OPTIONS,
+                  onDisconnect: "continue",
+                  signal: abortController.signal,
+                },
+              ),
+            abortController,
           );
-
-          await processStream(stream, abortController);
         } catch (err) {
           // Ignore abort errors — triggered by interrupt() or cancel()
           if (abortController.signal.aborted) return;
@@ -793,7 +1082,7 @@ export function useAgent({
         resetStreamState();
       });
     },
-    [addEvent, processStream, handleStreamComplete, resetStreamState],
+    [addEvent, runWithReconnect, handleStreamComplete, resetStreamState],
   );
 
   // Ref to submit for use in deferred auto-submit (avoids stale closure)
@@ -847,17 +1136,20 @@ export function useAgent({
         });
 
         try {
-          const stream = client.runs.stream(
-            threadIdRef.current!,
-            getAssistantOverride() || assistantIdRef.current,
-            {
-              command: { resume: value },
-              ...STREAM_OPTIONS,
-              onDisconnect: "continue",
-              signal: abortController.signal,
-            },
+          await runWithReconnect(
+            () =>
+              client.runs.stream(
+                threadIdRef.current!,
+                getAssistantOverride() || assistantIdRef.current,
+                {
+                  command: { resume: value },
+                  ...STREAM_OPTIONS,
+                  onDisconnect: "continue",
+                  signal: abortController.signal,
+                },
+              ),
+            abortController,
           );
-          await processStream(stream, abortController);
         } catch (err) {
           if (abortController.signal.aborted) return;
           setError(err instanceof Error ? err.message : "Answer submit failed");
@@ -873,7 +1165,7 @@ export function useAgent({
         resetStreamState();
       });
     },
-    [addEvent, processStream, handleStreamComplete, resetStreamState],
+    [addEvent, runWithReconnect, handleStreamComplete, resetStreamState],
   );
 
   // ── Resume (pause point OR previous session) ───────────────────
@@ -909,17 +1201,20 @@ export function useAgent({
           setStreamStats({ startTime: Date.now(), totalTokens: 0, promptTokens: 0, completionTokens: 0 });
 
           try {
-            const stream = client.runs.stream(
-              threadIdRef.current!,
-              getAssistantOverride() || assistantIdRef.current,
-              {
-                command: { resume: value ?? true },
-                ...STREAM_OPTIONS,
-                onDisconnect: "continue",
-                signal: abortController.signal,
-              },
+            await runWithReconnect(
+              () =>
+                client.runs.stream(
+                  threadIdRef.current!,
+                  getAssistantOverride() || assistantIdRef.current,
+                  {
+                    command: { resume: value ?? true },
+                    ...STREAM_OPTIONS,
+                    onDisconnect: "continue",
+                    signal: abortController.signal,
+                  },
+                ),
+              abortController,
             );
-            await processStream(stream, abortController);
           } catch (err) {
             if (abortController.signal.aborted) return;
             setError(err instanceof Error ? err.message : "Resume failed");
@@ -974,7 +1269,7 @@ export function useAgent({
       // Case 3: Nothing to resume
       addEvent({ type: "system", content: "Nothing to resume." });
     },
-    [addEvent, processStream, handleStreamComplete, resetStreamState],
+    [addEvent, runWithReconnect, handleStreamComplete, resetStreamState],
   );
 
   return {
@@ -995,6 +1290,7 @@ export function useAgent({
     activeQuestion,
     answerQuestion,
     error,
+    connectionState,
     clearEvents,
     addSystemEvent,
   };

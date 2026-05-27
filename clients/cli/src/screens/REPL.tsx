@@ -21,6 +21,7 @@ import { useAppState } from "../state/AppState.js";
 import { Banner } from "../components/Banner.js";
 import { EventItem } from "../components/EventItem.js";
 import { ActivityIndicator } from "../components/ActivityIndicator.js";
+import { ConnectionStatus } from "../components/ConnectionStatus.js";
 import { OpplanStatus } from "../components/OpplanStatus.js";
 import { Prompt } from "../components/Prompt.js";
 import { QuestionPicker } from "../components/QuestionPicker.js";
@@ -267,6 +268,10 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
             runState={agent.runState}
             streamStats={agent.streamStats}
           />
+
+          {/* Stream reconnection notice — yellow during backoff, green flash
+              on recovery, red after giving up. Renders nothing when healthy. */}
+          <ConnectionStatus state={agent.connectionState} />
 
           {/* Persistent OPPLAN display */}
           {opplan && opplan.objectives.length > 0 && (
