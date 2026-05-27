@@ -20,6 +20,12 @@ extend-ignore-re = [
     # flags the "mis" token as a typo of miss/mist. The whole compound
     # is correct (mis-fire, mis-split, mis-configure, mis-allocation).
     "mis-[a-z]+",
+    # "ICS-OT" / "ICS/OT" (Industrial Control Systems / Operational
+    # Technology) — typos splits on the separator and flags the bare "OT"
+    # token. Ignore only this exact compound so we don't globally
+    # allow-list "OT" (the rest of the tree keeps full coverage; the
+    # ics-ot skill bodies are handled by the files exclude below).
+    "ICS[-/]OT",
 ]
 
 [default.extend-words]
