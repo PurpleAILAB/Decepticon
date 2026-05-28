@@ -40,10 +40,25 @@ from decepticon.sandbox_kernel.tmux import _interpret_exit_code
 
 log = logging.getLogger("decepticon.tools.bash.bash")
 
+# Sandbox lookup is a two-level chain:
+#   1. ``_sandbox_var`` — per-context override. Honoured first so a
+#      request-scoped middleware (multi-tenant SaaS) can pin a
+#      different HTTPSandbox for the lifetime of a request without
+#      touching the module-level default.
+#   2. ``_sandbox_default`` — module-level fallback. Required because
+#      Python ``contextvars`` do not propagate across thread boundaries,
+#      and LangGraph platform dispatches sub-agent tool nodes in a
+#      ThreadPoolExecutor whose workers inherit an empty context. Before
+#      this fallback existed, every sub-agent ``bash()`` call raised
+#      ``RuntimeError: HTTPSandbox not initialized`` even though
+#      ``set_sandbox`` ran at agent-factory build time in the main
+#      thread. Restoring the cross-thread default keeps the public
+#      ContextVar API (used for per-request overrides) intact.
 _sandbox_var: contextvars.ContextVar[HTTPSandbox | None] = contextvars.ContextVar(
     "decepticon_bash_sandbox",
     default=None,
 )
+_sandbox_default: HTTPSandbox | None = None
 _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
     "decepticon_bash_workspace_path",
     default="/workspace",
@@ -177,17 +192,35 @@ def _sanitize_output(text: str) -> str:
 
 
 def set_sandbox(sandbox: HTTPSandbox) -> contextvars.Token:
-    """Inject the shared HTTPSandbox instance for the current context.
+    """Inject the shared HTTPSandbox instance.
 
-    Returns a token that can be passed to ``_sandbox_var.reset()`` to
-    restore the previous value — useful for scoped per-agent isolation.
+    Writes both:
+      * ``_sandbox_var`` — the per-context value, returned token can be
+        passed to ``_sandbox_var.reset()`` for scoped per-agent isolation.
+      * ``_sandbox_default`` — the module-level fallback. Required so
+        ``get_sandbox`` returns the right instance when called from a
+        thread that did not inherit the calling context (e.g., a
+        LangGraph tool node dispatched in a ``ThreadPoolExecutor``).
     """
+    global _sandbox_default
+    _sandbox_default = sandbox
     return _sandbox_var.set(sandbox)
 
 
 def get_sandbox() -> HTTPSandbox | None:
-    """Return the current HTTPSandbox instance (for wiring progress callbacks)."""
-    return _sandbox_var.get()
+    """Return the current HTTPSandbox instance.
+
+    Resolution order: the per-context ``_sandbox_var`` (so a
+    request-scoped override takes precedence), then the module-level
+    ``_sandbox_default`` for callers running outside that context —
+    typically tool nodes the LangGraph runtime dispatched in a worker
+    thread, where contextvars from the build-time context are not
+    inherited.
+    """
+    sandbox = _sandbox_var.get()
+    if sandbox is not None:
+        return sandbox
+    return _sandbox_default
 
 
 def _workspace_path_from_config(config: RunnableConfig | None) -> str:
@@ -237,7 +270,7 @@ async def _prune_old_scratch(workspace_path: str = "/workspace") -> None:
     path pays for cleanup at most every ~10 minutes per process. Best-effort:
     a failure here must never block the agent's command.
     """
-    sandbox = _sandbox_var.get()
+    sandbox = get_sandbox()
     if sandbox is None or workspace_path == "/workspace":
         return
 
@@ -269,7 +302,7 @@ async def _offload_large_output(
     - Return preview (head 2K + tail 1K) + file path reference
     - Agent can use read_file or grep to access specific parts later
     """
-    sandbox = _sandbox_var.get()
+    sandbox = get_sandbox()
     assert sandbox is not None
 
     if workspace_path == "/workspace":
@@ -335,7 +368,7 @@ async def bash(
             session name (not "main"). Check results later with bash_output.
         description: Short label for UI display.
     """
-    _sandbox = _sandbox_var.get()
+    _sandbox = get_sandbox()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized. Call set_sandbox() first.")
 
@@ -410,7 +443,7 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
     Args:
         session: Session name passed to bash(..., background=True).
     """
-    _sandbox = _sandbox_var.get()
+    _sandbox = get_sandbox()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
@@ -471,7 +504,7 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
     Args:
         session: Session name to terminate.
     """
-    _sandbox = _sandbox_var.get()
+    _sandbox = get_sandbox()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
@@ -497,7 +530,7 @@ async def bash_status(config: RunnableConfig | None = None) -> str:
     Use before launching a new background job to spot conflicts, or to
     detect stale sessions for cleanup.
     """
-    _sandbox = _sandbox_var.get()
+    _sandbox = get_sandbox()
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
