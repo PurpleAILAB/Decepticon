@@ -241,6 +241,14 @@ class StreamingRunnable(RunnableBinding):
                                     "agent": self._name,
                                     "tool": tc["name"],
                                     "args": tc_args,
+                                    # LangChain ToolCall id — exposed to
+                                    # consumers (CLI / Web) so they can pair
+                                    # this event with the matching
+                                    # subagent_tool_result emission instead of
+                                    # falling back to positional FIFO by
+                                    # tool name. None when the model omitted
+                                    # the id (rare; logged as a warning above).
+                                    "id": tc_id,
                                 }
                             )
 
@@ -265,6 +273,11 @@ class StreamingRunnable(RunnableBinding):
                             "args": tc_args,
                             "content": content,
                             "status": status,
+                            # Same id as the matching subagent_tool_call —
+                            # lets consumers pair the result back to its
+                            # originating call exactly, no per-tool-name
+                            # FIFO heuristic required.
+                            "id": msg.tool_call_id,
                         }
                     )
 
