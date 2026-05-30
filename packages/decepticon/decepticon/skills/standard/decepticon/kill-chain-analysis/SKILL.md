@@ -4,9 +4,10 @@ description: "Kill chain analysis and attack path decision-making — findings a
 allowed-tools: Read
 metadata:
   subdomain: orchestration
+  kind: analytic
   when_to_use: "analyze findings, select attack vector, prioritize targets, which technique, attack path, next attack, choose approach, alternative vector, blocked what next"
   tags: kill-chain, decision-making, attack-path, target-prioritization, technique-selection
-  mitre_attack: TA0043, TA0001, TA0002, TA0003, TA0004, TA0005, TA0006, TA0007, TA0008
+  mitre_attack:
 ---
 
 # Kill Chain Analysis & Attack Path Decision-Making

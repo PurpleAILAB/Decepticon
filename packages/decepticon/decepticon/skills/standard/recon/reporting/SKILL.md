@@ -4,6 +4,7 @@ description: "Recon output formatting — report structure, CVSS v4.0 scoring (p
 allowed-tools: Read Write
 metadata:
   subdomain: reporting
+  kind: reporting
   when_to_use: "generate report, write report, summarize findings, CVSS score, prioritize findings, recon report, final report, handoff"
   tags: report, cvss, findings, mitre-mapping, handoff, detection-gap, purple-team
   mitre_attack:

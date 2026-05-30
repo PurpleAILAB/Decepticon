@@ -2,6 +2,8 @@
 
 Skills are structured knowledge files that agents load on demand. They encode offensive techniques, OPSEC procedures, reporting templates, and engagement workflows — organized by kill chain phase and mapped to MITRE ATT&CK.
 
+> **Heads up — Skillogy successor**: this document describes the current text-matching skill system (`SkillsMiddleware`). Its planned replacement is **[Skillogy](skillogy.md)**, a Neo4j-backed knowledge graph layer over the same `SKILL.md` files. Skillogy ships behind a feature flag and becomes default after benchmark validation. `SKILL.md` authoring is unchanged across both systems.
+
 ---
 
 ## How Skills Work
