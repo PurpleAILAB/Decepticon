@@ -177,36 +177,11 @@ jobs:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
       - run: uv sync --dev --locked
-      - name: Ruff lint
-        run: uv run ruff check .
-      - name: Ruff format
-        run: uv run ruff format --check .
-      - name: basedpyright (errors only)
-        run: |
-          # Fail on errors only — pre-existing warnings on langchain dynamic
-          # interfaces are tracked but non-blocking. Ratchet up over time.
-          uv run basedpyright --outputjson > bp.json || true
-          uv run python -c "
-          import json, sys
-          d = json.load(open('bp.json'))
-          s = d['summary']
-          print(f\"basedpyright: {s['errorCount']} errors, {s['warningCount']} warnings, {s['informationCount']} info\")
-          if s['errorCount']:
-              print()
-              print('=== error-level diagnostics ===')
-              for diag in d.get('generalDiagnostics', []):
-                  if diag.get('severity') != 'error':
-                      continue
-                  loc = diag.get('range', {}).get('start', {})
-                  line = loc.get('line', 0)
-                  if isinstance(line, int):
-                      line += 1
-                  print(f\"  {diag.get('file', '?')}:{line}\")
-                  print(f\"    {diag.get('message', '')}\")
-                  if diag.get('rule'):
-                      print(f\"    rule: {diag['rule']}\")
-              sys.exit(1)
-          "
+      # Lint + typecheck are dispatched through the Makefile so the
+      # Makefile remains the single source of truth for what CI runs.
+      # See `make ci-lint` and scripts/check_basedpyright_errors.py.
+      - name: Lint + typecheck (CI mirror — `make ci-lint`)
+        run: make ci-lint
       - name: Upload basedpyright JSON (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
@@ -217,15 +192,15 @@ jobs:
       # PRs run tests without coverage instrumentation — coverage adds ~3x
       # runtime and PR feedback latency matters more than coverage tracking
       # on every change. Coverage is enforced on main pushes (next step).
-      - name: Pytest (PRs — fast, no coverage)
+      - name: Pytest (PRs — fast, no coverage; mirrors `make ci-test`)
         if: github.event_name == 'pull_request'
         # Deselect tests marked `slow` (e.g. benchmark/test_harness wall-clock
         # timeout cases) so PR feedback stays under a minute. Main coverage
         # lane below still runs them.
-        run: uv run pytest -n auto -q -m "not slow"
-      - name: Pytest with coverage (main — enforces threshold)
+        run: make ci-test
+      - name: Pytest with coverage (main — mirrors `make ci-test-coverage`)
         if: github.event_name == 'push'
-        run: uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=35
+        run: make ci-test-coverage
       - name: Upload coverage artifact
         if: github.event_name == 'push' && always()
         uses: actions/upload-artifact@v4

@@ -95,6 +95,9 @@ CLAUDE.md
 references/octogent
 clients/launcher/decepticon
 
+# basedpyright JSON output from `make ci-lint` (CI uploads as artifact on failure)
+bp.json
+
 # Benchmark
 # Per-run artefacts (timestamped batch + evidence/ + reports/) are local-only.
 # Curated per-challenge results (XBEN-*-24/) and the LEVEL3 index are committed.

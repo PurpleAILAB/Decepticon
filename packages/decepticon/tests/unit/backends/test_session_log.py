@@ -29,6 +29,8 @@ def test_initialize_does_not_create_root_workspace_sessions_log():
             "",
             "",
             "",
+            "",  # _sync_passthrough_env -> _send -> send-keys -l
+            "",  # _sync_passthrough_env -> _send -> send-keys Enter
         ]
         mock_run.return_value.returncode = 0
         mgr.initialize()
@@ -59,6 +61,8 @@ def test_initialize_pipes_pane_to_engagement_scoped_sessions_log():
             "",
             "",
             "",
+            "",  # _sync_passthrough_env -> _send -> send-keys -l
+            "",  # _sync_passthrough_env -> _send -> send-keys Enter
         ]
         mock_run.return_value.returncode = 0
         mgr.initialize()
@@ -87,7 +91,17 @@ def test_initialize_creates_sessions_directory_inside_engagement_workspace():
         patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
         patch("time.sleep"),
     ):
-        mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
+        mock_tmux.side_effect = [
+            RuntimeError("session not found"),
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",  # _sync_passthrough_env -> _send -> send-keys -l
+            "",  # _sync_passthrough_env -> _send -> send-keys Enter
+        ]
         mock_run.return_value.returncode = 0
         mgr.initialize()
 
@@ -120,7 +134,17 @@ def test_initialize_warns_when_mkdir_fails(caplog):
             patch("decepticon.sandbox_kernel.base.subprocess.run") as mock_run,
             patch("time.sleep"),
         ):
-            mock_tmux.side_effect = [RuntimeError("session not found"), "", "", "", "", "", ""]
+            mock_tmux.side_effect = [
+                RuntimeError("session not found"),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",  # _sync_passthrough_env -> _send -> send-keys -l
+                "",  # _sync_passthrough_env -> _send -> send-keys Enter
+            ]
             mock_run.side_effect = [None, CalledProcessError(1, ["docker", "exec"])]
             with caplog.at_level(logging.WARNING):
                 mgr.initialize()
@@ -512,6 +536,8 @@ def test_initialize_recreates_stale_cached_pane_without_error_string_matching():
             "",  # send-keys C-l
             "",  # clear-history
             "",  # pipe-pane
+            "",  # _sync_passthrough_env -> _send -> send-keys -l
+            "",  # _sync_passthrough_env -> _send -> send-keys Enter
         ]
         mock_run.return_value.returncode = 0
         mgr.initialize()

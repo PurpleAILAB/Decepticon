@@ -46,7 +46,8 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
 .PHONY: help \
         dogfood launcher smoke \
         dev cli-dev web-dev infra \
-        quality quality-cli test test-local lint lint-fix \
+        quality quality-strict quality-cli test test-local lint lint-fix \
+        ci-lint ci-test ci-test-coverage \
         web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
@@ -68,11 +69,15 @@ help:
 	@echo "  make web-dev      Web (Next.js) locally + backend hot-reload"
 	@echo ""
 	@echo "Quality gates (PR readiness):"
-	@echo "  make quality      Full gate (Python + CLI + Web)"
-	@echo "  make test         pytest in container"
-	@echo "  make test-local   pytest locally (uv sync --dev)"
-	@echo "  make lint         Python lint + format check + typecheck"
-	@echo "  make lint-fix     Auto-fix Python lint + format"
+	@echo "  make quality        PR gate — mirrors CI PR lane (fast, no slow tests, errors-only typecheck)"
+	@echo "  make quality-strict Release gate — mirrors CI main-push lane + full basedpyright warning audit"
+	@echo "  make ci-lint        Lint + format + basedpyright errors-only (CI mirror)"
+	@echo "  make ci-test        pytest fast lane (-n auto -m \"not slow\", no coverage)"
+	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=35)"
+	@echo "  make test           pytest in container"
+	@echo "  make test-local     pytest locally (uv sync --dev; takes ARGS=)"
+	@echo "  make lint           Python lint + format check + basedpyright (all levels, local exploratory)"
+	@echo "  make lint-fix       Auto-fix Python lint + format"
 	@echo ""
 	@echo "Web dashboard (single checks):"
 	@echo "  make web-build    Prisma generate + Next build"
@@ -197,6 +202,29 @@ lint-fix:
 	uv run ruff check --fix .
 	uv run ruff format .
 
+# ── CI mirror targets ─────────────────────────────────────────────
+# These are the exact commands CI runs. .github/workflows/ci.yml
+# dispatches via `make ci-lint` / `make ci-test{,-coverage}` so this
+# Makefile stays the single source of truth — no drift between local
+# and CI is possible by construction.
+
+ci-lint:
+	@echo "==> ruff check"
+	uv run ruff check .
+	@echo "==> ruff format --check"
+	uv run ruff format --check .
+	@echo "==> basedpyright (errors only — pre-existing warnings tracked but non-blocking)"
+	uv run basedpyright --outputjson > bp.json || true
+	uv run python scripts/check_basedpyright_errors.py bp.json
+
+## PR lane: fast, no coverage, slow tests excluded.
+ci-test:
+	uv run pytest -n auto -q -m "not slow"
+
+## main-push lane: slow included, coverage 35% gate.
+ci-test-coverage:
+	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=35
+
 quality-cli: node-install
 	# streaming workspace must be built first — its package.json main
 	# resolves to dist/, which cli's typecheck + build consume.
@@ -205,10 +233,20 @@ quality-cli: node-install
 	npm run build --workspace=@decepticon/cli
 	npm run test --workspace=@decepticon/cli
 
-## Full PR gate — Python + CLI + Web. Run before opening a PR.
-quality: lint test-local quality-cli web-lint web-build
+## PR gate — mirrors CI PR lane (errors-only typecheck + fast pytest + CLI + Web).
+## Use before opening a PR; passing this guarantees CI will pass.
+quality: ci-lint ci-test quality-cli web-lint web-build
 	@echo ""
-	@echo "OK — all quality gates passed (python + cli + web)"
+	@echo "OK — PR gates passed (mirrors CI PR lane)"
+
+## Release gate — mirrors CI main-push lane (coverage 35%) + full basedpyright
+## audit (warnings + info). Run before tagging a release.
+quality-strict: ci-lint ci-test-coverage quality-cli web-lint web-build
+	@echo ""
+	@echo "==> basedpyright (full — warning + info audit, non-blocking)"
+	uv run basedpyright
+	@echo ""
+	@echo "OK — release gate passed (mirrors CI main lane + warning audit)"
 
 # ── Web Dashboard (single checks) ────────────────────────────────
 # All web targets share the root `node-install` so workspace deps hoist
