@@ -102,6 +102,8 @@ help:
 ## launcher version is "dev" so auto-update + config-sync are skipped — the
 ## symlinked .dogfood/ tree is the source of truth.
 dogfood: launcher
+	@echo "[dogfood] Stopping any prior repo-root stack to avoid container-name conflict..."
+	@$(COMPOSE) $(PROFILES_ALL) down --remove-orphans 2>/dev/null; true
 	@mkdir -p $(DOGFOOD_HOME)/workspace
 	@ln -sfn $(CURDIR)/docker-compose.yml $(DOGFOOD_HOME)/docker-compose.yml
 	@ln -sfn $(CURDIR)/config              $(DOGFOOD_HOME)/config
