@@ -50,6 +50,7 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
         ci-lint ci-test ci-test-coverage \
         web-build web-hotswap web-lint web-migrate \
         status logs health clean \
+        deadman deadman-dry \
         node-install web-db-ensure \
         benchmark recreate-litellm
 
@@ -90,6 +91,10 @@ help:
 	@echo "  make logs [SVC=]  Follow logs (default: langgraph)"
 	@echo "  make health       KG + Neo4j + Web health checks"
 	@echo "  make clean        Full teardown (compose volumes + .dogfood/)"
+	@echo ""
+	@echo "Session security (dazai dead-man's-switch — see docs/dazai-deadman.md):"
+	@echo "  make deadman      Arm: tear down stack + shred .env if the session dies (detached)"
+	@echo "  make deadman-dry  Rehearse the switch (logs what it would do, touches nothing)"
 	@echo ""
 	@echo "Other:"
 	@echo "  make benchmark [ARGS=\"--level 1\"]"
@@ -294,6 +299,25 @@ clean:
 	$(COMPOSE) $(PROFILES_ALL) down --volumes --remove-orphans
 	@rm -rf $(DOGFOOD_HOME)
 	@echo "OK — compose volumes purged, .dogfood/ removed"
+
+# ── Session security: dazai dead-man's-switch ────────────────────
+# A host-side sentinel watches an armed `dazai daemon` tied to your engagement
+# shell (https://github.com/New1Direction/ningen-shikkaku). When the session
+# dies and the daemon self-destructs past its grace window, the sentinel tears
+# this stack down (compose down -v) and shreds .env. See docs/dazai-deadman.md.
+DEADMAN_LOG ?= /tmp/decepticon-deadman.log
+
+## Arm the dead-man's-switch (detached, survives the shell). Requires an armed
+## `dazai daemon` + `dazai client` heartbeat already running in your session.
+deadman:
+	@command -v dazai >/dev/null 2>&1 || { echo "dazai not on PATH — install it and run 'dazai daemon --arm' first (see docs/dazai-deadman.md)"; exit 1; }
+	@nohup python3 scripts/dazai_deadman.py --stack-dir $(CURDIR) --compose-file $(CURDIR)/docker-compose.yml >$(DEADMAN_LOG) 2>&1 &
+	@echo "[deadman] armed — watching the dazai daemon; teardown on session loss. log: $(DEADMAN_LOG)"
+
+## Rehearse the switch in the foreground: logs what it WOULD tear down and
+## shred, never touches the stack or .env. Ctrl-C to disarm.
+deadman-dry:
+	python3 scripts/dazai_deadman.py --stack-dir $(CURDIR) --compose-file $(CURDIR)/docker-compose.yml --dry-run
 
 # ── Internal idempotent helpers ──────────────────────────────────
 
