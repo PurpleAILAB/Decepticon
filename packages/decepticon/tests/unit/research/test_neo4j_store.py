@@ -309,7 +309,8 @@ class TestEnsureSchema:
         driver = _FakeDriver(sessions=[session])
         store = _make_store(driver)
         store.ensure_schema()
-        assert len(session.runs) == 26
+        # 17 constraints (incl. DetectionFired/DefenseAction key uniqueness) + 11 indexes
+        assert len(session.runs) == 28
 
     def test_ensure_schema_includes_known_constraint(self) -> None:
         session = _FakeSession()
