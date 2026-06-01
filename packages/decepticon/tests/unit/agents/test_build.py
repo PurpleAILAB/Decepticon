@@ -596,6 +596,7 @@ def test_middleware_slot_enum_order_is_assembly_order():
         "kg",
         "event-log",
         "sandbox-notification",
+        "detection-feedback",
         "budget",
         "model-override",
         "model-fallback",

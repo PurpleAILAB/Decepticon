@@ -1,6 +1,7 @@
 """Decepticon middleware - custom AgentMiddleware implementations."""
 
 from decepticon.middleware.budget import BudgetEnforcementMiddleware
+from decepticon.middleware.detection_feedback import DetectionFeedbackMiddleware
 from decepticon.middleware.engagement import EngagementContextMiddleware
 from decepticon.middleware.event_logging import EventLogMiddleware
 from decepticon.middleware.filesystem import FilesystemMiddleware
@@ -34,6 +35,7 @@ __all__ = [
     "ApprovalTransport",
     "BudgetEnforcementMiddleware",
     "DEFAULT_HIGH_IMPACT_POLICY",
+    "DetectionFeedbackMiddleware",
     "EngagementContextMiddleware",
     "EventLogMiddleware",
     "FileBackedApprovalTransport",
