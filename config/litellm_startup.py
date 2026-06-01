@@ -30,6 +30,32 @@ from ollama_probe import (  # noqa: E402
 )
 
 
+def _egress_probe() -> None:
+    """Boot-time outbound TCP probe to the Anthropic OAuth endpoint.
+
+    Surfaces silent fail-after-boot — LiteLLM passes ``/health/readiness``
+    even when outbound DNS or routing is broken, so the first user request
+    sees ``[Errno 101] Network is unreachable`` mid-stream and the langgraph
+    SSE drops with "Connection to server lost". A 5-second probe at startup
+    logs the issue to the LiteLLM container stderr where ``decepticon logs
+    litellm`` can find it before the user retries.
+
+    Non-fatal: a user with only Gemini / Groq / local Ollama configured does
+    not need Anthropic reachability. The probe only logs.
+    """
+    import socket
+
+    for host, port in (("api.anthropic.com", 443), ("platform.claude.com", 443)):
+        try:
+            socket.create_connection((host, port), timeout=5).close()
+        except OSError as exc:
+            sys.stderr.write(
+                f"[litellm-startup] WARN egress probe failed for {host}:{port} — {exc}\n"
+                "[litellm-startup]      Anthropic / Claude-Code auth providers may fail at first request.\n"
+            )
+            sys.stderr.flush()
+
+
 def _replace_config_arg() -> None:
     """Append env-requested model routes to the LiteLLM config before boot.
 
@@ -81,6 +107,7 @@ def _replace_config_arg() -> None:
 
 
 _replace_config_arg()
+_egress_probe()
 
 
 def _probe_ollama_if_configured() -> None:

@@ -38,6 +38,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import post as _http_post
 
 log = logging.getLogger(__name__)
 
@@ -274,9 +275,9 @@ def oauth_refresh_request(
     """
     try:
         if json_body:
-            resp = httpx.post(token_url, json=payload, timeout=timeout)
+            resp = _http_post(token_url, json=payload, timeout=timeout)
         else:
-            resp = httpx.post(token_url, data=payload, timeout=timeout)
+            resp = _http_post(token_url, data=payload, timeout=timeout)
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPStatusError as exc:

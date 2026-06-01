@@ -22,6 +22,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
     DEFAULT_REFRESH_BUFFER_SECONDS,
@@ -207,7 +208,7 @@ class GeminiSubHandler(CustomLLM):
                 "authorization": f"Bearer {access_token}",
                 "content-type": "application/json",
             }
-            return httpx.post(url, json=request_body, headers=req_headers, timeout=timeout or 600)
+            return _http_post(url, json=request_body, headers=req_headers, timeout=timeout or 600)
 
         resp = with_retry_on_401(_send)
 

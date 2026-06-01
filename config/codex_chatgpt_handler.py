@@ -31,6 +31,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
     DEFAULT_JWT_SKEW_SECONDS,
@@ -506,7 +507,7 @@ class CodexChatGPTCustomHandler(CustomLLM):
 
         def _send(force_refresh: bool) -> httpx.Response:
             access_token, account_id = get_codex_access_token(force_refresh=force_refresh)
-            return httpx.post(
+            return _http_post(
                 f"{api_root}/responses",
                 json=body,
                 headers={**_headers(access_token, account_id), **(headers or {})},

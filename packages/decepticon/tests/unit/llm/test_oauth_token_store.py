@@ -315,7 +315,9 @@ def _httpx_response(status_code: int, payload: Any) -> httpx.Response:
 
 def test_oauth_refresh_request_returns_parsed_payload_on_success() -> None:
     expected = {"access_token": "new", "expires_in": 3600}
-    with patch.object(httpx, "post", return_value=_httpx_response(200, expected)) as mock_post:
+    with patch.object(
+        _module, "_http_post", return_value=_httpx_response(200, expected)
+    ) as mock_post:
         result = oauth_refresh_request(
             "https://example.test/oauth/token",
             {"grant_type": "refresh_token", "refresh_token": "r"},
@@ -328,7 +330,9 @@ def test_oauth_refresh_request_returns_parsed_payload_on_success() -> None:
 
 
 def test_oauth_refresh_request_supports_form_body() -> None:
-    with patch.object(httpx, "post", return_value=_httpx_response(200, {"a": 1})) as mock_post:
+    with patch.object(
+        _module, "_http_post", return_value=_httpx_response(200, {"a": 1})
+    ) as mock_post:
         oauth_refresh_request(
             "https://example.test/oauth/token",
             {"k": "v"},
@@ -341,7 +345,7 @@ def test_oauth_refresh_request_supports_form_body() -> None:
 
 def test_oauth_refresh_request_raises_on_4xx_with_body_in_message() -> None:
     bad = _httpx_response(400, {"error": "bad_grant"})
-    with patch.object(httpx, "post", return_value=bad):
+    with patch.object(_module, "_http_post", return_value=bad):
         with pytest.raises(litellm.AuthenticationError) as exc:
             oauth_refresh_request(
                 "https://example.test/oauth/token",
@@ -358,7 +362,7 @@ def test_oauth_refresh_request_raises_when_response_is_not_object() -> None:
         headers={"content-type": "application/json"},
         request=httpx.Request("POST", "https://example.test/oauth/token"),
     )
-    with patch.object(httpx, "post", return_value=not_object):
+    with patch.object(_module, "_http_post", return_value=not_object):
         with pytest.raises(litellm.AuthenticationError) as exc:
             oauth_refresh_request(
                 "https://example.test/oauth/token",

@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 import httpx
 import litellm
+from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
     DEFAULT_REFRESH_BUFFER_SECONDS,
@@ -503,7 +504,7 @@ class ClaudeCodeCustomHandler(CustomLLM):
         def _send(force_refresh: bool) -> httpx.Response:
             access_token = get_access_token(force_refresh=force_refresh)
             req_headers = _build_headers(access_token)
-            return httpx.post(
+            return _http_post(
                 f"{api_url}/v1/messages?beta=true",
                 content=body_str,
                 headers=req_headers,

@@ -23,9 +23,14 @@ _FAKE_OAUTH.read_json_file = lambda *_a, **_kw: {}
 _FAKE_OAUTH.with_retry_on_401 = lambda *_a, **_kw: None
 _FAKE_OAUTH.write_json_atomic = lambda *_a, **_kw: None
 
+_FAKE_HTTP_CLIENT = types.ModuleType("http_client")
+_FAKE_HTTP_CLIENT.post = lambda *_a, **_kw: None
+_FAKE_HTTP_CLIENT.async_post = lambda *_a, **_kw: None
+
 sys.modules.setdefault("litellm", _FAKE_LITELLM)
 sys.modules.setdefault("oauth_token_store", _FAKE_OAUTH)
 sys.modules.setdefault("httpx", types.ModuleType("httpx"))
+sys.modules.setdefault("http_client", _FAKE_HTTP_CLIENT)
 
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)

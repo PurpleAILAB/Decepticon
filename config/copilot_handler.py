@@ -52,6 +52,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
     DEFAULT_REFRESH_BUFFER_SECONDS,
@@ -173,7 +174,7 @@ _token_cache: dict[str, Any] = {}
 
 def _mint_copilot_token(github_token: str) -> dict[str, Any]:
     """Exchange a github oauth token for a short-lived Copilot bearer."""
-    resp = httpx.post(
+    resp = _http_post(
         GITHUB_TOKEN_MINT_URL,
         headers={
             "Authorization": f"Bearer {github_token}",
@@ -313,7 +314,7 @@ class CopilotHandler(CustomLLM):
                 **_COPILOT_EDITOR_HEADERS,
             }
             api_url = api_base or _api_base()
-            return httpx.post(
+            return _http_post(
                 f"{api_url}/chat/completions",
                 json=request_body,
                 headers=req_headers,

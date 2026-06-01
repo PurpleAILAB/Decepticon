@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
     DEFAULT_REFRESH_BUFFER_SECONDS,
@@ -177,7 +178,7 @@ class GrokSubHandler(CustomLLM):
                 "content-type": "application/json",
                 "accept": "application/json",
             }
-            return httpx.post(
+            return _http_post(
                 f"{api_url}/v1/chat/completions",
                 json=request_body,
                 headers=req_headers,

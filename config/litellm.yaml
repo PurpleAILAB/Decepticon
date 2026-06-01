@@ -701,6 +701,14 @@ litellm_settings:
     # Anthropic OAuth (Claude Code subscription) path
     - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
     - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
+    # OAuth → paid API key cross-method backstop. When the entire OAuth
+    # subscription chain (opus → sonnet → haiku) fails for one underlying
+    # cause — network egress dead, refresh-token expired, Anthropic OAuth
+    # outage — the agent keeps running via the user's paid Anthropic key
+    # if one is configured. LiteLLM silently skips entries whose target
+    # model_group is not registered, so this is a no-op for users without
+    # ANTHROPIC_API_KEY.
+    - {"auth/claude-haiku-4-5": ["anthropic/claude-haiku-4-5"]}
     # OpenRouter mirrors of the Anthropic models
     - {"openrouter/anthropic/claude-opus-4-7": ["openrouter/anthropic/claude-sonnet-4-6"]}
     - {"openrouter/anthropic/claude-sonnet-4-6": ["openrouter/anthropic/claude-haiku-4-5"]}
