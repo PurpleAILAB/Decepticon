@@ -40,10 +40,10 @@ Pushing a `v*` tag triggers `.github/workflows/release.yml`.
 |-----|--------|
 | `publish-pypi` | Builds the wheel + sdist and publishes the `decepticon` package to PyPI via Trusted Publishing (OIDC — no API token). |
 | `launcher` | Builds the Go launcher binaries with GoReleaser (which drafts the GitHub release) and uploads `config-checksums.txt`, a SHA-256 integrity manifest for `docker-compose.yml`, `config/litellm.yaml`, and `.env.example`. |
-| `docker` | Builds and pushes the multi-arch `litellm`, `langgraph`, and `cli` images. |
+| `docker` | Builds and pushes the multi-arch `litellm`, `langgraph`, `cli`, and `skillogy` images. |
 | `docker-heavy` / `docker-heavy-merge` | Builds `sandbox` and `c2-sliver` on native amd64/arm64 runners (the Kali base is too slow under QEMU), then merges the per-arch digests into manifests. |
 | `docker-web` / `docker-web-merge` | Builds and merges the `web` image the same way. |
-| `publish-release` | Verifies all six `:<version>` images exist on GHCR, promotes them to `:latest`, and flips the GitHub release from draft to published. |
+| `publish-release` | Verifies all seven `:<version>` images exist on GHCR, promotes them to `:latest`, and flips the GitHub release from draft to published. |
 
 Every image is signed with Cosign (keyless OIDC) and ships a CycloneDX SBOM.
 The `:latest` tag and the published release appear only *after* every image is

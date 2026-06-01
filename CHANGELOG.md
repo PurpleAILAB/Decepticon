@@ -6,6 +6,32 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [1.1.5] — 2026-06-01
+
+Patch release. Fixes a release-pipeline gap that broke `decepticon start`
+for every published install since the Skillogy layer landed in `v1.1.4`.
+
+### Fixed
+
+- **Skillogy image is now published** — the release pipeline never built,
+  pushed, verified, or promoted `ghcr.io/purpleailab/decepticon-skillogy`,
+  even though the always-on compose `skillogy` service pulls it. Every
+  release since `v1.1.4` therefore failed at `decepticon start` with
+  `No such image: ghcr.io/purpleailab/decepticon-skillogy:<version>` /
+  `error from registry: denied`. `decepticon-skillogy` is now part of the
+  multi-arch `docker` build matrix and the `publish-release` verify +
+  `:latest` promote lists (and `release-recover.yml`), so a missing image
+  now fails the release loudly instead of shipping a broken compose file.
+  (#450)
+
+### Changed
+
+- **`make dogfood`** now tears down any prior repo-root stack before
+  starting, to avoid a container-name conflict. (#447)
+- **`.env.example`** — the `LANGSMITH_API_KEY` placeholder is commented
+  out so it no longer triggers 403 tracing-spam when LangSmith tracing is
+  off. (#448)
+
 ## [1.1.4] — 2026-05-30
 
 Capability + safety expansion on top of `v1.1.3`. Lands the Sisyphus
