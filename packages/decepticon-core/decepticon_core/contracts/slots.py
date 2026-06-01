@@ -156,6 +156,8 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     },
     # ── Standard non-bash agent (planning + interview) ──
     "soundwave": _BASE_SLOTS | {MiddlewareSlot.ENGAGEMENT_CONTEXT},
+    # ── Standard read-only agent (Blue Cell — detection coverage, no bash) ──
+    "blue_cell": _BASE_SLOTS,
     # ── Standard bash-executing specialists ──
     "recon": _BASH_AGENT_SLOTS,
     "exploit": _BASH_AGENT_SLOTS,

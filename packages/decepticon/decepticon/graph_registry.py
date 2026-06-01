@@ -40,6 +40,7 @@ STANDARD_GRAPHS: dict[str, str] = {
     "contract_auditor": "./decepticon/agents/standard/contract_auditor.py:graph",
     "cloud_hunter": "./decepticon/agents/standard/cloud_hunter.py:graph",
     "ad_operator": "./decepticon/agents/standard/ad_operator.py:graph",
+    "blue_cell": "./decepticon/agents/standard/blue_cell.py:graph",
 }
 
 # Plugins bundle — vulnresearch family (community-plugin shape demonstrated
