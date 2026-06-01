@@ -8,22 +8,14 @@ design spec, §13.4).
 
 ## [1.1.6] — 2026-06-01
 
-Release-engineering patch. `v1.1.5` published the PyPI wheels and the
-`skillogy`, `cli`, `langgraph`, and `litellm` images, but its `sandbox`,
-`c2-sliver`, and `web` images never finished: the native `ubuntu-24.04-arm`
-hosted runners that build their arm64 layers were repeatedly killed by a
-runner-shutdown outage, so the multi-arch manifests, `:latest` promotion,
-and release publish never ran. This release ships the identical code with a
-pipeline that no longer depends on those runners.
-
-### Changed
-
-- **Release pipeline** — the arm64 legs of the heavy images (`sandbox`,
-  `c2-sliver`, `web`) now build under QEMU emulation on `ubuntu-latest`
-  instead of native `ubuntu-24.04-arm` runners, which were unavailable.
-  Slower per build, but removes the dependency on the flaky runner pool so
-  the release completes and `:latest` promotes. Revert to native arm64
-  runners once that capacity is restored. (#451)
+Re-cut of `v1.1.5` to restore version coherence — no functional change.
+During the `v1.1.5` release the PyPI wheels published, but the container
+publish was interrupted by a transient GitHub-hosted `ubuntu-24.04-arm`
+runner outage; recovery attempts also pushed `1.1.6` wheels to PyPI. With
+the outage resolved, `v1.1.6` re-runs the full pipeline on the native arm64
+runners so the PyPI wheels, all seven signed multi-arch images, and the
+GitHub release are consistent at the highest published version. Carries the
+same Skillogy publish fix as `v1.1.5`. (#452)
 
 ## [1.1.5] — 2026-06-01
 
