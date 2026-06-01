@@ -6,6 +6,25 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [1.1.6] — 2026-06-01
+
+Release-engineering patch. `v1.1.5` published the PyPI wheels and the
+`skillogy`, `cli`, `langgraph`, and `litellm` images, but its `sandbox`,
+`c2-sliver`, and `web` images never finished: the native `ubuntu-24.04-arm`
+hosted runners that build their arm64 layers were repeatedly killed by a
+runner-shutdown outage, so the multi-arch manifests, `:latest` promotion,
+and release publish never ran. This release ships the identical code with a
+pipeline that no longer depends on those runners.
+
+### Changed
+
+- **Release pipeline** — the arm64 legs of the heavy images (`sandbox`,
+  `c2-sliver`, `web`) now build under QEMU emulation on `ubuntu-latest`
+  instead of native `ubuntu-24.04-arm` runners, which were unavailable.
+  Slower per build, but removes the dependency on the flaky runner pool so
+  the release completes and `:latest` promotes. Revert to native arm64
+  runners once that capacity is restored. (#451)
+
 ## [1.1.5] — 2026-06-01
 
 Patch release. Fixes a release-pipeline gap that broke `decepticon start`
