@@ -13,6 +13,7 @@ from decepticon.agents.standard.blue_cell import create_blue_cell_agent
 from decepticon.agents.standard.cloud_hunter import create_cloud_hunter_agent
 from decepticon.agents.standard.contract_auditor import create_contract_auditor_agent
 from decepticon.agents.standard.decepticon import create_decepticon_agent
+from decepticon.agents.standard.defender import create_defender_agent
 from decepticon.agents.standard.exploit import create_exploit_agent
 from decepticon.agents.standard.mobile_operator import create_mobile_operator_agent
 from decepticon.agents.standard.phisher import create_phisher_agent
@@ -37,6 +38,7 @@ __all__ = [
     "create_mobile_operator_agent",
     "create_wireless_operator_agent",
     "create_blue_cell_agent",
+    "create_defender_agent",
     # Vulnresearch pipeline (five-stage modular)
     "create_scanner_agent",
     "create_detector_agent",

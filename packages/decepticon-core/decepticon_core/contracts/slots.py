@@ -158,6 +158,9 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "soundwave": _BASE_SLOTS | {MiddlewareSlot.ENGAGEMENT_CONTEXT},
     # ── Standard read-only agent (Blue Cell — detection coverage, no bash) ──
     "blue_cell": _BASE_SLOTS,
+    # ── Standard detection-engineering agent (Defender — deploys to SIEM/EDR,
+    #    no bash; HITL-gated because it writes to the customer's stack) ──
+    "defender": _BASE_SLOTS | {MiddlewareSlot.ENGAGEMENT_CONTEXT, MiddlewareSlot.HITL_APPROVAL},
     # ── Standard bash-executing specialists ──
     "recon": _BASH_AGENT_SLOTS,
     "exploit": _BASH_AGENT_SLOTS,
