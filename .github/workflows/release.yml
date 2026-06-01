@@ -146,6 +146,14 @@ jobs:
           - image: decepticon-cli
             dockerfile: containers/cli.Dockerfile
             platforms: linux/amd64,linux/arm64
+          # Skillogy server: lean python:3.13-slim (no Kali/heavy apt layers),
+          # so multi-arch under QEMU is cheap like cli/langgraph. The compose
+          # `skillogy` service has no `profiles:`, so it is ALWAYS started by
+          # `decepticon start` — it MUST be published or every start fails to
+          # pull ghcr.io/purpleailab/decepticon-skillogy:<version>.
+          - image: decepticon-skillogy
+            dockerfile: containers/skillogy.Dockerfile
+            platforms: linux/amd64,linux/arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -635,6 +643,7 @@ jobs:
             decepticon-langgraph
             decepticon-sandbox
             decepticon-cli
+            decepticon-skillogy
             decepticon-c2-sliver
             decepticon-web
           )
@@ -655,6 +664,7 @@ jobs:
             decepticon-langgraph
             decepticon-sandbox
             decepticon-cli
+            decepticon-skillogy
             decepticon-c2-sliver
             decepticon-web
           )

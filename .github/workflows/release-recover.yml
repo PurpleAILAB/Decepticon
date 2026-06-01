@@ -40,6 +40,7 @@ jobs:
             decepticon-langgraph
             decepticon-sandbox
             decepticon-cli
+            decepticon-skillogy
             decepticon-c2-sliver
             decepticon-web
           )
@@ -60,6 +61,7 @@ jobs:
             decepticon-langgraph
             decepticon-sandbox
             decepticon-cli
+            decepticon-skillogy
             decepticon-c2-sliver
             decepticon-web
           )
