@@ -85,7 +85,7 @@ Per-asset analysis.
 | **Tampering** | LiteLLM admin UI mutates routing | Master key never exposed to sandbox network | Done |
 | **Information disclosure** | OAuth credential files bind-mounted (Claude/Codex) | Bind RO; LiteLLM container itself is on `decepticon-net` only | Done |
 | **Information disclosure** | Health endpoint hardcoded master key as fallback | Removed; health refuses without explicit `LITELLM_API_KEY` | Done |
-| **Denial of service** | Per-engagement model-tier spend not capped | Per-engagement budget cap (planned) | Open |
+| **Denial of service** | Per-engagement model-tier spend not capped | `BudgetEnforcementMiddleware` (in `_BASE_SLOTS`) hard-pauses at the per-engagement / per-agent USD cap | Done — opt-in via `DECEPTICON_BUDGET__*` ([security-controls](./security-controls.md)) |
 | **Elevation of privilege** | Compromised LiteLLM → upstream provider impersonation | Provider keys held server-side; client can't extract | Done (LiteLLM design) |
 
 ### Asset: Sandbox container
@@ -154,7 +154,7 @@ Tracked in this PR's roadmap, in order of priority:
 
 1. **Per-engagement Cypher user** (`decepticon-sandbox-<engagement>`, rotating Bolt token). Caps the impact of a single sandbox compromise to that engagement's portion of the graph.
 2. **Per-engagement sandbox container** (Docker SDK based lifecycle, one container per engagement open). Eliminates the "Engagement A's `.scratch/` is visible to Engagement B" leak. Tier 3 of this PR ships the design + compose hardening; full lifecycle ships in a follow-up.
-3. **Per-engagement budget cap** (token / dollar threshold per LiteLLM virtual key, downgrades to lower tier at threshold, hard-stops at 2x).
+3. ~~**Per-engagement budget cap**~~ — **shipped.** `BudgetEnforcementMiddleware` (in `_BASE_SLOTS`) soft-warns at a configurable fraction of the cap and hard-pauses the run at 100%, scoped per-engagement and per-agent. Enable via `DECEPTICON_BUDGET__ENGAGEMENT_USD` / `DECEPTICON_BUDGET__PER_AGENT_USD`; see [security-controls](./security-controls.md). Automatic model-tier downgrade at threshold is not implemented.
 4. **Plugin bundle signature** (PluginBundle ships an Ed25519 signature; operator pins trust set; `pip install` of an unpinned bundle is rejected at boot).
 5. **Firecracker microVM sandbox** (one ~125ms-boot microVM per objective). Kernel boundary instead of namespace boundary. SaaS-only; OSS keeps Docker.
 6. **Sigstore-style transparent log** for the RoE audit ledger. Today the ledger lives next to the engagement workspace; the HMAC key is operator-held. For paid engagements, ship the chain hash to a third-party transparency log (Rekor) so even the operator can't rewrite history.
@@ -167,6 +167,20 @@ This document does NOT cover:
 - **OpenAI/Anthropic/Google provider trust**: Decepticon trusts the upstream LLM providers' published security posture.
 - **Operator workstation hardening**: standard endpoint hygiene applies.
 - **Network ingress filtering** above what compose provides: deployers responsible for firewalling beyond `127.0.0.1:*` exposed ports.
+
+## Runtime security reference
+
+The controls referenced throughout this STRIDE walk are documented in
+detail in the runtime security reference suite:
+
+- [Security Controls](./security-controls.md) — knob/default/verify table
+  for every runtime guard, plus the budget, audit, and HITL env vars.
+- [RoE Machine Enforcement](./roe-machine-enforcement.md) — the scope and
+  forbidden-command gate for bash tool calls.
+- [Audit Ledger](./audit-ledger.md) — the HMAC-chained record of RoE
+  decisions and how to verify it.
+- [HITL Approval](./hitl-approval.md) — the opt-in operator-approval gate
+  for high-impact actions.
 
 ## Reporting
 
