@@ -45,6 +45,10 @@ from decepticon.middleware import (
     UntrustedOutputMiddleware,
 )
 from decepticon.middleware.budget import BudgetEnforcementMiddleware
+from decepticon.middleware.detection_feedback import (
+    DetectionFeedbackMiddleware,
+    detection_mttd_threshold,
+)
 from decepticon.middleware.event_logging import EventLogMiddleware
 from decepticon.middleware.hitl import (
     DEFAULT_HIGH_IMPACT_POLICY,
@@ -172,6 +176,10 @@ def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
     return SandboxNotificationMiddleware(sandbox=sandbox)
 
 
+def _make_detection_feedback(**_: Any):
+    return DetectionFeedbackMiddleware(mttd_threshold=detection_mttd_threshold())
+
+
 def _make_model_override(**_: Any):
     return ModelOverrideMiddleware()
 
@@ -261,6 +269,7 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.OPPLAN: _make_opplan,
     MiddlewareSlot.EVENT_LOG: _make_event_log,
     MiddlewareSlot.SANDBOX_NOTIFICATION: _make_sandbox_notification,
+    MiddlewareSlot.DETECTION_FEEDBACK: _make_detection_feedback,
     MiddlewareSlot.BUDGET: _make_budget,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,
