@@ -40,28 +40,73 @@ Available Skills:
 
 ## Skill Categories
 
-Skills live in `skills/` organized by agent role:
+Skills ship as package data under `decepticon/skills/` and are served in-process
+at the virtual prefix `/skills/`. The tree has three roots:
+
+- `/skills/standard/<dir>/` — built-in OSS roles. The default source list for a
+  standard role is `[f"/skills/standard/{role}/", "/skills/shared/"]`
+  (`agents/middleware_slots.py:98`).
+- `/skills/plugins/<name>/` — plugin specialists. These agents pass an explicit
+  `skill_sources=` kwarg to `build_middleware` rather than relying on the
+  `/skills/standard/{role}/` fallback.
+- `/skills/shared/` — cross-cutting protocols injected into every standard role.
 
 | Directory | Agent(s) | Coverage |
 |-----------|---------|----------|
-| `skills/soundwave/` | Soundwave | RoE templates, ConOps, OPPLAN generation, threat profiles |
-| `skills/shared/` | Every non-planning agent | OPSEC, defense evasion, workflow protocols, finding format, deconfliction |
-| `skills/recon/` | Recon | Passive recon, active recon, web recon, cloud recon, OSINT, reporting |
-| `skills/exploit/` | Exploit | Web exploitation, Active Directory attacks |
-| `skills/scanner/` | Scanner | Vulnerability scanning, automated tool integration |
-| `skills/post-exploit/` | Post-Exploit | Credential access, privilege escalation, lateral movement, C2 |
-| `skills/ad/` | AD Operator | Kerberoasting, Pass-the-Hash, BloodHound, DCSync |
-| `skills/cloud/` | Cloud Hunter | IAM escalation, S3/GCS/Azure storage attacks, metadata abuse |
-| `skills/contracts/` | Contract Auditor | Solidity analysis, reentrancy, access control, token mechanics |
-| `skills/reverser/` | Reverser | Static analysis, dynamic analysis, decompilation, binary patching |
-| `skills/exploiter/` | Exploiter | PoC generation, CVE reproduction, weaponization |
-| `skills/verifier/` | Verifier | Multi-method vulnerability confirmation |
-| `skills/detector/` | Detector | Detection rule generation, IOC extraction |
-| `skills/patcher/` | Patcher | Remediation code, configuration hardening |
-| `skills/analyst/` | Analyst | Research, graph querying, executive summaries |
-| `skills/vulnresearch/` | Vulnresearch (orchestrator), Scanner, Detector | Five-stage vulnerability research pipeline coordination |
-| `skills/decepticon/` | Decepticon | Core orchestration procedures (engagement lifecycle, kill-chain analysis, final report) |
-| `skills/benchmark/` | CTF / XBOW benchmark mode | Activated when `BENCHMARK_MODE=1` — flag-capture rules and challenge context handling |
+| `/skills/standard/soundwave/` | Soundwave | RoE templates, ConOps, OPPLAN generation, threat profiles |
+| `/skills/shared/` | Every standard role | OPSEC, defense evasion, workflow protocols, finding format, deconfliction |
+| `/skills/standard/recon/` | Recon | Passive recon, active recon, web recon, cloud recon, OSINT, reporting |
+| `/skills/standard/exploit/` | Exploit | Web exploitation, Active Directory attacks |
+| `/skills/standard/post-exploit/` | Post-Exploit | Credential access, privilege escalation, lateral movement, C2 |
+| `/skills/standard/ad/` | AD Operator | Kerberoasting, Pass-the-Hash, BloodHound, DCSync |
+| `/skills/standard/cloud/` | Cloud Hunter | IAM escalation, S3/GCS/Azure storage attacks, metadata abuse |
+| `/skills/standard/contracts/` | Contract Auditor | Solidity analysis, reentrancy, access control, token mechanics |
+| `/skills/standard/reverser/` | Reverser | Static analysis, dynamic analysis, decompilation, binary patching |
+| `/skills/standard/analyst/` | Analyst | Research, graph querying, executive summaries |
+| `/skills/standard/phisher/` | Phisher | Lure deconfliction and phishing operations |
+| `/skills/standard/mobile/` | MobileOperator | Android / iOS application attacks (see role-vs-directory note below) |
+| `/skills/standard/wireless/` | WirelessOperator | Wireless / RF attacks (see role-vs-directory note below) |
+| `/skills/standard/decepticon/` | Decepticon | Core orchestration procedures (engagement lifecycle, kill-chain analysis, final report) |
+| `/skills/plugins/scanner/` | Scanner | Vulnerability scanning, automated tool integration |
+| `/skills/plugins/exploiter/` | Exploiter | PoC generation, CVE reproduction, weaponization |
+| `/skills/plugins/verifier/` | Verifier | Multi-method vulnerability confirmation |
+| `/skills/plugins/detector/` | Detector | Detection rule generation, IOC extraction |
+| `/skills/plugins/patcher/` | Patcher | Remediation code, configuration hardening |
+| `/skills/plugins/vulnresearch/` | Vulnresearch (orchestrator) | Five-stage vulnerability research pipeline coordination |
+| `/skills/plugins/llm-redteam/` | LLM red-team specialist (commercial) | LLM/agentic attack techniques (ASI taxonomy) |
+| `/skills/benchmark/` | CTF / XBOW benchmark mode | Activated when `BENCHMARK_MODE=1` — flag-capture rules and challenge context handling |
+
+> **Note — role-vs-directory mismatch**: several roles do not share a name with
+> their on-disk directory. The default fallback resolves the source to
+> `/skills/standard/{role}/`, but the skills actually live under a different
+> directory name:
+>
+> | Role | Resolved source (`{role}`) | On-disk directory |
+> |------|---------------------------|-------------------|
+> | `postexploit` | `/skills/standard/postexploit/` | `/skills/standard/post-exploit/` |
+> | `ad_operator` | `/skills/standard/ad_operator/` | `/skills/standard/ad/` |
+> | `cloud_hunter` | `/skills/standard/cloud_hunter/` | `/skills/standard/cloud/` |
+> | `contract_auditor` | `/skills/standard/contract_auditor/` | `/skills/standard/contracts/` |
+> | `mobile_operator` | `/skills/standard/mobile_operator/` | `/skills/standard/mobile/` |
+> | `wireless_operator` | `/skills/standard/wireless_operator/` | `/skills/standard/wireless/` |
+>
+> The directories in the table above reflect where the skills actually live. This
+> mismatch is a code bug being fixed separately.
+
+### Library categories (no consuming agent yet)
+
+These directories live under `/skills/standard/` but no role resolves to them, so
+no agent loads them today. They are authored as a skill library for future roles
+or manual `load_skill()` use.
+
+| Directory | Coverage |
+|-----------|----------|
+| `/skills/standard/dfir/` | Digital forensics & incident response |
+| `/skills/standard/ics/` | Industrial control systems / OT |
+| `/skills/standard/iot/` | IoT / embedded (firmware, Zigbee, LoRaWAN) |
+| `/skills/standard/osint/` | Open-source intelligence |
+| `/skills/standard/supply-chain/` | Supply-chain attack techniques |
+| `/skills/standard/phish/` | Phishing techniques (distinct from the consumed `phisher/` dir) |
 
 ---
 
@@ -177,7 +222,7 @@ One-line description of the skill's core role and principles.
 
 ## Writing a Custom Skill
 
-1. Create a directory under the appropriate category: `skills/recon/my-skill/`
+1. Create a directory under the appropriate category: `skills/standard/recon/my-skill/`
 2. Write `SKILL.md` with frontmatter and body following the format above
 3. Add `references/` docs for content over 100 lines
 4. Add `scripts/` for any automation the agent should execute
@@ -189,23 +234,38 @@ The skill is automatically available to agents whose source paths include your s
 
 ## Agent–Skill Mapping
 
-| Agent | Skill sources |
-|-------|--------------|
-| Decepticon | `skills/decepticon/`, `skills/shared/` |
-| Vulnresearch | `skills/vulnresearch/`, `skills/shared/` |
-| Soundwave | `skills/soundwave/` |
-| Recon | `skills/recon/`, `skills/shared/` |
-| Scanner | `skills/scanner/`, `skills/vulnresearch/`, `skills/shared/` |
-| Exploit | `skills/exploit/`, `skills/shared/` |
-| Exploiter | `skills/exploiter/`, `skills/shared/` |
-| Detector | `skills/detector/`, `skills/vulnresearch/`, `skills/shared/` |
-| Verifier | `skills/verifier/`, `skills/shared/` |
-| Patcher | `skills/patcher/`, `skills/shared/` |
-| Post-Exploit | `skills/post-exploit/`, `skills/shared/` |
-| AD Operator | `skills/ad/`, `skills/shared/` |
-| Cloud Hunter | `skills/cloud/`, `skills/shared/` |
-| Contract Auditor | `skills/contracts/`, `skills/shared/` |
-| Reverser | `skills/reverser/`, `skills/shared/` |
-| Analyst | `skills/analyst/`, `skills/shared/` |
+Standard roles use the default `[f"/skills/standard/{role}/", "/skills/shared/"]`
+fallback (`agents/middleware_slots.py:98`). Plugin specialists pass an explicit
+`skill_sources=` list instead of relying on that fallback; the bash-executing
+plugins (scanner, exploiter, detector, verifier, patcher) additionally pull
+`/skills/standard/analyst/`.
 
-`skills/shared/` (OPSEC, defense evasion, workflow) is injected into every non-planning agent. Soundwave is the only agent that does not load `skills/shared/` — it is a document-generation planner, not an operational agent.
+| Agent (role) | Skill sources |
+|-------|--------------|
+| Decepticon (`decepticon`) | `/skills/standard/decepticon/`, `/skills/shared/` |
+| Soundwave (`soundwave`) | `/skills/standard/soundwave/`, `/skills/shared/` |
+| Recon (`recon`) | `/skills/standard/recon/`, `/skills/shared/` |
+| Exploit (`exploit`) | `/skills/standard/exploit/`, `/skills/shared/` |
+| Post-Exploit (`postexploit`) | `/skills/standard/postexploit/`, `/skills/shared/` |
+| AD Operator (`ad_operator`) | `/skills/standard/ad_operator/`, `/skills/shared/` |
+| Cloud Hunter (`cloud_hunter`) | `/skills/standard/cloud_hunter/`, `/skills/shared/` |
+| Contract Auditor (`contract_auditor`) | `/skills/standard/contract_auditor/`, `/skills/shared/` |
+| Reverser (`reverser`) | `/skills/standard/reverser/`, `/skills/shared/` |
+| Analyst (`analyst`) | `/skills/standard/analyst/`, `/skills/shared/` |
+| Phisher (`phisher`) | `/skills/standard/phisher/`, `/skills/shared/` |
+| MobileOperator (`mobile_operator`) | `/skills/standard/mobile_operator/`, `/skills/shared/` (see role-vs-directory note above) |
+| WirelessOperator (`wireless_operator`) | `/skills/standard/wireless_operator/`, `/skills/shared/` (see role-vs-directory note above) |
+| Vulnresearch (`vulnresearch`) | `/skills/plugins/vulnresearch/`, `/skills/shared/` |
+| Scanner (`scanner`) | `/skills/plugins/scanner/`, `/skills/standard/analyst/`, `/skills/shared/` |
+| Exploiter (`exploiter`) | `/skills/plugins/exploiter/`, `/skills/standard/analyst/`, `/skills/shared/` |
+| Detector (`detector`) | `/skills/plugins/detector/`, `/skills/standard/analyst/`, `/skills/shared/` |
+| Verifier (`verifier`) | `/skills/plugins/verifier/`, `/skills/standard/analyst/`, `/skills/shared/` |
+| Patcher (`patcher`) | `/skills/plugins/patcher/`, `/skills/standard/analyst/`, `/skills/shared/` |
+
+`/skills/shared/` (OPSEC, defense evasion, workflow) is appended to every standard
+role's default source list — including Soundwave, which uses the same
+`skills_sources_for(role)` fallback. The `SKILLS` middleware slot is part of the base
+slot set (`decepticon_core/contracts/slots.py`), so every role carries it.
+
+When `BENCHMARK_MODE=1`, `/skills/benchmark/` is appended to a role's sources
+(`agents/_benchmark_mode.py`).
