@@ -236,6 +236,56 @@ class TestLLMFactory:
         assert factory.get_model("decepticon").model_name == "openai/gpt-5.5"
 
 
+class TestLLMFactoryEmptyChainValidation:
+    """A credentials inventory whose AuthMethods lack a (method, tier) entry
+    for some required tier resolves to an EMPTY model chain at that tier.
+    ``LLMModelMapping.from_credentials_and_profile`` silently skips such
+    roles, so the failure surfaces much later — either as a confusing
+    ``KeyError: No model assignment for role: ...`` at ``get_model`` time
+    or, when a caller routes through middleware, as a primary-less
+    ``ModelFallbackMiddleware([])``. Validate at construction so the
+    operator gets one actionable error naming the empty tier(s) and the
+    configured credentials inventory."""
+
+    def setup_method(self) -> None:
+        self.proxy = ProxyConfig(url="http://localhost:4000", api_key="test-key")
+
+    def test_empty_tier_raises_at_init_with_inventory_listed(self) -> None:
+        # MINIMAX_API has only HIGH+MID entries in METHOD_MODELS — no LOW.
+        # ECO routes ``recon`` (and other LOW roles) to Tier.LOW, so the
+        # LOW chain resolves to []. The factory must refuse to construct.
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API])
+        with pytest.raises(ValueError) as exc_info:
+            LLMFactory(self.proxy, credentials=creds, profile=ModelProfile.ECO)
+        msg = str(exc_info.value)
+        # Names the empty tier so the operator knows what to fix.
+        assert "low" in msg.lower()
+        # Echoes the configured credentials so the operator can audit
+        # what was actually detected (vs. what they think they set).
+        assert AuthMethod.MINIMAX_API.value in msg
+
+    def test_test_profile_empty_high_chain_raises(self) -> None:
+        # MINIMAX_API covers HIGH+MID but not LOW; TEST profile forces every
+        # role to LOW → empty chain across the board.
+        creds = Credentials(methods=[AuthMethod.MINIMAX_API])
+        with pytest.raises(ValueError, match="(?i)low"):
+            LLMFactory(self.proxy, credentials=creds, profile=ModelProfile.TEST)
+
+    def test_valid_inventory_still_constructs(self) -> None:
+        # OPENAI_API covers all three tiers — no empty chain, no regression.
+        creds = Credentials(methods=[AuthMethod.OPENAI_API])
+        factory = LLMFactory(self.proxy, credentials=creds, profile=ModelProfile.ECO)
+        assert factory.get_model("recon").model_name == "openai/gpt-5-nano"
+        assert factory.get_model("decepticon").model_name == "openai/gpt-5.5"
+
+    def test_explicit_mapping_bypasses_validation(self) -> None:
+        # When the caller supplies a mapping directly, they own its shape —
+        # the credentials-based validation does not apply (existing tests
+        # build empty/partial mappings explicitly).
+        factory = LLMFactory(self.proxy, mapping=LLMModelMapping())
+        assert factory.proxy_url == "http://localhost:4000"
+
+
 class TestLLMFactoryHealthCheck:
     def test_health_check_returns_false_when_no_proxy(self):
         proxy = ProxyConfig(url="http://localhost:19999")

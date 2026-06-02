@@ -38,11 +38,14 @@ from pydantic import SecretStr
 from decepticon.llm.router import ModelRouter
 from decepticon_core.registry import RoleRegistry
 from decepticon_core.types.llm import (
+    AGENT_TIERS,
     AuthMethod,
     Credentials,
     LLMModelMapping,
     ModelProfile,
     ProxyConfig,
+    Tier,
+    resolve_chain,
 )
 from decepticon_core.utils.logging import get_logger
 
@@ -1279,6 +1282,51 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         ) from exc
 
 
+def _tiers_required(profile: ModelProfile) -> dict[Tier, list[str]]:
+    if profile == ModelProfile.MAX:
+        return {Tier.HIGH: list(AGENT_TIERS)}
+    if profile == ModelProfile.TEST:
+        return {Tier.LOW: list(AGENT_TIERS)}
+    grouped: dict[Tier, list[str]] = {}
+    for role, tier in AGENT_TIERS.items():
+        grouped.setdefault(tier, []).append(role)
+    return grouped
+
+
+def _validate_chain_coverage(credentials: Credentials, profile: ModelProfile) -> None:
+    """Fail fast when ``credentials`` resolve to an EMPTY chain for any
+    tier the factory must serve under ``profile``.
+
+    ``LLMModelMapping.from_credentials_and_profile`` silently skips a role
+    whose resolved chain is empty (no configured AuthMethod has a
+    ``(method, tier)`` entry in ``METHOD_MODELS``). Downstream this surfaces
+    as a confusing ``KeyError`` at ``get_model`` time or a primary-less
+    ``ModelFallbackMiddleware([])``. Surface it once, here, with the
+    offending tier(s) + the configured inventory so the operator can fix
+    config immediately rather than chase a runtime failure.
+    """
+    empty: list[tuple[Tier, list[str]]] = [
+        (tier, roles)
+        for tier, roles in _tiers_required(profile).items()
+        if not resolve_chain(tier, credentials)
+    ]
+    if not empty:
+        return
+    details = "; ".join(
+        f"{tier.value} (roles: {', '.join(sorted(roles))})" for tier, roles in empty
+    )
+    inventory = ", ".join(m.value for m in credentials.methods) or "<none>"
+    tier_list = ", ".join(tier.value for tier, _ in empty)
+    raise ValueError(
+        f"LLMFactory: no model available for tier(s) [{tier_list}] under "
+        f"profile {profile.value!r}. Empty chains: {details}. Configured "
+        f"credentials: [{inventory}]. Add a credential whose AuthMethod "
+        f"has an entry for the listed tier(s) in METHOD_MODELS "
+        f"(packages/decepticon-core/decepticon_core/types/llm.py), or "
+        f"adjust DECEPTICON_AUTH_PRIORITY / DECEPTICON_MODEL_PROFILE."
+    )
+
+
 class LLMFactory:
     """Creates and caches LangChain ChatModel instances per agent role.
 
@@ -1302,7 +1350,9 @@ class LLMFactory:
             self._mapping = mapping
         else:
             creds = credentials if credentials is not None else _resolve_credentials()
-            resolved_profile = profile if profile is not None else self._resolve_profile()
+            raw_profile = profile if profile is not None else self._resolve_profile()
+            resolved_profile = ModelProfile(raw_profile)
+            _validate_chain_coverage(creds, resolved_profile)
             self._mapping = LLMModelMapping.from_credentials_and_profile(creds, resolved_profile)
         self._router = ModelRouter(self._mapping)
         self._cache: dict[str, BaseChatModel] = {}
