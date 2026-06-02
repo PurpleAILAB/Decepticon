@@ -5,6 +5,9 @@ import * as path from "path";
 // doubles as an on-disk workspace directory shared by both sides.
 export const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
+export const VALID_TARGET_TYPES = ["web_url", "ip_range"] as const;
+export const VALID_STATUSES = ["draft", "planning", "running", "completed", "failed"] as const;
+
 // Path-traversal containment: refuse any `name` whose resolved directory escapes
 // `workspace`, so a poisoned DB row (e.g. "../../etc" from the CLI auto-import
 // path) cannot be read. Checked on the resolved absolute path, not the raw input.

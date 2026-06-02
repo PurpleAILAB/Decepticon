@@ -1,6 +1,6 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
 import { prisma } from "@/lib/prisma";
-import { SLUG_RE } from "@/lib/workspace";
+import { SLUG_RE, VALID_TARGET_TYPES, VALID_STATUSES } from "@/lib/workspace";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
@@ -66,6 +66,23 @@ export async function PATCH(
           error:
             "Invalid engagement name — must be 3-64 chars, lowercase letters / digits / internal hyphens",
         },
+        { status: 400 }
+      );
+    }
+
+    if ("status" in data && !VALID_STATUSES.includes(data.status as (typeof VALID_STATUSES)[number])) {
+      return NextResponse.json(
+        { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    if (
+      "targetType" in data &&
+      !VALID_TARGET_TYPES.includes(data.targetType as (typeof VALID_TARGET_TYPES)[number])
+    ) {
+      return NextResponse.json(
+        { error: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(", ")}` },
         { status: 400 }
       );
     }

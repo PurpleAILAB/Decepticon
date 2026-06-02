@@ -1,6 +1,6 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
 import { prisma } from "@/lib/prisma";
-import { SLUG_RE } from "@/lib/workspace";
+import { SLUG_RE, VALID_TARGET_TYPES } from "@/lib/workspace";
 import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs/promises";
 import * as path from "path";
@@ -77,12 +77,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const validTypes = [
-      "local_path", "git_url", "file_upload", "web_url", "ip_range",
-    ];
-    if (!validTypes.includes(targetType)) {
+    if (!VALID_TARGET_TYPES.includes(targetType)) {
       return NextResponse.json(
-        { error: `Invalid targetType. Must be one of: ${validTypes.join(", ")}` },
+        { error: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(", ")}` },
         { status: 400 }
       );
     }
