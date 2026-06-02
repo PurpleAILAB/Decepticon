@@ -28,6 +28,7 @@ from typing import Any
 
 from decepticon.tools.research._state import get_store
 from decepticon_core.types.kg import (
+    SEVERITY_COST_MULTIPLIER,
     SEVERITY_SCORE,
     EdgeKind,
     NodeKind,
@@ -51,15 +52,6 @@ _ATTACK_REL_TYPES = "|".join(
         EdgeKind.ADMIN_TO.value,
     ]
 )
-
-# Severity → multiplier. High severity shrinks cost (faster to reach).
-_SEVERITY_MULTIPLIER: dict[str, float] = {
-    Severity.CRITICAL.value: 0.4,
-    Severity.HIGH.value: 0.6,
-    Severity.MEDIUM.value: 1.0,
-    Severity.LOW.value: 1.6,
-    Severity.INFO.value: 2.5,
-}
 
 
 @dataclass(frozen=True)
@@ -123,7 +115,10 @@ def compute_edge_cost(
     This should be called at ingestion time and stored as the ``cost``
     property on relationships so Cypher path algorithms can use it.
     """
-    mult = _SEVERITY_MULTIPLIER.get(severity, 1.0)
+    try:
+        mult = SEVERITY_COST_MULTIPLIER[Severity(severity)]
+    except ValueError:
+        mult = 1.0
     if validated:
         mult *= 0.5
     return max(base_weight, 0.05) * mult

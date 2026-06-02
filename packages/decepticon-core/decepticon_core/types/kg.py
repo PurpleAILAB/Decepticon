@@ -155,6 +155,15 @@ SEVERITY_SCORE: dict[Severity, float] = {
 }
 
 
+SEVERITY_COST_MULTIPLIER: dict[Severity, float] = {
+    Severity.CRITICAL: 0.4,
+    Severity.HIGH: 0.6,
+    Severity.MEDIUM: 1.0,
+    Severity.LOW: 1.6,
+    Severity.INFO: 2.5,
+}
+
+
 # ── Models ──────────────────────────────────────────────────────────────
 
 

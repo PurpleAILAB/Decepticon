@@ -11,7 +11,6 @@ import pytest
 
 from decepticon.tools.research.chain import (
     _ATTACK_REL_TYPES,
-    _SEVERITY_MULTIPLIER,
     Chain,
     ChainStep,
     compute_edge_cost,
@@ -22,7 +21,7 @@ from decepticon.tools.research.chain import (
     promote_chain,
     unexplored_surface,
 )
-from decepticon_core.types.kg import EdgeKind, NodeKind, Severity
+from decepticon_core.types.kg import SEVERITY_COST_MULTIPLIER, EdgeKind, NodeKind, Severity
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -95,25 +94,19 @@ class TestAttackRelTypes:
         assert not _ATTACK_REL_TYPES.endswith("|")
 
 
-# ── _SEVERITY_MULTIPLIER ─────────────────────────────────────────────────
-
-
 class TestSeverityMultiplier:
     def test_critical_cheapest(self) -> None:
-        assert (
-            _SEVERITY_MULTIPLIER[Severity.CRITICAL.value]
-            < _SEVERITY_MULTIPLIER[Severity.HIGH.value]
-        )
+        assert SEVERITY_COST_MULTIPLIER[Severity.CRITICAL] < SEVERITY_COST_MULTIPLIER[Severity.HIGH]
 
     def test_info_most_expensive(self) -> None:
-        assert _SEVERITY_MULTIPLIER[Severity.INFO.value] > _SEVERITY_MULTIPLIER[Severity.LOW.value]
+        assert SEVERITY_COST_MULTIPLIER[Severity.INFO] > SEVERITY_COST_MULTIPLIER[Severity.LOW]
 
     def test_medium_is_neutral(self) -> None:
-        assert _SEVERITY_MULTIPLIER[Severity.MEDIUM.value] == 1.0
+        assert SEVERITY_COST_MULTIPLIER[Severity.MEDIUM] == 1.0
 
     def test_all_severities_covered(self) -> None:
         for sev in Severity:
-            assert sev.value in _SEVERITY_MULTIPLIER
+            assert sev in SEVERITY_COST_MULTIPLIER
 
 
 # ── compute_edge_cost ────────────────────────────────────────────────────
