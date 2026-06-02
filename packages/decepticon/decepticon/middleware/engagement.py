@@ -24,7 +24,10 @@ state-backed context injection via wrap_model_call.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+from pathlib import Path
 from typing import Annotated, Any, NotRequired, cast
 
 from langchain.agents import AgentState
@@ -67,6 +70,9 @@ class EngagementContextState(AgentState):
     ]
     flag_format: NotRequired[Annotated[str, "Expected flag format string."]]
     mission_brief: NotRequired[Annotated[str, "Challenge name + description."]]
+
+
+log = logging.getLogger(__name__)
 
 
 _FALSY_ENV_VALUES = frozenset({"", "0", "false", "no", "off"})
@@ -170,6 +176,45 @@ def _build_engagement_injection(slug: str, workspace: str) -> str:
         "engagement directory name; the launcher already chose them. The "
         "human-friendly engagement title belongs in roe.json:engagement_name "
         "and may differ from this slug."
+    )
+
+
+def _load_deconfliction(workspace: str) -> dict[str, Any] | None:
+    root = workspace.rstrip("/") or workspace
+    path = Path(root) / "plan" / "deconfliction.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("engagement: failed to read %s: %s; skipping block", path, exc)
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _build_deconfliction_injection(data: dict[str, Any]) -> str:
+    code = data.get("deconfliction_code")
+    raw_identifiers = data.get("identifiers")
+    identifiers = raw_identifiers if isinstance(raw_identifiers, list) else []
+
+    lines: list[str] = []
+    if isinstance(code, str) and code:
+        lines.append(f"Deconfliction code: {code}")
+    for entry in identifiers:
+        if not isinstance(entry, dict):
+            continue
+        kind = entry.get("type")
+        value = entry.get("value")
+        if isinstance(kind, str) and kind and isinstance(value, str) and value:
+            lines.append(f"- {kind}: {value}")
+
+    if not lines:
+        return ""
+
+    return (
+        "\n\n[Deconfliction — set by Soundwave for blue-team coordination]\n"
+        "Stamp your activity with these identifiers so defenders can separate "
+        "this engagement from real threats:\n" + "\n".join(lines)
     )
 
 
@@ -287,6 +332,11 @@ class EngagementContextMiddleware(AgentMiddleware):
         sections: list[str] = []
         if slug:
             sections.append(_build_engagement_injection(slug, workspace))
+            deconfliction = _load_deconfliction(workspace)
+            if deconfliction is not None:
+                block = _build_deconfliction_injection(deconfliction)
+                if block:
+                    sections.append(block)
         if _benchmark_mode_active():
             sections.append(
                 _build_benchmark_injection(

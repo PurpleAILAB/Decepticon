@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -330,6 +332,105 @@ def test_appended_to_existing_system_message(
     assert "Workspace slug: demo" in text
     assert "## CTF Benchmark Challenge" in text
     assert text.index("ORIGINAL_PROMPT_BODY") < text.index("Workspace slug")
+
+
+def _write_deconfliction(workspace: Path, payload: dict[str, Any]) -> None:
+    plan_dir = workspace / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "deconfliction.json").write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def test_deconfliction_identifiers_appear_in_injection(
+    tmp_path: Path,
+    middleware: EngagementContextMiddleware,
+) -> None:
+    _write_deconfliction(
+        tmp_path,
+        {
+            "engagement_name": "blue-falcon",
+            "deconfliction_code": "ECHO-9",
+            "identifiers": [
+                {"type": "source-ip", "value": "10.4.4.4", "description": "jump host"},
+                {"type": "user-agent", "value": "decepticon/1.0"},
+            ],
+        },
+    )
+    req = _FakeRequest(
+        state={"engagement_name": "blue-falcon", "workspace_path": str(tmp_path)},
+    )
+    result = middleware._inject(req)
+    text = _flatten(result.system_message)
+
+    assert "Deconfliction code: ECHO-9" in text
+    assert "source-ip: 10.4.4.4" in text
+    assert "user-agent: decepticon/1.0" in text
+    assert text.index("Workspace slug:") < text.index("Deconfliction code: ECHO-9")
+
+
+def test_deconfliction_absent_degrades_cleanly(
+    tmp_path: Path,
+    middleware: EngagementContextMiddleware,
+) -> None:
+    req = _FakeRequest(
+        state={"engagement_name": "blue-falcon", "workspace_path": str(tmp_path)},
+    )
+    result = middleware._inject(req)
+    text = _flatten(result.system_message)
+
+    assert "Workspace slug: blue-falcon" in text
+    assert "Deconfliction" not in text
+
+
+def test_deconfliction_malformed_json_degrades_cleanly(
+    tmp_path: Path,
+    middleware: EngagementContextMiddleware,
+) -> None:
+    plan_dir = tmp_path / "plan"
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    (plan_dir / "deconfliction.json").write_text("{not valid json", encoding="utf-8")
+
+    req = _FakeRequest(
+        state={"engagement_name": "blue-falcon", "workspace_path": str(tmp_path)},
+    )
+    result = middleware._inject(req)
+    text = _flatten(result.system_message)
+
+    assert "Workspace slug: blue-falcon" in text
+    assert "Deconfliction" not in text
+
+
+def test_deconfliction_empty_identifiers_emit_no_block(
+    tmp_path: Path,
+    middleware: EngagementContextMiddleware,
+) -> None:
+    _write_deconfliction(
+        tmp_path,
+        {"engagement_name": "blue-falcon", "deconfliction_code": "", "identifiers": []},
+    )
+    req = _FakeRequest(
+        state={"engagement_name": "blue-falcon", "workspace_path": str(tmp_path)},
+    )
+    result = middleware._inject(req)
+    text = _flatten(result.system_message)
+
+    assert "Workspace slug: blue-falcon" in text
+    assert "Deconfliction" not in text
+
+
+def test_deconfliction_skipped_without_engagement_slug(
+    tmp_path: Path,
+    middleware: EngagementContextMiddleware,
+) -> None:
+    _write_deconfliction(
+        tmp_path,
+        {"engagement_name": "blue-falcon", "deconfliction_code": "ECHO-9"},
+    )
+    req = _FakeRequest(state={"workspace_path": str(tmp_path)})
+    result = middleware._inject(req)
+
+    assert result is req
 
 
 # ── runnable-config hydration ──────────────────────────────────────────
