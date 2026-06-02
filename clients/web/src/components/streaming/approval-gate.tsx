@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { ShieldAlert, Check, X, Loader2 } from "lucide-react";
+import { ShieldAlert, Check, X, Loader2, Pencil } from "lucide-react";
 
 // Matches the `approval_request` wire format written by
 // decepticon/middleware/hitl.py (ApprovalRequest.to_jsonl).
@@ -84,13 +84,25 @@ interface ApprovalCardProps {
 
 function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState<"allow" | "deny" | null>(null);
+  const [argsText, setArgsText] = useState("");
+  const [submitting, setSubmitting] = useState<"allow" | "deny" | "redirect" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const noteRef = useRef(note);
   noteRef.current = note;
 
-  async function decide(action: "allow" | "deny") {
+  async function decide(action: "allow" | "deny" | "redirect") {
     if (submitting) return;
+
+    let redirectArgs: Record<string, unknown> | undefined;
+    if (action === "redirect") {
+      try {
+        redirectArgs = JSON.parse(argsText) as Record<string, unknown>;
+      } catch {
+        setError("Redirect args must be valid JSON");
+        return;
+      }
+    }
+
     setSubmitting(action);
     setError(null);
     try {
@@ -101,6 +113,7 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
           request_id: request.request_id,
           action,
           operator_note: noteRef.current.trim(),
+          ...(action === "redirect" ? { redirect_args: redirectArgs } : {}),
         }),
       });
       if (!res.ok) {
@@ -167,6 +180,15 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
           className="min-h-[2.5rem] text-xs"
         />
 
+        <Textarea
+          aria-label="Redirect arguments (JSON)"
+          placeholder='Redirect args as JSON, e.g. {"cmd": "ls -la"}'
+          value={argsText}
+          onChange={(e) => setArgsText(e.target.value)}
+          disabled={submitting !== null}
+          className="min-h-[2.5rem] font-mono text-xs"
+        />
+
         {error && <p className="text-destructive">{error}</p>}
 
         <div className="flex gap-2">
@@ -194,6 +216,21 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
           >
             {submitting === "deny" ? <Loader2 className="animate-spin" /> : <X />}
             Deny
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => decide("redirect")}
+            disabled={submitting !== null}
+            className="flex-1"
+          >
+            {submitting === "redirect" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Pencil />
+            )}
+            Redirect
           </Button>
         </div>
       </CardContent>
