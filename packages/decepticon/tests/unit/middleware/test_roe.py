@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -20,6 +21,7 @@ from decepticon_core.types.roe import (
     MachineEnforcement,
     evaluate_command,
     evaluate_target,
+    evaluate_time_window,
 )
 
 
@@ -120,6 +122,90 @@ class TestEvaluateCommand:
     def test_invalid_regex_skipped(self) -> None:
         rules = MachineEnforcement.from_dict({"forbidden_command_patterns": ["[unclosed"]})
         assert evaluate_command("rm -rf /etc", rules).allow
+
+
+class TestTimeWindowSchema:
+    def test_no_windows_by_default(self) -> None:
+        rules = MachineEnforcement.from_dict({})
+        assert rules.authorized_windows == ()
+        assert rules.blackout_windows == ()
+
+    def test_authorized_windows_parsed_from_pairs(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {"authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]]}
+        )
+        assert len(rules.authorized_windows) == 1
+        start, end = rules.authorized_windows[0]
+        assert start == datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)
+        assert end == datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
+
+    def test_dict_windows_parsed(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {
+                "blackout_windows": [
+                    {"start": "2026-06-01T22:00:00+00:00", "end": "2026-06-02T06:00:00+00:00"}
+                ]
+            }
+        )
+        assert len(rules.blackout_windows) == 1
+
+    def test_bad_values_skipped(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {
+                "authorized_windows": [
+                    ["not-a-date", "2026-06-01T18:00:00+00:00"],
+                    ["2026-06-01T18:00:00+00:00", "2026-06-01T09:00:00+00:00"],
+                    "Mon-Fri 09:00-18:00 KST",
+                    ["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"],
+                ]
+            }
+        )
+        assert len(rules.authorized_windows) == 1
+
+
+class TestEvaluateTimeWindow:
+    AUTH = {"authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]]}
+    BLACKOUT = {"blackout_windows": [["2026-06-01T12:00:00+00:00", "2026-06-01T13:00:00+00:00"]]}
+
+    def test_no_windows_allow(self) -> None:
+        now = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, MachineEnforcement()).allow
+
+    def test_in_window_allow(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert d.allow
+        assert d.reason_code == "IN_TESTING_WINDOW"
+
+    def test_out_of_window_refuse(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert not d.allow
+        assert d.reason_code == "OUTSIDE_TESTING_WINDOW"
+
+    def test_window_end_is_exclusive(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
+        assert not evaluate_time_window(now, rules).allow
+
+    def test_blackout_refuse(self) -> None:
+        rules = MachineEnforcement.from_dict({**self.AUTH, **self.BLACKOUT})
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert not d.allow
+        assert d.reason_code == "BLACKOUT_WINDOW"
+
+    def test_blackout_takes_precedence_over_authorized(self) -> None:
+        rules = MachineEnforcement.from_dict({**self.AUTH, **self.BLACKOUT})
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, rules).reason_code == "BLACKOUT_WINDOW"
+
+    def test_blackout_only_allows_outside_blackout(self) -> None:
+        rules = MachineEnforcement.from_dict(self.BLACKOUT)
+        now = datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, rules).allow
 
 
 class TestExtractTargets:
@@ -365,6 +451,84 @@ class TestRoEMiddleware:
         assert len(recs) == 1
         assert recs[0]["decision"] == "refuse"
         assert recs[0]["reason_code"] == "NOT_IN_SCOPE"
+
+    def test_enforce_refuses_outside_testing_window(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "OUTSIDE_TESTING_WINDOW" in result.content
+
+    def test_enforce_allows_inside_testing_window(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_enforce_refuses_during_blackout(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "blackout_windows": [["2026-06-01T12:00:00+00:00", "2026-06-01T13:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "BLACKOUT_WINDOW" in result.content
+
+    def test_enforce_allows_when_no_windows_configured(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        now = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_warn_mode_runs_outside_window_with_warning(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "warn",
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="scan output", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert "[ROE_WARN]" in result.content
+        assert "OUTSIDE_TESTING_WINDOW" in result.content
 
 
 class TestRedactSecrets:

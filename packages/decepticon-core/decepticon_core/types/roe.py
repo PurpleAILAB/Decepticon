@@ -43,6 +43,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Iterable
 
@@ -100,6 +101,8 @@ class MachineEnforcement:
     allow_cloud_metadata: bool = False
     max_concurrent_connections: int | None = None
     min_inter_request_delay_ms: int = 0
+    authorized_windows: tuple[tuple[datetime, datetime], ...] = field(default_factory=tuple)
+    blackout_windows: tuple[tuple[datetime, datetime], ...] = field(default_factory=tuple)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> MachineEnforcement:
@@ -119,6 +122,8 @@ class MachineEnforcement:
             allow_cloud_metadata=bool(data.get("allow_cloud_metadata", False)),
             max_concurrent_connections=data.get("max_concurrent_connections"),
             min_inter_request_delay_ms=int(data.get("min_inter_request_delay_ms") or 0),
+            authorized_windows=tuple(_parse_windows(data.get("authorized_windows") or ())),
+            blackout_windows=tuple(_parse_windows(data.get("blackout_windows") or ())),
         )
 
     def effective_forbidden_destinations(self) -> tuple[str, ...]:
@@ -135,6 +140,33 @@ def _parse_rules(items: Iterable[Any]) -> list[ScopeRule]:
         elif isinstance(item, dict) and item.get("target"):
             rules.append(ScopeRule(pattern=str(item["target"]), kind=str(item.get("type", "auto"))))
     return rules
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _parse_windows(items: Iterable[Any]) -> list[tuple[datetime, datetime]]:
+    windows: list[tuple[datetime, datetime]] = []
+    for item in items:
+        start_raw: Any = None
+        end_raw: Any = None
+        if isinstance(item, dict):
+            start_raw = item.get("start")
+            end_raw = item.get("end")
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            start_raw, end_raw = item[0], item[1]
+        start = _parse_iso(start_raw)
+        end = _parse_iso(end_raw)
+        if start is None or end is None or end <= start:
+            continue
+        windows.append((start, end))
+    return windows
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,4 +285,44 @@ def evaluate_command(
                 )
         except re.error:
             continue
+    return Decision.allow_default()
+
+
+def _within(now: datetime, window: tuple[datetime, datetime]) -> bool:
+    start, end = window
+    return start <= now < end
+
+
+def evaluate_time_window(
+    now: datetime,
+    rules: MachineEnforcement,
+) -> Decision:
+    for window in rules.blackout_windows:
+        if _within(now, window):
+            return Decision.refuse(
+                code="BLACKOUT_WINDOW",
+                detail=(
+                    f"{now.isoformat()} falls inside blackout window "
+                    f"{window[0].isoformat()}..{window[1].isoformat()}"
+                ),
+                matched=(f"{window[0].isoformat()}/{window[1].isoformat()}",),
+            )
+
+    if rules.authorized_windows:
+        for window in rules.authorized_windows:
+            if _within(now, window):
+                return Decision(
+                    allow=True,
+                    reason_code="IN_TESTING_WINDOW",
+                    reason_detail=(
+                        f"{now.isoformat()} is inside authorized window "
+                        f"{window[0].isoformat()}..{window[1].isoformat()}"
+                    ),
+                )
+        return Decision.refuse(
+            code="OUTSIDE_TESTING_WINDOW",
+            detail=f"{now.isoformat()} is outside all authorized testing windows",
+            risk="medium",
+        )
+
     return Decision.allow_default()
