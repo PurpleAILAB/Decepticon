@@ -227,6 +227,13 @@ ci-test:
 ci-test-coverage:
 	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=60
 
+## PR-informational lane: coverage without any threshold. Used by the
+## non-blocking ``coverage-report`` job in ci.yml so PR authors see a
+## coverage delta without blocking merge (the documented decision is to
+## keep the blocking PR pytest step coverage-free — see ci.yml comment).
+ci-test-coverage-report:
+	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=0
+
 quality-cli: node-install
 	# streaming workspace must be built first — its package.json main
 	# resolves to dist/, which cli's typecheck + build consume.

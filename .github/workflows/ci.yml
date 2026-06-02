@@ -211,6 +211,76 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  # ── PR coverage visibility (NON-BLOCKING) ───────────────────────────
+  # Informational coverage job that runs in PARALLEL with the blocking
+  # `python` job, so it does NOT add to merge latency. The blocking PR
+  # lane deliberately runs pytest WITHOUT coverage (see the comment in
+  # the `python` job above — coverage adds ~3x runtime and PR feedback
+  # latency is the priority). This job exists purely to surface a
+  # coverage delta to PR reviewers without contradicting that decision:
+  #   * uses `--cov-fail-under=0` (via `make ci-test-coverage-report`),
+  #     so a coverage drop NEVER fails the PR;
+  #   * is NOT in the repo's required-status set — keep it out of the
+  #     branch protection list so it remains advisory only;
+  #   * uploads coverage.xml as an artifact and writes a short summary
+  #     to $GITHUB_STEP_SUMMARY for at-a-glance review.
+  coverage-report:
+    name: Coverage report (PRs — informational, non-blocking)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    # Belt-and-braces: even if the runner choked, this job must never
+    # block a PR. Required-status enforcement lives in branch
+    # protection, but `continue-on-error` makes the non-blocking intent
+    # explicit in the workflow file itself.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # Share the cached .venv with the blocking `python` job (same key
+      # shape) so the cold-cache cost of this job is mostly checkout +
+      # pytest, not a full uv resolve.
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+      - run: uv sync --dev --locked
+      - name: Pytest with coverage (no threshold — `make ci-test-coverage-report`)
+        run: make ci-test-coverage-report
+      - name: Write coverage summary to step summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage report (informational)"
+            echo ""
+            echo "This is a NON-BLOCKING coverage visibility job. The blocking PR"
+            echo "pytest step runs without coverage by design — see the comment in"
+            echo "the \`python\` job. Coverage threshold gating happens on main pushes."
+            echo ""
+            if [ -f coverage.xml ]; then
+              # line-rate is a fraction in [0,1] on the root <coverage> tag
+              rate=$(python -c "import xml.etree.ElementTree as ET; print(ET.parse('coverage.xml').getroot().attrib.get('line-rate','0'))")
+              pct=$(python -c "print(f'{float(\"$rate\")*100:.2f}')")
+              echo "**Line coverage:** ${pct}%"
+            else
+              echo "_coverage.xml not produced — see the pytest step logs._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-pr
+          path: coverage.xml
+          if-no-files-found: ignore
+
   cli:
     # Matrix mirrors the python job — Linux + macOS. Windows runner is
     # deferred until the cli test suite is verified on Windows in a
