@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import ToolMessage
 
 from decepticon.middleware import roe as roe_mod
@@ -17,7 +18,10 @@ from decepticon.middleware._audit_sink import RoEAuditSink, verify_ledger
 from decepticon.middleware._command_targets import extract_targets
 from decepticon.middleware.roe import (
     RoEEnforcementMiddleware,
+    _load_rules_for_workspace,
     _redact_secrets,
+    _to_text,
+    build_default_sink,
 )
 from decepticon_core.types.roe import (
     EnforcementMode,
@@ -1150,3 +1154,136 @@ class TestConcurrencyGate:
         assert not handler.called
         assert "[ROE_REFUSED]" in result.content
         assert mw._sync_sema is None
+
+
+class TestLoadRulesFallback:
+    def test_malformed_roe_json_falls_back_to_audit(self, tmp_path: Path) -> None:
+        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "plan" / "roe.json").write_text("{not valid json", encoding="utf-8")
+        rules = _load_rules_for_workspace(str(tmp_path))
+        assert rules.mode == EnforcementMode.AUDIT
+
+    def test_malformed_roe_json_gated_call_allowed_and_logged(self, tmp_path: Path) -> None:
+        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "plan" / "roe.json").write_text("}}garbage{{", encoding="utf-8")
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert isinstance(result, ToolMessage)
+        assert result.content == "ok"
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert len(recs) == 1
+        assert recs[0]["decision"] == "allow"
+        assert recs[0]["mode"] == "audit"
+
+
+class TestToTextFlattening:
+    def test_list_of_str_flattened_in_warn(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+        tool_msg = ToolMessage(content=["part-a", "part-b"], tool_call_id="tc-test")
+        handler = MagicMock(return_value=tool_msg)
+        result = mw.wrap_tool_call(req, handler)
+        assert "[ROE_WARN]" in result.content
+        assert "part-apart-b" in result.content
+
+    def test_list_of_text_dicts_flattened_in_warn(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+        content = [
+            {"type": "text", "text": "alpha "},
+            {"type": "text", "text": "beta"},
+            {"type": "image", "url": "ignored"},
+        ]
+        tool_msg = ToolMessage(content=content, tool_call_id="tc-test")
+        handler = MagicMock(return_value=tool_msg)
+        result = mw.wrap_tool_call(req, handler)
+        assert "[ROE_WARN]" in result.content
+        assert "alpha beta" in result.content
+        assert "ignored" not in result.content
+
+    def test_to_text_direct(self) -> None:
+        assert _to_text("plain") == "plain"
+        assert _to_text(["a", "b"]) == "ab"
+        assert _to_text([{"type": "text", "text": "x"}, {"type": "other"}]) == "x"
+        assert _to_text(42) == "42"
+
+
+class TestRoEMiddlewareAsync:
+    def test_async_enforce_refuses_out_of_scope(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        called = False
+
+        async def handler(_req):
+            nonlocal called
+            called = True
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert not called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.status == "error"
+        assert result.tool_call_id == "tc-test"
+
+    def test_async_enforce_allows_in_scope(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+
+        async def handler(_req):
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert result.content == "ok"
+
+    def test_async_warn_wraps_output(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+
+        async def handler(_req):
+            return ToolMessage(content="scan output", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert "[ROE_WARN]" in result.content
+        assert "scan output" in result.content
+
+
+class TestTcidFallback:
+    def test_refused_carries_id_from_tool_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        del req.tool_call_id
+        req.tool_call.id = "fallback-id"
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.tool_call_id == "fallback-id"
+
+
+class TestBuildDefaultSink:
+    def test_env_path_used(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        env_target = tmp_path / "env" / "ledger.jsonl"
+        monkeypatch.setenv("DECEPTICON_ROE_AUDIT_PATH", str(env_target))
+        sink = build_default_sink(str(tmp_path / "workspace"))
+        assert sink is not None
+        assert sink.path == env_target
+
+    def test_no_env_no_workspace_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_ROE_AUDIT_PATH", raising=False)
+        assert build_default_sink(None) is None
+
+    def test_workspace_path_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_ROE_AUDIT_PATH", raising=False)
+        sink = build_default_sink(str(tmp_path))
+        assert sink is not None
+        assert sink.path == tmp_path / "audit" / "roe-decisions.jsonl"
