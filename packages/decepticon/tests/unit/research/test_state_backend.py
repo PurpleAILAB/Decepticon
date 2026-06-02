@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 
@@ -90,3 +91,32 @@ def test_save_compat_batch_upserts(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_json_helper() -> None:
     result = state._json({"key": "value"})
     assert '"key": "value"' in result
+
+
+def test_transaction_does_not_save_on_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_calls: list[KnowledgeGraph] = []
+
+    monkeypatch.setattr(state, "_load", lambda: (KnowledgeGraph(), Path("/dev/null")))
+    monkeypatch.setattr(state, "_save", lambda graph, path=None: save_calls.append(graph))
+
+    with pytest.raises(RuntimeError):
+        with state.graph_transaction():
+            raise RuntimeError("boom")
+
+    assert save_calls == []
+
+
+def test_transaction_saves_once_on_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_calls: list[KnowledgeGraph] = []
+
+    monkeypatch.setattr(state, "_load", lambda: (KnowledgeGraph(), Path("/dev/null")))
+    monkeypatch.setattr(state, "_save", lambda graph, path=None: save_calls.append(graph))
+
+    with state.graph_transaction() as g:
+        g.upsert_node(Node.make(NodeKind.HOST, "10.0.0.2", key="host::10.0.0.2"))
+
+    assert len(save_calls) == 1

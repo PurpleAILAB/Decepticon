@@ -83,17 +83,7 @@ def _json(data: Any) -> str:
 
 @contextmanager
 def graph_transaction():
-    """Load the graph, yield it for mutation, save on exit.
-
-    Thread-safe: only one transaction runs at a time.
-    Crash-safe: saves even if the body raises (best-effort).
-    """
     with _GRAPH_LOCK:
         graph, path = _load()
-        try:
-            yield graph
-        finally:
-            try:
-                _save(graph, path)
-            except Exception:
-                log.exception("Failed to save graph after transaction")
+        yield graph
+        _save(graph, path)
