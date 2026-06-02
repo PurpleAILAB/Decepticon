@@ -35,10 +35,12 @@ import random
 import re
 import threading
 import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from urllib.parse import urlsplit
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import ToolMessage
@@ -64,8 +66,45 @@ GATED_TOOL_NAMES: frozenset[str] = frozenset(
         "bash",
         "bash_output",
         "bash_kill",
+        "http_request",
+        "proxy_send_request",
+        "browser_action",
     }
 )
+
+
+def _host_from_url(url: Any) -> list[str]:
+    if not isinstance(url, str) or not url:
+        return []
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return []
+    return [host] if host else []
+
+
+def _hosts_from_url_arg(args: dict[str, Any]) -> list[str]:
+    return _host_from_url(args.get("url"))
+
+
+def _hosts_from_browser_action(args: dict[str, Any]) -> list[str]:
+    raw = args.get("params_json")
+    if not isinstance(raw, str) or not raw:
+        return []
+    try:
+        params = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(params, dict):
+        return []
+    return _host_from_url(params.get("url"))
+
+
+NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
+    "http_request": _hosts_from_url_arg,
+    "proxy_send_request": _hosts_from_url_arg,
+    "browser_action": _hosts_from_browser_action,
+}
 
 
 def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
@@ -191,13 +230,16 @@ def _redact_secrets(cmd: str) -> str:
     return out
 
 
-def _command_from_tool_call(request) -> str:
+def _tool_call_args(request) -> dict[str, Any]:
     args = getattr(request, "tool_call_args", None)
     if not isinstance(args, dict):
         last = getattr(request, "tool_call", None)
         args = getattr(last, "args", None) if last else None
-    if not isinstance(args, dict):
-        return ""
+    return args if isinstance(args, dict) else {}
+
+
+def _command_from_tool_call(request) -> str:
+    args = _tool_call_args(request)
     cmd = args.get("command") or args.get("cmd") or ""
     return cmd if isinstance(cmd, str) else ""
 
@@ -363,6 +405,7 @@ class RoEEnforcementMiddleware(AgentMiddleware):
             sema = self._async_sema
         async with sema:
             yield
+
     def _evaluate(self, request) -> tuple[Decision, MachineEnforcement, str]:
         tool = getattr(request, "tool", None)
         tool_name = getattr(tool, "name", "unknown") if tool else "unknown"
@@ -375,6 +418,14 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         time_decision = evaluate_time_window(self._now(), rules)
         if not time_decision.allow:
             return time_decision, rules, tool_name
+        extractor = NETWORK_TARGET_EXTRACTORS.get(tool_name)
+        if extractor is not None:
+            hosts = extractor(_tool_call_args(request))
+            for host in sorted(set(hosts)):
+                target_decision = evaluate_target(host, rules)
+                if not target_decision.allow:
+                    return target_decision, rules, tool_name
+            return Decision.allow_default(), rules, tool_name
         command = _command_from_tool_call(request)
         cmd_decision = evaluate_command(command, rules)
         if not cmd_decision.allow:

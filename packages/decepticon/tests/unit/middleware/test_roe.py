@@ -347,6 +347,19 @@ def _make_request(tool_name: str, command: str = "", state: dict | None = None):
     return request
 
 
+def _make_network_request(tool_name: str, args: dict, state: dict | None = None):
+    request = MagicMock()
+    request.tool = MagicMock()
+    request.tool.name = tool_name
+    request.state = state or {}
+    request.tool_call = MagicMock()
+    request.tool_call.args = args
+    request.tool_call.id = "tc-test"
+    request.tool_call_args = args
+    request.tool_call_id = "tc-test"
+    return request
+
+
 def _write_roe(workspace: Path, machine_enforcement: dict) -> None:
     (workspace / "plan").mkdir(parents=True, exist_ok=True)
     (workspace / "plan" / "roe.json").write_text(
@@ -688,6 +701,127 @@ class TestEmergencyAbort:
         result = mw.wrap_tool_call(req, handler)
         assert handler.called
         assert result.content == "ok"
+
+class TestNetworkToolGating:
+    def test_http_request_out_of_scope_refused_in_enforce(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://evilcorp.com/x"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.status == "error"
+
+    def test_http_request_in_scope_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://api.acme.com/v1"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_proxy_send_request_out_of_scope_refused(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "proxy_send_request",
+            {"method": "POST", "url": "https://evilcorp.com/login"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+
+    def test_browser_action_goto_url_respected(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": json.dumps({"url": "https://evilcorp.com/"})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+
+    def test_browser_action_in_scope_url_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": json.dumps({"url": "https://app.acme.com/"})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_browser_action_malformed_params_degrades_to_allow(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": "{not valid json"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_browser_action_without_url_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "screenshot", "params_json": json.dumps({"full_page": True})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_http_request_imds_blocked_by_default(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/8"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "http://169.254.169.254/latest/meta-data/"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "FORBIDDEN_DESTINATION" in result.content
+
+    def test_http_request_warn_mode_appends_warning(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["evilcorp.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://evilcorp.com/x"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="resp body", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert "[ROE_WARN]" in result.content
+        assert "resp body" in result.content
+
 
 class TestSlotRegistration:
     def test_slot_is_in_enum_and_safety_critical(self) -> None:
