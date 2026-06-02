@@ -32,6 +32,7 @@ interface Props {
   runState: RunState;
   /** Whether a message is queued. */
   hasQueuedMessage?: boolean;
+  modalActive?: boolean;
 }
 
 const DOUBLE_PRESS_MS = 500;
@@ -44,6 +45,7 @@ export function useGlobalKeybindings({
   addSystemEvent,
   runState,
   hasQueuedMessage = false,
+  modalActive = false,
 }: Props): void {
   const screen = useAppState((s) => s.screen);
   const setAppState = useSetAppState();
@@ -113,6 +115,8 @@ export function useGlobalKeybindings({
           onClearQueue?.();
         } else if (screen === "transcript") {
           exitTranscript();
+        } else if (modalActive) {
+          return;
         } else {
           // Truly idle, no queue → exit app
           onExit();
