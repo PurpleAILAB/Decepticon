@@ -30,7 +30,11 @@ log = logging.getLogger("decepticon.sandbox_kernel.tmux")
 
 # ─── Tunable timing constants (patched in tests) ────────────────────────
 
-PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):(.+?)\]")
+# CWD group is a negated class (no ']', no newline) rather than non-greedy
+# '.+?': $PWD is always a single line and never contains a literal ']', so
+# this shape rejects malformed/half-markers stitched together by capture-pane
+# joining without relying on backtracking or on '.' implicitly excluding '\n'.
+PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):([^\]\n]+)\]")
 
 POLL_INTERVAL: float = 0.5
 STALL_SECONDS: float = 3.0
