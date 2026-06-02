@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from decepticon.tools.research._engagement_scope import (
+    get_active_engagement,
     with_engagement_property,
 )
 from decepticon_core.types.kg import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
@@ -106,6 +107,20 @@ def _encode_props(props: dict[str, Any]) -> str:
         return json.dumps(props, ensure_ascii=False, default=str)
     except (TypeError, ValueError):
         return "{}"
+
+
+def _read_engagement(all_engagements: bool) -> str | None:
+    """Engagement label to constrain a read to, or ``None`` to read unscoped.
+
+    ``None`` (legacy unscoped behaviour) covers two cases: the caller opted
+    out via ``all_engagements``, or no engagement is configured at all (the
+    single-tenant/local default, where there is nothing to isolate). A
+    configured engagement otherwise scopes the read so a shared/SaaS Neo4j
+    cannot leak one engagement's graph into another's.
+    """
+    if all_engagements:
+        return None
+    return get_active_engagement()
 
 
 class Neo4jStore:
@@ -401,11 +416,17 @@ class Neo4jStore:
         node_id: str,
         edge_kind: str | None = None,
         direction: str = "out",
+        *,
+        all_engagements: bool = False,
     ) -> list[dict[str, Any]]:
         """Query neighbors of a node using Cypher, optionally filtering by edge kind.
 
         direction: "out" (outgoing), "in" (incoming), or "both".
         Returns a list of dicts with edge and neighbor node properties.
+
+        Scoped to the active engagement unless ``all_engagements`` is set
+        (see :func:`_read_engagement`): the edge and the neighbour must both
+        belong to the engagement, mirroring the dashboard graph route.
         """
         if direction not in ("out", "in", "both"):
             raise ValueError("direction must be out/in/both")
@@ -417,14 +438,19 @@ class Neo4jStore:
         else:
             pattern = "(src {id: $node_id})-[r]-(nbr)"
 
-        where_clause = ""
+        conditions: list[str] = []
         params: dict[str, Any] = {"node_id": node_id}
         if edge_kind:
             # Parameter-bind the relationship type instead of interpolating it
             # into a Cypher string literal (Cypher does allow $-params in
             # ``type(r) = $x``), closing a Cypher-injection vector.
-            where_clause = "WHERE type(r) = $edge_kind"
+            conditions.append("type(r) = $edge_kind")
             params["edge_kind"] = edge_kind.upper()
+        engagement = _read_engagement(all_engagements)
+        if engagement:
+            conditions.append("r.engagement = $engagement AND nbr.engagement = $engagement")
+            params["engagement"] = engagement
+        where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
         query = f"""
         MATCH {pattern}
@@ -465,7 +491,7 @@ class Neo4jStore:
                 )
         return results
 
-    def query_by_kind(self, kind: str) -> list[dict[str, Any]]:
+    def query_by_kind(self, kind: str, *, all_engagements: bool = False) -> list[dict[str, Any]]:
         """Query all nodes of a given kind using native Neo4j labels.
 
         ``kind`` can be either a NodeKind value (e.g. "host") or a Neo4j
@@ -473,6 +499,9 @@ class Neo4jStore:
         ``ValueError`` - the label is interpolated into the Cypher template
         (Neo4j Cypher does not parameter-bind labels), so an unvalidated
         caller-supplied label would be a direct Cypher-injection vector.
+
+        Scoped to the active engagement unless ``all_engagements`` is set
+        (see :func:`_read_engagement`).
         """
         try:
             nk = NodeKind(kind)
@@ -486,8 +515,11 @@ class Neo4jStore:
                 ) from None
             label = kind
 
+        engagement = _read_engagement(all_engagements)
+        where = "WHERE n.engagement = $engagement" if engagement else ""
         query = f"""
         MATCH (n:{label})
+        {where}
         RETURN n.id AS id,
                n.kind AS kind,
                n.label AS label,
@@ -495,9 +527,10 @@ class Neo4jStore:
                coalesce(n.created_at, 0.0) AS created_at,
                coalesce(n.updated_at, 0.0) AS updated_at
         """
+        params = {"engagement": engagement} if engagement else {}
         results: list[dict[str, Any]] = []
         with self._driver.session(database=self._database) as session:
-            for row in session.run(query):
+            for row in session.run(query, **params):
                 results.append(
                     {
                         "id": row["id"],
@@ -517,6 +550,12 @@ class Neo4jStore:
 
         Intended for agent tools that need ad-hoc graph queries (attack path
         analysis, neighbor traversal, etc.).
+
+        Unlike the structured reads, this raw escape hatch is NOT
+        engagement-scoped: the caller owns the Cypher and must add its own
+        ``.engagement = $engagement`` filter (from :func:`get_active_engagement`)
+        when isolation is required. Scoping the chain-planner queries that run
+        through here is a tracked follow-up.
         """
         results: list[dict[str, Any]] = []
         with self._driver.session(database=self._database) as session:
@@ -583,28 +622,44 @@ class Neo4jStore:
 
     # ── Backward-compatible full-graph load ──────────────────────────────
 
-    def load_graph(self) -> KnowledgeGraph:
+    def load_graph(self, *, all_engagements: bool = False) -> KnowledgeGraph:
         """Load the entire graph into a KnowledgeGraph Pydantic model.
 
         Queries by individual labels (not the old KGNode label).
         Kept for backward compatibility during migration, used by tests
         and one-shot operations.
+
+        Scoped to the active engagement unless ``all_engagements`` is set
+        (see :func:`_read_engagement`). This is the load path behind
+        ``graph_transaction``; scoping it keeps a transaction's save-back
+        from re-tagging another engagement's nodes onto the current one.
         """
         graph = KnowledgeGraph()
 
+        engagement = _read_engagement(all_engagements)
+        node_where = "WHERE any(l IN labels(n) WHERE l IN $labels)"
+        edge_where = "WHERE r.id IS NOT NULL"
+        node_params: dict[str, Any] = {"labels": _ALL_NODE_LABELS}
+        edge_params: dict[str, Any] = {}
+        if engagement:
+            node_where += " AND n.engagement = $engagement"
+            edge_where += " AND r.engagement = $engagement"
+            node_params["engagement"] = engagement
+            edge_params["engagement"] = engagement
+
         # Load nodes across all known labels — single query
         with self._driver.session(database=self._database) as session:
-            node_query = """
+            node_query = f"""
             MATCH (n)
-            WHERE any(l IN labels(n) WHERE l IN $labels)
+            {node_where}
             RETURN n.id AS id,
                    n.kind AS kind,
                    n.label AS label,
-                   coalesce(n.props, '{}') AS props,
+                   coalesce(n.props, '{{}}') AS props,
                    coalesce(n.created_at, 0.0) AS created_at,
                    coalesce(n.updated_at, 0.0) AS updated_at
             """
-            for row in session.run(node_query, labels=_ALL_NODE_LABELS):
+            for row in session.run(node_query, **node_params):
                 node_id = row.get("id")
                 kind_raw = row.get("kind")
                 if not isinstance(node_id, str) or not isinstance(kind_raw, str):
@@ -629,18 +684,18 @@ class Neo4jStore:
                 graph.nodes[node.id] = node
 
             # Load all edges (match any relationship type)
-            edge_query = """
+            edge_query = f"""
             MATCH (src)-[r]->(dst)
-            WHERE r.id IS NOT NULL
+            {edge_where}
             RETURN r.id AS id,
                    src.id AS src,
                    dst.id AS dst,
                    r.kind AS kind,
                    coalesce(r.weight, 1.0) AS weight,
-                   coalesce(r.props, '{}') AS props,
+                   coalesce(r.props, '{{}}') AS props,
                    coalesce(r.created_at, 0.0) AS created_at
             """
-            for row in session.run(edge_query):
+            for row in session.run(edge_query, **edge_params):
                 edge_id = row.get("id")
                 kind_raw = row.get("kind")
                 src = row.get("src")

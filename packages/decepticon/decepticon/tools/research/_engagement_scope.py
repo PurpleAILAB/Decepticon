@@ -93,14 +93,18 @@ def get_active_engagement() -> str | None:
 
 
 def with_engagement_property(props: dict | None, *, override: str | None = None) -> dict:
-    """Return ``props`` with an ``engagement`` key set to the active label.
+    """Return ``props`` with an ``engagement`` key set to the right label.
 
-    ``override`` lets callers explicitly set the engagement for a single
-    write (e.g. when ingesting historical data into a specific
-    engagement). If neither override nor active engagement is set, the
-    legacy label is used so the property always exists on every write.
+    Precedence (first non-empty wins): ``override`` (caller pins it) → an
+    ``engagement`` already on ``props`` → the active engagement → the legacy
+    label. Preserving an existing ``engagement`` is the multi-tenant safety
+    invariant: it stops a ``graph_transaction`` save-back from relabelling a
+    loaded node onto the current (or ``_legacy``) engagement on a shared
+    Neo4j. See docs/security/neo4j-hardening.md.
     """
     out = dict(props or {})
-    engagement = override or get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
+    engagement = (
+        override or out.get("engagement") or get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
+    )
     out["engagement"] = engagement
     return out

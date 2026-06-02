@@ -896,3 +896,120 @@ class TestLoadGraph:
         store = _make_store(driver)
         graph = store.load_graph()
         assert isinstance(graph, KnowledgeGraph)
+
+
+class TestEngagementScopedReads:
+    def _load_session(self) -> _FakeSession:
+        return _FakeSession(results=[_FakeResult([]), _FakeResult([])])
+
+    def test_query_by_kind_unscoped_when_no_active_engagement(self) -> None:
+        session = _FakeSession(results=[_FakeResult([])])
+        store = _make_store(_FakeDriver(sessions=[session]))
+        store.query_by_kind("Host")
+        query, params = session.runs[0]
+        assert "engagement" not in query
+        assert "engagement" not in params
+
+    def test_query_by_kind_scoped_to_active_engagement(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = _FakeSession(results=[_FakeResult([])])
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.query_by_kind("Host")
+            query, params = session.runs[0]
+            assert "WHERE n.engagement = $engagement" in query
+            assert params["engagement"] == "acme"
+        finally:
+            reset_active_engagement(token)
+
+    def test_query_by_kind_all_engagements_opts_out(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = _FakeSession(results=[_FakeResult([])])
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.query_by_kind("Host", all_engagements=True)
+            query, params = session.runs[0]
+            assert "engagement" not in query
+            assert "engagement" not in params
+        finally:
+            reset_active_engagement(token)
+
+    # ── query_neighbors ──────────────────────────────────────────────────
+    def test_query_neighbors_scoped_filters_edge_and_neighbor(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = _FakeSession(results=[_FakeResult([])])
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.query_neighbors("n1")
+            query, params = session.runs[0]
+            assert "r.engagement = $engagement" in query
+            assert "nbr.engagement = $engagement" in query
+            assert params["engagement"] == "acme"
+        finally:
+            reset_active_engagement(token)
+
+    def test_query_neighbors_combines_engagement_with_edge_kind(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = _FakeSession(results=[_FakeResult([])])
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.query_neighbors("n1", edge_kind="has_vuln")
+            query, params = session.runs[0]
+            assert "type(r) = $edge_kind" in query
+            assert "r.engagement = $engagement" in query
+            assert " AND " in query
+            assert params["edge_kind"] == "HAS_VULN"
+            assert params["engagement"] == "acme"
+        finally:
+            reset_active_engagement(token)
+
+    def test_query_neighbors_all_engagements_opts_out(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = _FakeSession(results=[_FakeResult([])])
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.query_neighbors("n1", all_engagements=True)
+            query, params = session.runs[0]
+            assert "engagement" not in query
+            assert "engagement" not in params
+        finally:
+            reset_active_engagement(token)
+
+    # ── load_graph (the graph_transaction load path) ─────────────────────
+    def test_load_graph_unscoped_when_no_active_engagement(self) -> None:
+        session = self._load_session()
+        store = _make_store(_FakeDriver(sessions=[session]))
+        store.load_graph()
+        node_query, node_params = session.runs[0]
+        edge_query, edge_params = session.runs[1]
+        assert "n.engagement" not in node_query
+        assert "r.engagement" not in edge_query
+        assert "engagement" not in node_params
+        assert "engagement" not in edge_params
+
+    def test_load_graph_scoped_filters_nodes_and_edges(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = self._load_session()
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.load_graph()
+            node_query, node_params = session.runs[0]
+            edge_query, edge_params = session.runs[1]
+            assert "n.engagement = $engagement" in node_query
+            assert "r.engagement = $engagement" in edge_query
+            assert node_params["engagement"] == "acme"
+            assert edge_params["engagement"] == "acme"
+        finally:
+            reset_active_engagement(token)
+
+    def test_load_graph_all_engagements_opts_out(self) -> None:
+        token = set_active_engagement("acme")
+        try:
+            session = self._load_session()
+            store = _make_store(_FakeDriver(sessions=[session]))
+            store.load_graph(all_engagements=True)
+            node_query, node_params = session.runs[0]
+            assert "n.engagement" not in node_query
+            assert "engagement" not in node_params
+        finally:
+            reset_active_engagement(token)

@@ -138,6 +138,22 @@ class TestWithEngagementProperty:
         assert "engagement" not in original
         assert out is not original
 
+    def test_existing_engagement_preserved_over_active(self) -> None:
+        token = set_active_engagement("engagement-b")
+        try:
+            out = with_engagement_property({"engagement": "engagement-a", "ip": "10.0.0.9"})
+            assert out["engagement"] == "engagement-a"
+        finally:
+            reset_active_engagement(token)
+
+    def test_existing_engagement_preserved_when_no_active(self) -> None:
+        out = with_engagement_property({"engagement": "engagement-a"})
+        assert out["engagement"] == "engagement-a"
+
+    def test_override_beats_existing_engagement(self) -> None:
+        out = with_engagement_property({"engagement": "engagement-a"}, override="engagement-c")
+        assert out["engagement"] == "engagement-c"
+
 
 class TestNeo4jUpsertCypherShape:
     def test_upsert_node_cypher_sets_engagement(self) -> None:
