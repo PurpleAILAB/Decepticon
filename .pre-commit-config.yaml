@@ -1,10 +1,11 @@
 # Pre-commit hooks — install with: uvx pre-commit install
 # Run on demand: uvx pre-commit run --all-files
 #
-# CI runs a curated subset via the `pre-commit` job in
-# .github/workflows/ci.yml. The subset excludes hooks that need a
-# language toolchain (basedpyright, gofmt) — those run in their own CI
-# job already.
+# These hooks run locally; there is no `pre-commit` job in CI. The
+# linters that gate merges are enforced independently in the `python`
+# job of .github/workflows/ci.yml via `make ci-lint` (ci.yml:186) —
+# namely ruff (check + format) and basedpyright. The remaining hooks
+# (shellcheck, hadolint, typos, gitleaks) run only locally via pre-commit.
 #
 # Hooks that would auto-fix pre-existing files at large scale
 # (end-of-file-fixer, mixed-line-ending, trailing-whitespace) are
