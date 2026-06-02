@@ -804,14 +804,16 @@ class _ProxiedChatOpenAI(ChatOpenAI):
 
     def invoke(self, *args, **kwargs):
         try:
-            return super().invoke(*args, **kwargs)
+            result = super().invoke(*args, **kwargs)
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _log_served_model(self.model_name, result)
+        return result
 
     async def ainvoke(self, *args, **kwargs):
         try:
-            return await call_with_timeout(
+            result = await call_with_timeout(
                 super().ainvoke(*args, **kwargs),
                 _resolve_llm_timeout_seconds(),
             )
@@ -820,6 +822,32 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _log_served_model(self.model_name, result)
+        return result
+
+
+def _log_served_model(requested: str, result: object) -> None:
+    """Best-effort attribution log: which provider/model the LiteLLM proxy
+    actually routed to. When fallback fires (primary -> fallback) the
+    requested model id and the served model id diverge — surfacing the
+    delta lets operators trace cost/perf/debug back to the real upstream.
+
+    Never raise from this path: attribution is observability, not control
+    flow. Any extraction failure is swallowed silently.
+    """
+    try:
+        metadata = getattr(result, "response_metadata", None) or {}
+        served = (
+            metadata.get("model_name")
+            or metadata.get("model")
+            or getattr(result, "model_name", None)
+        )
+        if served and served != requested:
+            log.info("llm.attribution requested=%s served=%s", requested, served)
+        elif served:
+            log.debug("llm.attribution requested=%s served=%s", requested, served)
+    except Exception:
+        pass
 
 
 def _model_drops_temperature(model: str) -> bool:
