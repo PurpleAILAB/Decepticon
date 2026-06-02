@@ -321,31 +321,52 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
 
 # ── Convenience: build a runner from an HTTPSandbox ─────────────────────
 
+# Typed-error sentinels: callers distinguish a hung runner from a crash by
+# inspecting the stderr prefix (return shape stays (stdout, stderr, code)).
+POC_ERR_TIMEOUT = "[POC_TIMEOUT]"
+POC_ERR_SANDBOX = "[SANDBOX_ERROR]"
 
-def sandbox_runner(sandbox: Any) -> PoCRunner:
+# Outer-bound on a single PoC invocation. The inner tmux call has its own
+# 60s budget but can wedge — this guards against indefinite hangs.
+POC_RUNNER_TIMEOUT_SECONDS: float = 120.0
+
+
+def sandbox_runner(sandbox: Any, *, timeout: float | None = None) -> PoCRunner:
     """Adapt an ``HTTPSandbox`` into a :data:`PoCRunner` callable.
 
     The sandbox must expose ``execute_tmux_async`` (or ``execute_tmux``) that
     returns a str output. We split the returned blob on ``[Exit code:`` to
     recover an exit code when present.
+
+    The invocation is bounded by ``timeout`` seconds (defaults to module
+    constant :data:`POC_RUNNER_TIMEOUT_SECONDS`). On timeout the stderr
+    field is prefixed with :data:`POC_ERR_TIMEOUT`; other sandbox failures
+    use :data:`POC_ERR_SANDBOX`. Return arity is unchanged so existing
+    callers continue to destructure ``(stdout, stderr, exit_code)``.
     """
 
     async def _run(command: str) -> tuple[str, str, int]:
+        eff_timeout = timeout if timeout is not None else POC_RUNNER_TIMEOUT_SECONDS
         try:
             if hasattr(sandbox, "execute_tmux_async"):
-                out = await sandbox.execute_tmux_async(
+                coro: Awaitable[str] = sandbox.execute_tmux_async(
                     command=command, session="poc", timeout=60, is_input=False
                 )
             else:
-                out = await asyncio.to_thread(
+                coro = asyncio.to_thread(
                     sandbox.execute_tmux,
                     command=command,
                     session="poc",
                     timeout=60,
                     is_input=False,
                 )
-        except Exception as e:  # pragma: no cover — defensive
-            err_msg = f"[SANDBOX_ERROR] {type(e).__name__}: {e}"
+            out = await asyncio.wait_for(coro, timeout=eff_timeout)
+        except asyncio.TimeoutError:
+            err_msg = f"{POC_ERR_TIMEOUT} runner exceeded {eff_timeout}s"
+            log.error("sandbox_runner timeout: %s", err_msg)
+            return "", err_msg, -1
+        except Exception as e:
+            err_msg = f"{POC_ERR_SANDBOX} {type(e).__name__}: {e}"
             log.error("sandbox_runner failed: %s", err_msg)
             return "", err_msg, -1
         code = 0
