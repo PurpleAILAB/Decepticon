@@ -38,6 +38,7 @@ class MiddlewareSlot(StrEnum):
     OPPLAN = "opplan"
     EVENT_LOG = "event-log"
     SANDBOX_NOTIFICATION = "sandbox-notification"
+    DETECTION_FEEDBACK = "detection-feedback"
     BUDGET = "budget"
     MODEL_OVERRIDE = "model-override"
     MODEL_FALLBACK = "model-fallback"
@@ -152,6 +153,7 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
         MiddlewareSlot.OPPLAN,
         MiddlewareSlot.MODEL_OVERRIDE,
         MiddlewareSlot.HITL_APPROVAL,
+        MiddlewareSlot.DETECTION_FEEDBACK,
     },
     # ── Standard non-bash agent (planning + interview) ──
     "soundwave": _BASE_SLOTS | {MiddlewareSlot.ENGAGEMENT_CONTEXT},

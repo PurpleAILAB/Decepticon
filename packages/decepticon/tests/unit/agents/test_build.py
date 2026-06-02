@@ -588,6 +588,7 @@ def test_middleware_slot_enum_order_is_assembly_order():
         "opplan",
         "event-log",
         "sandbox-notification",
+        "detection-feedback",
         "budget",
         "model-override",
         "model-fallback",
