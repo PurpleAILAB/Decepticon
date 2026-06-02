@@ -1103,6 +1103,26 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+def _redact_url_credentials(url: str) -> str:
+    """Strip ``user:pass@`` userinfo from a URL before logging.
+
+    Operators may configure the proxy URL with embedded credentials
+    (``http://user:pass@litellm:4000``); those must not reach INFO logs.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.scheme or "@" not in parts.netloc:
+        return url
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, f"***@{host}", parts.path, parts.query, parts.fragment))
+
+
 def _redact_secrets(text: str) -> str:
     """Scrub credential-shaped substrings from upstream error text.
 
@@ -1305,7 +1325,7 @@ class LLMFactory:
             "Creating LLM for role '%s' → model '%s' via %s",
             role,
             assignment.primary,
-            self._proxy.url,
+            _redact_url_credentials(self._proxy.url),
         )
 
         model = self._create_chat_model(assignment.primary, assignment.temperature)
