@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from langchain_core.messages import ToolMessage
 
+from decepticon.middleware import roe as roe_mod
 from decepticon.middleware._audit_sink import RoEAuditSink, verify_ledger
 from decepticon.middleware._command_targets import extract_targets
 from decepticon.middleware.roe import (
@@ -432,3 +433,82 @@ class TestFqdnTrailingDotNormalization:
         assert evaluate_target("single-host.example.", rules).allow is True
         # An unrelated FQDN-form host is still refused (not in scope).
         assert evaluate_target("other.example.", rules).allow is False
+
+
+class TestRoEThrottle:
+    def test_zero_delay_never_waits(self) -> None:
+        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 0})
+        assert mw._pace_wait_seconds(rules) == 0.0
+
+    def test_first_call_does_not_wait_then_burst_is_spaced(self, monkeypatch) -> None:
+        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 200})
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
+        assert mw._pace_wait_seconds(rules) == 0.0
+        assert abs(mw._pace_wait_seconds(rules) - 0.2) < 1e-9
+        assert abs(mw._pace_wait_seconds(rules) - 0.4) < 1e-9
+
+    def test_elapsed_gap_resets_wait(self, monkeypatch) -> None:
+        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 100})
+        clock = {"t": 5000.0}
+        monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
+        assert mw._pace_wait_seconds(rules) == 0.0
+        clock["t"] += 1.0
+        assert mw._pace_wait_seconds(rules) == 0.0
+
+    def test_jitter_added_above_floor_under_contention(self, monkeypatch) -> None:
+        mw = RoEEnforcementMiddleware(jitter_frac=0.5)
+        rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 200})
+        clock = {"t": 1000.0}
+        monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
+        monkeypatch.setattr(roe_mod.random, "uniform", lambda _a, b: b)
+        assert mw._pace_wait_seconds(rules) == 0.0
+        assert abs(mw._pace_wait_seconds(rules) - 0.3) < 1e-9
+
+    def test_dispatch_sleeps_and_records_throttle(self, tmp_path: Path, monkeypatch) -> None:
+        _write_roe(tmp_path, {"mode": "audit", "min_inter_request_delay_ms": 150})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink, jitter_frac=0.0)
+        slept: list[float] = []
+        monkeypatch.setattr(roe_mod.time, "monotonic", lambda: 1000.0)
+        monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        req = _make_request("bash", "id", state={"workspace_path": str(tmp_path)})
+        mw.wrap_tool_call(req, handler)
+        mw.wrap_tool_call(req, handler)
+        assert slept and abs(slept[0] - 0.15) < 1e-9
+        assert handler.call_count == 2
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert any(
+            r.get("event") == "throttle" and r["reason_code"] == "MIN_INTER_REQUEST_DELAY"
+            for r in recs
+        )
+
+    def test_refused_call_is_not_paced(self, tmp_path: Path, monkeypatch) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "enforce", "in_scope": ["10.0.0.0/24"], "min_inter_request_delay_ms": 500},
+        )
+        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        slept: list[float] = []
+        monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
+        handler = MagicMock()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        result = mw.wrap_tool_call(req, handler)
+        assert "[ROE_REFUSED]" in result.content
+        assert not handler.called
+        assert slept == []
+
+    def test_ungated_tool_not_paced(self, tmp_path: Path, monkeypatch) -> None:
+        _write_roe(tmp_path, {"mode": "audit", "min_inter_request_delay_ms": 500})
+        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        slept: list[float] = []
+        monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        req = _make_request("opplan_add_objective", "", state={"workspace_path": str(tmp_path)})
+        mw.wrap_tool_call(req, handler)
+        mw.wrap_tool_call(req, handler)
+        assert slept == []
