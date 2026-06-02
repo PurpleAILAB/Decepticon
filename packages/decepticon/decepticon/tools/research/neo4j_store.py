@@ -179,6 +179,14 @@ class Neo4jStore:
                 "CREATE CONSTRAINT attack_path_key IF NOT EXISTS"
                 " FOR (ap:AttackPath) REQUIRE ap.key IS UNIQUE"
             ),
+            (
+                "CREATE CONSTRAINT detection_fired_key IF NOT EXISTS"
+                " FOR (d:DetectionFired) REQUIRE d.key IS UNIQUE"
+            ),
+            (
+                "CREATE CONSTRAINT defense_action_key IF NOT EXISTS"
+                " FOR (a:DefenseAction) REQUIRE a.key IS UNIQUE"
+            ),
         ]
 
         indexes = [
