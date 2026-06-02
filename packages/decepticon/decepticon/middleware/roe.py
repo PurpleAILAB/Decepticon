@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import random
+import re
 import threading
 import time
 from pathlib import Path
@@ -121,6 +122,50 @@ def _to_text(content: Any) -> str:
                 chunks.append(str(item.get("text", "")))
         return "".join(chunks)
     return str(content)
+
+
+_REDACT_MASK = "***"
+
+_SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"(?i)(sshpass\s+-p\s+)('[^']*'|\"[^\"]*\"|\S+)"),
+    re.compile(r"(?i)(\bPGPASSWORD=)('[^']*'|\"[^\"]*\"|\S+)"),
+    re.compile(
+        r"(?i)((?:--password|--pass|--token)(?:[=\s]+)|-p\s+)"
+        r"('[^']*'|\"[^\"]*\"|\S+)"
+    ),
+    re.compile(r"(?i)((?:-u|--user)\s+)('[^']*'|\"[^\"]*\"|[^\s:]+):(\S+)"),
+    re.compile(
+        r"(?i)((?:-H|--header)(?:[=\s]+))"
+        r"('(?:[^']*(?:authorization|bearer|api-key|apikey|x-api-key)[^']*)'"
+        r"|\"(?:[^\"]*(?:authorization|bearer|api-key|apikey|x-api-key)[^\"]*)\")",
+    ),
+    re.compile(r"(?i)([^\s/@:]+/[^\s/@:]+:)([^\s@]+)(@)"),
+    re.compile(r"(?i)([A-Za-z][\w.-]*:)([^\s@:]+)(@[\w.-]+)"),
+)
+
+
+def _redact_header_value(match: re.Match[str]) -> str:
+    flag, raw = match.group(1), match.group(2)
+    quote = raw[0]
+    inner = raw[1:-1]
+    if ":" in inner:
+        name, _, _value = inner.partition(":")
+        return f"{flag}{quote}{name}: {_REDACT_MASK}{quote}"
+    return f"{flag}{quote}{_REDACT_MASK}{quote}"
+
+
+def _redact_secrets(cmd: str) -> str:
+    if not cmd:
+        return cmd
+    out = cmd
+    out = _SECRET_PATTERNS[0].sub(lambda m: f"{m.group(1)}{_REDACT_MASK}", out)
+    out = _SECRET_PATTERNS[1].sub(lambda m: f"{m.group(1)}{_REDACT_MASK}", out)
+    out = _SECRET_PATTERNS[2].sub(lambda m: f"{m.group(1)}{_REDACT_MASK}", out)
+    out = _SECRET_PATTERNS[3].sub(lambda m: f"{m.group(1)}{m.group(2)}:{_REDACT_MASK}", out)
+    out = _SECRET_PATTERNS[4].sub(_redact_header_value, out)
+    out = _SECRET_PATTERNS[5].sub(lambda m: f"{m.group(1)}{_REDACT_MASK}{m.group(3)}", out)
+    out = _SECRET_PATTERNS[6].sub(lambda m: f"{m.group(1)}{_REDACT_MASK}{m.group(3)}", out)
+    return out
 
 
 def _command_from_tool_call(request) -> str:
@@ -251,7 +296,7 @@ class RoEEnforcementMiddleware(AgentMiddleware):
             "risk": decision.risk,
             "matched_targets": list(decision.matched_targets),
             "mode": mode.value,
-            "command_excerpt": _command_from_tool_call(request)[:512],
+            "command_excerpt": _redact_secrets(_command_from_tool_call(request))[:512],
         }
         try:
             self._sink.append(record)

@@ -13,6 +13,7 @@ from decepticon.middleware._audit_sink import RoEAuditSink, verify_ledger
 from decepticon.middleware._command_targets import extract_targets
 from decepticon.middleware.roe import (
     RoEEnforcementMiddleware,
+    _redact_secrets,
 )
 from decepticon_core.types.roe import (
     EnforcementMode,
@@ -364,6 +365,117 @@ class TestRoEMiddleware:
         assert len(recs) == 1
         assert recs[0]["decision"] == "refuse"
         assert recs[0]["reason_code"] == "NOT_IN_SCOPE"
+
+
+class TestRedactSecrets:
+    def test_password_flag_redacted(self) -> None:
+        assert _redact_secrets("mysql -u root -p s3cr3t -h db") == "mysql -u root -p *** -h db"
+
+    def test_long_password_flag_redacted(self) -> None:
+        assert _redact_secrets("tool --password=hunter2 -h db") == "tool --password=*** -h db"
+        assert _redact_secrets("tool --pass myval x") == "tool --pass *** x"
+
+    def test_token_flag_redacted(self) -> None:
+        assert _redact_secrets("gh --token ghp_aBcD1234 --repo x") == "gh --token *** --repo x"
+
+    def test_sshpass_redacted(self) -> None:
+        assert (
+            _redact_secrets("sshpass -p MyP@ss ssh u@10.0.0.5") == "sshpass -p *** ssh u@10.0.0.5"
+        )
+
+    def test_curl_user_pass_redacted(self) -> None:
+        assert (
+            _redact_secrets("curl -u admin:p4ssw0rd https://api.acme.com")
+            == "curl -u admin:*** https://api.acme.com"
+        )
+
+    def test_authorization_header_redacted(self) -> None:
+        out = _redact_secrets('curl -H "Authorization: Bearer abc.def" https://api.acme.com')
+        assert "abc.def" not in out
+        assert "***" in out
+
+    def test_api_key_header_redacted(self) -> None:
+        out = _redact_secrets('curl -H "X-API-Key: deadbeef" https://api.acme.com')
+        assert "deadbeef" not in out
+        assert "***" in out
+
+    def test_non_secret_header_untouched(self) -> None:
+        cmd = 'curl -H "Content-Type: application/json" https://api.acme.com'
+        assert _redact_secrets(cmd) == cmd
+
+    def test_pgpassword_redacted(self) -> None:
+        assert (
+            _redact_secrets("PGPASSWORD=topsecret psql -U postgres")
+            == "PGPASSWORD=*** psql -U postgres"
+        )
+
+    def test_impacket_domain_creds_redacted(self) -> None:
+        out = _redact_secrets("impacket-secretsdump corp/admin:Password!@10.0.0.10")
+        assert "Password!" not in out
+        assert "corp/admin:***@10.0.0.10" in out
+
+    def test_url_userinfo_redacted(self) -> None:
+        out = _redact_secrets("curl https://user:pass@host.example/path")
+        assert "user:***@host.example" in out
+        assert ":pass@" not in out
+
+    def test_plain_command_unchanged(self) -> None:
+        assert _redact_secrets("nmap 10.0.0.10") == "nmap 10.0.0.10"
+
+    def test_ssh_user_host_without_password_unchanged(self) -> None:
+        assert _redact_secrets("ssh -i key.pem user@10.0.0.5") == "ssh -i key.pem user@10.0.0.5"
+
+    def test_empty_command_unchanged(self) -> None:
+        assert _redact_secrets("") == ""
+
+    def test_redaction_is_deterministic(self) -> None:
+        cmd = 'mysql -u root -p s3cr3t; curl -H "Authorization: Bearer X" h'
+        assert _redact_secrets(cmd) == _redact_secrets(cmd)
+
+
+class TestAuditRecordRedaction:
+    def test_password_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash", "mysql -u root -p s3cr3t -h db", state={"workspace_path": str(tmp_path)}
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "s3cr3t" not in recs[0]["command_excerpt"]
+        assert "-p ***" in recs[0]["command_excerpt"]
+
+    def test_bearer_header_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash",
+            'curl -H "Authorization: Bearer s3cr3ttoken" https://api.acme.com',
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "s3cr3ttoken" not in recs[0]["command_excerpt"]
+        assert "***" in recs[0]["command_excerpt"]
+
+    def test_sshpass_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash",
+            "sshpass -p HunterPass ssh user@10.0.0.5",
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "HunterPass" not in recs[0]["command_excerpt"]
+        assert "sshpass -p ***" in recs[0]["command_excerpt"]
 
 
 class TestSlotRegistration:
