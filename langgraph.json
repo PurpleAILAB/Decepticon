@@ -11,7 +11,8 @@
     "contract_auditor": "./packages/decepticon/decepticon/agents/standard/contract_auditor.py:graph",
     "cloud_hunter": "./packages/decepticon/decepticon/agents/standard/cloud_hunter.py:graph",
     "ad_operator": "./packages/decepticon/decepticon/agents/standard/ad_operator.py:graph",
-    "blue_cell": "./packages/decepticon/decepticon/agents/standard/blue_cell.py:graph"
+    "blue_cell": "./packages/decepticon/decepticon/agents/standard/blue_cell.py:graph",
+    "defender": "./packages/decepticon/decepticon/agents/standard/defender.py:graph"
   },
   "env": ".env",
   "python_version": "3.13",
