@@ -37,6 +37,11 @@ STALL_SECONDS: float = 3.0
 MAX_OUTPUT_CHARS: int = 30_000
 AUTO_BACKGROUND_SECONDS: float = 60.0
 SIZE_WATCHDOG_CHARS: int = 5_000_000
+# Consecutive transient capture failures (docker-exec stall / tmux-server
+# unresponsive) tolerated inside the poll loop before we fail fast. Without
+# this cap a wedged `docker exec` resets the stall timer every iteration and
+# the command spins until the full `timeout`, pinning a core the whole time.
+MAX_CONSECUTIVE_CAPTURE_FAILURES: int = 5
 
 # ─── Sandbox env passthrough allowlist ──────────────────────────────────
 #
@@ -500,6 +505,7 @@ class TmuxSessionManager:
         start = time.monotonic()
         prev_screen = baseline
         last_change_time = start
+        consecutive_capture_failures = 0
 
         while time.monotonic() - start < timeout:
             time.sleep(POLL_INTERVAL)
@@ -513,11 +519,21 @@ class TmuxSessionManager:
                     f"Session will auto-recover on next bash() call."
                 )
             except (OSError, subprocess.TimeoutExpired) as poll_err:
-                # docker exec stall — keep polling, do not let it trigger stall detection
+                consecutive_capture_failures += 1
+                if consecutive_capture_failures >= MAX_CONSECUTIVE_CAPTURE_FAILURES:
+                    self._forget_cached_state()
+                    return (
+                        f"[ERROR] Sandbox capture failed {consecutive_capture_failures} times "
+                        f"in a row for session '{self.session}': {poll_err}\n"
+                        f"docker exec is stalled or the tmux server is unresponsive — "
+                        f"giving up rather than spinning until the {timeout}s timeout.\n"
+                        f'Retry, or terminate with bash_kill(session="{self.session}").'
+                    )
                 log.debug("transient capture error in poll loop: %s", poll_err)
                 last_change_time = time.monotonic()
                 continue
 
+            consecutive_capture_failures = 0
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
@@ -658,6 +674,7 @@ class TmuxSessionManager:
         start = time.monotonic()
         prev_screen = baseline
         last_change_time = start
+        consecutive_capture_failures = 0
 
         while time.monotonic() - start < timeout:
             await asyncio.sleep(POLL_INTERVAL)  # CancelledError delivered here
@@ -671,11 +688,21 @@ class TmuxSessionManager:
                     f"Session will auto-recover on next bash() call."
                 )
             except (OSError, subprocess.TimeoutExpired) as poll_err:
-                # docker exec stall — keep polling, do not let it trigger stall detection
+                consecutive_capture_failures += 1
+                if consecutive_capture_failures >= MAX_CONSECUTIVE_CAPTURE_FAILURES:
+                    self._forget_cached_state()
+                    return (
+                        f"[ERROR] Sandbox capture failed {consecutive_capture_failures} times "
+                        f"in a row for session '{self.session}': {poll_err}\n"
+                        f"docker exec is stalled or the tmux server is unresponsive — "
+                        f"giving up rather than spinning until the {timeout}s timeout.\n"
+                        f'Retry, or terminate with bash_kill(session="{self.session}").'
+                    )
                 log.debug("transient capture error in poll loop: %s", poll_err)
                 last_change_time = time.monotonic()
                 continue
 
+            consecutive_capture_failures = 0
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
