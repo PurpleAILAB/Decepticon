@@ -8,12 +8,12 @@ reasoning while the authoritative store lives in Neo4j.
 
 Schema
 ------
-Nodes span five layers — Infrastructure (Host, Network, Domain, Service,
+Nodes span seven layers — Infrastructure (Host, Network, Domain, Service,
 URL, CloudResource, Container), Identity (User, Group, Credential, Secret,
 Session), Vulnerability (Vulnerability, CVE, Misconfiguration, Weakness),
 Code (Repository, SourceFile, CodeLocation, Contract), Attack Progression
-(Technique, Entrypoint, CrownJewel, AttackPath, Finding), and Analysis
-(Candidate, Hypothesis, Patch).
+(Technique, Entrypoint, CrownJewel, AttackPath, Finding), Analysis
+(Candidate, Hypothesis, Patch), and Defense (DetectionFired, DefenseAction).
 
 Edges carry a ``kind`` (Neo4j relationship type) plus optional ``weight``
 used by the path planner (lower = easier exploitation).
@@ -83,6 +83,9 @@ class NodeKind(StrEnum):
     CANDIDATE = "Candidate"
     HYPOTHESIS = "Hypothesis"
     PATCH = "Patch"
+    # Defense (Blue Cell — proven detection coverage)
+    DETECTION_FIRED = "DetectionFired"
+    DEFENSE_ACTION = "DefenseAction"
 
 
 class EdgeKind(StrEnum):
@@ -128,6 +131,9 @@ class EdgeKind(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PATCHES = "PATCHES"
     MAPS_TO = "MAPS_TO"
+    # Defense (Blue Cell — links a fired detection to what it caught)
+    DETECTED = "DETECTED"
+    USES_RULE = "USES_RULE"
 
 
 class Severity(StrEnum):
