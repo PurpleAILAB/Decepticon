@@ -21,6 +21,7 @@ from decepticon.tools.research.neo4j_store import (
     _decode_props,
     _encode_props,
     _label_for,
+    _promoted_props,
 )
 from decepticon_core.types.kg import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
 
@@ -179,6 +180,33 @@ class TestEncodeProps:
         monkeypatch.setattr(mod.json, "dumps", bad_dumps)
         assert mod._encode_props({"x": 1}) == "{}"
         monkeypatch.setattr(mod.json, "dumps", original_dumps)
+
+
+class TestPromotedProps:
+    def test_whitelisted_scalars_promoted(self) -> None:
+        result = _promoted_props({"severity": "high", "validated": True, "engagement": "acme"})
+        assert result == {"severity": "high", "validated": True}
+
+    def test_absent_keys_omitted_not_nulled(self) -> None:
+        result = _promoted_props({"severity": "low"})
+        assert result == {"severity": "low"}
+        assert "validated" not in result
+
+    def test_none_values_skipped(self) -> None:
+        result = _promoted_props({"severity": None, "validated": False})
+        assert result == {"validated": False}
+
+    def test_dict_and_list_values_skipped(self) -> None:
+        result = _promoted_props({"status": ["open"], "severity": {"x": 1}, "cracked": True})
+        assert result == {"cracked": True}
+
+    def test_non_whitelisted_keys_skipped(self) -> None:
+        result = _promoted_props({"notes": "free text", "ip": "10.0.0.1"})
+        assert result == {"ip": "10.0.0.1"}
+
+    def test_numeric_scalars_promoted(self) -> None:
+        result = _promoted_props({"version": 1, "product": "nginx"})
+        assert result == {"version": 1, "product": "nginx"}
 
 
 class TestLabelFor:
@@ -399,6 +427,25 @@ class TestUpsertNode:
         _query, params = session.runs[0]
         assert params["key"] == node.id
 
+    def test_upsert_node_promotes_indexed_scalar_props(self) -> None:
+        session = _FakeSession()
+        driver = _FakeDriver(sessions=[session])
+        store = _make_store(driver)
+        node = Node.make(NodeKind.VULNERABILITY, "v1", severity="high", validated=True)
+        store.upsert_node(node)
+        query, params = session.runs[0]
+        assert "n += $promoted" in query
+        assert params["promoted"] == {"severity": "high", "validated": True}
+
+    def test_upsert_node_promoted_excludes_non_whitelisted(self) -> None:
+        session = _FakeSession()
+        driver = _FakeDriver(sessions=[session])
+        store = _make_store(driver)
+        node = Node.make(NodeKind.VULNERABILITY, "v2", severity="medium", notes="ignore me")
+        store.upsert_node(node)
+        _query, params = session.runs[0]
+        assert params["promoted"] == {"severity": "medium"}
+
 
 class TestUpsertEdge:
     def test_upsert_edge_runs_merge_query_with_correct_params(self) -> None:
@@ -466,6 +513,18 @@ class TestBatchUpsertNodes:
             assert batch[0]["engagement"] == "test-eng"
         finally:
             reset_active_engagement(token)
+
+    def test_batch_rows_include_promoted_map_and_query(self) -> None:
+        session = _FakeSession()
+        driver = _FakeDriver(sessions=[session])
+        store = _make_store(driver)
+        node = Node.make(NodeKind.VULNERABILITY, "v1", severity="high", validated=True)
+        store.batch_upsert_nodes([node])
+        query, params = session.runs[0]
+        assert "n += row.promoted" in query
+        batch = params.get("batch", [])
+        assert len(batch) == 1
+        assert batch[0]["promoted"] == {"severity": "high", "validated": True}
 
 
 class TestBatchUpsertEdges:
