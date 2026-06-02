@@ -80,6 +80,26 @@ def _load_rules_for_workspace(workspace_path: str | None) -> MachineEnforcement:
     return MachineEnforcement.from_dict(block)
 
 
+def _abort_marker_present(workspace_path: str | None) -> bool:
+    if not workspace_path:
+        return False
+    try:
+        return (Path(workspace_path) / ".abort").exists()
+    except OSError:
+        return False
+
+
+def _halted_message(tool_name: str, tool_call_id: str | None) -> ToolMessage:
+    body = (
+        f"[AGENT_HALTED] code=EMERGENCY_ABORT tool={tool_name}\n"
+        "An out-of-band emergency abort was signalled by the operator "
+        "(.abort marker in the workspace). This gated call was NOT executed.\n"
+        "Stop work immediately and await operator instructions - do NOT "
+        "retry or attempt alternative commands this turn."
+    )
+    return ToolMessage(content=body, tool_call_id=tool_call_id or "", status="error")
+
+
 def _refused_message(decision: Decision, tool_name: str, tool_call_id: str | None) -> ToolMessage:
     body = (
         f"[ROE_REFUSED] code={decision.reason_code} tool={tool_name}\n"
@@ -217,6 +237,9 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         return await self._dispatch_async(request, handler)
 
     def _dispatch_sync(self, request, handler):
+        halt = self._check_abort(request)
+        if halt is not None:
+            return halt
         decision, rules, tool_name = self._evaluate(request)
         self._record(request, tool_name, decision, rules.mode)
         if not decision.allow and rules.mode == EnforcementMode.ENFORCE:
@@ -235,6 +258,9 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         return result
 
     async def _dispatch_async(self, request, handler):
+        halt = self._check_abort(request)
+        if halt is not None:
+            return halt
         decision, rules, tool_name = self._evaluate(request)
         self._record(request, tool_name, decision, rules.mode)
         if not decision.allow and rules.mode == EnforcementMode.ENFORCE:
@@ -251,6 +277,41 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         ):
             return _warn_message(decision, result)
         return result
+
+    def _check_abort(self, request) -> ToolMessage | None:
+        tool = getattr(request, "tool", None)
+        tool_name = getattr(tool, "name", "unknown") if tool else "unknown"
+        if tool_name not in self._gated:
+            return None
+        state = getattr(request, "state", {}) or {}
+        get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+        workspace = get("workspace_path") or None
+        if not _abort_marker_present(workspace):
+            return None
+        self._record_abort(request, tool_name)
+        return _halted_message(tool_name, _tcid(request))
+
+    def _record_abort(self, request, tool_name: str) -> None:
+        if self._sink is None:
+            return
+        state = getattr(request, "state", {}) or {}
+        get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+        engagement = get("engagement_name") or "unknown-engagement"
+        objective = get("active_objective_id") or get("current_objective") or ""
+        record = {
+            "ts": time.time(),
+            "event": "abort",
+            "engagement": engagement,
+            "objective_id": objective,
+            "tool": tool_name,
+            "decision": "refuse",
+            "reason_code": "EMERGENCY_ABORT",
+            "command_excerpt": _command_from_tool_call(request)[:512],
+        }
+        try:
+            self._sink.append(record)
+        except Exception as exc:  # noqa: BLE001 - audit must never break tool execution
+            log.error("roe: audit sink write failed: %s", exc)
 
     def _evaluate(self, request) -> tuple[Decision, MachineEnforcement, str]:
         tool = getattr(request, "tool", None)

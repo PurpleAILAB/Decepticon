@@ -478,6 +478,50 @@ class TestAuditRecordRedaction:
         assert "sshpass -p ***" in recs[0]["command_excerpt"]
 
 
+class TestEmergencyAbort:
+    def test_abort_marker_halts_gated_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        (tmp_path / ".abort").write_text("", encoding="utf-8")
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert isinstance(result, ToolMessage)
+        assert result.content.startswith("[AGENT_HALTED]")
+        assert result.status == "error"
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert len(recs) == 1
+        assert recs[0]["event"] == "abort"
+        assert recs[0]["reason_code"] == "EMERGENCY_ABORT"
+
+    def test_no_marker_allows_gated_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_abort_marker_ignored_for_ungated_tool(self, tmp_path: Path) -> None:
+        (tmp_path / ".abort").write_text("", encoding="utf-8")
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("opplan_add_objective", "", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_no_workspace_does_not_halt(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
 class TestSlotRegistration:
     def test_slot_is_in_enum_and_safety_critical(self) -> None:
         from decepticon_core.contracts.slots import (
