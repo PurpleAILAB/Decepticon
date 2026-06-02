@@ -7,6 +7,7 @@ import { AIMessage } from "./messages/AIMessage.js";
 import { ToolCallMessage } from "./messages/ToolCallMessage.js";
 import { DelegateMessage } from "./messages/DelegateMessage.js";
 import { SystemMessage } from "./messages/SystemMessage.js";
+import { QAQuestionMessage, QAAnswerMessage } from "./messages/QAMessage.js";
 import { BackgroundCompleteMessage } from "./messages/BackgroundCompleteMessage.js";
 
 interface EventItemProps {
@@ -48,6 +49,17 @@ export const EventItem = React.memo(function EventItem({
 
     case "system":
       return <SystemMessage content={event.content} />;
+
+    case "ask_user_question":
+      return (
+        <QAQuestionMessage
+          header={event.header ?? ""}
+          question={event.question ?? event.content}
+        />
+      );
+
+    case "ask_user_answer":
+      return <QAAnswerMessage answer={event.content} />;
 
     case "background_complete":
       return (
