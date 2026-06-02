@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -832,3 +835,184 @@ class TestRoEThrottle:
         mw.wrap_tool_call(req, handler)
         mw.wrap_tool_call(req, handler)
         assert slept == []
+
+
+class _ConcurrencyProbe:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def enter(self) -> None:
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+
+    def exit(self) -> None:
+        with self.lock:
+            self.active -= 1
+
+
+class TestConcurrencyGate:
+    def test_limit_none_means_unlimited(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"mode": "audit"})
+        assert mw._resolve_limit(rules) is None
+        with mw._sync_gate(rules, gated=True):
+            pass
+        assert mw._sync_sema is None
+
+    def test_limit_zero_means_unlimited(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"max_concurrent_connections": 0})
+        assert mw._resolve_limit(rules) is None
+        with mw._sync_gate(rules, gated=True):
+            pass
+        assert mw._sync_sema is None
+
+    def test_first_seen_limit_wins(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        first = MachineEnforcement.from_dict({"max_concurrent_connections": 2})
+        second = MachineEnforcement.from_dict({"max_concurrent_connections": 9})
+        assert mw._resolve_limit(first) == 2
+        assert mw._resolve_limit(second) == 2
+
+    def test_ungated_call_is_not_gated(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"max_concurrent_connections": 1})
+        with mw._sync_gate(rules, gated=False):
+            pass
+        assert mw._sync_sema is None
+
+    def test_sync_gate_admits_at_most_n(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "audit", "max_concurrent_connections": 2},
+        )
+        mw = RoEEnforcementMiddleware()
+        probe = _ConcurrencyProbe()
+        release = threading.Event()
+
+        def handler(_request):
+            probe.enter()
+            release.wait(timeout=5)
+            probe.exit()
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        def run() -> None:
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            mw.wrap_tool_call(req, handler)
+
+        threads = [threading.Thread(target=run) for _ in range(5)]
+        for t in threads:
+            t.start()
+        deadline = time.time() + 5
+        while probe.active < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.05)
+        peak_while_blocked = probe.peak
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+        assert peak_while_blocked == 2
+        assert probe.peak == 2
+
+    def test_sync_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        mw = RoEEnforcementMiddleware()
+        probe = _ConcurrencyProbe()
+        release = threading.Event()
+        started = threading.Semaphore(0)
+
+        def handler(_request):
+            probe.enter()
+            started.release()
+            release.wait(timeout=5)
+            probe.exit()
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        def run() -> None:
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            mw.wrap_tool_call(req, handler)
+
+        threads = [threading.Thread(target=run) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for _ in range(4):
+            assert started.acquire(timeout=5)
+        assert probe.peak == 4
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+
+    async def test_async_gate_admits_at_most_n(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "audit", "max_concurrent_connections": 2},
+        )
+        mw = RoEEnforcementMiddleware()
+        active = 0
+        peak = 0
+        gate = asyncio.Event()
+
+        async def handler(_request):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await gate.wait()
+            active -= 1
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        async def run():
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            return await mw.awrap_tool_call(req, handler)
+
+        tasks = [asyncio.create_task(run()) for _ in range(5)]
+        deadline = time.time() + 5
+        while active < 2 and time.time() < deadline:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
+        assert peak == 2
+        gate.set()
+        await asyncio.gather(*tasks)
+        assert peak == 2
+
+    async def test_async_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        mw = RoEEnforcementMiddleware()
+        active = 0
+        peak = 0
+        gate = asyncio.Event()
+
+        async def handler(_request):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await gate.wait()
+            active -= 1
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        async def run():
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            return await mw.awrap_tool_call(req, handler)
+
+        tasks = [asyncio.create_task(run()) for _ in range(4)]
+        deadline = time.time() + 5
+        while active < 4 and time.time() < deadline:
+            await asyncio.sleep(0.01)
+        assert peak == 4
+        gate.set()
+        await asyncio.gather(*tasks)
+
+    def test_refused_call_releases_no_slot(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "enforce", "in_scope": ["10.0.0.0/24"], "max_concurrent_connections": 1},
+        )
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert mw._sync_sema is None
