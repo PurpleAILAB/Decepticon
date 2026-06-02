@@ -229,6 +229,84 @@ async def test_load_mcp_tools_uses_mock_client_when_package_present(
     }
 
 
+async def test_load_mcp_tools_retries_transient_failures(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    """A server whose get_tools() fails twice then succeeds is retried."""
+    from decepticon.tools.mcp import client as mcp_client
+
+    sentinel_tools = [object()]
+    attempts: list[int] = []
+
+    class FakeClient:
+        def __init__(self, connections: dict[str, Any]):
+            pass
+
+        async def get_tools(self) -> list[Any]:
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise ConnectionError("transient")
+            return sentinel_tools
+
+    fake_pkg = types.ModuleType("langchain_mcp_adapters")
+    fake_client_mod = types.ModuleType("langchain_mcp_adapters.client")
+    fake_client_mod.MultiServerMCPClient = FakeClient  # type: ignore[attr-defined]
+    fake_pkg.client = fake_client_mod  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters", fake_pkg)
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", fake_client_mod)
+
+    sleeps: list[float] = []
+
+    async def _no_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(mcp_client, "_sleep", _no_sleep)
+
+    servers = (MCPServerConfig(name="kali", transport="streamable_http", url="http://x/mcp"),)
+    with caplog.at_level(logging.WARNING, logger="decepticon.tools.mcp"):
+        result = await load_mcp_tools(servers)
+    assert result == sentinel_tools
+    assert len(attempts) == 3
+    assert len(sleeps) == 2
+    assert all(s > 0 for s in sleeps)
+
+
+async def test_load_mcp_tools_skips_after_all_attempts_exhausted(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    """A server that fails every retry is logged+skipped (current end-state)."""
+    from decepticon.tools.mcp import client as mcp_client
+
+    attempts: list[int] = []
+
+    class FakeClient:
+        def __init__(self, connections: dict[str, Any]):
+            pass
+
+        async def get_tools(self) -> list[Any]:
+            attempts.append(1)
+            raise ConnectionError("down")
+
+    fake_pkg = types.ModuleType("langchain_mcp_adapters")
+    fake_client_mod = types.ModuleType("langchain_mcp_adapters.client")
+    fake_client_mod.MultiServerMCPClient = FakeClient  # type: ignore[attr-defined]
+    fake_pkg.client = fake_client_mod  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters", fake_pkg)
+    monkeypatch.setitem(sys.modules, "langchain_mcp_adapters.client", fake_client_mod)
+
+    async def _no_sleep(seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(mcp_client, "_sleep", _no_sleep)
+
+    servers = (MCPServerConfig(name="bad", transport="streamable_http", url="http://x/mcp"),)
+    with caplog.at_level(logging.WARNING, logger="decepticon.tools.mcp"):
+        result = await load_mcp_tools(servers)
+    assert result == []
+    assert len(attempts) >= 2
+    assert any("unreachable" in rec.message for rec in caplog.records)
+
+
 async def test_load_mcp_tools_one_bad_server_does_not_kill_others(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
