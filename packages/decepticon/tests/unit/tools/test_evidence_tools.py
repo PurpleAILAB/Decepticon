@@ -6,7 +6,22 @@ from pathlib import Path
 import pytest
 
 from decepticon.tools.evidence import tools as evtools
-from decepticon.tools.evidence.tools import export_session_asciicast, list_session_recordings
+from decepticon.tools.evidence.tools import (
+    export_session_asciicast,
+    list_session_recordings,
+    seal_evidence,
+    verify_evidence,
+)
+
+
+def _seed_evidence(workspace: Path) -> Path:
+    evidence = workspace / "evidence"
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / "a.txt").write_text("alpha", encoding="utf-8")
+    sub = evidence / "captures"
+    sub.mkdir()
+    (sub / "b.bin").write_bytes(b"\x00\x01\x02beta")
+    return evidence
 
 
 def test_workspace_default_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,3 +125,79 @@ def test_list_session_recordings_returns_manifests(
     result = json.loads(list_session_recordings.invoke({}))
     assert result["count"] == 2
     assert sorted(r["session_name"] for r in result["recordings"]) == ["a", "b"]
+
+
+def test_seal_evidence_error_when_dir_missing(tmp_path: Path) -> None:
+    result = json.loads(seal_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert "error" in result
+    assert "status" not in result
+
+
+def test_seal_evidence_writes_manifest_for_each_file(tmp_path: Path) -> None:
+    _seed_evidence(tmp_path)
+    result = json.loads(seal_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert result["status"] == "sealed"
+    assert result["sealed"] == 2
+    assert sorted(result["files"]) == ["a.txt", "captures/b.bin"]
+    manifest = tmp_path / "evidence" / "chain-of-custody.jsonl"
+    assert manifest.exists()
+    records = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+    assert len(records) == 2
+    assert records[0]["prev_hash"] == "0" * 64
+    assert records[1]["prev_hash"] == records[0]["hash"]
+    for rec in records:
+        assert len(rec["sha256"]) == 64
+        assert rec["size"] >= 0
+
+
+def test_verify_evidence_ok_after_seal(tmp_path: Path) -> None:
+    _seed_evidence(tmp_path)
+    seal_evidence.invoke({"workspace_path": str(tmp_path)})
+    result = json.loads(verify_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert result["ok"] is True
+    assert result["records_checked"] == 2
+    assert result["drift"] == []
+    assert result["missing"] == []
+    assert result["chain_errors"] == []
+
+
+def test_verify_evidence_flags_drift_when_file_tampered(tmp_path: Path) -> None:
+    evidence = _seed_evidence(tmp_path)
+    seal_evidence.invoke({"workspace_path": str(tmp_path)})
+    (evidence / "a.txt").write_text("TAMPERED", encoding="utf-8")
+    result = json.loads(verify_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert result["ok"] is False
+    drift_paths = [d["path"] for d in result["drift"]]
+    assert "a.txt" in drift_paths
+
+
+def test_verify_evidence_flags_missing_file(tmp_path: Path) -> None:
+    evidence = _seed_evidence(tmp_path)
+    seal_evidence.invoke({"workspace_path": str(tmp_path)})
+    (evidence / "a.txt").unlink()
+    result = json.loads(verify_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert result["ok"] is False
+    assert "a.txt" in result["missing"]
+
+
+def test_verify_evidence_error_when_manifest_absent(tmp_path: Path) -> None:
+    (tmp_path / "evidence").mkdir()
+    result = json.loads(verify_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert "error" in result
+
+
+def test_verify_evidence_flags_hmac_chain_break(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DECEPTICON_AUDIT_HMAC_KEY", "secret-key")
+    _seed_evidence(tmp_path)
+    seal_evidence.invoke({"workspace_path": str(tmp_path)})
+    manifest = tmp_path / "evidence" / "chain-of-custody.jsonl"
+    lines = manifest.read_text().splitlines()
+    first = json.loads(lines[0])
+    first["sha256"] = "0" * 64
+    lines[0] = json.dumps(first)
+    manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = json.loads(verify_evidence.invoke({"workspace_path": str(tmp_path)}))
+    assert result["ok"] is False
+    assert result["chain_errors"]
