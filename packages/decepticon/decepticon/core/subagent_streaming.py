@@ -41,6 +41,16 @@ from langchain_core.runnables import Runnable, RunnableBinding
 
 log = logging.getLogger("decepticon.subagent_streaming")
 
+# Terminal guard: cap on consecutive sub-agent failures before we surface a
+# distinct marker the orchestrator can stop on. We can't re-raise from the
+# except branches (it strands tool calls and PatchToolCallsMiddleware turns
+# them into "cancelled" → retry loop), so the only stop signal we own is
+# the *content* of the returned state. After this many back-to-back
+# failures on the same runnable instance, emit a TERMINAL message instead
+# of yet another generic per-failure one.
+MAX_SUBAGENT_CONSECUTIVE_FAILURES = 3
+_TERMINAL_MARKER = "[TERMINAL]"
+
 # Context variable for the active renderer — set by StreamingEngine.run()
 _active_renderer: contextvars.ContextVar[Any] = contextvars.ContextVar(
     "subagent_renderer", default=None
@@ -103,6 +113,26 @@ class StreamingRunnable(RunnableBinding):
         if name is not None and "name" not in data:
             data["name"] = name
         super().__init__(**data)
+        # Pydantic BaseModel: use object.__setattr__ to attach mutable
+        # per-instance state outside the declared field schema.
+        object.__setattr__(self, "_consecutive_failures", 0)
+
+    def _bump_failure_and_format(self, exc: BaseException) -> str:
+        """Increment the failure counter; return the message body for the
+        returned state. Switches to a distinct TERMINAL marker once the cap
+        is reached so the orchestrator can stop re-delegating."""
+        n = int(getattr(self, "_consecutive_failures", 0)) + 1
+        object.__setattr__(self, "_consecutive_failures", n)
+        if n >= MAX_SUBAGENT_CONSECUTIVE_FAILURES:
+            return (
+                f"{_TERMINAL_MARKER} subagent '{self._name}' failed {n} "
+                f"consecutive times; aborting this objective. "
+                f"Last error: {type(exc).__name__}: {exc}"
+            )
+        return f"Subagent '{self._name}' failed: {type(exc).__name__}: {exc}"
+
+    def _reset_failures(self) -> None:
+        object.__setattr__(self, "_consecutive_failures", 0)
 
     # ── Back-compat aliases for OSS callers / tests ────────────────────
     # Internal code (and unit tests) refer to ``self._runnable`` / ``self._name``;
@@ -328,13 +358,14 @@ class StreamingRunnable(RunnableBinding):
             # thread state. On the next run, PatchToolCallsMiddleware finds the
             # dangling tool calls and injects "cancelled" messages, causing the
             # orchestrator to retry in an infinite loop.
-            error_msg = f"Subagent '{self._name}' failed: {type(exc).__name__}: {exc}"
+            error_msg = self._bump_failure_and_format(exc)
             if last_state is not None:
                 last_state.setdefault("messages", []).append(AIMessage(content=error_msg))
                 return last_state
             return {"messages": [AIMessage(content=error_msg)]}
 
         self._emit_end(renderer, has_renderer, writer, time.monotonic() - start)
+        self._reset_failures()
 
         if last_state is None:
             # stream() yielded zero states. Re-invoking the sub-agent here
@@ -417,13 +448,14 @@ class StreamingRunnable(RunnableBinding):
             # thread state. On the next run, PatchToolCallsMiddleware finds the
             # dangling tool calls and injects "cancelled" messages, causing the
             # orchestrator to retry in an infinite loop.
-            error_msg = f"Subagent '{self._name}' failed: {type(exc).__name__}: {exc}"
+            error_msg = self._bump_failure_and_format(exc)
             if last_state is not None:
                 last_state.setdefault("messages", []).append(AIMessage(content=error_msg))
                 return last_state
             return {"messages": [AIMessage(content=error_msg)]}
 
         self._emit_end(renderer, has_renderer, writer, time.monotonic() - start)
+        self._reset_failures()
 
         if last_state is None:
             # See the sync invoke() branch above: re-invoking here would
