@@ -4,6 +4,10 @@ description: BloodHound ingestion + canonical Cypher queries for AD attack-path 
 metadata:
   subdomain: active-directory
   when_to_use: "bloodhound cypher query shortest path kerberoastable unconstrained delegation"
+  mitre_attack:
+    - T1087.002
+    - T1018
+    - T1482
 ---
 
 # BloodHound Query Playbook

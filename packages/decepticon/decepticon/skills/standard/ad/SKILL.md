@@ -3,6 +3,14 @@ name: ad-overview
 description: Active Directory attack lane — BloodHound ingestion, Kerberoasting, ADCS ESC scanning, DCSync, LAPS extraction.
 metadata:
   subdomain: active-directory
+  when_to_use: "active directory ad attack lane overview routing bloodhound kerberoast adcs dcsync laps domain compromise"
+  mitre_attack:
+    - T1078.002
+    - T1558.003
+    - T1558.004
+    - T1003.006
+    - T1649
+    - T1555
 ---
 
 # AD Operator Skill Catalog

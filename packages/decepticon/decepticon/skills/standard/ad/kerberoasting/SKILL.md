@@ -4,6 +4,8 @@ description: Request Kerberos TGS tickets for SPN-bound service accounts and cra
 metadata:
   subdomain: active-directory
   when_to_use: "kerberoasting spn service ticket hashcat"
+  mitre_attack:
+    - T1558.003
 ---
 
 # Kerberoasting Playbook

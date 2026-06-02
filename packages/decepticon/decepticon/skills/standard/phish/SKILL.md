@@ -7,6 +7,7 @@ description: >
   deconfliction handshake with SOC / incident response.
 metadata:
   subdomain: phish
+  when_to_use: "phishing engagement gophish evilginx2 modlishka mfa bypass reverse proxy soc deconfliction conops phishing_engagement"
   tags: phishing, evilginx, gophish, modlishka, social-engineering, mfa-bypass
   mitre_attack: T1566, T1566.001, T1566.002, T1078, T1539, T1621
   gated_by_conops: phishing_engagement

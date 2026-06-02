@@ -60,6 +60,9 @@ from typing_extensions import override
 log = logging.getLogger(__name__)
 
 
+_TAG_SMUGGLING_RE = re.compile(r"[\U000e0000-\U000e007f\u2061-\u2064\u206a-\u206f]+")
+
+
 _PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
     (
         re.compile(
@@ -131,6 +134,11 @@ _PATTERNS: list[tuple[re.Pattern[str], str, str]] = [
         re.compile(r"[\u200b\u200c\u200d\u2060\ufeff\u202e\u202d]{3,}"),
         "invisible_chars",
         "medium",
+    ),
+    (
+        _TAG_SMUGGLING_RE,
+        "unicode_tag_smuggling",
+        "high",
     ),
     (
         re.compile(
@@ -412,7 +420,8 @@ class PromptInjectionShieldMiddleware(AgentMiddleware):
         else:
             banner = None
 
-        wrapped = _wrap_untrusted(original, banner)
+        neutralized = _TAG_SMUGGLING_RE.sub("", original)
+        wrapped = _wrap_untrusted(neutralized, banner)
 
         return ToolMessage(
             content=wrapped,

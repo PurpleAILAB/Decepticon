@@ -80,6 +80,18 @@ scripts/             Installer and utilities
 docs/                Documentation
 ```
 
+## Authoring Skills
+
+Every `packages/decepticon/decepticon/skills/**/SKILL.md` file must
+conform to the schema in [docs/skill-schema.md](docs/skill-schema.md).
+Before opening a PR, run `make audit-skills` locally and fix any
+reported violations. CI runs the same check on every PR.
+
+For the cleanup of legacy skills that pre-date the schema, see
+[docs/skill-cleanup-process.md](docs/skill-cleanup-process.md). New
+authors writing skills against the schema do not need to read the
+cleanup process — only the schema doc.
+
 ## Releases
 
 Maintainers: see [RELEASE.md](RELEASE.md) for the versioning model and the release process.

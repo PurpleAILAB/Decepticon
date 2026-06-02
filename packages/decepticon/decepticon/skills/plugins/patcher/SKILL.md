@@ -1,6 +1,10 @@
 ---
 name: patcher-overview
 description: Stage 4 patch generation playbook. Minimal diffs for validated findings with mandatory patch_verify. Load at patcher-agent startup.
+metadata:
+  subdomain: orchestration
+  when_to_use: "patcher stage 4 patch generation minimal diff validated finding patch_verify pipeline"
+  upstream_ref: "Decepticon vulnresearch pipeline — stage 4 patcher role"
 ---
 
 # Patcher Skill

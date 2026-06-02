@@ -1,6 +1,10 @@
 ---
 name: supply-chain
 description: Hunt LLM supply-chain compromise (OWASP LLM03:2025) — malicious or backdoored models, datasets, adapters, plugins, MCP servers, and tokenizer / framework dependencies that ship inside an AI-integrated product.
+metadata:
+  subdomain: supply-chain
+  when_to_use: "llm supply chain compromise owasp llm03 malicious backdoored model dataset adapter plugin mcp tokenizer framework dependency"
+  upstream_ref: "OWASP Top 10 for LLM Applications 2025 — LLM03 Supply Chain"
 ---
 
 # LLM Supply-Chain Compromise (LLM03:2025)

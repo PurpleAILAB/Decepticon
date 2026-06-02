@@ -31,6 +31,7 @@ convention used by ``DECEPTICON_BUDGET__*``, ``DECEPTICON_RUNTIME__*``,
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from collections.abc import Mapping
@@ -48,6 +49,16 @@ ENV_SERVERS = "DECEPTICON_MCP__SERVERS"
 Transport = Literal["streamable_http", "sse", "stdio"]
 
 _VALID_TRANSPORTS: frozenset[str] = frozenset({"streamable_http", "sse", "stdio"})
+
+#: Bounded retry policy for per-server MCP connect+get_tools. A transient
+#: network hiccup must not permanently drop a server's tools, but we still
+#: need a hard ceiling so a dead endpoint can't stall agent start-up.
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE_SECONDS = 1.0
+
+#: Module-level sleep indirection so tests can patch it to a no-op without
+#: monkey-patching ``asyncio.sleep`` globally.
+_sleep = asyncio.sleep
 
 
 @dataclass(frozen=True)
@@ -224,15 +235,33 @@ async def load_mcp_tools(
     collected: list[Any] = []
     for srv in servers:
         connections = {srv.name: srv.to_client_kwargs()}
-        try:
-            client = MultiServerMCPClient(connections)
-            tools = await client.get_tools()
-        except Exception as exc:  # noqa: BLE001 — third-party I/O
+        tools: list[Any] | None = None
+        last_exc: BaseException | None = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                client = MultiServerMCPClient(connections)
+                tools = await client.get_tools()
+                break
+            except Exception as exc:  # noqa: BLE001 — third-party I/O
+                last_exc = exc
+                if attempt < _MAX_ATTEMPTS:
+                    delay = _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+                    log.info(
+                        "MCP server %r attempt %d/%d failed (%s: %s); retrying in %.1fs",
+                        srv.name,
+                        attempt,
+                        _MAX_ATTEMPTS,
+                        type(exc).__name__,
+                        exc,
+                        delay,
+                    )
+                    await _sleep(delay)
+        if tools is None:
             log.warning(
                 "MCP server %r unreachable, skipping (%s: %s)",
                 srv.name,
-                type(exc).__name__,
-                exc,
+                type(last_exc).__name__ if last_exc is not None else "Error",
+                last_exc,
             )
             continue
         log.info("loaded %d tool(s) from MCP server %r", len(tools), srv.name)

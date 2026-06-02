@@ -1,6 +1,13 @@
 ---
 name: contracts-overview
 description: Smart contract audit lane — Solidity/EVM pattern scanner, Slither ingestion, Foundry PoC generation, DeFi attack playbooks.
+metadata:
+  subdomain: smart-contracts
+  when_to_use: "smart contract solidity evm slither foundry defi audit lane overview routing"
+  mitre_attack:
+    - T1190
+    - T1565
+    - T1565.001
 ---
 
 # Smart Contract Audit Catalog

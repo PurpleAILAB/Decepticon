@@ -1,6 +1,9 @@
 ---
 name: analyst-overview
 description: Root pointer for the analyst's vulnerability research playbooks. Load this first at iteration start to see the full catalog of vuln-class and chain-building skills.
+metadata:
+  subdomain: analyst
+  when_to_use: "analyst overview vulnerability research playbook catalog chain building routing iteration start"
 ---
 
 # Analyst Skill Catalog

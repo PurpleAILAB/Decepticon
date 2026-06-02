@@ -1,6 +1,9 @@
 ---
 name: auth-bypass
 description: Hunt authentication/authorization bypass in route guards, role checks, tenant boundaries, and state-machine transitions.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "authentication authorization bypass route guard role check tenant boundary state machine transition session jwt"
 ---
 
 # Auth Bypass Playbook

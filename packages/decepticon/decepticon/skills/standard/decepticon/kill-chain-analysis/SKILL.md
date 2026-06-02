@@ -7,7 +7,7 @@ metadata:
   kind: analytic
   when_to_use: "analyze findings, select attack vector, prioritize targets, which technique, attack path, next attack, choose approach, alternative vector, blocked what next"
   tags: kill-chain, decision-making, attack-path, target-prioritization, technique-selection
-  mitre_attack:
+  upstream_ref: "Lockheed Martin Cyber Kill Chain + Decepticon attack-path planner — analytic decision support, no direct attack technique"
 ---
 
 # Kill Chain Analysis & Attack Path Decision-Making

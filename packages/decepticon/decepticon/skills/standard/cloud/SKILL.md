@@ -1,6 +1,16 @@
 ---
 name: cloud-overview
 description: Cloud exploitation lane — AWS IAM privesc, S3 takeover, k8s RBAC abuse, Terraform state leaks, cloud metadata pivoting.
+metadata:
+  subdomain: cloud
+  when_to_use: "cloud aws gcp azure iam s3 kubernetes k8s terraform metadata imds privesc lane overview routing"
+  mitre_attack:
+    - T1078.004
+    - T1530
+    - T1552.005
+    - T1552.007
+    - T1610
+    - T1611
 ---
 
 # Cloud Hunter Skill Catalog

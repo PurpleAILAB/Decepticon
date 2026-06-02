@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "interview the operator, ask a yes/no, pick engagement type, choose attack class, scope window, posture choice, multi-select kill-chain phases, free-form name / IP / contact"
   tags: interview, ask_user_question, picker, multiple-choice
-  mitre_attack: []
+  upstream_ref: "Soundwave operator-interview channel — ask_user_question structured input templates"
 ---
 
 # Structured Operator Questions (`ask_user_question`)

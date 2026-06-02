@@ -1,6 +1,10 @@
 ---
 name: bounty-report-formatter
 description: Bug bounty report formatting for HackerOne, Bugcrowd, Immunefi, and GitHub Security Advisories. Load after validate_finding succeeds and the finding needs to be submitted to a bounty program.
+metadata:
+  subdomain: reporting
+  when_to_use: "bug bounty report hackerone h1 bugcrowd immunefi github security advisory ghsa submission triage cvss writeup"
+  upstream_ref: "HackerOne / Bugcrowd / Immunefi / GitHub Security Advisory submission templates"
 ---
 
 # Bug Bounty Report Formatter

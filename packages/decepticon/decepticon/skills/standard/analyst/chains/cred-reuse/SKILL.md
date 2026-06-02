@@ -1,6 +1,9 @@
 ---
 name: chain-credential-reuse
 description: Build chains where leaked or weak credentials pivot across services to privileged access.
+metadata:
+  subdomain: credential-access
+  when_to_use: "credential reuse chain pivot leaked weak password sso oauth across services privileged access"
 ---
 
 # Chain: Credential Reuse Pivot

@@ -6,7 +6,7 @@ metadata:
   subdomain: reporting
   when_to_use: "write finding, record finding, create finding, document vulnerability, FIND-, findings/, severity"
   tags: finding, protocol, template, severity, reporting, documentation, operational
-  mitre_attack: []
+  upstream_ref: "Operational-tier finding template — sub-agent decision support output, not an attack technique"
 ---
 
 # Finding Protocol — Operational Tier

@@ -1,6 +1,9 @@
 ---
 name: deserialization
 description: Hunt insecure deserialization (CWE-502) across Python pickle, Java ObjectInputStream / Jackson / SnakeYAML, .NET BinaryFormatter / DataContractJson, PHP unserialize, Ruby Marshal/YAML.load, and Node.js vm. Direct path to unauthenticated RCE.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "insecure deserialization cwe-502 pickle jackson snakeyaml binaryformatter datacontractjson unserialize marshal yaml load node vm gadget chain"
 ---
 
 # Insecure Deserialization Playbook

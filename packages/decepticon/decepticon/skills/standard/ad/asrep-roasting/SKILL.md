@@ -4,6 +4,8 @@ description: Request AS-REP for accounts with DONT_REQ_PREAUTH set and crack off
 metadata:
   subdomain: active-directory
   when_to_use: "asrep as-rep roasting kerberos pre-auth dontreqpreauth"
+  mitre_attack:
+    - T1558.004
 ---
 
 # AS-REP Roasting Playbook

@@ -33,7 +33,7 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const WORKSPACE = process.env.WORKSPACE_PATH ?? "/workspace";
+  const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
   const events: TimelineEvent[] = [];
 
   // Engagement creation

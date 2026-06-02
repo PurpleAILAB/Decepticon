@@ -227,7 +227,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Warm the backend so the first agent request doesn't pay the
     # init cost on its critical path.
-    _get_backend()
+    backend = _get_backend()
+    # Reap tmux sockets/sessions left by a previously-killed daemon
+    # process. A SIGKILL leaves them orphaned (their tmux servers
+    # survive but no live manager tracks them); without this reap they
+    # accumulate forever and can collide with new session names on the
+    # next engagement attempt. Scoped to decepticon-named sockets
+    # only — see SandboxBase.reap_orphaned_tmux_sessions docstring.
+    try:
+        reaped = backend.reap_orphaned_tmux_sessions()
+        if reaped:
+            log.info("startup: reaped %d orphan tmux session(s)", reaped)
+    except Exception:
+        log.exception("startup: reap_orphaned_tmux_sessions raised")
     yield
     # Shutdown: kill every tmux session we ever handed out so the tmux
     # servers don't outlive the daemon and leave bash zombies behind.

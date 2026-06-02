@@ -1,6 +1,10 @@
 ---
 name: vulnresearch-orchestrator
 description: Five-stage modular vulnerability pipeline orchestrator. Delegates scan → detect → verify → patch → exploit through OPPLAN objectives. Load at orchestrator startup.
+metadata:
+  subdomain: orchestration
+  when_to_use: "vulnresearch orchestrator pipeline five-stage scan detect verify patch exploit opplan delegation"
+  upstream_ref: "Decepticon vulnresearch pipeline — top-level orchestrator role"
 ---
 
 # Vulnresearch Orchestrator Skill

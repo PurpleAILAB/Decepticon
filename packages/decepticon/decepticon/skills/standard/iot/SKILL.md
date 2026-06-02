@@ -8,6 +8,7 @@ description: >
   Z-Wave, LoRaWAN, sub-GHz).
 metadata:
   subdomain: iot
+  when_to_use: "iot embedded linux rtos uart jtag swd firmware binwalk filesystem bootloader ble zigbee z-wave lorawan sub-ghz wireless"
   tags: iot, firmware, embedded, binwalk, uart, jtag, ble, zigbee
   mitre_attack: T1542, T1542.005, T1601, T1499.004
 ---

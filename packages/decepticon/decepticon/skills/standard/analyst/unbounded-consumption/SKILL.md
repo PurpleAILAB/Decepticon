@@ -1,6 +1,9 @@
 ---
 name: unbounded-consumption
 description: Hunt LLM unbounded consumption (OWASP LLM10:2025) — denial-of-wallet and denial-of-service against LLM endpoints via unrestricted prompt size, runaway tool loops, expensive model selection, and unauthenticated fan-out.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm unbounded consumption owasp llm10 denial of wallet dos prompt size tool loop expensive model unauthenticated fan-out"
 ---
 
 # LLM Unbounded Consumption (LLM10:2025)

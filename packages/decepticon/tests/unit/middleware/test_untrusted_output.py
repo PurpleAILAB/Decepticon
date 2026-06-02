@@ -139,6 +139,29 @@ class TestEnvelopeWrapping:
             assert f'origin="{tool_name}"' in result.content, tool_name
             assert "candidate hit from target file" in result.content, tool_name
 
+    def test_network_tools_output_is_quarantined(self) -> None:
+        mw = UntrustedOutputMiddleware()
+        network_tools = (
+            "http_request",
+            "http_history",
+            "browser_action",
+            "proxy_list_requests",
+            "proxy_view_request",
+            "proxy_send_request",
+            "proxy_repeat_request",
+            "proxy_list_sitemap",
+            "proxy_view_sitemap_entry",
+        )
+        for tool_name in network_tools:
+            assert tool_name in UNTRUSTED_TOOL_NAMES, tool_name
+            request = _make_request(tool_name)
+            handler = MagicMock(return_value=_tool_message("response bytes from target"))
+            result = mw.wrap_tool_call(request, handler)
+            assert isinstance(result, ToolMessage)
+            assert "<UNTRUSTED_TOOL_OUTPUT" in result.content, tool_name
+            assert f'origin="{tool_name}"' in result.content, tool_name
+            assert "response bytes from target" in result.content, tool_name
+
     def test_embedded_marker_cannot_break_out_of_envelope(self) -> None:
         # Regression: attacker-controlled tool output containing the closing
         # envelope marker must not forge/close the quarantine and smuggle text

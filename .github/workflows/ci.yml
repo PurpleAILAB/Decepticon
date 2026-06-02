@@ -191,6 +191,43 @@ jobs:
           name: basedpyright-${{ github.run_id }}
           path: bp.json
           retention-days: 7
+      # SKILL.md schema validator — mandatory after Phase 0 completed
+      # the 208-violation → 0-violation cleanup. Any new SKILL.md added
+      # via PR must conform to the canonical schema (see
+      # docs/skill-schema.md) or the lint stage blocks the merge.
+      - name: Skill corpus audit (strict mode)
+        run: make audit-skills-strict
+      # Phase 1a graph builder — assert the checked-in skills.cypher
+      # matches what the builder produces from the current SKILL.md +
+      # seed YAML + pinned MITRE STIX bundle. Authors who edit a
+      # SKILL.md must also commit the regenerated dump.
+      - name: Pre-warm MITRE STIX bundle (immutable v19.1 tag)
+        run: |
+          mkdir -p ~/.cache/skillogy/mitre
+          BUNDLE=~/.cache/skillogy/mitre/enterprise-attack-19.1.json
+          EXPECTED_SHA256=bdf1ce86a4e604214c5076d37ae4dcb322678afc528df8492e6fdc1b554f5da3
+          # Pin to the v19.1 release tag so CI gets the same bytes every
+          # run. The 'master' branch reflows as MITRE pushes patches,
+          # which silently drifts the cypher dump and breaks
+          # `check-skill-graph`.
+          if [ ! -f "$BUNDLE" ]; then
+            curl -sSL \
+              https://raw.githubusercontent.com/mitre-attack/attack-stix-data/v19.1/enterprise-attack/enterprise-attack-19.1.json \
+              -o "$BUNDLE"
+          fi
+          echo "$EXPECTED_SHA256  $BUNDLE" | sha256sum -c -
+      - name: Skill graph build gate (Phase 1a)
+        run: |
+          set +e
+          make check-skill-graph
+          ec=$?
+          if [ $ec -ne 0 ]; then
+            echo "::group::Diff against checked-in dump"
+            uv run python -m decepticon.skillogy.builder --frozen-built-at --out /tmp/built.cypher
+            diff -u packages/decepticon/decepticon/skills/.graph/skills.cypher /tmp/built.cypher | head -200 || true
+            echo "::endgroup::"
+            exit $ec
+          fi
       # PRs run tests without coverage instrumentation — coverage adds ~3x
       # runtime and PR feedback latency matters more than coverage tracking
       # on every change. Coverage is enforced on main pushes (next step).

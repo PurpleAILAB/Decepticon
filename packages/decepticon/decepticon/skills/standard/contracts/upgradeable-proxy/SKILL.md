@@ -4,6 +4,9 @@ description: Proxy upgrade patterns and their bugs — uninitialized implementat
 metadata:
   subdomain: smart-contracts
   when_to_use: "upgradeable proxy uups eip-1967 storage collision"
+  mitre_attack:
+    - T1190
+    - T1574
 ---
 
 # Upgradeable Proxy Playbook

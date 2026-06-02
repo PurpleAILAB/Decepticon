@@ -33,8 +33,26 @@ from decepticon.tools.research._engagement_scope import (
     get_active_engagement,
     with_engagement_property,
 )
-from decepticon_core.types.kg import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
+from decepticon_core.types.kg import (
+    SEVERITY_COST_MULTIPLIER,
+    Edge,
+    EdgeKind,
+    KnowledgeGraph,
+    Node,
+    NodeKind,
+)
 from decepticon_core.utils.logging import get_logger
+
+
+def _edge_cost_expr(weight_ref: str) -> str:
+    severity_when = " ".join(
+        f"WHEN '{sev.value}' THEN {mult}" for sev, mult in SEVERITY_COST_MULTIPLIER.items()
+    )
+    severity_case = f"CASE coalesce(dst.severity, '') {severity_when} ELSE 1.0 END"
+    validated_case = "CASE WHEN coalesce(dst.validated, false) THEN 0.5 ELSE 1.0 END"
+    weight_case = f"CASE WHEN {weight_ref} > 0.05 THEN {weight_ref} ELSE 0.05 END"
+    return f"({severity_case}) * ({validated_case}) * ({weight_case})"
+
 
 log = get_logger("research.neo4j")
 
@@ -326,11 +344,13 @@ class Neo4jStore:
         rel_type = edge.kind.value.upper()
         scoped_props = with_engagement_property(edge.props)
         engagement = scoped_props["engagement"]
+        cost_expr = _edge_cost_expr("$weight")
         query = f"""
         MATCH (src {{id: $src_id}}), (dst {{id: $dst_id}})
         MERGE (src)-[r:{rel_type} {{id: $edge_id}}]->(dst)
         SET r.kind = $kind,
             r.weight = $weight,
+            r.cost = {cost_expr},
             r.props = $props,
             r.engagement = $engagement,
             r.created_at = coalesce(r.created_at, $created_at)
@@ -425,6 +445,7 @@ class Neo4jStore:
             )
 
         total = 0
+        cost_expr = _edge_cost_expr("row.weight")
         with self._driver.session(database=self._database) as session:
             for rel_type, batch in grouped.items():
                 query = f"""
@@ -433,6 +454,7 @@ class Neo4jStore:
                 MERGE (src)-[r:{rel_type} {{id: row.id}}]->(dst)
                 SET r.kind = row.kind,
                     r.weight = row.weight,
+                    r.cost = {cost_expr},
                     r.props = row.props,
                     r.engagement = row.engagement,
                     r.created_at = coalesce(r.created_at, row.created_at)

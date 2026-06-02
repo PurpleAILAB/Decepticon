@@ -9,6 +9,8 @@ description: >
   certificate transparency, BGP/ASN mapping.
 metadata:
   subdomain: osint
+  when_to_use: "osint passive reconnaissance maltego shodan censys hunter breach data github code search wayback machine certificate transparency bgp asn outbound only bug bounty"
+  subdomain: osint
   tags: osint, passive-recon, shodan, censys, breach-data, ct-logs, bgp
   mitre_attack: T1589, T1590, T1591, T1593, T1594, T1596
   network_policy: outbound-only

@@ -1,6 +1,9 @@
 ---
 name: prototype-pollution
 description: Hunt JavaScript prototype pollution (CWE-1321) — the 2023-2026 meta-vulnerability that chains into RCE, auth bypass, and SSRF on most Node.js stacks.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "javascript prototype pollution cwe-1321 node js __proto__ constructor chain rce auth bypass ssrf gadget"
 ---
 
 # Prototype Pollution Playbook

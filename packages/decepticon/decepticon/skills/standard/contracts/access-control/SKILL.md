@@ -4,6 +4,8 @@ description: Missing modifiers, wrong msg.sender checks, default-public function
 metadata:
   subdomain: smart-contracts
   when_to_use: "smart contract access control onlyowner missing modifier privilege"
+  mitre_attack:
+    - T1190
 ---
 
 # Access Control Playbook

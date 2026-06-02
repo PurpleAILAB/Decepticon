@@ -31,7 +31,7 @@ interface ApprovalRequest {
 const ACTIONS = new Set(["allow", "deny", "redirect"]);
 
 function workspaceFor(name: string) {
-  const WORKSPACE = process.env.WORKSPACE_PATH ?? "/workspace";
+  const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
   const dir = path.join(WORKSPACE, name, "approvals");
   return {
     dir,

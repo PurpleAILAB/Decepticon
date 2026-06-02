@@ -6,7 +6,7 @@ metadata:
   subdomain: orchestration
   when_to_use: "final report, generate report, engagement complete, all objectives done, executive summary, technical report"
   tags: report, final, executive-summary, technical-report, remediation, detection-gap
-  mitre_attack: []
+  upstream_ref: "Decepticon final-engagement report template — deliverable generation, no direct attack technique"
 ---
 
 # Final Engagement Report Generation

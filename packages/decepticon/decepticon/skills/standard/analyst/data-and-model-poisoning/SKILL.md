@@ -1,6 +1,9 @@
 ---
 name: data-and-model-poisoning
 description: Hunt LLM training-data and model poisoning (OWASP LLM04:2025) — adversarial inputs that bias future model behaviour through fine-tuning, RLHF, or continuous-learning loops.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm data model poisoning owasp llm04 training fine tune rlhf continuous learning adversarial input bias backdoor"
 ---
 
 # LLM Data and Model Poisoning (LLM04:2025)

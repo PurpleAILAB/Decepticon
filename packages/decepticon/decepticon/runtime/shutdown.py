@@ -37,6 +37,10 @@ MAX_FLUSH_SECONDS: float = 5.0
 The handler joins the worker thread with this deadline and exits even
 if writes are still in flight when the deadline expires."""
 
+PER_COMPONENT_FLUSH_SECONDS: float = 2.0
+"""Per-component upper bound: one hung checkpoint writer cannot consume
+the whole ``MAX_FLUSH_SECONDS`` budget and starve the remaining steps."""
+
 DUPLICATE_SIGNAL_WINDOW_SECONDS: float = 2.0
 """Second signal within this window of the first forces immediate exit."""
 
@@ -231,37 +235,71 @@ def _run_flush(signal_name: str, deadline: float) -> _FlushResult:
     if workspace is None:
         return result
 
-    if _time_left(deadline) <= 0:
-        return result
-    try:
-        result.findings_written = _write_inflight_findings(state, workspace)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"findings: {exc!r}")
+    ok, val = _run_step(
+        "findings", lambda: _write_inflight_findings(state, workspace), deadline, result
+    )
+    if ok and isinstance(val, int):
+        result.findings_written = val
 
-    if _time_left(deadline) <= 0:
-        return result
-    try:
-        result.opplan_written = _write_opplan_checkpoint(state, workspace)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"opplan: {exc!r}")
+    ok, val = _run_step(
+        "opplan", lambda: _write_opplan_checkpoint(state, workspace), deadline, result
+    )
+    if ok:
+        result.opplan_written = bool(val)
 
-    if _time_left(deadline) <= 0:
-        return result
-    try:
-        result.partial_executive_written = _write_partial_executive(state, workspace)
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"executive: {exc!r}")
+    ok, val = _run_step(
+        "executive", lambda: _write_partial_executive(state, workspace), deadline, result
+    )
+    if ok:
+        result.partial_executive_written = bool(val)
 
-    if _time_left(deadline) <= 0:
-        return result
-    try:
-        result.event_written = _write_checkpoint_event_if_available(
-            state, workspace, result, signal_name
-        )
-    except Exception as exc:  # noqa: BLE001
-        result.errors.append(f"event: {exc!r}")
+    ok, val = _run_step(
+        "event",
+        lambda: _write_checkpoint_event_if_available(state, workspace, result, signal_name),
+        deadline,
+        result,
+    )
+    if ok:
+        result.event_written = bool(val)
 
     return result
+
+
+def _run_step(
+    label: str,
+    func: Callable[[], Any],
+    deadline: float,
+    result: _FlushResult,
+) -> tuple[bool, Any]:
+    """Run ``func`` bounded by ``min(PER_COMPONENT_FLUSH_SECONDS, time_left)``.
+
+    The ``_write_*`` helpers are synchronous filesystem calls, so we cannot
+    cancel them cooperatively; instead each runs in its own short-lived
+    daemon thread and we ``join`` with a per-component timeout. On timeout
+    we record a structured error and return ``(False, None)`` so the next
+    checkpoint step can still execute within the remaining total budget.
+    """
+    cap = min(PER_COMPONENT_FLUSH_SECONDS, _time_left(deadline))
+    if cap <= 0:
+        return False, None
+    box: dict[str, Any] = {}
+
+    def _runner() -> None:
+        try:
+            box["v"] = func()
+        except Exception as exc:  # noqa: BLE001 - reported via result.errors
+            box["e"] = exc
+
+    t = threading.Thread(target=_runner, name=f"decepticon-shutdown-{label}", daemon=True)
+    t.start()
+    t.join(timeout=cap)
+    if t.is_alive():
+        result.errors.append(f"{label}: timed out after {cap:.2f}s")
+        return False, None
+    if "e" in box:
+        result.errors.append(f"{label}: {box['e']!r}")
+        return False, None
+    return True, box.get("v")
 
 
 def _time_left(deadline: float) -> float:

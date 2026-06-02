@@ -1,6 +1,9 @@
 ---
 name: vector-and-embedding-weaknesses
 description: Hunt vector / embedding weaknesses (OWASP LLM08:2025) — adversarial inputs against the RAG / similarity layer that cause cross-tenant leak, embedding-inversion privacy loss, semantic confusion, and retriever-driven prompt injection.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm vector embedding weakness owasp llm08 rag similarity cross-tenant leak inversion privacy semantic retriever prompt injection"
 ---
 
 # LLM Vector and Embedding Weaknesses (LLM08:2025)

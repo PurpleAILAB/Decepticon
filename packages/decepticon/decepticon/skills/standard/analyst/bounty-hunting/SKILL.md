@@ -1,6 +1,9 @@
 ---
 name: bounty-hunting-methodology
 description: Bug bounty white-box hunting methodology. Load when the target is an open-source project with a security advisory program, bug bounty, or responsible disclosure policy.
+metadata:
+  subdomain: analyst
+  when_to_use: "bug bounty white-box methodology open source security advisory program responsible disclosure policy h1 bugcrowd"
 ---
 
 # Bug Bounty Hunting Methodology

@@ -73,7 +73,7 @@ help:
 	@echo "  make quality-strict Release gate — mirrors CI main-push lane + full basedpyright warning audit"
 	@echo "  make ci-lint        Lint + format + basedpyright errors-only (CI mirror)"
 	@echo "  make ci-test        pytest fast lane (-n auto -m \"not slow\", no coverage)"
-	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=35)"
+	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=60)"
 	@echo "  make test           pytest in container"
 	@echo "  make test-local     pytest locally (uv sync --dev; takes ARGS=)"
 	@echo "  make lint           Python lint + format check + basedpyright (all levels, local exploratory)"
@@ -223,6 +223,28 @@ ci-lint:
 ci-test:
 	uv run pytest -n auto -q -m "not slow"
 
+## SKILL.md schema validator (warn mode — Phase 0). Exit 0 even if violations found.
+.PHONY: audit-skills
+audit-skills:
+	uv run python -m decepticon.skill_audit --mode warn
+
+## SKILL.md schema validator (strict mode — post-Phase-0 CI gate). Exit 1 on any violation.
+.PHONY: audit-skills-strict
+audit-skills-strict:
+	uv run python -m decepticon.skill_audit --mode strict
+
+## Skill graph builder (Phase 1a) — compile SKILL.md + seeds + MITRE STIX
+## into packages/decepticon/decepticon/skills/.graph/skills.cypher.
+.PHONY: build-skill-graph
+build-skill-graph:
+	uv run python -m decepticon.skillogy.builder --frozen-built-at
+
+## CI gate — assert the checked-in skills.cypher matches what the
+## builder produces from the current SKILL.md + seed YAML + pinned STIX.
+.PHONY: check-skill-graph
+check-skill-graph:
+	uv run python -m decepticon.skillogy.builder --frozen-built-at --check
+
 ## main-push lane: slow included, coverage 60% gate (ratcheted from 35% in #380).
 ci-test-coverage:
 	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=60
@@ -241,7 +263,7 @@ quality: ci-lint ci-test quality-cli web-lint web-build
 	@echo ""
 	@echo "OK — PR gates passed (mirrors CI PR lane)"
 
-## Release gate — mirrors CI main-push lane (coverage 35%) + full basedpyright
+## Release gate — mirrors CI main-push lane (coverage 60%) + full basedpyright
 ## audit (warnings + info). Run before tagging a release.
 quality-strict: ci-lint ci-test-coverage quality-cli web-lint web-build
 	@echo ""

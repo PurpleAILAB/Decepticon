@@ -1,6 +1,11 @@
 ---
 name: reentrancy
 description: Hunt and validate reentrancy bugs — classic cross-function, same-function, read-only, and cross-contract variants.
+metadata:
+  subdomain: smart-contracts
+  when_to_use: "reentrancy cross-function read-only erc777 erc1155 hook callback evm"
+  mitre_attack:
+    - T1190
 ---
 
 # Reentrancy Playbook

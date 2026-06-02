@@ -3,7 +3,8 @@ name: deep-analysis
 description: "Depth-first RE investigation loop for a single binary or function cluster: decompile→rename→retype→comment→re-read, with context-rot guards and on-task checks. Use when triage has already identified the interesting area and the goal is full understanding: what does function X do, identify cryptographic primitives, locate C2 protocol, recover data structures. Triggers on: 'deep analysis', 'understand function', 'recover struct', 'crypto identification', 'C2 protocol', 'reverse this binary fully', 'what does this function do'."
 allowed-tools: Bash Read Write
 metadata:
-  subdomain: reconnaissance
+  subdomain: reverse-engineering
+  when_to_use: "deep analysis understand function recover struct crypto identification C2 protocol reverse binary fully decompile rename retype comment ghidra"
   tags: reverse-engineering, ghidra, decompilation, static-analysis, deep-re
   mitre_attack: T1027, T1055, T1129
 ---

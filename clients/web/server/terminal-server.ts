@@ -3,10 +3,12 @@
  * Terminal WebSocket Server — spawns Decepticon CLI in a PTY.
  *
  * Session-persistent architecture:
- *   PTY processes are keyed by engagement slug + agent ID and survive
- *   WebSocket disconnects. When the browser reconnects (tab refresh,
- *   network blip, hotswap), it reattaches to the SAME PTY — no new
- *   CLI banner, no lost state, no [Reconnecting...] spam.
+ *   PTY processes are keyed by engagement slug and survive WebSocket
+ *   disconnects. When the browser reconnects (tab refresh, network blip,
+ *   hotswap), it reattaches to the SAME PTY — no new CLI banner, no lost
+ *   state, no [Reconnecting...] spam. The key omits the agent id on purpose:
+ *   the CLI flips soundwave -> decepticon in-process on engagement_ready, so
+ *   a later connect computing a different agent must still find the live PTY.
  *
  *   PTYs are only destroyed when:
  *     1. The CLI process itself exits (user typed Ctrl+C, engagement finished)
@@ -65,14 +67,18 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
-function sessionKey(slug: string, agentId: string): string {
-  return `${slug}:${agentId}`;
+function sessionKey(slug: string): string {
+  return slug;
 }
 
 function appendScrollback(session: Session, data: string): void {
   session.scrollback += data;
   if (session.scrollback.length > SCROLLBACK_LIMIT) {
-    session.scrollback = session.scrollback.slice(-SCROLLBACK_LIMIT);
+    const trimmed = session.scrollback.slice(-SCROLLBACK_LIMIT);
+    // Resume at a line boundary so replay never starts mid escape sequence,
+    // which would mis-color or swallow output on the client after term.reset().
+    const nl = trimmed.indexOf("\n");
+    session.scrollback = nl >= 0 && nl < trimmed.length - 1 ? trimmed.slice(nl + 1) : trimmed;
   }
 }
 
@@ -142,7 +148,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
     return;
   }
 
-  const key = sessionKey(engagementSlug, agentId);
+  const key = sessionKey(engagementSlug);
   let session = sessions.get(key);
 
   // ── Reattach to existing session ──
@@ -155,9 +161,10 @@ wss.on("connection", async (ws: WebSocket, req) => {
       session.orphanTimer = null;
     }
 
-    // Detach old WS if any
+    // Detach old WS if any. 4001 (app range) distinguishes "another connection
+    // took over" from the genuine PTY-exit 1000 the client treats as session end.
     if (session.ws && session.ws !== ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.close(1000, "Replaced by new connection");
+      session.ws.close(4001, "Replaced by new connection");
     }
     session.ws = ws;
 
@@ -261,8 +268,12 @@ wss.on("connection", async (ws: WebSocket, req) => {
       }
       newSession.ws.close(1000, "PTY exited");
     }
-    // Don't destroy immediately — let reattach see the exit message
-    setTimeout(() => destroySession(key), 5000);
+    // Don't destroy immediately — let reattach see the exit message. Guard on
+    // session identity so a reconnect that respawns a fresh PTY under the same
+    // key within the window isn't killed by this stale timer.
+    setTimeout(() => {
+      if (sessions.get(key) === newSession) destroySession(key);
+    }, 5000);
   });
 
   wireWsToSession(ws, newSession);
@@ -271,8 +282,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
 // ── Wire a WebSocket to a Session ────────────────────────────────
 
 function wireWsToSession(ws: WebSocket, session: Session): void {
-  // Send initial resize
-
   ws.on("message", (raw: Buffer | string) => {
     const msg = raw.toString();
     try {

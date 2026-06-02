@@ -4,6 +4,9 @@ description: Exploit Active Directory Certificate Services ESC1 — vulnerable t
 metadata:
   subdomain: active-directory
   when_to_use: "adcs esc1 ad certificate services template misconfiguration domain admin"
+  mitre_attack:
+    - T1649
+    - T1078.002
 ---
 
 # ADCS ESC1 Exploitation

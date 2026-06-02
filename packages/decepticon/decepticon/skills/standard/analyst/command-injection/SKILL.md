@@ -1,6 +1,9 @@
 ---
 name: command-injection
 description: Hunt OS command injection (CWE-78) — user input reaching shell, exec, or system calls. Covers argument-array bypasses, path confusion, and template-string injection in modern frameworks.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "command injection cwe-78 os shell exec system call argument array bypass path confusion template string"
 ---
 
 # Command Injection Playbook

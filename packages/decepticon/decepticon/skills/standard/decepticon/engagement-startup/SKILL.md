@@ -6,7 +6,7 @@ metadata:
   subdomain: orchestration
   when_to_use: "agent startup, first message, session start"
   tags: startup, engagement-selection, workspace-init, resume
-  mitre_attack: []
+  upstream_ref: "Decepticon orchestrator first-turn bootstrap — workspace + engagement selection, no direct attack technique"
 ---
 
 # Engagement Startup Procedure

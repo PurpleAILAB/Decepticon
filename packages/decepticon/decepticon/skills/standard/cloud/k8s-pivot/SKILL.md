@@ -4,6 +4,11 @@ description: Kubernetes attack playbook — service-account token theft, RBAC ab
 metadata:
   subdomain: cloud
   when_to_use: "kubernetes k8s pod escape cluster compromise lateral"
+  mitre_attack:
+    - T1552.007
+    - T1610
+    - T1611
+    - T1613
 ---
 
 # Kubernetes Pivot

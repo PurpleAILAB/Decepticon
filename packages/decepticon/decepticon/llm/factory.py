@@ -27,7 +27,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from langchain_core.language_models import BaseChatModel
@@ -38,11 +38,14 @@ from pydantic import SecretStr
 from decepticon.llm.router import ModelRouter
 from decepticon_core.registry import RoleRegistry
 from decepticon_core.types.llm import (
+    AGENT_TIERS,
     AuthMethod,
     Credentials,
     LLMModelMapping,
     ModelProfile,
     ProxyConfig,
+    Tier,
+    resolve_chain,
 )
 from decepticon_core.utils.logging import get_logger
 
@@ -801,14 +804,16 @@ class _ProxiedChatOpenAI(ChatOpenAI):
 
     def invoke(self, *args, **kwargs):
         try:
-            return super().invoke(*args, **kwargs)
+            result = super().invoke(*args, **kwargs)
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _log_served_model(self.model_name, result)
+        return result
 
     async def ainvoke(self, *args, **kwargs):
         try:
-            return await call_with_timeout(
+            result = await call_with_timeout(
                 super().ainvoke(*args, **kwargs),
                 _resolve_llm_timeout_seconds(),
             )
@@ -817,6 +822,32 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         except Exception as exc:
             _reraise_with_actionable_message(exc, self.model_name)
             raise
+        _log_served_model(self.model_name, result)
+        return result
+
+
+def _log_served_model(requested: str, result: object) -> None:
+    """Best-effort attribution log: which provider/model the LiteLLM proxy
+    actually routed to. When fallback fires (primary -> fallback) the
+    requested model id and the served model id diverge — surfacing the
+    delta lets operators trace cost/perf/debug back to the real upstream.
+
+    Never raise from this path: attribution is observability, not control
+    flow. Any extraction failure is swallowed silently.
+    """
+    try:
+        metadata = getattr(result, "response_metadata", None) or {}
+        served = (
+            metadata.get("model_name")
+            or metadata.get("model")
+            or getattr(result, "model_name", None)
+        )
+        if served and served != requested:
+            log.info("llm.attribution requested=%s served=%s", requested, served)
+        elif served:
+            log.debug("llm.attribution requested=%s served=%s", requested, served)
+    except Exception:
+        pass
 
 
 def _model_drops_temperature(model: str) -> bool:
@@ -1103,6 +1134,26 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+def _redact_url_credentials(url: str) -> str:
+    """Strip ``user:pass@`` userinfo from a URL before logging.
+
+    Operators may configure the proxy URL with embedded credentials
+    (``http://user:pass@litellm:4000``); those must not reach INFO logs.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if not parts.scheme or "@" not in parts.netloc:
+        return url
+    host = parts.hostname or ""
+    if parts.port is not None:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, f"***@{host}", parts.path, parts.query, parts.fragment))
+
+
 def _redact_secrets(text: str) -> str:
     """Scrub credential-shaped substrings from upstream error text.
 
@@ -1115,6 +1166,57 @@ def _redact_secrets(text: str) -> str:
     for pattern, replacement in _SECRET_PATTERNS:
         text = pattern.sub(replacement, text)
     return text
+
+
+ProviderErrorClass = Literal["retryable", "fatal"]
+
+# HTTP status → class. 408/425/429 + 5xx are worth a retry / fallback hop;
+# 4xx auth/config (400/401/403/404) won't be fixed by another attempt.
+_RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_FATAL_STATUS = frozenset({400, 401, 403, 404})
+
+# Last-resort message scrape when the exception lacks ``status_code`` —
+# LiteLLM/openai surface the upstream status only in the body text.
+_STATUS_IN_MSG = re.compile(r"(?:error\s*code|status(?:_code)?|http)\D{0,8}(\d{3})", re.I)
+
+
+def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
+    """Tag a provider exception as ``retryable`` or ``fatal``.
+
+    Inspection order (cheapest signal first):
+      1. Our own ``LLMTimeoutError`` and httpx transport errors → retryable.
+      2. ``status_code`` attribute (openai.APIStatusError shape).
+      3. ``response.status_code`` (httpx.HTTPStatusError shape).
+      4. Regex over ``str(exc)`` — LiteLLM nests upstream status in the body.
+
+    Default for unrecognised shapes is ``retryable`` so we preserve today's
+    behavior (LiteLLM ``num_retries`` keeps spinning). Only flip to ``fatal``
+    on a positive 4xx signal.
+    """
+    if isinstance(exc, LLMTimeoutError):
+        return "retryable"
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return "retryable"
+
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        if status in _FATAL_STATUS:
+            return "fatal"
+        if status in _RETRYABLE_STATUS:
+            return "retryable"
+
+    match = _STATUS_IN_MSG.search(str(exc))
+    if match is not None:
+        code = int(match.group(1))
+        if code in _FATAL_STATUS:
+            return "fatal"
+        if code in _RETRYABLE_STATUS:
+            return "retryable"
+
+    return "retryable"
 
 
 def _reraise_if_connection_error(exc: Exception) -> None:
@@ -1153,6 +1255,9 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     err_type = type(exc).__name__
     msg = str(exc)
     msg_lower = msg.lower()
+    fatal_prefix = (
+        "non-retryable provider error: " if _classify_provider_error(exc) == "fatal" else ""
+    )
     # Match on the raw text (status codes / keywords are not secret-shaped),
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
@@ -1172,7 +1277,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
 
     if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
         raise RuntimeError(
-            f"Model '{model_name}' rejected the request (400). "
+            f"{fatal_prefix}Model '{model_name}' rejected the request (400). "
             f"This usually means a parameter the model no longer supports "
             f"(e.g. temperature on Claude Opus 4.7). Underlying: {safe_msg}"
         ) from exc
@@ -1183,7 +1288,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         or "invalid_api_key" in msg_lower
     ):
         raise RuntimeError(
-            f"Model '{model_name}' rejected your credentials (401). "
+            f"{fatal_prefix}Model '{model_name}' rejected your credentials (401). "
             f"Check the API key for that provider in ~/.decepticon/.env, "
             f"or run 'decepticon onboard --reset'.\nUnderlying: {safe_msg}"
         ) from exc
@@ -1197,12 +1302,57 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
 
     if "notfound" in err_type.lower() or "code: 404" in msg_lower:
         raise RuntimeError(
-            f"Model '{model_name}' is not registered in the LiteLLM proxy "
+            f"{fatal_prefix}Model '{model_name}' is not registered in the LiteLLM proxy "
             f"(404). For local Ollama, set OLLAMA_MODEL to something you "
             f"actually pulled ('ollama list'). For cloud providers, check "
             f"that the model id matches config/litellm.yaml.\n"
             f"Underlying: {safe_msg}"
         ) from exc
+
+
+def _tiers_required(profile: ModelProfile) -> dict[Tier, list[str]]:
+    if profile == ModelProfile.MAX:
+        return {Tier.HIGH: list(AGENT_TIERS)}
+    if profile == ModelProfile.TEST:
+        return {Tier.LOW: list(AGENT_TIERS)}
+    grouped: dict[Tier, list[str]] = {}
+    for role, tier in AGENT_TIERS.items():
+        grouped.setdefault(tier, []).append(role)
+    return grouped
+
+
+def _validate_chain_coverage(credentials: Credentials, profile: ModelProfile) -> None:
+    """Fail fast when ``credentials`` resolve to an EMPTY chain for any
+    tier the factory must serve under ``profile``.
+
+    ``LLMModelMapping.from_credentials_and_profile`` silently skips a role
+    whose resolved chain is empty (no configured AuthMethod has a
+    ``(method, tier)`` entry in ``METHOD_MODELS``). Downstream this surfaces
+    as a confusing ``KeyError`` at ``get_model`` time or a primary-less
+    ``ModelFallbackMiddleware([])``. Surface it once, here, with the
+    offending tier(s) + the configured inventory so the operator can fix
+    config immediately rather than chase a runtime failure.
+    """
+    empty: list[tuple[Tier, list[str]]] = [
+        (tier, roles)
+        for tier, roles in _tiers_required(profile).items()
+        if not resolve_chain(tier, credentials)
+    ]
+    if not empty:
+        return
+    details = "; ".join(
+        f"{tier.value} (roles: {', '.join(sorted(roles))})" for tier, roles in empty
+    )
+    inventory = ", ".join(m.value for m in credentials.methods) or "<none>"
+    tier_list = ", ".join(tier.value for tier, _ in empty)
+    raise ValueError(
+        f"LLMFactory: no model available for tier(s) [{tier_list}] under "
+        f"profile {profile.value!r}. Empty chains: {details}. Configured "
+        f"credentials: [{inventory}]. Add a credential whose AuthMethod "
+        f"has an entry for the listed tier(s) in METHOD_MODELS "
+        f"(packages/decepticon-core/decepticon_core/types/llm.py), or "
+        f"adjust DECEPTICON_AUTH_PRIORITY / DECEPTICON_MODEL_PROFILE."
+    )
 
 
 class LLMFactory:
@@ -1228,7 +1378,9 @@ class LLMFactory:
             self._mapping = mapping
         else:
             creds = credentials if credentials is not None else _resolve_credentials()
-            resolved_profile = profile if profile is not None else self._resolve_profile()
+            raw_profile = profile if profile is not None else self._resolve_profile()
+            resolved_profile = ModelProfile(raw_profile)
+            _validate_chain_coverage(creds, resolved_profile)
             self._mapping = LLMModelMapping.from_credentials_and_profile(creds, resolved_profile)
         self._router = ModelRouter(self._mapping)
         self._cache: dict[str, BaseChatModel] = {}
@@ -1305,7 +1457,7 @@ class LLMFactory:
             "Creating LLM for role '%s' → model '%s' via %s",
             role,
             assignment.primary,
-            self._proxy.url,
+            _redact_url_credentials(self._proxy.url),
         )
 
         model = self._create_chat_model(assignment.primary, assignment.temperature)

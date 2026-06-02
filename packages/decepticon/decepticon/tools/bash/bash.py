@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import time
+from collections import OrderedDict
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -96,20 +97,43 @@ _scratch_prune_state: dict[str, float] = {}
 # hint once the threshold is hit. Resets on any state-changing event:
 # non-empty command, output diff, kill, or new background job.
 _STALE_PASSIVE_READS = 3  # consecutive identical reads before [STALE] hint
-_passive_read_state: dict[tuple[str, str], list[str]] = {}
+# Bound the tracker: a long-lived server otherwise accumulates one entry per
+# (workspace, session) forever. Cap by both count (LRU) and age (TTL) so
+# idle/abandoned sessions are reaped on access; `_passive_clock` is module-
+# patchable so tests can drive time without sleeping.
+_PASSIVE_MAX_ENTRIES = 128
+_PASSIVE_TTL_SECONDS = 300.0
+_passive_clock = time.monotonic
+_passive_read_state: "OrderedDict[tuple[str, str], tuple[float, list[str]]]" = OrderedDict()
 
 
 def _passive_key(workspace_path: str, session: str) -> tuple[str, str]:
     return (workspace_path, session)
 
 
+def _prune_expired_passive(now: float) -> None:
+    expired = [k for k, (ts, _) in _passive_read_state.items() if now - ts > _PASSIVE_TTL_SECONDS]
+    for k in expired:
+        del _passive_read_state[k]
+
+
 def _track_passive_read(workspace_path: str, session: str, output: str) -> str | None:
     """Record a passive read; return [STALE] hint when threshold tripped."""
     key = _passive_key(workspace_path, session)
     digest = hashlib.sha256(output.encode("utf-8", errors="replace")).hexdigest()[:16]
-    hashes = _passive_read_state.setdefault(key, [])
+    now = _passive_clock()
+    _prune_expired_passive(now)
+
+    entry = _passive_read_state.get(key)
+    hashes = entry[1] if entry is not None else []
     hashes.append(digest)
     del hashes[: max(0, len(hashes) - _STALE_PASSIVE_READS)]
+    _passive_read_state[key] = (now, hashes)
+    _passive_read_state.move_to_end(key)
+
+    while len(_passive_read_state) > _PASSIVE_MAX_ENTRIES:
+        _passive_read_state.popitem(last=False)
+
     if len(hashes) < _STALE_PASSIVE_READS or len(set(hashes)) != 1:
         return None
     return (

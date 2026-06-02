@@ -37,7 +37,6 @@ interface AgentGraphCanvasProps {
 export function AgentGraphCanvas({
   agents,
   events,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   selectedAgent,
   onAgentClick,
 }: AgentGraphCanvasProps) {
@@ -285,8 +284,8 @@ export function AgentGraphCanvas({
                 targetY={targetPos.y}
                 active={edge.active}
                 color={targetNode?.color ?? "#6b7280"}
-                sourceRadius={sourceNode?.radius ?? 48}
-                targetRadius={targetNode?.radius ?? 32}
+                sourceRadius={sourceNode?.radius ?? 36}
+                targetRadius={targetNode?.radius ?? 24}
               />
             );
           })}
@@ -312,6 +311,7 @@ export function AgentGraphCanvas({
                 node={node}
                 x={pos.x}
                 y={pos.y}
+                selected={selectedAgent?.id === node.agentId}
                 onDragStart={handleNodeDragStart}
               />
             );

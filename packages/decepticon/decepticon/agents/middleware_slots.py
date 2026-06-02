@@ -22,7 +22,8 @@ needs an entry in ``SLOTS_PER_ROLE``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 # Middleware classes & factory helpers — imported at module level so
@@ -32,7 +33,7 @@ from typing import Any
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.subagents import SubAgentMiddleware
 from deepagents.middleware.summarization import create_summarization_middleware
-from langchain.agents.middleware import ModelFallbackMiddleware
+from langchain.agents.middleware import AgentMiddleware, ModelFallbackMiddleware
 from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
@@ -70,6 +71,8 @@ from decepticon_core.contracts.slots import (
     MiddlewareSlot,
 )
 from decepticon_core.plugin_loader import load_plugin_skill_sources
+
+logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────
 # Skills sources — role-specific
@@ -188,8 +191,58 @@ def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
     return ModelFallbackMiddleware(*fallback_models)
 
 
+class _SafeSummarizationProxy(AgentMiddleware):
+    """Defensive wrapper around the deepagents summarization middleware.
+
+    The inner middleware's ``wrap_model_call`` / ``awrap_model_call``
+    hooks issue a live LLM call to compute the summary; a provider
+    timeout or 5xx would otherwise propagate up and kill the whole
+    agent run for one transient backend failure. This proxy delegates
+    to the inner hook and, on exception, logs a warning and falls back
+    to invoking the downstream ``handler`` unchanged — effectively
+    skipping summarization for that turn rather than aborting the run.
+    Successful summarization is passed through untouched.
+    """
+
+    def __init__(self, inner: AgentMiddleware) -> None:
+        super().__init__()
+        self._inner = inner
+        # Forward the inner's state schema and tools so langchain's agent
+        # factory sees the same merged state shape and registered tools
+        # it would see for the unwrapped middleware. ``name`` is a
+        # property on AgentMiddleware so it's delegated below instead.
+        self.state_schema = inner.state_schema
+        self.tools = list(getattr(inner, "tools", []) or [])
+
+    @property
+    def name(self) -> str:
+        return self._inner.name
+
+    def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        try:
+            return self._inner.wrap_model_call(request, handler)
+        except Exception:
+            logger.warning(
+                "Summarization middleware failed; skipping summarization "
+                "this turn and forwarding the original request.",
+                exc_info=True,
+            )
+            return handler(request)
+
+    async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
+        try:
+            return await self._inner.awrap_model_call(request, handler)
+        except Exception:
+            logger.warning(
+                "Summarization middleware failed; skipping summarization "
+                "this turn and forwarding the original request.",
+                exc_info=True,
+            )
+            return await handler(request)
+
+
 def _make_summarization(*, backend: Any, llm: Any, **_: Any):
-    return create_summarization_middleware(llm, backend)
+    return _SafeSummarizationProxy(create_summarization_middleware(llm, backend))
 
 
 def _make_prompt_caching(**_: Any):

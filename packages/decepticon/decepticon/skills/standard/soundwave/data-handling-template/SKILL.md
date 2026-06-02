@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create data handling plan, evidence retention, chain-of-custody, GDPR, HIPAA, PCI-DSS, compliance, PII handling"
   tags: data-handling, evidence, retention, encryption, chain-of-custody, compliance, gdpr, hipaa
-  mitre_attack: []
+  upstream_ref: "Soundwave data-handling template — evidence retention, encryption, chain-of-custody, compliance"
 ---
 
 # Data Handling Plan Generator

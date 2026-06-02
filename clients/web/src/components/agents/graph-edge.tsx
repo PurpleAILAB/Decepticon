@@ -34,8 +34,8 @@ export function GraphEdgeComponent({
   active,
   color,
   edgeId,
-  sourceRadius = 48,
-  targetRadius = 32,
+  sourceRadius = 36,
+  targetRadius = 24,
 }: GraphEdgeProps) {
   const dx = targetX - sourceX;
   const dy = targetY - sourceY;

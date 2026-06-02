@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create contact plan, communications plan, escalation chain, operator contacts, SOC notification, blackout window"
   tags: contact, communications, escalation, soc, deconfliction, blackout
-  mitre_attack: []
+  upstream_ref: "Soundwave contact / communications plan template — operator, escalation, SOC endpoint, blackouts"
 ---
 
 # Contact / Communications Plan Generator

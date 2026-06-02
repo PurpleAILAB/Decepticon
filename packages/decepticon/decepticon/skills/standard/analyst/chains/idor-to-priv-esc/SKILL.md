@@ -1,6 +1,9 @@
 ---
 name: chain-idor-to-priv-esc
 description: Build chains where IDOR enables privilege escalation and high-impact control-plane actions.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "idor chain privilege escalation control plane high impact horizontal vertical authorization bypass"
 ---
 
 # Chain: IDOR to Privilege Escalation

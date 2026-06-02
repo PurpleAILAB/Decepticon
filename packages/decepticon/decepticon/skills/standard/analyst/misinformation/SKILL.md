@@ -1,6 +1,9 @@
 ---
 name: misinformation
 description: Hunt LLM misinformation / overreliance (OWASP LLM09:2025) — confident-but-wrong outputs that flow into downstream automated decisions, compliance reports, customer communications, or autonomous code commits without verification.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm misinformation overreliance owasp llm09 confident wrong output downstream automation compliance autonomous commit verification"
 ---
 
 # LLM Misinformation and Overreliance (LLM09:2025)

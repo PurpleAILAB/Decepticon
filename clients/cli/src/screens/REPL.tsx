@@ -79,6 +79,7 @@ export function REPL({ initialMessage, resumeThread }: REPLProps) {
     addSystemEvent: agent.addSystemEvent,
     runState: agent.runState,
     hasQueuedMessage: agent.queuedMessage != null,
+    modalActive: showSessionPicker || agent.activeQuestion != null,
   });
 
   // ── Command handling ────────────────────────────────────────────

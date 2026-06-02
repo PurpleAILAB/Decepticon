@@ -3,7 +3,9 @@ name: anti-debug-bypass
 description: Detect and neutralize anti-debug / anti-VM checks — IsDebuggerPresent, ptrace, NtGlobalFlag, timing, hardware-breakpoint detection.
 metadata:
   subdomain: reverse-engineering
-  when_to_use: "anti debug bypass ptrace isdebuggerpresent debugger detection"
+  when_to_use: "anti debug bypass ptrace isdebuggerpresent debugger detection ntglobalflag timing hardware breakpoint"
+  mitre_attack:
+    - T1622
 ---
 
 # Anti-Debug Bypass Playbook

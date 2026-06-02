@@ -1,6 +1,9 @@
 ---
 name: path-traversal
 description: Hunt directory traversal and archive traversal (ZipSlip/TarSlip) from user input to filesystem operations.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "path directory traversal zipslip tarslip archive filesystem cwe-22 dot dot slash"
 ---
 
 # Path Traversal Playbook

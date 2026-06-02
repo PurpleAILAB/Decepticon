@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create OPPLAN, generate objectives, set up the loop, convert plan to tasks, make it runnable"
   tags: opplan, objectives, ralph-loop, automation
-  mitre_attack:
+  upstream_ref: "Soundwave OPPLAN converter — engagement document → machine-readable objectives for the ralph loop"
 ---
 
 # OPPLAN Converter — CONOPS to Ralph Loop Format

@@ -309,10 +309,10 @@ class TestListSessionRecordingsTool:
         names = sorted(m["session_name"] for m in data["recordings"])
         assert names == ["a", "b"]
 
-    def test_evidence_tools_list_has_two_items(self) -> None:
+    def test_evidence_tools_list_has_four_items(self) -> None:
         from decepticon.tools.evidence.tools import EVIDENCE_TOOLS
 
-        assert len(EVIDENCE_TOOLS) == 2
+        assert len(EVIDENCE_TOOLS) == 4
 
 
 # ── cloud/tools.py wrappers ────────────────────────────────────────────────

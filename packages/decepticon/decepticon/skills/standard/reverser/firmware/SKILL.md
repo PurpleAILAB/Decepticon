@@ -1,6 +1,12 @@
 ---
 name: reverser-firmware
 description: Router / IoT firmware extraction pipeline — unpack nested filesystems, locate web server, identify backdoor credentials.
+metadata:
+  subdomain: reverse-engineering
+  when_to_use: "firmware extraction router iot binwalk nested filesystem web server backdoor credential squashfs cramfs"
+  mitre_attack:
+    - T1542
+    - T1078.001
 ---
 
 # Firmware Extraction Playbook

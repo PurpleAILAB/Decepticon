@@ -1,6 +1,9 @@
 ---
 name: sql-injection
 description: Hunt SQL injection (CWE-89) via source-level taint tracking. Covers string concat, format-string, ORM raw queries, second-order injection, and NoSQL injection in MongoDB/DynamoDB.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "sql injection sqli cwe-89 taint tracking string concat format orm raw second order nosql mongodb dynamodb"
 ---
 
 # SQL Injection Hunting Playbook

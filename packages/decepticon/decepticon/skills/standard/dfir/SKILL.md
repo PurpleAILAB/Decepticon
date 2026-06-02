@@ -8,8 +8,9 @@ description: >
   detection rules are theoretical.
 metadata:
   subdomain: dfir
+  when_to_use: "dfir validation sigma yara volatility plaso memory dump event log forensic artifact detection rule blue team"
   tags: dfir, memory, volatility, plaso, sigma, validation, blue-team
-  mitre_attack: defense-evasion-validation
+  upstream_ref: "Sigma rules + YARA + Volatility 3 + plaso — detection-rule validation harness for the Offensive Vaccine loop"
 ---
 
 # Forensicator / DFIR Skill Catalog

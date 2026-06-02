@@ -4,6 +4,9 @@ description: Signature replay attacks — missing nonces, missing chain ID, ecre
 metadata:
   subdomain: smart-contracts
   when_to_use: "signature replay eip-712 nonce smart contract"
+  mitre_attack:
+    - T1556
+    - T1190
 ---
 
 # Signature Replay Playbook

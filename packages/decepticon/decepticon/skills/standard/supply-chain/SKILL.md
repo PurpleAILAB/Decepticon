@@ -7,6 +7,7 @@ description: >
   or vendor portal credential abuse.
 metadata:
   subdomain: supply-chain
+  when_to_use: "supply chain typosquat dependency confusion gh actions secret oauth app impersonation internal mirror poisoning vendor portal"
   tags: supply-chain, typosquatting, dep-confusion, gh-actions, oauth-app
   mitre_attack: T1195, T1195.001, T1195.002, T1199, T1136, T1543
 ---

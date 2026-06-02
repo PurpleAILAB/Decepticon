@@ -1,6 +1,10 @@
 ---
 name: reverser-overview
 description: Root pointer for the binary reversing lane. Covers triage, string extraction, packer unpacking, symbol risk, ROP, Ghidra deep analysis, and firmware extraction.
+metadata:
+  subdomain: reverse-engineering
+  when_to_use: "reverser binary reversing triage strings packer unpack rop ghidra firmware overview routing"
+  upstream_ref: "Decepticon reverser lane catalog — Ghidra, AFL++, libFuzzer, binwalk, and binary triage tooling"
 ---
 
 # Reverser Skill Catalog

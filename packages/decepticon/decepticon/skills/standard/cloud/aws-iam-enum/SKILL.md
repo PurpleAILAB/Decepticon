@@ -1,6 +1,14 @@
 ---
 name: aws-iam-enum
 description: Enumerate AWS IAM policies, detect privilege escalation paths per Rhino Security Labs canonical 21 primitives.
+metadata:
+  subdomain: cloud
+  when_to_use: "aws iam enumeration privesc rhino security labs 21 primitives policy escalation"
+  mitre_attack:
+    - T1087.004
+    - T1069.003
+    - T1078.004
+    - T1098.003
 ---
 
 # AWS IAM Enumeration + Privesc

@@ -1,6 +1,10 @@
 ---
 name: references
 description: External knowledge integration — HackerOne reports, PayloadsAllTheThings, Book of Secret Knowledge, CVE PoC corpora, bug bounty methodologies, and reference pentest agent architectures. Use these to calibrate, look up payloads, and accelerate research.
+metadata:
+  subdomain: orchestration
+  when_to_use: "external reference hackerone payloadsallthethings bsk book of secret knowledge cve poc bug bounty methodology pentest agent calibration"
+  upstream_ref: "HackerOne disclosed reports + PayloadsAllTheThings + Book of Secret Knowledge + curated CVE PoC corpora"
 ---
 
 # External References Skill

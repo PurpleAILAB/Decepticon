@@ -1,6 +1,9 @@
 ---
 name: improper-output-handling
 description: Hunt improper LLM output handling (OWASP LLM05:2025) — downstream code that trusts unstructured model output and renders / executes / shells it without sanitisation, producing XSS, SSRF, SQL injection, RCE, and SSTI via the model channel.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm improper output handling owasp llm05 unstructured model output sanitisation downstream xss ssrf sql injection rce ssti via model channel"
 ---
 
 # LLM Improper Output Handling (LLM05:2025)

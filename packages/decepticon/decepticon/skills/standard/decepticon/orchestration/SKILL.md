@@ -6,7 +6,7 @@ metadata:
   subdomain: orchestration
   when_to_use: "delegate, orchestrate, next objective, blocked, re-plan, hand off, engagement state, status update, parallel execution"
   tags: orchestration, delegation, state-management, re-planning, context-handoff
-  mitre_attack: []
+  upstream_ref: "Decepticon orchestrator delegation / re-planning patterns — multi-agent control plane, no direct attack technique"
 ---
 
 # Decepticon Orchestration Patterns

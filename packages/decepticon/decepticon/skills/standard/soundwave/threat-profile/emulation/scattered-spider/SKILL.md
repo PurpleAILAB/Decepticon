@@ -1,5 +1,5 @@
 ---
-name: scattered-spider
+name: emulation-scattered-spider
 description: "Scattered Spider (UNC3944 / Octo Tempest) adversary-emulation playbook — help-desk vishing → MFA takeover → cloud/SaaS/identity privilege expansion → RMM persistence → data-theft extortion. Use when emulating identity-first social-engineering eCrime against a help-desk/IdP estate. Triggers on: 'emulate Scattered Spider', 'UNC3944', 'Octo Tempest', '0ktapus', 'help desk social engineering', 'MFA fatigue', 'SIM swap', 'identity attack'."
 allowed-tools: Read Write Edit
 metadata:

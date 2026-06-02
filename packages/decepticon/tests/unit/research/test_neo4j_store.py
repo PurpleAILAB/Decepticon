@@ -19,11 +19,19 @@ from decepticon.tools.research.neo4j_store import (
     Neo4jStore,
     Neo4jUnavailableError,
     _decode_props,
+    _edge_cost_expr,
     _encode_props,
     _label_for,
     _promoted_props,
 )
-from decepticon_core.types.kg import Edge, EdgeKind, KnowledgeGraph, Node, NodeKind
+from decepticon_core.types.kg import (
+    SEVERITY_COST_MULTIPLIER,
+    Edge,
+    EdgeKind,
+    KnowledgeGraph,
+    Node,
+    NodeKind,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -954,6 +962,37 @@ class TestLoadGraph:
         store = _make_store(driver)
         graph = store.load_graph()
         assert isinstance(graph, KnowledgeGraph)
+
+
+class TestEdgeCost:
+    def test_upsert_edge_writes_computed_cost(self) -> None:
+        session = _FakeSession()
+        store = _make_store(_FakeDriver(sessions=[session]))
+        edge = Edge.make("h1", "v1", EdgeKind.HAS_VULN)
+        store.upsert_edge(edge)
+        query, _params = session.runs[0]
+        assert "r.cost =" in query
+        assert "coalesce(dst.severity, '')" in query
+        assert "coalesce(dst.validated, false)" in query
+        assert "WHEN 'critical' THEN 0.4" in query
+        assert "$weight > 0.05" in query
+
+    def test_batch_upsert_edges_writes_computed_cost(self) -> None:
+        session = _FakeSession()
+        store = _make_store(_FakeDriver(sessions=[session]))
+        e1 = Edge.make("h1", "v1", EdgeKind.HAS_VULN)
+        store.batch_upsert_edges([e1])
+        query, _params = session.runs[0]
+        assert "r.cost =" in query
+        assert "row.weight > 0.05" in query
+        assert "coalesce(dst.severity, '')" in query
+
+    def test_edge_cost_expr_covers_every_multiplier(self) -> None:
+        expr = _edge_cost_expr("$weight")
+        for sev, mult in SEVERITY_COST_MULTIPLIER.items():
+            assert f"WHEN '{sev.value}' THEN {mult}" in expr
+        assert "ELSE 1.0 END" in expr
+        assert "$weight" in expr
 
 
 class TestEngagementScopedReads:

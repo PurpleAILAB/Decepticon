@@ -4,6 +4,9 @@ description: Detect and claim dangling S3 buckets referenced by subdomains (CNAM
 metadata:
   subdomain: cloud
   when_to_use: "s3 bucket takeover dangling cname"
+  mitre_attack:
+    - T1584.006
+    - T1583.006
 ---
 
 # S3 Subdomain Takeover

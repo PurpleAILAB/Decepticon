@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
 from langchain_core.messages import ToolMessage
 
 from decepticon.middleware import roe as roe_mod
@@ -13,12 +18,17 @@ from decepticon.middleware._audit_sink import RoEAuditSink, verify_ledger
 from decepticon.middleware._command_targets import extract_targets
 from decepticon.middleware.roe import (
     RoEEnforcementMiddleware,
+    _load_rules_for_workspace,
+    _redact_secrets,
+    _to_text,
+    build_default_sink,
 )
 from decepticon_core.types.roe import (
     EnforcementMode,
     MachineEnforcement,
     evaluate_command,
     evaluate_target,
+    evaluate_time_window,
 )
 
 
@@ -119,6 +129,90 @@ class TestEvaluateCommand:
     def test_invalid_regex_skipped(self) -> None:
         rules = MachineEnforcement.from_dict({"forbidden_command_patterns": ["[unclosed"]})
         assert evaluate_command("rm -rf /etc", rules).allow
+
+
+class TestTimeWindowSchema:
+    def test_no_windows_by_default(self) -> None:
+        rules = MachineEnforcement.from_dict({})
+        assert rules.authorized_windows == ()
+        assert rules.blackout_windows == ()
+
+    def test_authorized_windows_parsed_from_pairs(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {"authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]]}
+        )
+        assert len(rules.authorized_windows) == 1
+        start, end = rules.authorized_windows[0]
+        assert start == datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)
+        assert end == datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
+
+    def test_dict_windows_parsed(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {
+                "blackout_windows": [
+                    {"start": "2026-06-01T22:00:00+00:00", "end": "2026-06-02T06:00:00+00:00"}
+                ]
+            }
+        )
+        assert len(rules.blackout_windows) == 1
+
+    def test_bad_values_skipped(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {
+                "authorized_windows": [
+                    ["not-a-date", "2026-06-01T18:00:00+00:00"],
+                    ["2026-06-01T18:00:00+00:00", "2026-06-01T09:00:00+00:00"],
+                    "Mon-Fri 09:00-18:00 KST",
+                    ["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"],
+                ]
+            }
+        )
+        assert len(rules.authorized_windows) == 1
+
+
+class TestEvaluateTimeWindow:
+    AUTH = {"authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]]}
+    BLACKOUT = {"blackout_windows": [["2026-06-01T12:00:00+00:00", "2026-06-01T13:00:00+00:00"]]}
+
+    def test_no_windows_allow(self) -> None:
+        now = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, MachineEnforcement()).allow
+
+    def test_in_window_allow(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert d.allow
+        assert d.reason_code == "IN_TESTING_WINDOW"
+
+    def test_out_of_window_refuse(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert not d.allow
+        assert d.reason_code == "OUTSIDE_TESTING_WINDOW"
+
+    def test_window_end_is_exclusive(self) -> None:
+        rules = MachineEnforcement.from_dict(self.AUTH)
+        now = datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
+        assert not evaluate_time_window(now, rules).allow
+
+    def test_blackout_refuse(self) -> None:
+        rules = MachineEnforcement.from_dict({**self.AUTH, **self.BLACKOUT})
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        d = evaluate_time_window(now, rules)
+        assert not d.allow
+        assert d.reason_code == "BLACKOUT_WINDOW"
+
+    def test_blackout_takes_precedence_over_authorized(self) -> None:
+        rules = MachineEnforcement.from_dict({**self.AUTH, **self.BLACKOUT})
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, rules).reason_code == "BLACKOUT_WINDOW"
+
+    def test_blackout_only_allows_outside_blackout(self) -> None:
+        rules = MachineEnforcement.from_dict(self.BLACKOUT)
+        now = datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc)
+        assert evaluate_time_window(now, rules).allow
 
 
 class TestExtractTargets:
@@ -257,6 +351,19 @@ def _make_request(tool_name: str, command: str = "", state: dict | None = None):
     return request
 
 
+def _make_network_request(tool_name: str, args: dict, state: dict | None = None):
+    request = MagicMock()
+    request.tool = MagicMock()
+    request.tool.name = tool_name
+    request.state = state or {}
+    request.tool_call = MagicMock()
+    request.tool_call.args = args
+    request.tool_call.id = "tc-test"
+    request.tool_call_args = args
+    request.tool_call_id = "tc-test"
+    return request
+
+
 def _write_roe(workspace: Path, machine_enforcement: dict) -> None:
     (workspace / "plan").mkdir(parents=True, exist_ok=True)
     (workspace / "plan" / "roe.json").write_text(
@@ -365,6 +472,361 @@ class TestRoEMiddleware:
         assert recs[0]["decision"] == "refuse"
         assert recs[0]["reason_code"] == "NOT_IN_SCOPE"
 
+    def test_enforce_refuses_outside_testing_window(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "OUTSIDE_TESTING_WINDOW" in result.content
+
+    def test_enforce_allows_inside_testing_window(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_enforce_refuses_during_blackout(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "enforce",
+                "in_scope": ["10.0.0.0/24"],
+                "blackout_windows": [["2026-06-01T12:00:00+00:00", "2026-06-01T13:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "BLACKOUT_WINDOW" in result.content
+
+    def test_enforce_allows_when_no_windows_configured(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        now = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_warn_mode_runs_outside_window_with_warning(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {
+                "mode": "warn",
+                "authorized_windows": [["2026-06-01T09:00:00+00:00", "2026-06-01T18:00:00+00:00"]],
+            },
+        )
+        now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
+        mw = RoEEnforcementMiddleware(now=lambda: now)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="scan output", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert "[ROE_WARN]" in result.content
+        assert "OUTSIDE_TESTING_WINDOW" in result.content
+
+
+class TestEmergencyAbort:
+    def test_abort_marker_halts_gated_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        (tmp_path / ".abort").write_text("", encoding="utf-8")
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert isinstance(result, ToolMessage)
+        assert result.content.startswith("[AGENT_HALTED]")
+        assert result.status == "error"
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert len(recs) == 1
+        assert recs[0]["event"] == "abort"
+        assert recs[0]["reason_code"] == "EMERGENCY_ABORT"
+
+    def test_no_marker_allows_gated_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_abort_marker_ignored_for_ungated_tool(self, tmp_path: Path) -> None:
+        (tmp_path / ".abort").write_text("", encoding="utf-8")
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("opplan_add_objective", "", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_no_workspace_does_not_halt(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+
+class TestRedactSecrets:
+    def test_password_flag_redacted(self) -> None:
+        assert _redact_secrets("mysql -u root -p s3cr3t -h db") == "mysql -u root -p *** -h db"
+
+    def test_long_password_flag_redacted(self) -> None:
+        assert _redact_secrets("tool --password=hunter2 -h db") == "tool --password=*** -h db"
+        assert _redact_secrets("tool --pass myval x") == "tool --pass *** x"
+
+    def test_token_flag_redacted(self) -> None:
+        assert _redact_secrets("gh --token ghp_aBcD1234 --repo x") == "gh --token *** --repo x"
+
+    def test_sshpass_redacted(self) -> None:
+        assert (
+            _redact_secrets("sshpass -p MyP@ss ssh u@10.0.0.5") == "sshpass -p *** ssh u@10.0.0.5"
+        )
+
+    def test_curl_user_pass_redacted(self) -> None:
+        assert (
+            _redact_secrets("curl -u admin:p4ssw0rd https://api.acme.com")
+            == "curl -u admin:*** https://api.acme.com"
+        )
+
+    def test_authorization_header_redacted(self) -> None:
+        out = _redact_secrets('curl -H "Authorization: Bearer abc.def" https://api.acme.com')
+        assert "abc.def" not in out
+        assert "***" in out
+
+    def test_api_key_header_redacted(self) -> None:
+        out = _redact_secrets('curl -H "X-API-Key: deadbeef" https://api.acme.com')
+        assert "deadbeef" not in out
+        assert "***" in out
+
+    def test_non_secret_header_untouched(self) -> None:
+        cmd = 'curl -H "Content-Type: application/json" https://api.acme.com'
+        assert _redact_secrets(cmd) == cmd
+
+    def test_pgpassword_redacted(self) -> None:
+        assert (
+            _redact_secrets("PGPASSWORD=topsecret psql -U postgres")
+            == "PGPASSWORD=*** psql -U postgres"
+        )
+
+    def test_impacket_domain_creds_redacted(self) -> None:
+        out = _redact_secrets("impacket-secretsdump corp/admin:Password!@10.0.0.10")
+        assert "Password!" not in out
+        assert "corp/admin:***@10.0.0.10" in out
+
+    def test_url_userinfo_redacted(self) -> None:
+        out = _redact_secrets("curl https://user:pass@host.example/path")
+        assert "user:***@host.example" in out
+        assert ":pass@" not in out
+
+    def test_plain_command_unchanged(self) -> None:
+        assert _redact_secrets("nmap 10.0.0.10") == "nmap 10.0.0.10"
+
+    def test_ssh_user_host_without_password_unchanged(self) -> None:
+        assert _redact_secrets("ssh -i key.pem user@10.0.0.5") == "ssh -i key.pem user@10.0.0.5"
+
+    def test_empty_command_unchanged(self) -> None:
+        assert _redact_secrets("") == ""
+
+    def test_redaction_is_deterministic(self) -> None:
+        cmd = 'mysql -u root -p s3cr3t; curl -H "Authorization: Bearer X" h'
+        assert _redact_secrets(cmd) == _redact_secrets(cmd)
+
+
+class TestAuditRecordRedaction:
+    def test_password_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash", "mysql -u root -p s3cr3t -h db", state={"workspace_path": str(tmp_path)}
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "s3cr3t" not in recs[0]["command_excerpt"]
+        assert "-p ***" in recs[0]["command_excerpt"]
+
+    def test_bearer_header_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash",
+            'curl -H "Authorization: Bearer s3cr3ttoken" https://api.acme.com',
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "s3cr3ttoken" not in recs[0]["command_excerpt"]
+        assert "***" in recs[0]["command_excerpt"]
+
+    def test_sshpass_redacted_in_audit_record(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request(
+            "bash",
+            "sshpass -p HunterPass ssh user@10.0.0.5",
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        mw.wrap_tool_call(req, handler)
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert "HunterPass" not in recs[0]["command_excerpt"]
+        assert "sshpass -p ***" in recs[0]["command_excerpt"]
+
+
+class TestNetworkToolGating:
+    def test_http_request_out_of_scope_refused_in_enforce(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://evilcorp.com/x"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.status == "error"
+
+    def test_http_request_in_scope_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://api.acme.com/v1"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_proxy_send_request_out_of_scope_refused(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "proxy_send_request",
+            {"method": "POST", "url": "https://evilcorp.com/login"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+
+    def test_browser_action_goto_url_respected(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": json.dumps({"url": "https://evilcorp.com/"})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+
+    def test_browser_action_in_scope_url_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": json.dumps({"url": "https://app.acme.com/"})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_browser_action_malformed_params_degrades_to_allow(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "goto", "params_json": "{not valid json"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_browser_action_without_url_allowed(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "browser_action",
+            {"action": "screenshot", "params_json": json.dumps({"full_page": True})},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "ok"
+
+    def test_http_request_imds_blocked_by_default(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/8"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "http://169.254.169.254/latest/meta-data/"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "FORBIDDEN_DESTINATION" in result.content
+
+    def test_http_request_warn_mode_appends_warning(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["evilcorp.com"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_network_request(
+            "http_request",
+            {"method": "GET", "url": "https://evilcorp.com/x"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="resp body", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert "[ROE_WARN]" in result.content
+        assert "resp body" in result.content
+
 
 class TestSlotRegistration:
     def test_slot_is_in_enum_and_safety_critical(self) -> None:
@@ -433,6 +895,320 @@ class TestFqdnTrailingDotNormalization:
         assert evaluate_target("single-host.example.", rules).allow is True
         # An unrelated FQDN-form host is still refused (not in scope).
         assert evaluate_target("other.example.", rules).allow is False
+
+
+class TestLoadRulesFallback:
+    def test_malformed_roe_json_falls_back_to_audit(self, tmp_path: Path) -> None:
+        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "plan" / "roe.json").write_text("{not valid json", encoding="utf-8")
+        rules = _load_rules_for_workspace(str(tmp_path))
+        assert rules.mode == EnforcementMode.AUDIT
+
+    def test_malformed_roe_json_gated_call_allowed_and_logged(self, tmp_path: Path) -> None:
+        (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "plan" / "roe.json").write_text("}}garbage{{", encoding="utf-8")
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEEnforcementMiddleware(sink=sink)
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert isinstance(result, ToolMessage)
+        assert result.content == "ok"
+        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+        assert len(recs) == 1
+        assert recs[0]["decision"] == "allow"
+        assert recs[0]["mode"] == "audit"
+
+
+class TestToTextFlattening:
+    def test_list_of_str_flattened_in_warn(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+        tool_msg = ToolMessage(content=["part-a", "part-b"], tool_call_id="tc-test")
+        handler = MagicMock(return_value=tool_msg)
+        result = mw.wrap_tool_call(req, handler)
+        assert "[ROE_WARN]" in result.content
+        assert "part-apart-b" in result.content
+
+    def test_list_of_text_dicts_flattened_in_warn(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+        content = [
+            {"type": "text", "text": "alpha "},
+            {"type": "text", "text": "beta"},
+            {"type": "image", "url": "ignored"},
+        ]
+        tool_msg = ToolMessage(content=content, tool_call_id="tc-test")
+        handler = MagicMock(return_value=tool_msg)
+        result = mw.wrap_tool_call(req, handler)
+        assert "[ROE_WARN]" in result.content
+        assert "alpha beta" in result.content
+        assert "ignored" not in result.content
+
+    def test_to_text_direct(self) -> None:
+        assert _to_text("plain") == "plain"
+        assert _to_text(["a", "b"]) == "ab"
+        assert _to_text([{"type": "text", "text": "x"}, {"type": "other"}]) == "x"
+        assert _to_text(42) == "42"
+
+
+class TestRoEMiddlewareAsync:
+    def test_async_enforce_refuses_out_of_scope(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        called = False
+
+        async def handler(_req):
+            nonlocal called
+            called = True
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert not called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.status == "error"
+        assert result.tool_call_id == "tc-test"
+
+    def test_async_enforce_allows_in_scope(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
+
+        async def handler(_req):
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert result.content == "ok"
+
+    def test_async_warn_wraps_output(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
+
+        async def handler(_req):
+            return ToolMessage(content="scan output", tool_call_id="tc-test")
+
+        result = asyncio.run(mw.awrap_tool_call(req, handler))
+        assert "[ROE_WARN]" in result.content
+        assert "scan output" in result.content
+
+
+class TestTcidFallback:
+    def test_refused_carries_id_from_tool_call(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        del req.tool_call_id
+        req.tool_call.id = "fallback-id"
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert result.tool_call_id == "fallback-id"
+
+
+class TestBuildDefaultSink:
+    def test_env_path_used(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        env_target = tmp_path / "env" / "ledger.jsonl"
+        monkeypatch.setenv("DECEPTICON_ROE_AUDIT_PATH", str(env_target))
+        sink = build_default_sink(str(tmp_path / "workspace"))
+        assert sink is not None
+        assert sink.path == env_target
+
+    def test_no_env_no_workspace_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_ROE_AUDIT_PATH", raising=False)
+        assert build_default_sink(None) is None
+
+    def test_workspace_path_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("DECEPTICON_ROE_AUDIT_PATH", raising=False)
+        sink = build_default_sink(str(tmp_path))
+        assert sink is not None
+        assert sink.path == tmp_path / "audit" / "roe-decisions.jsonl"
+
+
+class _ConcurrencyProbe:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.active = 0
+        self.peak = 0
+
+    def enter(self) -> None:
+        with self.lock:
+            self.active += 1
+            self.peak = max(self.peak, self.active)
+
+    def exit(self) -> None:
+        with self.lock:
+            self.active -= 1
+
+
+class TestConcurrencyGate:
+    def test_limit_none_means_unlimited(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"mode": "audit"})
+        assert mw._resolve_limit(rules) is None
+        with mw._sync_gate(rules, gated=True):
+            pass
+        assert mw._sync_sema is None
+
+    def test_limit_zero_means_unlimited(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"max_concurrent_connections": 0})
+        assert mw._resolve_limit(rules) is None
+        with mw._sync_gate(rules, gated=True):
+            pass
+        assert mw._sync_sema is None
+
+    def test_first_seen_limit_wins(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        first = MachineEnforcement.from_dict({"max_concurrent_connections": 2})
+        second = MachineEnforcement.from_dict({"max_concurrent_connections": 9})
+        assert mw._resolve_limit(first) == 2
+        assert mw._resolve_limit(second) == 2
+
+    def test_ungated_call_is_not_gated(self) -> None:
+        mw = RoEEnforcementMiddleware()
+        rules = MachineEnforcement.from_dict({"max_concurrent_connections": 1})
+        with mw._sync_gate(rules, gated=False):
+            pass
+        assert mw._sync_sema is None
+
+    def test_sync_gate_admits_at_most_n(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "audit", "max_concurrent_connections": 2},
+        )
+        mw = RoEEnforcementMiddleware()
+        probe = _ConcurrencyProbe()
+        release = threading.Event()
+
+        def handler(_request):
+            probe.enter()
+            release.wait(timeout=5)
+            probe.exit()
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        def run() -> None:
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            mw.wrap_tool_call(req, handler)
+
+        threads = [threading.Thread(target=run) for _ in range(5)]
+        for t in threads:
+            t.start()
+        deadline = time.time() + 5
+        while probe.active < 2 and time.time() < deadline:
+            time.sleep(0.01)
+        time.sleep(0.05)
+        peak_while_blocked = probe.peak
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+        assert peak_while_blocked == 2
+        assert probe.peak == 2
+
+    def test_sync_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        mw = RoEEnforcementMiddleware()
+        probe = _ConcurrencyProbe()
+        release = threading.Event()
+        started = threading.Semaphore(0)
+
+        def handler(_request):
+            probe.enter()
+            started.release()
+            release.wait(timeout=5)
+            probe.exit()
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        def run() -> None:
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            mw.wrap_tool_call(req, handler)
+
+        threads = [threading.Thread(target=run) for _ in range(4)]
+        for t in threads:
+            t.start()
+        for _ in range(4):
+            assert started.acquire(timeout=5)
+        assert probe.peak == 4
+        release.set()
+        for t in threads:
+            t.join(timeout=5)
+
+    async def test_async_gate_admits_at_most_n(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "audit", "max_concurrent_connections": 2},
+        )
+        mw = RoEEnforcementMiddleware()
+        active = 0
+        peak = 0
+        gate = asyncio.Event()
+
+        async def handler(_request):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await gate.wait()
+            active -= 1
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        async def run():
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            return await mw.awrap_tool_call(req, handler)
+
+        tasks = [asyncio.create_task(run()) for _ in range(5)]
+        deadline = time.time() + 5
+        while active < 2 and time.time() < deadline:
+            await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
+        assert peak == 2
+        gate.set()
+        await asyncio.gather(*tasks)
+        assert peak == 2
+
+    async def test_async_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
+        _write_roe(tmp_path, {"mode": "audit"})
+        mw = RoEEnforcementMiddleware()
+        active = 0
+        peak = 0
+        gate = asyncio.Event()
+
+        async def handler(_request):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await gate.wait()
+            active -= 1
+            return ToolMessage(content="ok", tool_call_id="tc-test")
+
+        async def run():
+            req = _make_request("bash", "nmap 10.0.0.1", state={"workspace_path": str(tmp_path)})
+            return await mw.awrap_tool_call(req, handler)
+
+        tasks = [asyncio.create_task(run()) for _ in range(4)]
+        deadline = time.time() + 5
+        while active < 4 and time.time() < deadline:
+            await asyncio.sleep(0.01)
+        assert peak == 4
+        gate.set()
+        await asyncio.gather(*tasks)
+
+    def test_refused_call_releases_no_slot(self, tmp_path: Path) -> None:
+        _write_roe(
+            tmp_path,
+            {"mode": "enforce", "in_scope": ["10.0.0.0/24"], "max_concurrent_connections": 1},
+        )
+        mw = RoEEnforcementMiddleware()
+        req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
+        handler = MagicMock()
+        result = mw.wrap_tool_call(req, handler)
+        assert not handler.called
+        assert "[ROE_REFUSED]" in result.content
+        assert mw._sync_sema is None
 
 
 class TestRoEThrottle:

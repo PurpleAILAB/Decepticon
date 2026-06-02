@@ -1,6 +1,9 @@
 ---
 name: system-prompt-leakage
 description: Hunt LLM system-prompt leakage (OWASP LLM07:2025) — exfiltration of the privileged system prompt revealing internal rules, secrets baked in, tool inventory, and business logic that should not be client-visible.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm system prompt leakage owasp llm07 exfiltration privileged internal rules secrets tool inventory business logic client visible"
 ---
 
 # LLM System Prompt Leakage (LLM07:2025)

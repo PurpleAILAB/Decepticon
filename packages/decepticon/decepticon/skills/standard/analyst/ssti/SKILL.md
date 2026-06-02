@@ -1,6 +1,9 @@
 ---
 name: ssti
 description: Hunt server-side template injection across Jinja2/Twig/Freemarker/Velocity/Handlebars and validate progression from expression injection to code execution.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "ssti server side template injection jinja2 twig freemarker velocity handlebars expression code execution"
 ---
 
 # SSTI Playbook

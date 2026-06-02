@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Globe, Server, Loader2 } from "lucide-react";
+import { isValidEngagementSlug } from "@/lib/engagement-slug";
 
 export default function NewEngagementPage() {
   const router = useRouter();
@@ -17,8 +18,14 @@ export default function NewEngagementPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const nameValid = isValidEngagementSlug(name);
+  const nameError =
+    name.length > 0 && !nameValid
+      ? "Name must be 3-64 chars, lowercase letters / digits with internal hyphens only"
+      : null;
+
   async function handleSubmit() {
-    if (!name.trim() || !targetValue.trim()) {
+    if (!nameValid || !targetValue.trim()) {
       setError("Please fill in all required fields");
       return;
     }
@@ -71,10 +78,19 @@ export default function NewEngagementPage() {
             <Label htmlFor="name">Engagement Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Q2 Security Assessment"
+              placeholder="e.g., q2-security-assessment"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              aria-invalid={nameError ? true : undefined}
             />
+            {nameError ? (
+              <p className="text-xs text-destructive">{nameError}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Used as the workspace folder name — 3-64 chars, lowercase
+                letters / digits with internal hyphens
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -140,7 +156,7 @@ export default function NewEngagementPage() {
         <Button variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={submitting}>
+        <Button onClick={handleSubmit} disabled={submitting || !nameValid}>
           {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Create Engagement
         </Button>

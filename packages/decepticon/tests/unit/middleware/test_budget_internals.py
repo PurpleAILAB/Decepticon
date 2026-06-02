@@ -19,12 +19,16 @@ The spend source is injected, so there is no LiteLLM / Postgres dependency.
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from decepticon.middleware import budget as budget_mod
 from decepticon.middleware.budget import (
     BudgetEnforcementMiddleware,
     BudgetExceeded,
+    _default_litellm_spend_provider,
     _emit_warning_event,
     _env_float,
     _SpendCache,
@@ -208,3 +212,89 @@ def test_emit_warning_event_swallows_writer_errors(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(lgconfig, "get_stream_writer", lambda: _boom)
     _emit_warning_event("agent", 1.0, 2.0, 0.5)  # logged, not raised
+
+
+class _StubCursor:
+    def __init__(self, row: tuple[object, ...]) -> None:
+        self._row = row
+
+    def __enter__(self) -> _StubCursor:
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+    def execute(self, _sql: str, _params: object) -> None:
+        return None
+
+    def fetchone(self) -> tuple[object, ...]:
+        return self._row
+
+
+class _StubConnection:
+    def __init__(self, row: tuple[object, ...], closed: list[int]) -> None:
+        self._row = row
+        self._closed = closed
+
+    def __enter__(self) -> _StubConnection:
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+    def cursor(self) -> _StubCursor:
+        return _StubCursor(self._row)
+
+    def close(self) -> None:
+        self._closed.append(1)
+
+
+def _install_stub_psycopg2(
+    monkeypatch: pytest.MonkeyPatch,
+    row: tuple[object, ...],
+    closed: list[int],
+) -> None:
+    module = types.ModuleType("psycopg2")
+    module.connect = lambda _dsn: _StubConnection(row, closed)
+    monkeypatch.setitem(sys.modules, "psycopg2", module)
+
+
+def test_default_provider_closes_connection_once(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://stub/db")
+    closed: list[int] = []
+    _install_stub_psycopg2(monkeypatch, (12.5,), closed)
+
+    result = _default_litellm_spend_provider("engagement:test")
+
+    assert result == 12.5
+    assert closed == [1]
+
+
+def test_default_provider_closes_connection_on_query_error(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://stub/db")
+    closed: list[int] = []
+
+    class _BoomCursor(_StubCursor):
+        def execute(self, _sql: str, _params: object) -> None:
+            raise RuntimeError("boom")
+
+    module = types.ModuleType("psycopg2")
+
+    class _Conn(_StubConnection):
+        def cursor(self) -> _BoomCursor:
+            return _BoomCursor((0.0,))
+
+    module.connect = lambda _dsn: _Conn((0.0,), closed)
+    monkeypatch.setitem(sys.modules, "psycopg2", module)
+
+    assert _default_litellm_spend_provider("engagement:test") == 0.0
+    assert closed == [1]
+
+
+def test_default_provider_no_database_url(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    closed: list[int] = []
+    _install_stub_psycopg2(monkeypatch, (5.0,), closed)
+
+    assert _default_litellm_spend_provider("engagement:test") == 0.0
+    assert closed == []

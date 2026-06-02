@@ -1,5 +1,5 @@
 ---
-name: reporting
+name: recon-reporting
 description: "Recon output formatting — report structure, CVSS v4.0 scoring (primary), MITRE ATT&CK mapping, finding prioritization, Markdown output, detection gap tracking, handoff checklists."
 allowed-tools: Read Write
 metadata:

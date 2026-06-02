@@ -4,6 +4,8 @@ description: Extract LAPS-managed local administrator passwords from AD computer
 metadata:
   subdomain: active-directory
   when_to_use: "laps local admin password ldap powerview netexec"
+  mitre_attack:
+    - T1555
 ---
 
 # LAPS Password Extraction

@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 
 const LANGGRAPH_URL = process.env.LANGGRAPH_API_URL ?? "http://langgraph:2024";
 const LITELLM_URL = process.env.LITELLM_URL ?? "http://litellm:4000";
-// LITELLM_API_KEY: no fallback to the documented public default. Health
-// endpoints that probe LiteLLM with the public key effectively bypass
-// any deployment-specific auth and report a false-positive "ok" against
-// a misconfigured stack. Require the env var to be set; otherwise the
-// LiteLLM check reports degraded.
-const LITELLM_KEY = process.env.LITELLM_API_KEY ?? "";
+// Read the operator-configured LiteLLM key. The stack sets LITELLM_MASTER_KEY
+// (compose + .env.example), so accept it as the source of truth while keeping
+// LITELLM_API_KEY supported for overrides. Still NO fallback to the public
+// default — probing with the public key would mask a misconfigured stack as
+// "ok"; an unset key correctly reports degraded.
+const LITELLM_KEY = process.env.LITELLM_API_KEY ?? process.env.LITELLM_MASTER_KEY ?? "";
 const NEO4J_HTTP_URL = process.env.NEO4J_HTTP_URL ?? "http://neo4j:7474";
 
 interface ServiceHealth {

@@ -3,7 +3,8 @@ name: redos
 description: "Hunt ReDoS (CWE-1333, Catastrophic Backtracking) — identify regexes with nested quantifiers or overlapping alternation that cause super-linear matching time, trace tainted input paths to regex sinks, demonstrate timing PoC, and validate with response-time delta. Covers PCRE/RE2/V8/Python re engine differences. Triggers on: 'ReDoS', 'regex denial', 'catastrophic backtracking', 'redos', 'regex complexity', 'nested quantifiers', 'regex amplification', 'CWE-1333'."
 allowed-tools: Bash Read Write
 metadata:
-  subdomain: reconnaissance
+  subdomain: web-exploitation
+  when_to_use: "redos regex denial catastrophic backtracking regex complexity nested quantifiers regex amplification cwe-1333 pcre re2 v8"
   tags: redos, regex, dos, backtracking, cwe-1333, denial-of-service
   mitre_attack: T1499.004
 ---

@@ -212,6 +212,7 @@ class HTTPSession:
         body: bytes | str | None = None,
         json_body: Any = None,
         tag: str = "",
+        timeout_ms: int | None = None,
     ) -> HTTPResponse:
         full_url = url if url.startswith(("http://", "https://")) else f"{self.base_url}{url}"
         req_body: bytes = b""
@@ -232,6 +233,10 @@ class HTTPSession:
             tag=tag,
         )
 
+        extra: dict[str, Any] = {}
+        if timeout_ms is not None:
+            extra["timeout"] = timeout_ms / 1000.0
+
         start = time.monotonic()
         r = await self._client.request(
             method=method.upper(),
@@ -239,20 +244,24 @@ class HTTPSession:
             params=params,
             headers=headers,
             content=req_body if req_body else None,
+            **extra,
         )
-        elapsed = (time.monotonic() - start) * 1000.0
-
-        resp = HTTPResponse(
-            id=uuid.uuid4().hex[:12],
-            request_id=req.id,
-            status=r.status_code,
-            headers=dict(r.headers),
-            body=r.content,
-            elapsed_ms=elapsed,
-            timestamp=time.time(),
-        )
-        self.history.record(req, resp)
-        return resp
+        try:
+            elapsed = (time.monotonic() - start) * 1000.0
+            resp = HTTPResponse(
+                id=uuid.uuid4().hex[:12],
+                request_id=req.id,
+                status=r.status_code,
+                headers=dict(r.headers),
+                body=r.content,
+                elapsed_ms=elapsed,
+                timestamp=time.time(),
+            )
+            self.history.record(req, resp)
+            return resp
+        except BaseException:
+            await r.aclose()
+            raise
 
     async def get(self, url: str, **kwargs: Any) -> HTTPResponse:
         return await self.request("GET", url, **kwargs)

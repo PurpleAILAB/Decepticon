@@ -9,6 +9,8 @@ description: >
   and biometric / Face ID / Touch ID bypass.
 metadata:
   subdomain: mobile
+  when_to_use: "mobile android ios apk aab ipa jadx apktool frida objection ssl pinning bypass root jailbreak detection deep link url scheme exported component ipc webview biometric face id touch id"
+  subdomain: mobile
   tags: mobile, android, ios, frida, objection, ssl-pinning, jadx, apktool
   mitre_attack: T1635, T1623, T1517, T1521, T1517.001
 ---

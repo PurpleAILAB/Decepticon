@@ -3,7 +3,10 @@ name: terraform-state-leak
 description: Exploit exposed Terraform state files — secrets, cloud creds, RDS passwords, IAM keys, and infrastructure topology in plain JSON.
 metadata:
   subdomain: cloud
-  when_to_use: "terraform state leak secrets"
+  when_to_use: "terraform state leak secrets tfstate"
+  mitre_attack:
+    - T1552
+    - T1530
 ---
 
 # Terraform State Leak Exploitation

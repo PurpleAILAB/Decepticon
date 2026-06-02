@@ -3,7 +3,8 @@ name: fuzzing
 description: "Coverage-guided fuzzing methodology for compiled binaries and libraries: target scoping, fuzzer selection (AFL++/libFuzzer/Honggfuzz), harness skeleton, ASan+UBSan flags, corpus curation, crash triage and minimization (afl-tmin/minimize_corpus), exploitability rubric. Outputs corpora and crashes to /workspace/. Triggers on: 'fuzz', 'fuzzing', 'AFL', 'libFuzzer', 'harness', 'crash triage', 'coverage-guided', 'afl-tmin', 'sanitizer', 'corpus'."
 allowed-tools: Bash Read Write
 metadata:
-  subdomain: reconnaissance
+  subdomain: reverse-engineering
+  when_to_use: "fuzz fuzzing afl afl++ libfuzzer honggfuzz harness crash triage coverage guided afl-tmin sanitizer asan ubsan corpus"
   tags: fuzzing, afl++, libfuzzer, honggfuzz, asan, harness, crash-triage
   mitre_attack: T1587.004, T1203
 ---

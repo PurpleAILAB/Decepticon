@@ -3,7 +3,10 @@ name: rop-chain
 description: ROP/JOP gadget hunting and exploit-chain construction — for NX/DEP bypass on x86/x64/ARM binaries.
 metadata:
   subdomain: reverse-engineering
-  when_to_use: "rop chain return oriented programming gadget pwntools"
+  when_to_use: "rop jop chain return oriented programming gadget pwntools nx dep bypass x86 x64 arm"
+  mitre_attack:
+    - T1203
+    - T1055
 ---
 
 # ROP Chain Construction Playbook

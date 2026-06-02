@@ -1,6 +1,10 @@
 ---
 name: verifier-overview
 description: Stage 3 triage and verification playbook. Crafts minimal PoCs, runs them with ZFP controls, promotes validated bugs to FINDING nodes with CVSS. Load at verifier-agent startup.
+metadata:
+  subdomain: orchestration
+  when_to_use: "verifier stage 3 triage verification poc zero-false-positive zfp finding cvss pipeline"
+  upstream_ref: "Decepticon vulnresearch pipeline — stage 3 verifier role"
 ---
 
 # Verifier Skill

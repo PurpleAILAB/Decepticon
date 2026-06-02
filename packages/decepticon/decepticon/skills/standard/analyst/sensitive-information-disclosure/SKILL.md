@@ -1,6 +1,9 @@
 ---
 name: sensitive-information-disclosure
 description: Hunt LLM sensitive-information disclosure (OWASP LLM02:2025) — leakage of PII, secrets, internal source, model details, and other-tenant data through model outputs, training-data extraction, or retrieval-side joins.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm sensitive information disclosure owasp llm02 pii secrets internal source model leak training data extraction cross tenant retrieval"
 ---
 
 # LLM Sensitive Information Disclosure (LLM02:2025)

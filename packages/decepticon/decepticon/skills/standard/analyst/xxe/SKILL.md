@@ -1,6 +1,9 @@
 ---
 name: xxe
 description: Hunt XML External Entity flaws in parsers and validate file read / SSRF impact with strict negative controls.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "xxe xml external entity parser file read ssrf cwe-611 dtd parameter entity blind oob"
 ---
 
 # XXE Playbook

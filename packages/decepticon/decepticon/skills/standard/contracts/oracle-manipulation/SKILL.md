@@ -4,6 +4,9 @@ description: Hunt single-block oracle manipulation — spot-price AMM oracles, m
 metadata:
   subdomain: smart-contracts
   when_to_use: "oracle manipulation twap price bypass"
+  mitre_attack:
+    - T1565.001
+    - T1190
 ---
 
 # Oracle Manipulation Playbook

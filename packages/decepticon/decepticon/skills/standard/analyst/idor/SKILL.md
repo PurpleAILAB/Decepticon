@@ -1,6 +1,9 @@
 ---
 name: idor
 description: Hunt Insecure Direct Object Reference (CWE-639) — missing authorization checks on object IDs. Covers horizontal vs vertical privilege escalation, UUID vs integer guessing, and GraphQL introspection-driven IDOR discovery.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "idor insecure direct object reference cwe-639 authorization horizontal vertical privilege escalation uuid integer graphql introspection"
 ---
 
 # IDOR Hunting Playbook

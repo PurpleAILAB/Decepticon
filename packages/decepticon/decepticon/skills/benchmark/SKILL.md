@@ -6,6 +6,7 @@ metadata:
   subdomain: benchmark
   when_to_use: "benchmark, ctf, challenge, flag capture"
   tags: benchmark, ctf
+  upstream_ref: "XBOW validation-benchmarks + Decepticon CTF mode marker"
 ---
 
 # Benchmark Mode

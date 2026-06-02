@@ -1,6 +1,9 @@
 ---
 name: chain-xss-to-takeover
 description: Build chains from XSS into account takeover or privileged action execution.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "xss chain account takeover privileged action cookie session csrf token theft post-message"
 ---
 
 # Chain: XSS to Takeover

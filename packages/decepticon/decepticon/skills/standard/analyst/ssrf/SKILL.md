@@ -1,6 +1,9 @@
 ---
 name: ssrf
 description: Hunt Server-Side Request Forgery (CWE-918) through taint analysis from user-controlled URLs to HTTP client sinks. Covers cloud metadata pivoting, DNS rebinding, gopher smuggling, and the IMDSv1 → IAM role chain that turns SSRF into RCE.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "ssrf server side request forgery cwe-918 taint url http client cloud metadata imds dns rebinding gopher smuggling iam role"
 ---
 
 # SSRF Hunting Playbook

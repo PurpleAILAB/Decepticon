@@ -1,6 +1,9 @@
 ---
 name: excessive-agency
 description: Hunt LLM excessive agency (OWASP LLM06:2025) — agentic systems granted too many tools, too broad permissions per tool, or unsupervised authority to act on the user / business behalf, producing financial loss, data loss, or destructive operations from a single bad token.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm excessive agency owasp llm06 agentic tools broad permissions unsupervised authority destructive financial loss data loss"
 ---
 
 # LLM Excessive Agency (LLM06:2025)

@@ -3,7 +3,9 @@ name: packer-unpacking
 description: Identify and unpack common binary packers — UPX, ASPack, Themida, VMProtect, MPRESS, PECompact, Enigma.
 metadata:
   subdomain: reverse-engineering
-  when_to_use: "packer unpack upx aspack themida unpacking"
+  when_to_use: "packer unpack upx aspack themida vmprotect mpress pecompact enigma unpacking"
+  mitre_attack:
+    - T1027.002
 ---
 
 # Packer Unpacking Playbook

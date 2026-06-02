@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create RoE, define scope, engagement boundaries, start new engagement"
   tags: roe, scope, engagement, authorization, legal
-  mitre_attack: []
+  upstream_ref: "Soundwave Rules of Engagement template — scope / window / escalation / incident procedures"
 ---
 
 # Rules of Engagement (RoE) Generator

@@ -1,5 +1,5 @@
 ---
-name: volt-typhoon
+name: emulation-volt-typhoon
 description: "Volt Typhoon (Vanguard Panda, PRC) adversary-emulation playbook — edge-device initial access, living-off-the-land-only operations, NTDS/credential theft, long-dwell pre-positioning toward critical infrastructure, multi-hop proxy egress. Use when emulating stealthy LOTL pre-positioning. Triggers on: 'emulate Volt Typhoon', 'Vanguard Panda', 'BRONZE SILHOUETTE', 'living off the land', 'edge device', 'pre-positioning', 'critical infrastructure persistence'."
 allowed-tools: Read Write Edit
 metadata:

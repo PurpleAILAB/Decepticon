@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create abort plan, emergency halt, crisis procedure, AI safety gate, hallucination guard, destructive action gate"
   tags: abort, halt, crisis, safety, ai-safety, owasp-agentic
-  mitre_attack: []
+  upstream_ref: "Soundwave abort / crisis template — halt triggers, AI-safety gates, hallucination guardrail"
 ---
 
 # Abort / Crisis Plan Generator

@@ -17,16 +17,33 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     fetch("/api/engagements")
-      .then((res) => res.json())
-      .then((data: Engagement[]) => {
-        setEngagements(data);
-        // Auto-select first running or completed engagement
-        const active = data.find((e) => e.status === "running") ?? data.find((e) => e.status === "completed") ?? data[0];
-        if (active) setSelectedId(active.id);
+      .then((res) => {
+        if (!res.ok) throw new Error("fetch failed");
+        return res.json();
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .then((data: Engagement[]) => {
+        if (!active) return;
+        const engagements = Array.isArray(data) ? data : [];
+        setEngagements(engagements);
+        const selected =
+          engagements.find((e) => e.status === "running") ??
+          engagements.find((e) => e.status === "completed") ??
+          engagements[0];
+        if (selected) setSelectedId(selected.id);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEngagements([]);
+      })
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (loading) {

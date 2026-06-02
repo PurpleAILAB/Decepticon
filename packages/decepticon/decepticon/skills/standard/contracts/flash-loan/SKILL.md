@@ -4,6 +4,9 @@ description: Flash-loan exploit patterns — callback reentrancy, oracle amplifi
 metadata:
   subdomain: smart-contracts
   when_to_use: "flash loan aave dydx balancer composition"
+  mitre_attack:
+    - T1190
+    - T1565.001
 ---
 
 # Flash Loan Attack Playbook

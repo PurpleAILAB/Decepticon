@@ -1,6 +1,9 @@
 ---
 name: pattern-exhaustion
 description: Systematic pattern exhaustion methodology. Load after finding any confirmed vulnerability to search for all instances of the same root cause pattern across the codebase.
+metadata:
+  subdomain: analyst
+  when_to_use: "pattern exhaustion methodology root cause search same pattern instances codebase variant hunt"
 ---
 
 # Pattern Exhaustion

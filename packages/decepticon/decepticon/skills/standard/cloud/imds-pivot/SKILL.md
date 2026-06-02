@@ -4,6 +4,9 @@ description: Pivot from SSRF or RCE to cloud Instance Metadata Service (IMDS) â€
 metadata:
   subdomain: cloud
   when_to_use: "imds metadata ssrf aws gcp azure instance metadata service pivot"
+  mitre_attack:
+    - T1552.005
+    - T1078.004
 ---
 
 # Instance Metadata Service Pivot

@@ -6,7 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "create cleanup plan, artifact inventory, persistence removal, post-engagement teardown, restoration plan"
   tags: cleanup, restoration, persistence, post-engagement, hygiene
-  mitre_attack: []
+  upstream_ref: "Soundwave cleanup template — artifact inventory, persistence removal, restoration plan"
 ---
 
 # Cleanup & Restoration Plan Generator

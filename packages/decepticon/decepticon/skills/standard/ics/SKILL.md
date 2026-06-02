@@ -8,6 +8,7 @@ description: >
   operation behind explicit operator confirmation regardless of HITL middleware.
 metadata:
   subdomain: ics
+  when_to_use: "ics ot industrial control modbus bacnet s7comm dnp3 opcua plc hmi scada safety-critical operational technology"
   tags: ics, ot, scada, plc, hmi, modbus, bacnet, s7, dnp3, opcua
   mitre_attack: T0800, T0801, T0859, T0830, T0814, T0846
   safety_critical: true

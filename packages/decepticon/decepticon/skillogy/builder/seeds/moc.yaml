@@ -1,0 +1,48 @@
+# Map-of-Concepts (MoC) seed — the ~300-token navigation summary the
+# SkillogyMiddleware injects into the agent's system prompt is computed
+# from this list filtered by the agent's current phase.
+#
+# parent_phase MUST be a :Phase.name from phases.yaml.
+mocs:
+  # Reconnaissance
+  - {name: passive-recon,       parent_phase: reconnaissance,    description: "OSINT, DNS, cert transparency — no packets to target"}
+  - {name: active-recon,        parent_phase: reconnaissance,    description: "Port scans, service enumeration"}
+  - {name: web-recon,           parent_phase: reconnaissance,    description: "HTTP fingerprinting, content discovery"}
+  - {name: ad-recon,            parent_phase: reconnaissance,    description: "Active Directory enumeration"}
+
+  # Initial access / execution / exploit
+  - {name: web-exploitation,    parent_phase: web-exploitation,  description: "SQLi, SSRF, IDOR, XXE, RCE chains"}
+  - {name: deserialization,     parent_phase: web-exploitation,  description: "Object-deserialisation gadgets"}
+  - {name: crypto-attacks,      parent_phase: web-exploitation,  description: "Padding oracles, JWT confusion, length extension"}
+
+  # Active Directory
+  - {name: ad-credential-theft, parent_phase: active-directory,  description: "Kerberoast, AS-REP roast, DCSync, LAPS"}
+  - {name: ad-cert-abuse,       parent_phase: active-directory,  description: "ADCS ESCs, Certipy chains"}
+  - {name: ad-coercion,         parent_phase: active-directory,  description: "PetitPotam, PrinterBug, NTLM relay"}
+
+  # Cloud
+  - {name: cloud-iam-privesc,   parent_phase: cloud,             description: "Rhino 21 IAM primitives, role assumption"}
+  - {name: cloud-pivot,         parent_phase: cloud,             description: "IMDS, S3 takeover, Terraform state leak"}
+  - {name: k8s-attacks,         parent_phase: cloud,             description: "Pod escape, RBAC abuse, hostPath"}
+
+  # AI security
+  - {name: prompt-injection,    parent_phase: ai-security,       description: "Direct + indirect prompt injection, tool hijack"}
+  - {name: model-extraction,    parent_phase: ai-security,       description: "Model stealing, membership inference"}
+  - {name: data-poisoning,      parent_phase: ai-security,       description: "Training-data + RLHF poisoning"}
+  - {name: rag-attacks,         parent_phase: ai-security,       description: "Embedding manipulation, retriever poisoning"}
+
+  # Smart contracts
+  - {name: defi-attacks,        parent_phase: smart-contracts,   description: "Flash-loan, oracle, reentrancy, governance"}
+
+  # ICS / IoT / Mobile
+  - {name: ics-disruption,      parent_phase: ics-ot,            description: "PLC firmware mode, Modbus AiTM"}
+  - {name: iot-firmware,        parent_phase: iot,               description: "Firmware extraction, default-cred hunting"}
+  - {name: mobile-app-attacks,  parent_phase: mobile,            description: "iOS/Android dynamic instrumentation, SSL-pinning bypass"}
+
+  # Post-exploit
+  - {name: lateral-movement,    parent_phase: lateral-movement,  description: "SMB exec, WMI, WinRM, SSH chains"}
+  - {name: persistence-tactics, parent_phase: persistence,       description: "Service install, scheduled task, registry run"}
+
+  # Meta
+  - {name: opplan-design,       parent_phase: planning,          description: "CONOPS, RoE, OPPLAN authoring"}
+  - {name: reporting-output,    parent_phase: reporting,         description: "Finding protocol, bounty report, exec summary"}

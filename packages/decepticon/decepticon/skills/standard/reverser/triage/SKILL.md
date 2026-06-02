@@ -1,6 +1,10 @@
 ---
 name: reverser-triage
 description: Fast-path binary triage — identify format/arch/mitigations, grab high-signal strings and imports in under a minute.
+metadata:
+  subdomain: reverse-engineering
+  when_to_use: "binary triage format architecture mitigations strings imports nm objdump readelf checksec file"
+  upstream_ref: "Decepticon reverser triage playbook — file / readelf / checksec / strings / nm"
 ---
 
 # Binary Triage (fast path)

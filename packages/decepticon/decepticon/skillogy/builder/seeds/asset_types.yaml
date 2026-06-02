@@ -1,0 +1,76 @@
+# Engagement-asset taxonomy seeded into the skill graph.
+# Each entry becomes one :AssetType node; the `category` field is
+# emitted as a property and used after build to wire HAS_SUBTYPE edges
+# from category-name -> child-name.
+asset_types:
+  # Root
+  - {name: service,           category: root}
+
+  # Web
+  - {name: web-service,       category: service}
+  - {name: http,              category: web-service}
+  - {name: https,             category: web-service}
+  - {name: websocket,         category: web-service}
+  - {name: api-rest,          category: web-service}
+  - {name: api-graphql,       category: web-service}
+
+  # Database
+  - {name: database,          category: service}
+  - {name: mysql,             category: database}
+  - {name: mssql,             category: database}
+  - {name: postgres,          category: database}
+  - {name: mongodb,           category: database}
+  - {name: redis,             category: database}
+  - {name: oracle-db,         category: database}
+
+  # Directory / Identity
+  - {name: directory-service, category: service}
+  - {name: active-directory,  category: directory-service}
+  - {name: ldap,              category: directory-service}
+  - {name: kerberos,          category: directory-service}
+
+  # Remote access
+  - {name: remote-access,     category: service}
+  - {name: ssh,               category: remote-access}
+  - {name: rdp,               category: remote-access}
+  - {name: winrm,             category: remote-access}
+  - {name: vpn,               category: remote-access}
+
+  # File / share
+  - {name: file-share,        category: service}
+  - {name: smb,               category: file-share}
+  - {name: nfs,               category: file-share}
+  - {name: ftp,               category: file-share}
+
+  # Cloud
+  - {name: cloud-resource,    category: service}
+  - {name: aws-resource,      category: cloud-resource}
+  - {name: aws-s3,            category: aws-resource}
+  - {name: aws-ec2,           category: aws-resource}
+  - {name: aws-iam,           category: aws-resource}
+  - {name: azure-resource,    category: cloud-resource}
+  - {name: gcp-resource,      category: cloud-resource}
+
+  # Container / orchestration
+  - {name: container,         category: service}
+  - {name: kubernetes,        category: container}
+  - {name: docker,            category: container}
+
+  # ICS / OT
+  - {name: ics-ot,            category: service}
+  - {name: modbus,            category: ics-ot}
+  - {name: siemens-s7,        category: ics-ot}
+  - {name: bacnet,            category: ics-ot}
+  - {name: dnp3,              category: ics-ot}
+  - {name: opcua,             category: ics-ot}
+
+  # Email
+  - {name: email-server,      category: service}
+  - {name: smtp,              category: email-server}
+  - {name: imap,              category: email-server}
+
+  # AI / LLM
+  - {name: ai-service,        category: service}
+  - {name: llm-endpoint,      category: ai-service}
+  - {name: rag-vector-store,  category: ai-service}
+  - {name: model-registry,    category: ai-service}

@@ -1,6 +1,9 @@
 ---
 name: chain-ssrf-to-rce
 description: Build and validate SSRF pivot chains toward metadata/infra control and final code execution impact.
+metadata:
+  subdomain: web-exploitation
+  when_to_use: "ssrf chain rce remote code execution pivot cloud metadata imds iam role gopher dns rebinding"
 ---
 
 # Chain: SSRF to RCE

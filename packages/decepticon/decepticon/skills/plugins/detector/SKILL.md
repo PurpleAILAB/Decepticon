@@ -1,6 +1,10 @@
 ---
 name: detector-overview
 description: Stage 2 vulnerability detector playbook. Reads source around CANDIDATE nodes and promotes real bugs to VULNERABILITY + HYPOTHESIS. Read-only. Load at detector-agent startup.
+metadata:
+  subdomain: orchestration
+  when_to_use: "detector stage 2 vulnerability candidate vulnerability hypothesis read-only source-read pipeline"
+  upstream_ref: "Decepticon vulnresearch pipeline — stage 2 detector role"
 ---
 
 # Detector Skill

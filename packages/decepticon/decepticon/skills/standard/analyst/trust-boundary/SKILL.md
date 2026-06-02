@@ -1,6 +1,9 @@
 ---
 name: trust-boundary-analysis
 description: Trust boundary mapping and startup sequence audit for developer tools, CLI apps, and plugin systems. Load when the target is a developer tool, CLI, IDE extension, or any application that loads config from the current directory.
+metadata:
+  subdomain: analyst
+  when_to_use: "trust boundary startup sequence developer tool cli ide extension plugin config load current directory analysis"
 ---
 
 # Trust Boundary Analysis

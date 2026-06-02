@@ -4,6 +4,8 @@ description: Abuse replication rights (DS-Replication-Get-Changes + GetChangesAl
 metadata:
   subdomain: active-directory
   when_to_use: "dcsync replication rights secretsdump krbtgt nt hash dump"
+  mitre_attack:
+    - T1003.006
 ---
 
 # DCSync Playbook

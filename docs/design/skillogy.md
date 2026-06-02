@@ -1,5 +1,25 @@
 # Skillogy — Knowledge-Graph-Backed Skill System
 
+> **⚠ Superseded (2026-06-03)**
+>
+> This document is the **v0.1 draft** (2026-05-28). It has been superseded by
+> [docs/design/skillogy-brain-redesign.md](skillogy-brain-redesign.md) (v0.2,
+> the "Brain" redesign). The successor differs in load-bearing ways:
+>
+> 1. Body lives in the graph node, not on disk (this doc kept an Index-Only pointer model).
+> 2. Agents get read-only Cypher access in addition to curated tools.
+> 3. Phase 1a graph schema is matrix-agnostic but loads ATT&CK Enterprise only;
+>    ICS / Mobile / ATLAS are deferred to Phase 1b/2 (this doc treated MITRE as
+>    Enterprise-only by default, with no slot for other matrices).
+> 4. The `:Skill` schema is slimmed against the production-code audit; `kind`,
+>    `safety_critical`, `gated_by_conops`, and `allowed-tools` are dropped.
+> 5. Phase 0 corpus cleanup is added as a pre-condition.
+>
+> This doc is kept for history and diff review. Read the successor for the
+> current direction.
+
+---
+
 **Status**: design draft, awaiting implementation
 **Replaces**: text-matching skill autoload in `SkillsMiddleware`
 **Target version**: Skillogy v0.1

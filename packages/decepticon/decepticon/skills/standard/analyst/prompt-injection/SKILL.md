@@ -1,6 +1,9 @@
 ---
 name: prompt-injection
 description: Hunt LLM prompt injection and tool-call hijacking in modern AI-integrated applications (CWE-1427). Covers indirect injection via RAG, tool abuse, exfiltration chains, and jailbreak-to-RCE pivots on agentic systems.
+metadata:
+  subdomain: ai-security
+  when_to_use: "llm prompt injection cwe-1427 tool call hijack rag indirect exfiltration jailbreak rce agentic owasp llm01"
 ---
 
 # Prompt Injection Playbook

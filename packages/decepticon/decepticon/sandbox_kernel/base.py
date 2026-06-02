@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import posixpath
 import re
 import subprocess
@@ -36,6 +37,80 @@ from decepticon.sandbox_kernel.jobs import BackgroundJob, BackgroundJobTracker
 from decepticon.sandbox_kernel.tmux import PS1_PATTERN, TmuxSessionManager, _safe_log
 
 log = logging.getLogger("decepticon.sandbox_kernel.base")
+
+# ── Startup orphan-reap ──────────────────────────────────────────────────
+#
+# When the daemon is SIGKILLed, the tmux sessions/sockets it spawned via
+# ``tmux -L <session> …`` (see TmuxSessionManager._tmux) survive the
+# parent's death. A fresh daemon then starts with an empty manager map
+# and `TmuxSessionManager._initialized` set, so it has no idea those
+# servers exist and they accumulate forever — file-descriptor + memory
+# leak, plus session-name collisions on the next engagement attempt.
+#
+# Reap discovers pre-existing sockets and kills the ones the new process
+# does NOT own. The decision is split from the I/O so the unit tests can
+# verify orphan classification without invoking real tmux (CI has none).
+#
+# Heuristic — we only reap sockets whose name carries the ``dcptn_``
+# prefix produced by SandboxBase._tmux_session_name for non-root
+# workspaces. Root-workspace sessions (bare names like ``main``) could
+# belong to anything on a shared host and are left alone deliberately.
+
+_DECEPTICON_TMUX_SOCKET_PREFIX = "dcptn_"
+
+
+def _compute_orphan_tmux_sessions(
+    discovered: set[str],
+    tracked: set[str],
+) -> set[str]:
+    """Pure decision function for the startup reap.
+
+    Returns the subset of ``discovered`` that are decepticon-owned
+    (``dcptn_`` prefix) AND not present in ``tracked``. Tracked sessions
+    are spared; non-decepticon-prefixed names are spared regardless.
+    """
+    return {
+        name
+        for name in discovered
+        if name.startswith(_DECEPTICON_TMUX_SOCKET_PREFIX) and name not in tracked
+    }
+
+
+def _list_decepticon_tmux_sockets() -> list[str]:
+    """List decepticon-owned tmux socket names on the host.
+
+    Each ``tmux -L <name>`` creates a socket at ``/tmp/tmux-<uid>/<name>``
+    (see ``man tmux``). We scan that directory and keep only the names
+    matching the decepticon prefix so we never touch an unrelated user's
+    tmux server on a shared host. Errors are logged + swallowed — a
+    missing socket dir simply means no sessions to reap.
+    """
+    socket_dir = f"/tmp/tmux-{os.getuid()}"
+    try:
+        return [n for n in os.listdir(socket_dir) if n.startswith(_DECEPTICON_TMUX_SOCKET_PREFIX)]
+    except FileNotFoundError:
+        return []
+    except OSError as e:
+        log.debug("tmux socket directory probe failed: %s", _safe_log(e))
+        return []
+
+
+def _kill_tmux_socket(session: str) -> None:
+    """Kill the tmux server backing a single decepticon socket.
+
+    ``tmux -L <session> kill-server`` terminates the server (and reaps
+    its bash children) for that named socket only — no other tmux server
+    on the host is affected.
+    """
+    subprocess.run(
+        ["tmux", "-L", session, "kill-server"],
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=True,
+        encoding="utf-8",
+        errors="replace",
+    )
 
 
 class SandboxBase(BaseSandbox):
@@ -366,6 +441,42 @@ class SandboxBase(BaseSandbox):
                     TmuxSessionManager._initialized.discard(mgr.session)
             self.reset_session_log_offset(session, effective_workspace)
             self._jobs.remove(session, key=manager_key)
+
+    def reap_orphaned_tmux_sessions(self) -> int:
+        """Kill decepticon-named tmux sockets this process does NOT own.
+
+        Wired into the daemon's startup lifespan: if the previous daemon
+        was SIGKILLed, its tmux sockets/sessions survive but no live
+        manager tracks them. Without this reap they leak forever.
+
+        Returns the count of sockets successfully killed. Discovery and
+        kill go through module-level seams (``_list_decepticon_tmux_sockets``,
+        ``_kill_tmux_socket``) so unit tests can drive the logic without
+        invoking real tmux.
+        """
+        discovered = set(_list_decepticon_tmux_sockets())
+        with self._managers_lock:
+            tracked = {mgr.session for mgr in self._managers.values()}
+        orphans = _compute_orphan_tmux_sessions(discovered, tracked)
+        killed = 0
+        for session in orphans:
+            try:
+                _kill_tmux_socket(session)
+                killed += 1
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+                OSError,
+                RuntimeError,
+            ) as e:
+                log.warning(
+                    "reap: failed to kill orphan tmux socket '%s': %s",
+                    _safe_log(session),
+                    _safe_log(e),
+                )
+        if killed:
+            log.info("reap: killed %d orphan tmux socket(s) on startup", killed)
+        return killed
 
     def kill_all_sessions(self) -> int:
         """Kill every tmux session this sandbox has handed out a manager for.

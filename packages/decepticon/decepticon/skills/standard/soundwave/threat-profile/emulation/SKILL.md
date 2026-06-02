@@ -6,6 +6,7 @@ metadata:
   subdomain: planning
   when_to_use: "emulate, adversary emulation, APT playbook, threat actor playbook, emulation plan, attack flow, kill chain for actor, which TTPs, how would APT29/Sandworm/Lazarus/Scattered Spider attack"
   tags: adversary-emulation, apt, ecrime, mitre-attack, kill-chain, planning
+  upstream_ref: "Soundwave adversary-emulation playbook catalog — per-actor kill chains for CONOPS / OPPLAN generation"
 ---
 
 # Adversary Emulation Playbook Catalog

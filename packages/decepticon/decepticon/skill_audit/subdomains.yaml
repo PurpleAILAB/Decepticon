@@ -1,0 +1,48 @@
+# Canonical Skillogy subdomain list. The validator rejects any SKILL.md whose
+# metadata.subdomain (after alias resolution) is not in this list.
+#
+# Order matters only for documentation; it follows kill-chain order where
+# applicable and then domain-specific categories.
+canonical:
+  # Kill-chain phases (ATT&CK Enterprise tactic-aligned)
+  - reconnaissance
+  - initial-access
+  - execution
+  - persistence
+  - privilege-escalation
+  - defense-evasion
+  - credential-access
+  - discovery
+  - lateral-movement
+  - collection
+  - command-and-control
+  - exfiltration
+  - impact
+
+  # Domain categories (sub-disciplines that group multiple kill-chain phases)
+  - active-directory
+  - cloud
+  - web-exploitation
+  - mobile
+  - ics-ot
+  - iot
+  - wireless
+  - ai-security
+  - reverse-engineering
+  - dfir
+  - osint
+  - phishing
+  - smart-contracts
+
+  # Broad post-compromise + supply-chain categories
+  - supply-chain
+  - post-exploit
+
+  # Engagement-meta (non-offensive)
+  - reporting
+  - planning
+  - orchestration
+  - adversary-emulation
+  - analyst
+  - opsec
+  - benchmark

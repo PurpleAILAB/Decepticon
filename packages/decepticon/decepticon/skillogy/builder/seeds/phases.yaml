@@ -1,0 +1,49 @@
+# Canonical :Phase nodes seeded into the skill graph.
+# Mirrors the canonical subdomains list in
+# packages/decepticon/decepticon/skill_audit/subdomains.yaml — kept here
+# (not imported) so the builder package has zero runtime dependency on
+# the validator package, and so future divergence between "phases the
+# graph traverses" and "subdomains an author may declare" is explicit.
+#
+# kill_chain_order is a small integer used purely for stable display /
+# routing. Domain categories that don't sit on the kill chain use 100+.
+phases:
+  - {name: reconnaissance,       kill_chain_order: 1,   kind: tactic}
+  - {name: initial-access,       kill_chain_order: 2,   kind: tactic}
+  - {name: execution,            kill_chain_order: 3,   kind: tactic}
+  - {name: persistence,          kill_chain_order: 4,   kind: tactic}
+  - {name: privilege-escalation, kill_chain_order: 5,   kind: tactic}
+  - {name: defense-evasion,      kill_chain_order: 6,   kind: tactic}
+  - {name: credential-access,    kill_chain_order: 7,   kind: tactic}
+  - {name: discovery,            kill_chain_order: 8,   kind: tactic}
+  - {name: lateral-movement,     kill_chain_order: 9,   kind: tactic}
+  - {name: collection,           kill_chain_order: 10,  kind: tactic}
+  - {name: command-and-control,  kill_chain_order: 11,  kind: tactic}
+  - {name: exfiltration,         kill_chain_order: 12,  kind: tactic}
+  - {name: impact,               kill_chain_order: 13,  kind: tactic}
+
+  # Domain categories.
+  - {name: active-directory,     kill_chain_order: 100, kind: domain}
+  - {name: cloud,                kill_chain_order: 101, kind: domain}
+  - {name: web-exploitation,     kill_chain_order: 102, kind: domain}
+  - {name: mobile,               kill_chain_order: 103, kind: domain}
+  - {name: ics-ot,               kill_chain_order: 104, kind: domain}
+  - {name: iot,                  kill_chain_order: 105, kind: domain}
+  - {name: wireless,             kill_chain_order: 106, kind: domain}
+  - {name: ai-security,          kill_chain_order: 107, kind: domain}
+  - {name: reverse-engineering,  kill_chain_order: 108, kind: domain}
+  - {name: dfir,                 kill_chain_order: 109, kind: domain}
+  - {name: osint,                kill_chain_order: 110, kind: domain}
+  - {name: phishing,             kill_chain_order: 111, kind: domain}
+  - {name: smart-contracts,      kill_chain_order: 112, kind: domain}
+  - {name: supply-chain,         kill_chain_order: 113, kind: domain}
+  - {name: post-exploit,         kill_chain_order: 114, kind: domain}
+
+  # Engagement-meta (non-offensive).
+  - {name: reporting,            kill_chain_order: 200, kind: meta}
+  - {name: planning,             kill_chain_order: 201, kind: meta}
+  - {name: orchestration,        kill_chain_order: 202, kind: meta}
+  - {name: adversary-emulation,  kill_chain_order: 203, kind: meta}
+  - {name: analyst,              kill_chain_order: 204, kind: meta}
+  - {name: opsec,                kill_chain_order: 205, kind: meta}
+  - {name: benchmark,            kill_chain_order: 206, kind: meta}
