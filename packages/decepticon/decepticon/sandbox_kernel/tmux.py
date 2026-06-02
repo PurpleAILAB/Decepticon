@@ -34,6 +34,9 @@ PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):(.+?)\]")
 
 POLL_INTERVAL: float = 0.5
 STALL_SECONDS: float = 3.0
+# Fallback after STALL_SECONDS when the tail is NOT a recognizable prompt:
+# treat as possibly-hung instead of mislabeling as interactive.
+HUNG_PROCESS_SECONDS: float = 30.0
 MAX_OUTPUT_CHARS: int = 30_000
 AUTO_BACKGROUND_SECONDS: float = 60.0
 SIZE_WATCHDOG_CHARS: int = 5_000_000
@@ -42,6 +45,36 @@ SIZE_WATCHDOG_CHARS: int = 5_000_000
 # this cap a wedged `docker exec` resets the stall timer every iteration and
 # the command spins until the full `timeout`, pinning a core the whole time.
 MAX_CONSECUTIVE_CAPTURE_FAILURES: int = 5
+
+# Common shell / REPL / offensive-tool prompt tails. Matched against the
+# last non-blank line of a stalled screen. The first alternative covers
+# generic shells ("$ ", "# ", "> ", ": ", "? "); the second covers
+# named tool prompts (msf6, meterpreter, sliver[, sliver (X)], Pdb,
+# Python REPL, mysql, ftp). Kept deliberately conservative — anything
+# that does not match is treated as a possibly-hung process, not as an
+# interactive prompt.
+_PROMPT_TAIL_RE = re.compile(
+    r"(?:[\$#>:?]\s*$)"
+    r"|(?:^(?:msf\d*|meterpreter|sliver(?:\s*\([^)]+\))?|mysql|ftp)\s*>\s*$)"
+    r"|(?:^\(Pdb\)\s*$)"
+    r"|(?:^>>>\s*$)"
+)
+
+
+def _looks_like_interactive_prompt(screen: str) -> bool:
+    """Return True if the screen's last non-blank line looks like a prompt.
+
+    Used by stall detection to distinguish a real interactive prompt
+    (msf6, meterpreter, ``$``, ``Password:`` …) from a silently hung
+    program that simply stopped producing output.
+    """
+    for line in reversed(screen.splitlines()):
+        stripped = line.rstrip()
+        if not stripped.strip():
+            continue
+        return _PROMPT_TAIL_RE.search(stripped) is not None
+    return False
+
 
 # ─── Sandbox env passthrough allowlist ──────────────────────────────────
 #
@@ -576,22 +609,41 @@ class TmuxSessionManager:
 
             # Stall detection: if screen changed from baseline (program produced
             # output) but hasn't changed for STALL_SECONDS, the program is likely
-            # waiting for input (interactive prompt like msf6>, sliver>).
+            # waiting for input (interactive prompt like msf6>, sliver>) — but
+            # only if the tail actually looks like a prompt. Otherwise keep
+            # polling until HUNG_PROCESS_SECONDS, then surface a distinct
+            # "may be hung" message instead of falsely claiming interactive.
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline and time.monotonic() - last_change_time >= STALL_SECONDS:
-                log.info(
-                    "Stall detected after %.1fs — interactive program [%s]",
-                    time.monotonic() - start,
-                    _safe_log(command[:50]),
-                )
-                output = _extract_interactive_output(screen, baseline)
-                return (
-                    f"{_truncate(output).strip()}\n"
-                    f"[session: {self.session} — interactive, "
-                    f"send next command with is_input=True]"
-                )
+            elif screen != baseline:
+                stalled_for = time.monotonic() - last_change_time
+                if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
+                    log.info(
+                        "Stall detected after %.1fs — interactive program [%s]",
+                        time.monotonic() - start,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — interactive, "
+                        f"send next command with is_input=True]"
+                    )
+                if stalled_for >= HUNG_PROCESS_SECONDS:
+                    log.info(
+                        "Prompt-less stall after %.1fs — may be hung [%s]",
+                        stalled_for,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — no interactive prompt detected "
+                        f"after {int(stalled_for)}s of silence; the program may be hung. "
+                        f"Send input with is_input=True as an escape hatch, "
+                        f'or terminate with bash_kill(session="{self.session}").]'
+                    )
 
         # Full timeout — include screen capture
         try:
@@ -772,18 +824,34 @@ class TmuxSessionManager:
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline and time.monotonic() - last_change_time >= STALL_SECONDS:
-                log.info(
-                    "Stall detected after %.1fs — interactive program [%s]",
-                    time.monotonic() - start,
-                    _safe_log(command[:50]),
-                )
-                output = _extract_interactive_output(screen, baseline)
-                return (
-                    f"{_truncate(output).strip()}\n"
-                    f"[session: {self.session} — interactive, "
-                    f"send next command with is_input=True]"
-                )
+            elif screen != baseline:
+                stalled_for = time.monotonic() - last_change_time
+                if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
+                    log.info(
+                        "Stall detected after %.1fs — interactive program [%s]",
+                        time.monotonic() - start,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — interactive, "
+                        f"send next command with is_input=True]"
+                    )
+                if stalled_for >= HUNG_PROCESS_SECONDS:
+                    log.info(
+                        "Prompt-less stall after %.1fs — may be hung [%s]",
+                        stalled_for,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — no interactive prompt detected "
+                        f"after {int(stalled_for)}s of silence; the program may be hung. "
+                        f"Send input with is_input=True as an escape hatch, "
+                        f'or terminate with bash_kill(session="{self.session}").]'
+                    )
 
         # Full timeout — include screen capture
         try:
