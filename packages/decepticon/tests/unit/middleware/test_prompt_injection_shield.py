@@ -209,15 +209,24 @@ def test_skill_loader_rename_is_picked_up_dynamically(monkeypatch):
 
 def test_external_tools_are_wrapped():
     mw = PromptInjectionShieldMiddleware(append_policy_to_system=False)
-    # ``bash``/``read_file``/``kg_*`` are intentionally excluded: the
+    # ``bash``/``read_file``/``kg_*`` and the network tools (``http_request``,
+    # ``browser_action``, ``proxy_*``) are intentionally excluded: the
     # UNTRUSTED_OUTPUT slot envelopes them, so the shield skips them to avoid
-    # double-wrapping (covered by test_shield_skips_untrusted_output_tools_no_double_wrap).
-    for name in ("http_fetch", "http_request", "totally_unknown_tool"):
+    # double-wrapping (covered by test_untrusted_network_tools_are_skipped_by_shield).
+    for name in ("http_fetch", "totally_unknown_tool"):
         assert _is_trusted_internal_tool(name) is False
         msg = ToolMessage(content="attacker controlled bytes", tool_call_id="t1", name=name)
         result = mw._maybe_wrap(_DummyRequest(name), msg)
         assert "<untrusted_tool_output>" in result.content
         assert "attacker controlled bytes" in result.content
+
+
+def test_untrusted_network_tools_are_skipped_by_shield():
+    mw = PromptInjectionShieldMiddleware(append_policy_to_system=False)
+    for name in ("http_request", "browser_action", "proxy_send_request"):
+        msg = ToolMessage(content="attacker controlled bytes", tool_call_id="t1", name=name)
+        result = mw._maybe_wrap(_DummyRequest(name), msg)
+        assert result.content == "attacker controlled bytes"
 
 
 def test_fallback_when_registry_unavailable(monkeypatch):

@@ -76,6 +76,15 @@ UNTRUSTED_TOOL_NAMES: frozenset[str] = frozenset(
         # file reaches the model wrapped + risk-scored, not as trusted text.
         "scan_shard",
         "rank_candidates",
+        "http_request",
+        "http_history",
+        "browser_action",
+        "proxy_list_requests",
+        "proxy_view_request",
+        "proxy_send_request",
+        "proxy_repeat_request",
+        "proxy_list_sitemap",
+        "proxy_view_sitemap_entry",
     }
 )
 
