@@ -28,13 +28,60 @@ import os
 import sys
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("decepticon.runtime.event_log")
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        v = float(raw)
+    except ValueError:
+        return default
+    return v if v > 0 else default
+
+
+LOCK_ACQUIRE_TIMEOUT_S: float = _env_float("DECEPTICON_EVENT_LOG_LOCK_TIMEOUT_S", 10.0)
+_LOCK_RETRY_INITIAL_SLEEP_S: float = 0.01
+_LOCK_RETRY_MAX_SLEEP_S: float = 1.0
+
+
+def _retry_lock(
+    acquire: Callable[[], None],
+    *,
+    timeout: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> None:
+    """Call ``acquire`` until it returns, with capped exponential backoff.
+
+    ``acquire`` must raise ``OSError`` on contention and return on
+    success. The retry stops once the elapsed time since the first
+    attempt exceeds ``timeout``; in that case the last ``OSError`` is
+    re-raised as :class:`TimeoutError` so callers fail fast instead of
+    spinning forever on a stale lock.
+    """
+    deadline = clock() + timeout
+    delay = _LOCK_RETRY_INITIAL_SLEEP_S
+    last_err: OSError | None = None
+    while True:
+        try:
+            acquire()
+            return
+        except OSError as e:
+            last_err = e
+        remaining = deadline - clock()
+        if remaining <= 0:
+            raise TimeoutError(f"event-log lock not acquired within {timeout:.3f}s") from last_err
+        sleep(min(delay, remaining))
+        delay = min(delay * 2, _LOCK_RETRY_MAX_SLEEP_S)
 
 
 class EventType(str, Enum):
@@ -113,12 +160,12 @@ def _acquire_lock(fd: int) -> None:
         import msvcrt
 
         os.lseek(fd, 0, os.SEEK_SET)
-        while True:
-            try:
-                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-                return
-            except OSError:
-                time.sleep(0.01)
+        _retry_lock(
+            lambda: msvcrt.locking(fd, msvcrt.LK_LOCK, 1),
+            timeout=LOCK_ACQUIRE_TIMEOUT_S,
+            sleep=time.sleep,
+            clock=time.monotonic,
+        )
     else:
         import fcntl
 
