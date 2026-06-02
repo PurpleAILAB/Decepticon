@@ -7,7 +7,7 @@ Analyst reads source, builds a persistent knowledge graph, and reasons
 about multi-hop paths from entrypoints to crown jewels.
 
 Tool surface (in addition to bash):
-    RESEARCH_TOOLS, BOUNTY_TOOLS, REFERENCES_TOOLS
+    RESEARCH_TOOLS, BOUNTY_TOOLS, REPORTING_TOOLS, REFERENCES_TOOLS
 
 Middleware stack — mirrors exploit.py. The analyst runs fewer shell
 commands in favour of first-class research tools (semgrep, bandit,
@@ -58,6 +58,7 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import REFERENCES_TOOLS
+from decepticon.tools.reporting.tools import REPORTING_TOOLS
 from decepticon.tools.research.bounty import BOUNTY_TOOLS
 from decepticon.tools.research.tools import RESEARCH_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
@@ -67,7 +68,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
     # references tools offer payloads + external knowledge lookup;
     # bounty tools provide scope checking and report formatting.
     t.name: t
-    for t in [*RESEARCH_TOOLS, *BOUNTY_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
+    for t in [*RESEARCH_TOOLS, *BOUNTY_TOOLS, *REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
 }
 
 

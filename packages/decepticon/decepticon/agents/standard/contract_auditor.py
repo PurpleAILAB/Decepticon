@@ -50,6 +50,7 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.contracts.tools import CONTRACT_TOOLS
+from decepticon.tools.reporting.tools import report_hackerone
 from decepticon.tools.research.tools import (
     cve_lookup,
     kg_add_edge,
@@ -75,6 +76,8 @@ _STANDARD_TOOLS: dict[str, Any] = {
         kg_ingest_sarif,
         # CVE intelligence
         cve_lookup,
+        # Reporting (prompt REPORT step files a HackerOne-style finding report)
+        report_hackerone,
         # Execution
         *BASH_TOOLS,
     ]

@@ -191,6 +191,11 @@ they apply — they update the graph for you and keep your state coherent:
                               — verify finding is in program scope before reporting
 - `format_bounty_report(finding_id, platform, program_name, component_name)`
                               — generate platform-ready bug bounty report from a FINDING node
+- `report_hackerone(finding_id)` — HackerOne-style markdown report for a FINDING / vuln node
+- `report_executive(engagement_name)` — engagement-level executive summary from the graph
+- `report_bugcrowd_csv(min_severity)` — Bugcrowd CSV submission bundle
+- `report_sarif(engagement_id, output_path)` — SARIF v2.1.0 for GitHub code scanning / DefectDojo
+- `report_timeline()` — chronological timeline of graph events for the engagement narrative
 
 ALWAYS call `kg_stats` at iteration start and after any major action. If
 your iteration ends with zero new graph nodes, you wasted it.
