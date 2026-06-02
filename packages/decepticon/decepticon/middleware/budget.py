@@ -49,6 +49,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from contextlib import closing
 from typing import Any, ClassVar
 
 from langchain.agents.middleware import AgentMiddleware
@@ -274,17 +275,18 @@ def _default_litellm_spend_provider(scope_key: str) -> float:
         log.warning("psycopg2 unavailable — install psycopg2-binary to enable budget enforcement")
         return 0.0
     try:
-        with psycopg2.connect(db_url) as conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COALESCE(SUM(spend), 0)::float
-                FROM "LiteLLM_SpendLogs"
-                WHERE metadata->>'scope_key' = %s
-                """,
-                (scope_key,),
-            )
-            row = cur.fetchone()
-            return float(row[0]) if row else 0.0
+        with closing(psycopg2.connect(db_url)) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COALESCE(SUM(spend), 0)::float
+                    FROM "LiteLLM_SpendLogs"
+                    WHERE metadata->>'scope_key' = %s
+                    """,
+                    (scope_key,),
+                )
+                row = cur.fetchone()
+                return float(row[0]) if row else 0.0
     except Exception as exc:  # noqa: BLE001
         log.warning("LiteLLM spend query failed for scope=%s: %s", scope_key, exc)
         return 0.0
