@@ -53,9 +53,9 @@ Each agent runs at the tier suited to its workload:
 
 | Tier  | Agents                                                                                          |
 |-------|-------------------------------------------------------------------------------------------------|
-| HIGH  | `decepticon`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`              |
-| MID   | `exploit`, `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser` |
-| LOW   | `soundwave`, `recon`, `scanner`                                                                 |
+| HIGH  | `decepticon`, `exploit`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`   |
+| MID   | `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser`, `phisher`, `mobile_operator` |
+| LOW   | `soundwave`, `recon`, `scanner`, `wireless_operator`                                            |
 
 ### `max` — every agent on HIGH
 
@@ -72,10 +72,11 @@ For development / CI. Forces every agent to the cheapest tier (Haiku-class).
 Your inventory is built at startup from environment variables, written by `decepticon onboard`.
 
 ```bash
-# Priority order (first = preferred). Empty value uses the default fallback
-# order: anthropic_oauth, anthropic_api, openai_oauth, openai_api,
-#        google_api, minimax_api, deepseek_api, xai_api, mistral_api,
-#        openrouter_api, nvidia_api, ollama_local
+# Priority order (first = preferred). When unset, the factory's built-in
+# `_DEFAULT_AUTH_PRIORITY` order applies (OAuth subscriptions ahead of their
+# paid per-token peers, hosted providers before local endpoints, with
+# unconfigured methods skipped at runtime). See `_DEFAULT_AUTH_PRIORITY` in
+# `decepticon/llm/factory.py` for the full ordered list.
 DECEPTICON_AUTH_PRIORITY=anthropic_oauth,openai_api
 
 # Set true if you have an active Claude Code OAuth subscription
@@ -302,7 +303,7 @@ Configuration: `config/litellm.yaml`. Authentication: `LITELLM_MASTER_KEY` in `.
 To wire in a new provider model:
 
 1. Add a `model_list` entry to `config/litellm.yaml` with the LiteLLM `provider/model` identifier and the env var that holds the key.
-2. Add the model identifier to the appropriate cell of `METHOD_MODELS` in `decepticon/llm/models.py`.
+2. Add the model identifier to the appropriate cell of `METHOD_MODELS` in `decepticon_core.types.llm`.
 3. If introducing a new AuthMethod, also add it to `AuthMethod`, the factory's `_API_METHOD_ENV` map, and the onboard wizard's option list.
 
 Tests in `tests/unit/llm/test_models.py` will catch dropped tiers or missing matrix entries.
