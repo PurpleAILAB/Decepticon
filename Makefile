@@ -73,7 +73,7 @@ help:
 	@echo "  make quality-strict Release gate — mirrors CI main-push lane + full basedpyright warning audit"
 	@echo "  make ci-lint        Lint + format + basedpyright errors-only (CI mirror)"
 	@echo "  make ci-test        pytest fast lane (-n auto -m \"not slow\", no coverage)"
-	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=35)"
+	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=60)"
 	@echo "  make test           pytest in container"
 	@echo "  make test-local     pytest locally (uv sync --dev; takes ARGS=)"
 	@echo "  make lint           Python lint + format check + basedpyright (all levels, local exploratory)"
@@ -241,7 +241,7 @@ quality: ci-lint ci-test quality-cli web-lint web-build
 	@echo ""
 	@echo "OK — PR gates passed (mirrors CI PR lane)"
 
-## Release gate — mirrors CI main-push lane (coverage 35%) + full basedpyright
+## Release gate — mirrors CI main-push lane (coverage 60%) + full basedpyright
 ## audit (warnings + info). Run before tagging a release.
 quality-strict: ci-lint ci-test-coverage quality-cli web-lint web-build
 	@echo ""
