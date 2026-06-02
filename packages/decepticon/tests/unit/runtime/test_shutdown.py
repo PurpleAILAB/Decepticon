@@ -449,3 +449,47 @@ def time_monotonic_plus(seconds: float) -> float:
     import time
 
     return time.monotonic() + seconds
+
+
+class TestPerComponentTimeout:
+    """Each ``_write_*`` step must be bounded so one hung writer cannot
+    consume the whole flush deadline and starve the remaining steps."""
+
+    def test_hung_component_is_bounded_and_others_still_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import time as _time
+
+        from decepticon.runtime import shutdown as mod
+
+        monkeypatch.setattr(mod, "PER_COMPONENT_FLUSH_SECONDS", 0.2, raising=False)
+
+        state = {
+            "workspace_path": str(tmp_path),
+            "engagement_name": "hang-test",
+            "objectives": [{"id": "OBJ-001"}],
+            "objective_counter": 1,
+            "pending_findings": [{"title": "x", "severity": "low"}],
+        }
+        mod._state_provider = lambda: state
+
+        def _hang(*_args: object, **_kwargs: object) -> int:
+            _time.sleep(5.0)
+            return 0
+
+        monkeypatch.setattr(mod, "_write_inflight_findings", _hang)
+
+        start = _time.monotonic()
+        result = mod._run_flush("SIGINT", deadline=_time.monotonic() + 4.0)
+        elapsed = _time.monotonic() - start
+
+        # Hung step must be bounded — well under the total 4 s deadline.
+        assert elapsed < 2.0, f"flush stalled for {elapsed:.2f}s"
+        # Hung step is recorded as errored, with zero side effects.
+        assert result.findings_written == 0
+        assert any("findings" in e for e in result.errors), result.errors
+        # Subsequent steps must still execute and persist their output.
+        assert result.opplan_written is True
+        assert result.partial_executive_written is True
+        assert (tmp_path / "plan" / "opplan.json").exists()
+        assert (tmp_path / "report" / "report_partial_executive.md").exists()
