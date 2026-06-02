@@ -21,12 +21,48 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import threading
 from collections import deque
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.tools import tool
+
+log = logging.getLogger(__name__)
+
+# Per-handle close timeout: one hung Playwright handle must not wedge cleanup.
+_CLOSE_TIMEOUT_S = 5.0
+
+
+async def _safe_close(
+    obj: Any,
+    name: str,
+    *,
+    timeout: float = _CLOSE_TIMEOUT_S,
+    method: str = "close",
+) -> None:
+    """Await ``obj.<method>()`` with a bounded timeout, logging any failure.
+
+    Replaces silent ``except Exception: pass`` blocks: a hung handle is
+    cancelled after ``timeout`` seconds and every failure is recorded so
+    operators can diagnose leaks instead of seeing the resource vanish.
+    """
+    if obj is None:
+        return
+    close_fn: Callable[[], Awaitable[Any]] = getattr(obj, method)
+    try:
+        await asyncio.wait_for(close_fn(), timeout=timeout)
+    except asyncio.TimeoutError:
+        log.warning(
+            "browser cleanup: %s.%s() timed out after %.2fs; abandoning handle",
+            name,
+            method,
+            timeout,
+        )
+    except Exception as exc:  # noqa: BLE001 — close paths must never re-raise
+        log.warning("browser cleanup: %s.%s() failed: %s", name, method, exc)
 
 
 class BrowserActionError(RuntimeError):
@@ -212,31 +248,16 @@ class BrowserSessionManager:
 
     async def close(self) -> dict[str, Any]:
         async with self._lock:
-            for tab in self._tabs.values():
-                try:
-                    await tab.page.close()
-                except Exception:
-                    pass
+            for tab_id, tab in self._tabs.items():
+                await _safe_close(tab.page, f"page[{tab_id}]")
             self._tabs.clear()
             self._active = None
-            if self._context is not None:
-                try:
-                    await self._context.close()
-                except Exception:
-                    pass
-                self._context = None
-            if self._browser is not None:
-                try:
-                    await self._browser.close()
-                except Exception:
-                    pass
-                self._browser = None
-            if self._playwright is not None:
-                try:
-                    await self._playwright.stop()
-                except Exception:
-                    pass
-                self._playwright = None
+            await _safe_close(self._context, "context")
+            self._context = None
+            await _safe_close(self._browser, "browser")
+            self._browser = None
+            await _safe_close(self._playwright, "playwright", method="stop")
+            self._playwright = None
             return {"closed": True}
 
 
