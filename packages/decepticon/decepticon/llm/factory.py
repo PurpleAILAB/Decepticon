@@ -27,7 +27,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from langchain_core.language_models import BaseChatModel
@@ -1137,6 +1137,57 @@ def _redact_secrets(text: str) -> str:
     return text
 
 
+ProviderErrorClass = Literal["retryable", "fatal"]
+
+# HTTP status → class. 408/425/429 + 5xx are worth a retry / fallback hop;
+# 4xx auth/config (400/401/403/404) won't be fixed by another attempt.
+_RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+_FATAL_STATUS = frozenset({400, 401, 403, 404})
+
+# Last-resort message scrape when the exception lacks ``status_code`` —
+# LiteLLM/openai surface the upstream status only in the body text.
+_STATUS_IN_MSG = re.compile(r"(?:error\s*code|status(?:_code)?|http)\D{0,8}(\d{3})", re.I)
+
+
+def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
+    """Tag a provider exception as ``retryable`` or ``fatal``.
+
+    Inspection order (cheapest signal first):
+      1. Our own ``LLMTimeoutError`` and httpx transport errors → retryable.
+      2. ``status_code`` attribute (openai.APIStatusError shape).
+      3. ``response.status_code`` (httpx.HTTPStatusError shape).
+      4. Regex over ``str(exc)`` — LiteLLM nests upstream status in the body.
+
+    Default for unrecognised shapes is ``retryable`` so we preserve today's
+    behavior (LiteLLM ``num_retries`` keeps spinning). Only flip to ``fatal``
+    on a positive 4xx signal.
+    """
+    if isinstance(exc, LLMTimeoutError):
+        return "retryable"
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return "retryable"
+
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        response = getattr(exc, "response", None)
+        status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        if status in _FATAL_STATUS:
+            return "fatal"
+        if status in _RETRYABLE_STATUS:
+            return "retryable"
+
+    match = _STATUS_IN_MSG.search(str(exc))
+    if match is not None:
+        code = int(match.group(1))
+        if code in _FATAL_STATUS:
+            return "fatal"
+        if code in _RETRYABLE_STATUS:
+            return "retryable"
+
+    return "retryable"
+
+
 def _reraise_if_connection_error(exc: Exception) -> None:
     err_type = type(exc).__name__
     if any(
@@ -1173,6 +1224,9 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     err_type = type(exc).__name__
     msg = str(exc)
     msg_lower = msg.lower()
+    fatal_prefix = (
+        "non-retryable provider error: " if _classify_provider_error(exc) == "fatal" else ""
+    )
     # Match on the raw text (status codes / keywords are not secret-shaped),
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
@@ -1192,7 +1246,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
 
     if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
         raise RuntimeError(
-            f"Model '{model_name}' rejected the request (400). "
+            f"{fatal_prefix}Model '{model_name}' rejected the request (400). "
             f"This usually means a parameter the model no longer supports "
             f"(e.g. temperature on Claude Opus 4.7). Underlying: {safe_msg}"
         ) from exc
@@ -1203,7 +1257,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
         or "invalid_api_key" in msg_lower
     ):
         raise RuntimeError(
-            f"Model '{model_name}' rejected your credentials (401). "
+            f"{fatal_prefix}Model '{model_name}' rejected your credentials (401). "
             f"Check the API key for that provider in ~/.decepticon/.env, "
             f"or run 'decepticon onboard --reset'.\nUnderlying: {safe_msg}"
         ) from exc
@@ -1217,7 +1271,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
 
     if "notfound" in err_type.lower() or "code: 404" in msg_lower:
         raise RuntimeError(
-            f"Model '{model_name}' is not registered in the LiteLLM proxy "
+            f"{fatal_prefix}Model '{model_name}' is not registered in the LiteLLM proxy "
             f"(404). For local Ollama, set OLLAMA_MODEL to something you "
             f"actually pulled ('ollama list'). For cloud providers, check "
             f"that the model id matches config/litellm.yaml.\n"
