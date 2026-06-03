@@ -48,6 +48,7 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
         dev cli-dev web-dev infra \
         quality quality-strict quality-cli test test-local lint lint-fix \
         ci-lint ci-test ci-test-coverage \
+        asset-coverage \
         web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
@@ -78,6 +79,7 @@ help:
 	@echo "  make test-local     pytest locally (uv sync --dev; takes ARGS=)"
 	@echo "  make lint           Python lint + format check + basedpyright (all levels, local exploratory)"
 	@echo "  make lint-fix       Auto-fix Python lint + format"
+	@echo "  make asset-coverage     Coverage report: covered/partial/gap across the 75 asset types"
 	@echo ""
 	@echo "Web dashboard (single checks):"
 	@echo "  make web-build    Prisma generate + Next build"
@@ -241,6 +243,10 @@ quality-cli: node-install
 	npm run typecheck --workspace=@decepticon/cli
 	npm run build --workspace=@decepticon/cli
 	npm run test --workspace=@decepticon/cli
+
+## Asset-type coverage report — covered/partial/gap across the 75 asset types.
+asset-coverage:
+	uv run python scripts/asset_coverage.py
 
 ## PR gate — mirrors CI PR lane (errors-only typecheck + fast pytest + CLI + Web).
 ## Use before opening a PR; passing this guarantees CI will pass.
