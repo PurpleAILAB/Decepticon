@@ -40,6 +40,7 @@ from typing_extensions import override
 from decepticon.middleware.opplan import _reduce_engagement_name, _reduce_workspace_path
 from decepticon.tools.bash.bash import bash_workspace
 from decepticon.tools.research._engagement_scope import set_active_engagement
+from decepticon_core.types.asset_types import classify
 
 
 class EngagementContextState(AgentState):
@@ -218,6 +219,71 @@ def _build_deconfliction_injection(data: dict[str, Any]) -> str:
     )
 
 
+def _asset_routing_active() -> bool:
+    """Truthy evaluation of DECEPTICON_ASSET_ROUTING (default off)."""
+    return os.environ.get("DECEPTICON_ASSET_ROUTING", "").strip().lower() not in _FALSY_ENV_VALUES
+
+
+def _load_roe_scope(workspace: str) -> list[tuple[str, str]]:
+    """Return ``[(target, type), ...]`` from ``<workspace>/plan/roe.json:in_scope``."""
+    root = workspace.rstrip("/") or workspace
+    path = Path(root) / "plan" / "roe.json"
+    if not path.exists():
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("engagement: failed to read %s: %s; skipping asset brief", path, exc)
+        return []
+    entries = data.get("in_scope") if isinstance(data, dict) else None
+    out: list[tuple[str, str]] = []
+    for entry in entries or []:
+        if isinstance(entry, dict):
+            target = entry.get("target")
+            kind = entry.get("type", "")
+            if isinstance(target, str) and target:
+                out.append((target, kind if isinstance(kind, str) else ""))
+    return out
+
+
+def _build_asset_coverage_injection(scope: list[tuple[str, str]]) -> str:
+    """Compact per-asset routing brief. Advice to the free-choice dispatcher."""
+    if not scope:
+        return ""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for target, kind in scope:
+        asset = classify(target, hint=kind or None)
+        if asset is None or asset.id in seen:
+            continue
+        seen.add(asset.id)
+        agents = (
+            ", ".join(asset.agents)
+            if asset.agents
+            else "(no dedicated agent — orchestrate manually)"
+        )
+        flag = " — SAFETY-CRITICAL (RoE/ConOps gate)" if asset.safety_critical else ""
+        if asset.gated_by_conops:
+            flag += f" — gated_by_conops: {asset.gated_by_conops}"
+        note = (
+            ""
+            if asset.coverage == "covered"
+            else f" [coverage: {asset.coverage} — expect to improvise/extend]"
+        )
+        lines.append(
+            f"- **{asset.label}** (`{asset.id}`){flag}: route to {agents}. "
+            f'Load skills via list_skills(tag_filter=["{asset.skill_tag}"]){note}.'
+        )
+    if not lines:
+        return ""
+    return (
+        "\n\n[Asset Coverage Brief — generated from the in-scope asset types]\n"
+        "For each in-scope asset type below, dispatch the named subagent(s) and "
+        "load the tagged skills. This is guidance, not a hard constraint — you "
+        "retain free choice over dispatch.\n" + "\n".join(lines)
+    )
+
+
 def _format_extra_services(target_url: str, extra_ports: dict[int, int]) -> str:
     if not extra_ports:
         return ""
@@ -337,6 +403,11 @@ class EngagementContextMiddleware(AgentMiddleware):
                 block = _build_deconfliction_injection(deconfliction)
                 if block:
                     sections.append(block)
+            if _asset_routing_active():
+                scope = _load_roe_scope(workspace)
+                asset_block = _build_asset_coverage_injection(scope)
+                if asset_block:
+                    sections.append(asset_block)
         if _benchmark_mode_active():
             sections.append(
                 _build_benchmark_injection(
