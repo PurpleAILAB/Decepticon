@@ -25,17 +25,25 @@ from __future__ import annotations
 from decepticon_core.protocols.agent import AgentProtocol
 from decepticon_core.protocols.backend import BackendProtocol
 from decepticon_core.protocols.callback import CallbackProtocol
+from decepticon_core.protocols.identity_provider import IdentityProvider
 from decepticon_core.protocols.llm import LLMProtocol
 from decepticon_core.protocols.middleware import MiddlewareProtocol
+from decepticon_core.protocols.platform_adapter import PlatformAdapter
+from decepticon_core.protocols.report_template import ReportTemplate
 from decepticon_core.protocols.sandbox import SandboxProtocol
+from decepticon_core.protocols.scope_provider import ScopeProvider
 from decepticon_core.protocols.tool import ToolProtocol
 
 __all__ = [
     "AgentProtocol",
     "BackendProtocol",
     "CallbackProtocol",
+    "IdentityProvider",
     "LLMProtocol",
     "MiddlewareProtocol",
+    "PlatformAdapter",
+    "ReportTemplate",
     "SandboxProtocol",
+    "ScopeProvider",
     "ToolProtocol",
 ]
