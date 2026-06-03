@@ -1,7 +1,11 @@
 # Engagement-asset taxonomy seeded into the Skillogy graph.
-# Each entry becomes one :AssetType node; the `category` field is
-# emitted as a property and used after build to wire HAS_SUBTYPE edges
-# from category-name -> child-name.
+# Each entry becomes one :AssetType node.
+#   `category`  is emitted as a property and wires a HAS_SUBTYPE edge
+#               category-name -> child-name. The root `asset` has none.
+#   `phases`    (optional) wires an ENGAGED_VIA edge AssetType -> :Phase for
+#               each listed phase, connecting the taxonomy to the live skill
+#               graph so a classifier can resolve asset -> phase -> skills /
+#               MoC / agent. Every value MUST be a :Phase.name from phases.yaml.
 asset_types:
   # Root
   - {name: asset,             category: root}
@@ -20,20 +24,25 @@ asset_types:
   # Network identifiers / scope selectors
   - {name: cidr,              category: network-identifier}
   - {name: ip-address,        category: network-identifier}
-  - {name: domain,            category: network-identifier}
-  - {name: subdomain,         category: network-identifier}
+  - {name: domain,            category: network-identifier, phases: [reconnaissance, osint]}
+  - {name: subdomain,         category: network-identifier, phases: [reconnaissance, osint]}
   - {name: wildcard,          category: network-identifier}
   - {name: url,               category: network-identifier}
   - {name: asn,               category: network-identifier}
 
+  # Identities (OSINT entrypoints)
+  - {name: identity,          category: service,           phases: [osint]}
+  - {name: employee,          category: identity,          phases: [osint]}
+  - {name: email-identity,    category: identity,          phases: [osint, phishing]}
+
   # Web / API services
   - {name: web-service,       category: service}
-  - {name: http,              category: web-service}
-  - {name: https,             category: web-service}
-  - {name: websocket,         category: web-service}
+  - {name: http,              category: web-service,       phases: [web-exploitation]}
+  - {name: https,             category: web-service,       phases: [web-exploitation]}
+  - {name: websocket,         category: web-service,       phases: [web-exploitation]}
   - {name: api,               category: web-service}
-  - {name: api-rest,          category: api}
-  - {name: api-graphql,       category: api}
+  - {name: api-rest,          category: api,               phases: [web-exploitation]}
+  - {name: api-graphql,       category: api,               phases: [web-exploitation]}
   - {name: grpc-service,      category: api}
   - {name: oauth-sso-provider, category: api}
 
@@ -45,12 +54,12 @@ asset_types:
   # Database / data platforms
   - {name: database,          category: service}
   - {name: exposed-database,  category: database}
-  - {name: mysql,             category: database}
-  - {name: mssql,             category: database}
-  - {name: postgres,          category: database}
-  - {name: mongodb,           category: database}
-  - {name: redis,             category: database}
-  - {name: oracle-db,         category: database}
+  - {name: mysql,             category: database,          phases: [web-exploitation]}
+  - {name: mssql,             category: database,          phases: [web-exploitation]}
+  - {name: postgres,          category: database,          phases: [web-exploitation]}
+  - {name: mongodb,           category: database,          phases: [web-exploitation]}
+  - {name: redis,             category: database,          phases: [web-exploitation]}
+  - {name: oracle-db,         category: database,          phases: [web-exploitation]}
   - {name: data-storage,      category: service}
   - {name: data-warehouse,    category: data-storage}
   - {name: secrets-manager,   category: data-storage}
@@ -58,9 +67,9 @@ asset_types:
 
   # Directory / identity / auth
   - {name: directory-service, category: service}
-  - {name: active-directory,  category: directory-service}
-  - {name: ldap,              category: directory-service}
-  - {name: kerberos,          category: directory-service}
+  - {name: active-directory,  category: directory-service, phases: [active-directory]}
+  - {name: ldap,              category: directory-service, phases: [active-directory]}
+  - {name: kerberos,          category: directory-service, phases: [active-directory]}
   - {name: identity-auth,     category: service}
   - {name: saml-oidc-idp,     category: identity-auth}
   - {name: sso-ldap-ad-integration, category: identity-auth}
@@ -69,28 +78,28 @@ asset_types:
 
   # Remote access
   - {name: remote-access,     category: service}
-  - {name: ssh,               category: remote-access}
-  - {name: rdp,               category: remote-access}
-  - {name: winrm,             category: remote-access}
-  - {name: vpn,               category: remote-access}
+  - {name: ssh,               category: remote-access,     phases: [lateral-movement]}
+  - {name: rdp,               category: remote-access,     phases: [lateral-movement]}
+  - {name: winrm,             category: remote-access,     phases: [lateral-movement]}
+  - {name: vpn,               category: remote-access,     phases: [reconnaissance]}
 
   # File / share
   - {name: file-share,        category: service}
-  - {name: smb,               category: file-share}
-  - {name: nfs,               category: file-share}
-  - {name: ftp,               category: file-share}
+  - {name: smb,               category: file-share,        phases: [lateral-movement]}
+  - {name: nfs,               category: file-share,        phases: [discovery]}
+  - {name: ftp,               category: file-share,        phases: [discovery]}
 
   # Cloud
   - {name: cloud-resource,    category: service}
   - {name: aws-resource,      category: cloud-resource}
   - {name: aws-account,       category: aws-resource}
-  - {name: aws-s3,            category: aws-resource}
-  - {name: aws-ec2,           category: aws-resource}
-  - {name: aws-iam,           category: aws-resource}
-  - {name: azure-resource,    category: cloud-resource}
+  - {name: aws-s3,            category: aws-resource,      phases: [cloud]}
+  - {name: aws-ec2,           category: aws-resource,      phases: [cloud]}
+  - {name: aws-iam,           category: aws-resource,      phases: [cloud]}
+  - {name: azure-resource,    category: cloud-resource,    phases: [cloud]}
   - {name: azure-account,     category: azure-resource}
   - {name: azure-blob,        category: azure-resource}
-  - {name: gcp-resource,      category: cloud-resource}
+  - {name: gcp-resource,      category: cloud-resource,    phases: [cloud]}
   - {name: gcp-project,       category: gcp-resource}
   - {name: google-workspace,  category: cloud-resource}
   - {name: m365-tenant,       category: cloud-resource}
@@ -99,8 +108,8 @@ asset_types:
 
   # Container / orchestration
   - {name: container,         category: service}
-  - {name: kubernetes,        category: container}
-  - {name: docker,            category: container}
+  - {name: kubernetes,        category: container,         phases: [cloud]}
+  - {name: docker,            category: container,         phases: [cloud]}
   - {name: docker-registry,   category: container}
   - {name: container-image,   category: container}
   - {name: vm-container-image, category: container}
@@ -110,10 +119,10 @@ asset_types:
   - {name: ios-application,   category: mobile-application}
   - {name: ios-app-store,     category: ios-application}
   - {name: ios-testflight,    category: ios-application}
-  - {name: ios-ipa,           category: ios-application}
+  - {name: ios-ipa,           category: ios-application,   phases: [mobile]}
   - {name: android-application, category: mobile-application}
   - {name: android-play-store, category: android-application}
-  - {name: android-apk,       category: android-application}
+  - {name: android-apk,       category: android-application, phases: [mobile]}
   - {name: desktop-application, category: application}
   - {name: windows-microsoft-store, category: desktop-application}
   - {name: macos-application, category: desktop-application}
@@ -124,17 +133,41 @@ asset_types:
   # Desktop / compiled / source artifacts
   - {name: source-code,       category: software-artifact}
   - {name: executable,        category: software-artifact}
-  - {name: firmware,          category: software-artifact}
+  - {name: elf-binary,        category: executable,        phases: [reverse-engineering]}
+  - {name: pe-binary,         category: executable,        phases: [reverse-engineering]}
+  - {name: macho-binary,      category: executable,        phases: [reverse-engineering]}
+  - {name: firmware,          category: software-artifact, phases: [iot, reverse-engineering]}
   - {name: sdk-client-library, category: software-artifact}
   - {name: cryptographic-library, category: software-artifact}
 
+  # Software supply chain
+  - {name: software-package,  category: software-artifact}
+  - {name: npm-package,       category: software-package,  phases: [supply-chain]}
+  - {name: pypi-package,      category: software-package,  phases: [supply-chain]}
+  - {name: crates-package,    category: software-package,  phases: [supply-chain]}
+  - {name: oci-image,         category: software-package,  phases: [supply-chain]}
+  - {name: ci-pipeline,       category: software-package,  phases: [supply-chain]}
+
   # ICS / OT
   - {name: ics-ot,            category: service}
-  - {name: modbus,            category: ics-ot}
-  - {name: siemens-s7,        category: ics-ot}
-  - {name: bacnet,            category: ics-ot}
-  - {name: dnp3,              category: ics-ot}
-  - {name: opcua,             category: ics-ot}
+  - {name: modbus,            category: ics-ot,            phases: [ics-ot]}
+  - {name: siemens-s7,        category: ics-ot,            phases: [ics-ot]}
+  - {name: bacnet,            category: ics-ot,            phases: [ics-ot]}
+  - {name: dnp3,              category: ics-ot,            phases: [ics-ot]}
+  - {name: opcua,             category: ics-ot,            phases: [ics-ot]}
+
+  # IoT / embedded
+  - {name: iot-device,        category: service}
+  - {name: iot-firmware,      category: iot-device,        phases: [iot, reverse-engineering]}
+  - {name: ble-device,        category: iot-device,        phases: [iot]}
+  - {name: zigbee-device,     category: iot-device,        phases: [iot]}
+  - {name: zwave-device,      category: iot-device,        phases: [iot]}
+  - {name: sub-ghz-device,    category: iot-device,        phases: [iot]}
+  - {name: lorawan-device,    category: iot-device,        phases: [iot]}
+
+  # Wireless / RF
+  - {name: wireless-network,  category: service}
+  - {name: wifi-network,      category: wireless-network,  phases: [wireless]}
 
   # Hardware / physical / RF
   - {name: hardware-iot,      category: hardware-physical}
@@ -143,8 +176,8 @@ asset_types:
 
   # Email / communications / integrations
   - {name: email-server,      category: service}
-  - {name: smtp,              category: email-server}
-  - {name: imap,              category: email-server}
+  - {name: smtp,              category: email-server,      phases: [phishing, reconnaissance]}
+  - {name: imap,              category: email-server,      phases: [phishing]}
   - {name: email-infrastructure, category: email-server}
   - {name: chat-messaging-integration, category: communication-integration}
   - {name: webhook-endpoint,  category: communication-integration}
@@ -152,22 +185,29 @@ asset_types:
 
   # AI / LLM / ML
   - {name: ai-service,        category: service}
-  - {name: llm-endpoint,      category: ai-service}
-  - {name: rag-vector-store,  category: ai-service}
-  - {name: model-registry,    category: ai-service}
-  - {name: ai-model,          category: ai-service}
-  - {name: llm-safety-classifier, category: ai-service}
-  - {name: ml-model-artifact, category: ai-service}
-  - {name: ai-inference-endpoint, category: ai-service}
-  - {name: training-data-pipeline, category: ai-service}
+  - {name: llm-endpoint,      category: ai-service,        phases: [ai-security]}
+  - {name: rag-vector-store,  category: ai-service,        phases: [ai-security]}
+  - {name: model-registry,    category: ai-service,        phases: [ai-security]}
+  - {name: ai-model,          category: ai-service,        phases: [ai-security]}
+  - {name: llm-safety-classifier, category: ai-service,    phases: [ai-security]}
+  - {name: ml-model-artifact, category: ai-service,        phases: [ai-security]}
+  - {name: ai-inference-endpoint, category: ai-service,    phases: [ai-security]}
+  - {name: training-data-pipeline, category: ai-service,   phases: [ai-security]}
 
   # Web3 / blockchain
   - {name: blockchain,        category: blockchain-asset}
   - {name: dlt,               category: blockchain-asset}
-  - {name: smart-contract,    category: blockchain-asset}
-  - {name: blockchain-node,   category: blockchain-asset}
-  - {name: defi-protocol,     category: blockchain-asset}
-  - {name: token-contract,    category: smart-contract}
-  - {name: cross-chain-bridge, category: blockchain-asset}
-  - {name: oracle-integration, category: blockchain-asset}
-  - {name: crypto-wallet,     category: blockchain-asset}
+  - {name: smart-contract,    category: blockchain-asset,  phases: [smart-contracts]}
+  - {name: blockchain-node,   category: blockchain-asset,  phases: [smart-contracts]}
+  - {name: defi-protocol,     category: blockchain-asset,  phases: [smart-contracts]}
+  - {name: token-contract,    category: smart-contract,    phases: [smart-contracts]}
+  - {name: cross-chain-bridge, category: blockchain-asset, phases: [smart-contracts]}
+  - {name: oracle-integration, category: blockchain-asset, phases: [smart-contracts]}
+  - {name: crypto-wallet,     category: blockchain-asset,  phases: [smart-contracts]}
+
+  # Forensic evidence (DFIR)
+  - {name: evidence,          category: service}
+  - {name: memory-image,      category: evidence,          phases: [dfir]}
+  - {name: disk-image,        category: evidence,          phases: [dfir]}
+  - {name: pcap,              category: evidence,          phases: [dfir]}
+  - {name: log-bundle,        category: evidence,          phases: [dfir]}

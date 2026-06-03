@@ -22,6 +22,7 @@ import yaml
 import decepticon
 from decepticon.graph_registry import BUILTIN_GRAPHS, STANDARD_GRAPHS
 from decepticon.middleware.skillogy import _PHASE_FOR_ROLE
+from decepticon.skillogy.builder.seeds import load_asset_types
 from decepticon_core.contracts.slots import SLOTS_PER_ROLE
 from decepticon_core.types.llm import AGENT_TIERS
 
@@ -116,3 +117,34 @@ def test_moc_parent_phases_are_seeded():
         moc["name"]: moc["parent_phase"] for moc in data["mocs"] if moc["parent_phase"] not in valid
     }
     assert not bad, f"MoC parent_phase not seeded in phases.yaml: {bad}"
+
+
+# Domain phases an engagement is entered through by classifying a target asset.
+# Excludes follow-on phases (post-exploit) and meta phases (orchestration /
+# planning / analyst), which are not asset entry points. Update deliberately
+# when a new asset-backed specialist domain is added.
+_ASSET_ENTRY_DOMAINS = {
+    "reconnaissance",
+    "osint",
+    "web-exploitation",
+    "active-directory",
+    "cloud",
+    "mobile",
+    "ics-ot",
+    "iot",
+    "wireless",
+    "ai-security",
+    "reverse-engineering",
+    "dfir",
+    "phishing",
+    "smart-contracts",
+    "supply-chain",
+}
+
+
+def test_asset_taxonomy_covers_entry_domains():
+    """Every asset-entry domain must be reachable from some :AssetType via
+    ENGAGED_VIA, or the classifier cannot route that target class to its agent."""
+    reached = {phase for at in load_asset_types() for phase in at.phases}
+    missing = sorted(_ASSET_ENTRY_DOMAINS - reached)
+    assert not missing, f"asset entry domains unreachable from any AssetType: {missing}"

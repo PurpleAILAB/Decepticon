@@ -33,10 +33,14 @@ def emit_phase_records() -> tuple[list[Node], list[Edge]]:
 
 
 def emit_asset_type_records() -> tuple[list[Node], list[Edge]]:
-    """Emit :AssetType nodes + HAS_SUBTYPE edges from each category to its child.
+    """Emit :AssetType nodes + HAS_SUBTYPE + ENGAGED_VIA edges.
 
-    The root category (``service``) has its category property set to
-    ``root``; no HAS_SUBTYPE edge points to it.
+    - ``HAS_SUBTYPE``: category AssetType -> child AssetType (the root
+      ``service`` has no parent edge).
+    - ``ENGAGED_VIA``: AssetType -> :Phase for each declared phase,
+      connecting the otherwise-disconnected asset taxonomy to the live
+      skill graph so a classifier can resolve asset -> phase -> skills /
+      MoC / agent.
     """
     seeds = load_asset_types()
     nodes = [
@@ -49,19 +53,30 @@ def emit_asset_type_records() -> tuple[list[Node], list[Edge]]:
     ]
     edges: list[Edge] = []
     for at in seeds:
-        if at.category == "root":
-            continue
-        edges.append(
-            Edge(
-                edge_type="HAS_SUBTYPE",
-                from_label="AssetType",
-                from_key_field="name",
-                from_key=at.category,
-                to_label="AssetType",
-                to_key_field="name",
-                to_key=at.name,
+        if at.category != "root":
+            edges.append(
+                Edge(
+                    edge_type="HAS_SUBTYPE",
+                    from_label="AssetType",
+                    from_key_field="name",
+                    from_key=at.category,
+                    to_label="AssetType",
+                    to_key_field="name",
+                    to_key=at.name,
+                )
             )
-        )
+        for phase in at.phases:
+            edges.append(
+                Edge(
+                    edge_type="ENGAGED_VIA",
+                    from_label="AssetType",
+                    from_key_field="name",
+                    from_key=at.name,
+                    to_label="Phase",
+                    to_key_field="name",
+                    to_key=phase,
+                )
+            )
     return nodes, edges
 
 
