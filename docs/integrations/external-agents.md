@@ -96,10 +96,26 @@ mcp_servers:
 
 ```bash
 # Install the skill for Hermes (copy the skill folder into Hermes' skills dir)
-cp -r ./Decepticon/integrations/agent-skills/decepticon ~/.hermes/skills/decepticon
+cp -r ./Decepticon/integrations/agent-skills/decepticon ~/.hermes/skills/red-teaming/decepticon
 ```
 
 Restart Hermes; the `decepticon` skill and `decepticon_*` tools become available.
+
+### The bundled skill
+
+The skill at `integrations/agent-skills/decepticon/` is one canonical AgentSkill
+that loads in **both** OpenClaw and Hermes (same `SKILL.md` format), using
+progressive disclosure so the always-loaded context stays lean:
+
+- `SKILL.md` — the playbook (mental model, authorization, the core loop,
+  polling cadence, result interpretation, error recovery).
+- `reference.md` — exact params, defaults, clamps, and return schemas per tool.
+- `examples.md` — worked end-to-end tool-call sequences (bug bounty from a
+  phone, recon-only, steering, resume, live burst, failure handling).
+
+Both install commands above copy the whole directory, so the reference files
+come along automatically. OpenClaw installs it globally as `decepticon`; Hermes
+auto-discovers it under the `red-teaming` category.
 
 ## 4. CLI-like workflow (what the agent does)
 
