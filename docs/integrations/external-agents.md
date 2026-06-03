@@ -1,21 +1,42 @@
 # External agents — OpenClaw & Hermes
 
 Decepticon ships an **engagement MCP server** so external agent runtimes can
-drive it as a tool: discover graphs, launch an authorized engagement, monitor
-it, and pull findings. This is what makes Decepticon usable from
-[OpenClaw](https://github.com/openclaw/openclaw) and
-[Hermes](https://github.com/NousResearch/hermes-agent) — including from a phone,
-via those agents' chat channels.
+drive it like its CLI — from a phone, via those agents' chat channels. It
+exposes the full interactive loop over the Model Context Protocol: discover and
+resume engagements, launch one, **steer it by chatting**, **watch progress**,
+inspect the OPPLAN, and pull findings.
 
-The MCP server is a thin control plane. The red-team work runs inside the
-Decepticon LangGraph server (full RoE enforcement, sandbox, knowledge-graph
-persistence); the MCP layer only translates tool calls into LangGraph runs
-(`decepticon.mcp_server`) and reads persisted findings back as SARIF.
+This makes Decepticon usable from
+[OpenClaw](https://github.com/openclaw/openclaw) and
+[Hermes](https://github.com/NousResearch/hermes-agent).
 
 ```
 OpenClaw / Hermes  ──MCP──▶  decepticon-mcp  ──LangGraph SDK──▶  Decepticon server
    (chat / phone)              (bridge)         (HTTP :2024)        (16 agents, RoE, KG)
 ```
+
+The bridge is a thin control plane. The red-team work runs inside the
+Decepticon LangGraph server (full RoE enforcement, sandbox, knowledge-graph
+persistence); the MCP layer translates tool calls into LangGraph runs
+(`decepticon.mcp_server`) and reads persisted transcript/state/findings back.
+
+## Tools
+
+| Tool | Purpose |
+|------|---------|
+| `decepticon_list_graphs` | Discover engagement graphs (decepticon, recon, soundwave, …) |
+| `decepticon_list_engagements` | Browse / resume recent engagements |
+| `decepticon_start_engagement` | Launch a background engagement (targets + scope/RoE) |
+| `decepticon_send_message` | Steer / answer the coordinator / `/model` switch mid-run |
+| `decepticon_transcript` | Read the orchestrator narrative incrementally (watch) |
+| `decepticon_watch` | Tail the live sub-agent stream for a few seconds |
+| `decepticon_engagement_state` | Inspect OPPLAN / objectives / scope / phase |
+| `decepticon_engagement_status` | Latest run status + whether findings exist |
+| `decepticon_engagement_findings` | Findings summary / full SARIF v2.1.0 |
+| `decepticon_cancel_engagement` | Stop the active run |
+
+Every tool is keyed by the `thread_id` returned from `decepticon_start_engagement`
+(or listed by `decepticon_list_engagements`) — no run-id juggling, just like the CLI.
 
 ## 1. Install + run
 
@@ -28,22 +49,25 @@ langgraph dev                        # dev server on http://localhost:2024
 # or the Docker stack — see docs/deployment
 
 # Smoke-test the bridge over stdio (Ctrl-C to exit):
-decepticon-mcp --transport stdio
+DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport stdio
 ```
+
+> **`DECEPTICON_SKIP_BOOT=1`** — always set this for the bridge. It drives a
+> *separate* LangGraph server and never builds agents in-process, so the eager
+> framework boot is pure cold-start overhead. With it, the server starts in a
+> few seconds instead of ~30s; the wiring below sets it for you.
 
 The bridge connects to `DECEPTICON_API_URL` (default `http://localhost:2024`).
 Override with `--langgraph-url` or the env var.
 
 ## 2. OpenClaw
 
-Register the MCP server, then install the bundled skill:
-
 ```bash
 # Register the engagement MCP server (stdio)
 openclaw mcp set decepticon '{
   "command": "decepticon-mcp",
   "args": ["--transport", "stdio"],
-  "env": { "DECEPTICON_API_URL": "http://localhost:2024" }
+  "env": { "DECEPTICON_API_URL": "http://localhost:2024", "DECEPTICON_SKIP_BOOT": "1" }
 }'
 
 # Install the agent skill (clone the repo first, then point at the skill dir)
@@ -51,15 +75,13 @@ openclaw skills install ./Decepticon/integrations/agent-skills/decepticon --as d
 openclaw gateway restart
 ```
 
-Now message your OpenClaw agent (from the dashboard or any connected channel,
-e.g. Telegram for phone): *"Run a Decepticon recon engagement against
-`https://test.example.com`, scope only that host."* The agent will call
-`decepticon_start_engagement`, poll status, and report findings.
+Now message your OpenClaw agent (dashboard or any connected channel, e.g.
+Telegram for phone): *"Start a Decepticon recon engagement against
+`https://test.example.com` — scope only that host — then watch it and summarise
+findings."* The agent calls `decepticon_start_engagement`, polls
+`decepticon_transcript`, and reports findings.
 
 ## 3. Hermes
-
-Add the MCP server to `~/.hermes/config.yaml` and drop the skill into Hermes's
-skills directory:
 
 ```yaml
 # ~/.hermes/config.yaml
@@ -69,6 +91,7 @@ mcp_servers:
     args: ["--transport", "stdio"]
     env:
       DECEPTICON_API_URL: "http://localhost:2024"
+      DECEPTICON_SKIP_BOOT: "1"
 ```
 
 ```bash
@@ -76,31 +99,30 @@ mcp_servers:
 cp -r ./Decepticon/integrations/agent-skills/decepticon ~/.hermes/skills/decepticon
 ```
 
-Restart Hermes; the `decepticon` skill and `decepticon_*` tools become
-available to the agent.
+Restart Hermes; the `decepticon` skill and `decepticon_*` tools become available.
 
-## 4. Remote / networked use (optional)
+## 4. CLI-like workflow (what the agent does)
 
-For a networked deployment (agent host separate from the Decepticon host), run
-the bridge over HTTP instead of stdio:
+1. `decepticon_start_engagement(targets=[...], instruction="In scope: …; Out of scope: …")`
+   → keep the `thread_id`.
+2. `decepticon_transcript(thread_id, after_index=…)` — poll to narrate progress
+   (operator prompts, coordinator replies, `task()` delegations to specialists).
+   `decepticon_watch(thread_id)` tails the live sub-agent feed for a few seconds.
+3. `decepticon_send_message(thread_id, "focus on the API, skip the marketing site")`
+   — steer mid-engagement, answer the coordinator, or `/model anthropic/claude-opus-4-8`.
+4. `decepticon_engagement_state(thread_id)` — check the OPPLAN / phase.
+5. `decepticon_engagement_findings(engagement_name, include_sarif=true)` — pull results.
+6. Later, `decepticon_list_engagements()` to resume any thread by `thread_id`.
+
+## 5. Remote / networked use (optional)
 
 ```bash
-decepticon-mcp --transport streamable-http --host 0.0.0.0 --port 8765 \
-  --langgraph-url http://decepticon-host:2024
+DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport streamable-http \
+  --host 0.0.0.0 --port 8765 --langgraph-url http://decepticon-host:2024
 ```
 
 Point the agent's MCP client at `http://<bridge-host>:8765/mcp`. Restrict
 exposure to a trusted network — the bridge can launch authorized engagements.
-
-## Tools exposed
-
-| Tool | Purpose |
-|------|---------|
-| `decepticon_list_graphs` | Discover engagement graphs (decepticon, recon, soundwave, …) |
-| `decepticon_start_engagement` | Launch a background engagement (targets + scope/RoE) |
-| `decepticon_engagement_status` | Poll run status + findings availability |
-| `decepticon_engagement_findings` | Fetch findings summary / full SARIF |
-| `decepticon_cancel_engagement` | Cancel a running engagement |
 
 ## Authorization
 
