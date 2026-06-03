@@ -17,8 +17,11 @@ from importlib.metadata import entry_points
 from pathlib import Path
 
 import pytest
+import yaml
 
+import decepticon
 from decepticon.graph_registry import BUILTIN_GRAPHS, STANDARD_GRAPHS
+from decepticon.middleware.skillogy import _PHASE_FOR_ROLE
 from decepticon_core.contracts.slots import SLOTS_PER_ROLE
 from decepticon_core.types.llm import AGENT_TIERS
 
@@ -74,3 +77,27 @@ def test_known_specialists_fully_wired(role):
     assert role in AGENT_TIERS
     assert role in STANDARD_GRAPHS
     assert role in _subagent_entry_point_names()
+
+
+_PHASES_YAML = (
+    Path(decepticon.__file__).resolve().parent / "skillogy" / "builder" / "seeds" / "phases.yaml"
+)
+
+
+def _seeded_phase_names() -> set[str]:
+    data = yaml.safe_load(_PHASES_YAML.read_text(encoding="utf-8"))
+    return {phase["name"] for phase in data["phases"]}
+
+
+def test_skillogy_phase_values_are_seeded_phases():
+    """Every ``_PHASE_FOR_ROLE`` value must be a real seeded ``:Phase`` node."""
+    valid = _seeded_phase_names()
+    bad = {role: phase for role, phase in _PHASE_FOR_ROLE.items() if phase not in valid}
+    assert not bad, f"_PHASE_FOR_ROLE values not seeded in phases.yaml: {bad}"
+
+
+def test_every_standard_graph_has_a_skillogy_phase():
+    """Each standard agent must map to a Skillogy phase, else it loses
+    phase-scoped skill retrieval under ``DECEPTICON_USE_SKILLOGY``."""
+    missing = sorted(set(STANDARD_GRAPHS) - set(_PHASE_FOR_ROLE))
+    assert not missing, f"standard agents missing a _PHASE_FOR_ROLE mapping: {missing}"
