@@ -80,11 +80,16 @@ telemetry = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp>=1.27",
 ]
-all = ["decepticon[neo4j,telemetry]"]
+# MCP server — exposes Decepticon engagement control over the Model
+# Context Protocol so external agents (OpenClaw, Hermes, or any MCP
+# client) can drive engagements. Provides the ``decepticon-mcp`` script.
+mcp = ["mcp>=1.9.0"]
+all = ["decepticon[neo4j,telemetry,mcp]"]
 
 [project.scripts]
 decepticon-cli = "decepticon.cli.__main__:main"
 decepticon-kg-health = "decepticon.tools.research.health:main"
+decepticon-mcp = "decepticon.mcp_server.__main__:main"
 
 # Plugin entry-point groups consumed by ``decepticon.plugin_loader``.
 # External packages (SaaS or community plugins) declare their
