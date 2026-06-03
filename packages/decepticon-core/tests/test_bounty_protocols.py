@@ -23,7 +23,6 @@ from decepticon_core.types.bounty import (
 )
 from decepticon_core.types.roe import EnforcementMode, MachineEnforcement, ScopeRule
 
-
 # ─────────────── ScopeProvider ───────────────
 
 
