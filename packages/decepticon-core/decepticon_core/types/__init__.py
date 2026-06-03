@@ -24,6 +24,6 @@ no ``langchain`` / ``langgraph`` / ``deepagents`` / ``httpx`` /
 
 from __future__ import annotations
 
-from decepticon_core.types import engagement, kg, llm, roe
+from decepticon_core.types import asset_types, engagement, kg, llm, roe
 
-__all__ = ["engagement", "llm", "kg", "roe"]
+__all__ = ["asset_types", "engagement", "llm", "kg", "roe"]

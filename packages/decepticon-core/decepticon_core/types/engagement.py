@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # ── Enums ─────────────────────────────────────────────────────────────
 
@@ -241,8 +241,22 @@ class ScopeEntry(BaseModel):
     """A single in-scope or out-of-scope target."""
 
     target: str = Field(description="Domain, IP range (CIDR), or asset identifier")
-    type: str = Field(description="domain, ip-range, cloud-resource, physical, etc.")
+    type: str = Field(
+        description="Canonical asset-type id (see decepticon_core.types.asset_types). Free-form input is normalized; unknown values are preserved."
+    )
     notes: str = ""
+
+    @field_validator("type")
+    @classmethod
+    def _normalize_asset_type(cls, v: str) -> str:
+        # Local import so engagement.py stays importable on its own
+        # (e.g. ``from decepticon_core.types.engagement import ScopeEntry``,
+        # bypassing types/__init__) without requiring asset_types to be
+        # loaded first. asset_types is pure stdlib — no import cycle.
+        from decepticon_core.types.asset_types import normalize_type
+
+        canonical = normalize_type(v)
+        return canonical if canonical is not None else v
 
 
 class EscalationContact(BaseModel):
