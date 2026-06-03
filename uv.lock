@@ -483,10 +483,14 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "mcp" },
     { name = "neo4j" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
+]
+mcp = [
+    { name = "mcp" },
 ]
 neo4j = [
     { name = "neo4j" },
@@ -499,7 +503,7 @@ telemetry = [
 
 [package.metadata]
 requires-dist = [
-    { name = "decepticon", extras = ["neo4j", "telemetry"], marker = "extra == 'all'", editable = "packages/decepticon" },
+    { name = "decepticon", extras = ["neo4j", "telemetry", "mcp"], marker = "extra == 'all'", editable = "packages/decepticon" },
     { name = "decepticon-core", editable = "packages/decepticon-core" },
     { name = "deepagents", specifier = ">=0.5.0" },
     { name = "defusedxml", specifier = ">=0.7.0" },
@@ -511,6 +515,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.0.0" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.2.0" },
     { name = "langgraph-sdk", specifier = ">=0.1.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.9.0" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.24" },
     { name = "opentelemetry-api", marker = "extra == 'telemetry'", specifier = ">=1.27" },
     { name = "opentelemetry-exporter-otlp", marker = "extra == 'telemetry'", specifier = ">=1.27" },
@@ -523,7 +528,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30.0" },
     { name = "xxhash", specifier = ">=3.0.0" },
 ]
-provides-extras = ["neo4j", "telemetry", "all"]
+provides-extras = ["neo4j", "telemetry", "mcp", "all"]
 
 [[package]]
 name = "decepticon-core"
