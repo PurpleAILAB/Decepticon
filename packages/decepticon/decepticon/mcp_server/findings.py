@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from decepticon.mcp_server.models import FindingsResult
-from decepticon.tools.research.sarif_export import export_findings_to_sarif
 from decepticon_core.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -71,6 +70,8 @@ def summarize_findings(
             level_counts={},
             sarif=None,
         )
+    from decepticon.tools.research.sarif_export import export_findings_to_sarif
+
     doc = export_findings_to_sarif(graph, engagement_name=engagement_name)
     runs = doc.get("runs") or [{}]
     results = runs[0].get("results", [])
