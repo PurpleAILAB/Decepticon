@@ -6,10 +6,10 @@ shape as ``decepticon.cli.scan`` so the orchestrator (and its RoE
 enforcement middleware) sees an identical engagement contract whether the
 trigger is the CLI or an external agent.
 
-Engagements are dispatched as **background** runs (``runs.create``, not
-``runs.stream``) so a long red-team run never blocks the calling agent's
-tool call — the agent polls :meth:`EngagementClient.run_status` and pulls
-findings when they appear.
+Everything is keyed by ``thread_id`` (the engagement handle) — the active
+run is resolved via ``runs.list`` exactly as the web/CLI live observer does,
+so callers never juggle run ids. Turns dispatch as background runs so a long
+red-team run never blocks the calling agent's tool call.
 """
 
 from __future__ import annotations
@@ -19,10 +19,20 @@ from collections.abc import Sequence
 from typing import Any
 
 from decepticon.mcp_server.config import ServerConfig
-from decepticon.mcp_server.models import GraphInfo, ScanMode, StartResult
+from decepticon.mcp_server.models import (
+    EngagementSummary,
+    GraphInfo,
+    RunHandle,
+    ScanMode,
+    StartResult,
+    StreamEvent,
+)
+from decepticon.mcp_server.streaming import watch_run
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("mcp_server.engagements")
+
+_ACTIVE_STATUSES = frozenset({"pending", "running"})
 
 
 class EngagementClient:
@@ -57,6 +67,36 @@ class EngagementClient:
             for entry in assistants
         ]
 
+    async def list_engagements(self, *, limit: int) -> list[EngagementSummary]:
+        """List recent engagement threads (most-recently-updated first)."""
+        client = self._ensure_client()
+        threads = await client.threads.search(limit=limit, sort_by="updated_at", sort_order="desc")
+        summaries: list[EngagementSummary] = []
+        for thread in threads:
+            values = thread.get("values") or {}
+            name = values.get("engagement_name") if isinstance(values, dict) else None
+            summaries.append(
+                EngagementSummary(
+                    thread_id=str(thread.get("thread_id", "")),
+                    engagement_name=str(name) if name else None,
+                    status=str(thread.get("status", "unknown")),
+                    created_at=_opt_str(thread.get("created_at")),
+                    updated_at=_opt_str(thread.get("updated_at")),
+                )
+            )
+        return summaries
+
+    async def get_state(self, thread_id: str) -> Any:
+        """Return the raw ThreadState for a thread (values + metadata)."""
+        client = self._ensure_client()
+        return await client.threads.get_state(thread_id)
+
+    async def latest_run(self, thread_id: str) -> dict[str, Any] | None:
+        """Return the most recent run dict for a thread, or None when there is none."""
+        client = self._ensure_client()
+        runs = await client.runs.list(thread_id, limit=1)
+        return runs[0] if runs else None
+
     async def start(
         self,
         *,
@@ -74,20 +114,6 @@ class EngagementClient:
             "scan_mode": scan_mode,
             "instruction": instruction,
         }
-        state_input: dict[str, Any] = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        "Run an authorized security engagement. Scope and rules "
-                        "of engagement are attached as JSON:\n\n"
-                        + json.dumps(scope_payload, indent=2)
-                    ),
-                }
-            ],
-            "engagement_name": engagement_name,
-            "scan_scope": scope_payload,
-        }
         run_config: dict[str, Any] = {
             "configurable": {"engagement_name": engagement_name, "scan_mode": scan_mode},
         }
@@ -98,7 +124,7 @@ class EngagementClient:
         run = await client.runs.create(
             thread_id,
             assistant_id=assistant,
-            input=state_input,
+            input=_engagement_input(scope_payload, engagement_name),
             config=run_config,
         )
         log.info("dispatched engagement %s on thread %s", engagement_name, thread_id)
@@ -111,13 +137,70 @@ class EngagementClient:
             langgraph_url=self._config.langgraph_url,
         )
 
-    async def run_status(self, *, thread_id: str, run_id: str) -> str:
-        """Return the current status string of a dispatched run."""
-        client = self._ensure_client()
-        run = await client.runs.get(thread_id, run_id)
-        return str(run.get("status", "unknown"))
+    async def send_message(
+        self, *, thread_id: str, message: str, assistant: str | None = None
+    ) -> RunHandle:
+        """Send an operator message onto an existing engagement thread.
 
-    async def cancel(self, *, thread_id: str, run_id: str) -> None:
-        """Cancel a running engagement."""
+        Continues the conversation (steer focus, answer the orchestrator, or use
+        ``/model <id>`` to switch models). The turn is enqueued after any active
+        run so it is never rejected, and dispatched in the background.
+        """
         client = self._ensure_client()
-        await client.runs.cancel(thread_id, run_id)
+        resolved = assistant
+        if resolved is None:
+            latest = await self.latest_run(thread_id)
+            resolved = str(latest.get("assistant_id")) if latest else self._config.default_assistant
+        run = await client.runs.create(
+            thread_id,
+            assistant_id=resolved,
+            input={"messages": [{"role": "user", "content": message}]},
+            multitask_strategy="enqueue",
+        )
+        return RunHandle(
+            thread_id=thread_id,
+            run_id=str(run["run_id"]),
+            assistant=resolved,
+            status=str(run.get("status", "pending")),
+        )
+
+    async def cancel(self, thread_id: str) -> str | None:
+        """Cancel the active run on a thread. Returns the cancelled run id, if any."""
+        latest = await self.latest_run(thread_id)
+        if latest is None or str(latest.get("status")) not in _ACTIVE_STATUSES:
+            return None
+        run_id = str(latest["run_id"])
+        await self._ensure_client().runs.cancel(thread_id, run_id)
+        return run_id
+
+    async def watch(
+        self, *, thread_id: str, run_id: str, max_seconds: float, max_events: int
+    ) -> tuple[list[StreamEvent], bool]:
+        """Tail a run's live stream, bounded by time and event count."""
+        return await watch_run(
+            self._ensure_client(),
+            thread_id=thread_id,
+            run_id=run_id,
+            max_seconds=max_seconds,
+            max_events=max_events,
+        )
+
+
+def _engagement_input(scope_payload: dict[str, Any], engagement_name: str) -> dict[str, Any]:
+    return {
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    "Run an authorized security engagement. Scope and rules of "
+                    "engagement are attached as JSON:\n\n" + json.dumps(scope_payload, indent=2)
+                ),
+            }
+        ],
+        "engagement_name": engagement_name,
+        "scan_scope": scope_payload,
+    }
+
+
+def _opt_str(value: Any) -> str | None:
+    return str(value) if value else None
