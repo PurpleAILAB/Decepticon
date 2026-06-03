@@ -1,6 +1,6 @@
 """Pure-pydantic types for the Decepticon contract layer.
 
-Four submodules:
+Five submodules:
 
   * ``engagement`` — red-team planning documents (RoE, ConOps, OPPLAN,
     Finding, Objective, OpsecLevel, C2Tier, MITREPhase, ...). Was
@@ -16,6 +16,12 @@ Four submodules:
     evaluation layer that decides allow/deny for a target or command;
     consumed by the framework's RoE-enforcement middleware. Distinct from
     ``engagement.RoE`` (the planning document).
+  * ``bounty`` — bug-bounty platform integration types (``Program``,
+    ``FindingSignature``, ``ReportDraft``, ``SubmittedReport``,
+    ``ReportStatus``, ``ReportState``). Consumed by ``PlatformAdapter``
+    implementations and the bugclaw orchestrator. Scope rules are NOT
+    redefined here — bug-bounty adapters produce ``MachineEnforcement``
+    instances that the existing RoE middleware consumes.
 
 These modules import only ``pydantic`` + stdlib + ``typing_extensions`` —
 no ``langchain`` / ``langgraph`` / ``deepagents`` / ``httpx`` /
@@ -24,6 +30,6 @@ no ``langchain`` / ``langgraph`` / ``deepagents`` / ``httpx`` /
 
 from __future__ import annotations
 
-from decepticon_core.types import engagement, kg, llm, roe
+from decepticon_core.types import bounty, engagement, kg, llm, roe
 
-__all__ = ["engagement", "llm", "kg", "roe"]
+__all__ = ["bounty", "engagement", "llm", "kg", "roe"]
