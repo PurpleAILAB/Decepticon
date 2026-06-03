@@ -101,3 +101,18 @@ def test_every_standard_graph_has_a_skillogy_phase():
     phase-scoped skill retrieval under ``DECEPTICON_USE_SKILLOGY``."""
     missing = sorted(set(STANDARD_GRAPHS) - set(_PHASE_FOR_ROLE))
     assert not missing, f"standard agents missing a _PHASE_FOR_ROLE mapping: {missing}"
+
+
+_MOC_YAML = (
+    Path(decepticon.__file__).resolve().parent / "skillogy" / "builder" / "seeds" / "moc.yaml"
+)
+
+
+def test_moc_parent_phases_are_seeded():
+    """Every MoC ``parent_phase`` must be a seeded ``:Phase`` (moc.yaml contract)."""
+    valid = _seeded_phase_names()
+    data = yaml.safe_load(_MOC_YAML.read_text(encoding="utf-8"))
+    bad = {
+        moc["name"]: moc["parent_phase"] for moc in data["mocs"] if moc["parent_phase"] not in valid
+    }
+    assert not bad, f"MoC parent_phase not seeded in phases.yaml: {bad}"
