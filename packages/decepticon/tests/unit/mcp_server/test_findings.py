@@ -63,3 +63,34 @@ def test_load_findings_graph_absent_returns_none(
 ) -> None:
     monkeypatch.setenv("DECEPTICON_ENGAGEMENT_WORKSPACE", str(tmp_path))
     assert load_findings_graph("eng") is None
+
+
+# ── path-traversal hardening (engagement_name is remote MCP input) ──────────
+# A malicious engagement name must never resolve outside the workspace root.
+# pathlib drops the left operand of ``/`` when the right side is absolute, and
+# treats ``..`` as a real parent step, so an unvalidated name is an arbitrary
+# file read + existence oracle on the bridge host.
+_UNSAFE_NAMES = [
+    "../../../../etc/ssl",
+    "/root/.ssh",
+    "a/b",
+    "..",
+    "",
+    "with space",
+    "x" * 200,
+    "name\x00.json",
+]
+
+
+@pytest.mark.parametrize("bad_name", _UNSAFE_NAMES)
+def test_engagement_workspace_rejects_unsafe_names(bad_name: str) -> None:
+    with pytest.raises(ValueError):
+        engagement_workspace(bad_name)
+
+
+@pytest.mark.parametrize("bad_name", _UNSAFE_NAMES)
+def test_load_findings_graph_rejects_unsafe_names(bad_name: str) -> None:
+    # Treated as "no findings" rather than reading an attacker-chosen path.
+    # No env override is set, so a valid name would resolve under $HOME; the
+    # unsafe names must short-circuit to None before any filesystem access.
+    assert load_findings_graph(bad_name) is None
