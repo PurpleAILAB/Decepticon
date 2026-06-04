@@ -1,8 +1,21 @@
-"""LangChain @tool wrappers for the Active Directory package."""
+"""LangChain @tool wrappers for the Active Directory package.
+
+Deprecation notice (ADR-0005, 2026-06-05).  The in-house BloodHound
+ingest + ADCS post-process tools below (``bh_ingest_zip``,
+``bh_ingest_json``, ``adcs_post_process``, ``dcsync_check``,
+``delegation_audit``, ``gpo_audit``, ``shadow_creds_audit``,
+``adcs_audit``) are deprecated in favour of the BHCE-backed
+``bhce_*`` surface in :mod:`decepticon.tools.ad.bh_tools`.  They emit
+``DeprecationWarning`` on every invocation, remain functional for
+one minor cycle, then move to ``decepticon.compat``, then are
+removed.  ``kerberos_classify`` stays — it parses local hash /
+ticket blobs with no BHCE equivalent.
+"""
 
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 from zipfile import BadZipFile
@@ -11,6 +24,7 @@ from langchain_core.tools import tool
 
 from decepticon.tools.ad.adcs import analyze_adcs_templates
 from decepticon.tools.ad.adcs_post import synthesise_adcs_post as _synthesise_adcs_post
+from decepticon.tools.ad.bh_tools import BHCE_TOOLS
 from decepticon.tools.ad.bloodhound import (
     ingest_bloodhound_zip as _ingest_bloodhound_zip_impl,
 )
@@ -24,6 +38,20 @@ from decepticon.tools.ad.kerberos import classify_hashcat_hash, parse_ticket
 from decepticon.tools.ad.shadow_creds import analyze_shadow_credentials
 from decepticon.tools.research._state import _load, _save
 from decepticon_core.utils.engagement_scope import get_active_engagement
+
+_DEPRECATION_MESSAGE = (
+    "{name} is deprecated under ADR-0005; use the BHCE-backed bhce_* "
+    "tools (bhce_status / bhce_cypher / bhce_ingest_zip) instead. "
+    "This tool will be removed one minor cycle after the cutover."
+)
+
+
+def _warn_deprecated(name: str) -> None:
+    warnings.warn(
+        _DEPRECATION_MESSAGE.format(name=name),
+        DeprecationWarning,
+        stacklevel=3,
+    )
 
 
 def _json(data: Any) -> str:
@@ -44,12 +72,14 @@ def _resolve_engagement() -> str:
 
 @tool
 def bh_ingest_zip(path: str) -> str:
-    """Merge a BloodHound collector ZIP into the engagement KG.
+    """Deprecated. Use ``bhce_ingest_zip`` instead.
 
-    Writes flow directly through ``KGStore.record_observations`` — a
-    single atomic batch per ZIP. The engagement label is resolved from
-    the ``EngagementContextMiddleware`` contextvar.
+    Legacy in-house BloodHound ZIP ingest into KGStore. The new
+    ``bhce_ingest_zip`` tool drives BHCE's official 3-step
+    file-upload + analysis pipeline instead, and BHCE derives every
+    ESC* / DCSync / GoldenCert edge for us.
     """
+    _warn_deprecated("bh_ingest_zip")
     engagement = _resolve_engagement()
     try:
         stats = _ingest_bloodhound_zip_impl(path, engagement=engagement)
@@ -60,7 +90,13 @@ def bh_ingest_zip(path: str) -> str:
 
 @tool
 def bh_ingest_json(path: str, type_hint: str = "") -> str:
-    """Merge a single BloodHound JSON file into the engagement KG."""
+    """Deprecated. Pack the JSON into a ZIP and call ``bhce_ingest_zip``.
+
+    BHCE's file-upload accepts JSON directly, but our agent surface
+    uniformly funnels through the ZIP path so ingest semantics stay
+    one-shape per call.
+    """
+    _warn_deprecated("bh_ingest_json")
     engagement = _resolve_engagement()
     try:
         data = Path(path).read_text(encoding="utf-8")
@@ -77,10 +113,12 @@ def bh_ingest_json(path: str, type_hint: str = "") -> str:
 
 @tool
 def dcsync_check() -> str:
-    """List principals with DCSync rights from the current KnowledgeGraph.
+    """Deprecated. Use ``bhce_cypher`` with the DCSync starter query.
 
-    Run after ``bh_ingest_*``.
+    Reference query (lives in the ``bloodhound-bhce`` skill):
+    ``MATCH (n)-[:DCSync]->(d:Domain) RETURN n.name, labels(n), d.name``
     """
+    _warn_deprecated("dcsync_check")
     graph, _ = _load()
     try:
         hits = dcsync_candidates(graph)
@@ -115,7 +153,14 @@ def kerberos_classify(hash_or_ticket: str) -> str:
 
 @tool
 def adcs_audit(certipy_json: str) -> str:
-    """Audit a Certipy find --json output for ESC1-ESC8 template weaknesses."""
+    """Deprecated. Prefer ``bhce_cypher`` over BHCE-ingested ADCS data.
+
+    Certipy JSON parsing remains available for runs where BHCE wasn't
+    used, but BHCE's PostProcessedRelationships covers ESC1-13 +
+    GoldenCert + TrustedForNTAuth more comprehensively than this
+    offline analyser.
+    """
+    _warn_deprecated("adcs_audit")
     try:
         data = json.loads(certipy_json)
     except json.JSONDecodeError as e:
@@ -126,11 +171,13 @@ def adcs_audit(certipy_json: str) -> str:
 
 @tool
 def delegation_audit() -> str:
-    """Analyze delegation configurations in the knowledge graph.
+    """Deprecated. Use ``bhce_cypher`` for delegation paths.
 
-    Identifies constrained delegation, unconstrained delegation, and
-    resource-based constrained delegation (RBCD) attack paths.
+    Reference: ``MATCH (n)-[:AllowedToDelegate|AllowedToAct*1..]->(t)
+    RETURN n.name, labels(n), t.name`` covers constrained,
+    unconstrained, and RBCD.
     """
+    _warn_deprecated("delegation_audit")
     graph, path = _load()
     findings = analyze_delegation(graph)
     _save(graph, path)
@@ -139,11 +186,12 @@ def delegation_audit() -> str:
 
 @tool
 def gpo_audit() -> str:
-    """Analyze GPO-based attack paths in the knowledge graph.
+    """Deprecated. Use ``bhce_cypher`` for GPO paths.
 
-    Identifies GPOs with weak ACLs that allow lateral movement or
-    persistence via Group Policy modification.
+    Reference: ``MATCH (n)-[:GenericAll|WriteDacl|WriteOwner]->(g:GPO)
+    MATCH (g)-[:GPLink]->(t) RETURN n.name, g.name, t.name``.
     """
+    _warn_deprecated("gpo_audit")
     graph, path = _load()
     findings = analyze_gpo_abuse(graph)
     _save(graph, path)
@@ -152,11 +200,12 @@ def gpo_audit() -> str:
 
 @tool
 def shadow_creds_audit() -> str:
-    """Detect Shadow Credentials attack paths in the knowledge graph.
+    """Deprecated. Use ``bhce_cypher`` with the AddKeyCredentialLink edge.
 
-    Identifies principals with write access to msDS-KeyCredentialLink
-    on target accounts.
+    Reference: ``MATCH (n)-[:AddKeyCredentialLink]->(t)
+    RETURN n.name, t.name, labels(t)``.
     """
+    _warn_deprecated("shadow_creds_audit")
     graph, path = _load()
     findings = analyze_shadow_credentials(graph)
     _save(graph, path)
@@ -165,29 +214,21 @@ def shadow_creds_audit() -> str:
 
 @tool
 def adcs_post_process() -> str:
-    """Synthesise BHCE-server-equivalent ADCS attack edges into the KG.
+    """Deprecated. BHCE derives all ADCS edges itself.
 
-    Walks the engagement's raw BloodHound graph and merges high-signal
-    chain edges that the raw collector does NOT emit:
-
-      - ``DCSync`` per (principal, domain) pair where the principal
-        holds both ``GET_CHANGES`` and ``GET_CHANGES_ALL``.
-      - ``GoldenCert`` per (principal, EnterpriseCA) pair where the
-        principal holds ``OWNS`` / ``WRITE_OWNER`` / ``MANAGE_CA``.
-
-    ESC1/3/4/6a/6b/9a/9b/10a/10b/13 require Enroll-edge ingest that
-    isn't wired in yet — they land in a dedicated follow-up PR.
-
-    Run after ``bh_ingest_zip`` / ``bh_ingest_json`` finishes for the
-    engagement. Idempotent: re-running on the same engagement creates
-    no extra edges.
+    The in-house port covered a subset of BHCE's
+    ``PostProcessedRelationships`` (DCSync, GoldenCert, TrustedForNTAuth);
+    BHCE v9.2.2 ships the full ESC1-13 + CoerceAndRelay* family. The
+    new ``bhce_ingest_zip`` waits for BHCE-side analysis to complete
+    before returning, so no separate post-process call is needed.
     """
+    _warn_deprecated("adcs_post_process")
     engagement = _resolve_engagement()
     stats = _synthesise_adcs_post(engagement=engagement)
     return _json({"synthesised": stats.to_dict()})
 
 
-AD_TOOLS = [
+_LEGACY_AD_TOOLS = [
     bh_ingest_zip,
     bh_ingest_json,
     dcsync_check,
@@ -198,3 +239,9 @@ AD_TOOLS = [
     gpo_audit,
     shadow_creds_audit,
 ]
+
+# Public agent toolbox: legacy tools first (one minor cycle of
+# overlap per ADR-0005), then the BHCE-backed surface that supersedes
+# everything except kerberos_classify.  ``kerberos_classify`` stays
+# because BHCE has no equivalent local hash/ticket parser.
+AD_TOOLS = _LEGACY_AD_TOOLS + BHCE_TOOLS
