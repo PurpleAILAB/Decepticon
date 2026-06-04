@@ -24,15 +24,21 @@ Decepticon runs on two Docker networks. Management infrastructure (LLM proxy, da
 │  Web        :3000   │       │  Victim targets              │
 │                     │       │                              │
 │  Neo4j ◀────────────┼───────┼──▶ Neo4j  :7687/:7474        │
-│  (dual-homed bolt:// for agent + sandbox writes)            │
+│  (KGStore — dual-homed bolt:// for agent + sandbox writes)  │
+│                     │       │                              │
+│  BHCE       :8081   │       │                              │
+│  BHCE-Neo4j (intl.) │       │                              │
+│  (AD attack-graph sidecar, decepticon-net only)             │
 └─────────────────────┘       └──────────────────────────────┘
        Management                       Operations
    (LLM, persistence, UI)        (exploitation, C2, targets)
 ```
 
-**Network boundaries.** The sandbox cannot reach LiteLLM, PostgreSQL, the LangGraph API, or the web dashboard — none of the management services are routable from `sandbox-net`. The agent inside LangGraph cannot reach attack tooling over a TCP socket; the only channel into the sandbox is `docker exec` via the Docker socket bind-mount.
+**Network boundaries.** The sandbox cannot reach LiteLLM, PostgreSQL, the LangGraph API, the web dashboard, the BHCE API, or BHCE's Neo4j — none of the management services are routable from `sandbox-net`. The agent inside LangGraph cannot reach attack tooling over a TCP socket; the only channel into the sandbox is `docker exec` via the Docker socket bind-mount.
 
-**Neo4j is the one shared service** — it sits on both networks because the sandbox writes findings into it (`bolt://neo4j:7687` from inside Kali) and the agent reads them back (`bolt://neo4j:7687` from inside LangGraph). It's a knowledge store, not a privileged service: the agent's credentials never traverse it, and a compromised sandbox can't pivot through Neo4j to LiteLLM or the API surface.
+**KGStore Neo4j is the one cross-network shared service** — it sits on both networks because the sandbox writes findings into it (`bolt://neo4j:7687` from inside Kali) and the agent reads them back (`bolt://neo4j:7687` from inside LangGraph). It's a knowledge store, not a privileged service: the agent's credentials never traverse it, and a compromised sandbox can't pivot through Neo4j to LiteLLM or the API surface.
+
+**BHCE has its own dedicated Neo4j** on `decepticon-net` only. Neo4j Community Edition allows one user database per server and KGStore already occupies it, so BHCE gets a separate instance to avoid label/constraint collisions with its `dawgs` driver. See [ADR-0005](adr/0005-bloodhound-via-bhce-rest-client.md). The sandbox does **not** see the BHCE Neo4j — the AD attack-graph pipeline is a management-plane concern only; the sandbox produces SharpHound ZIPs and hands them to the agent, never talks to BHCE directly.
 
 ---
 
@@ -65,14 +71,25 @@ Persistent relational storage for:
 
 Two logical databases: `litellm` (managed by LiteLLM) and `decepticon_web` (managed via Prisma in the web dashboard).
 
-### Neo4j Knowledge Graph (`sandbox-net` + `decepticon-net`, port 7687 / browser 7474)
+### Neo4j Knowledge Graph — KGStore (`sandbox-net` + `decepticon-net`, port 7687 / browser 7474)
 
-Graph database for the attack graph. Stores:
+Graph database for the cross-domain attack graph (web, cloud, smart-contract findings plus the chain planner's view across all domains). Stores:
 - Hosts, services, vulnerabilities, credentials, accounts
 - Typed relationships (EXPLOITS, REQUIRES, AFFECTS, LEADS_TO)
 - Attack chain paths for multi-hop planning
 
 **Dual-homed by design**: the sandbox writes operational findings into the graph (`cypher-shell` from inside Kali), and the agent in LangGraph reads them back to plan the next objective. Both networks see the same Neo4j instance on the same `bolt://neo4j:7687` URI.
+
+### BloodHound Community Edition sidecar (`decepticon-net`, BHCE API on host port 8081)
+
+AD attack-graph layer, introduced by [ADR-0005](adr/0005-bloodhound-via-bhce-rest-client.md). Two containers:
+
+- `bhce` — `docker.io/specterops/bloodhound` pinned to the v9.2.2 release commit. Speaks the official BHCE REST API (HMAC-signed, OpenAPI 3.0.3 at `/api/v2/spec`).
+- `bhce-neo4j` — dedicated `neo4j:4.4.42-community` for BHCE's graph. No host port exposure; only the `bhce` container talks bolt to it.
+
+Postgres is reused from the existing `postgres` container — `containers/postgres-init/02-bloodhound-db.sh` pre-creates the `bloodhound` database plus the `pg_trgm` extension so BHCE's goose migrations bootstrap cleanly on first boot.
+
+Agents call BHCE through `decepticon.tools.ad.bh_tools.bhce_status` / `bhce_cypher` / `bhce_ingest_zip` and the shared `decepticon.tools.ad.bhce_client.BHCEClient` HMAC-3-chain signer. The in-house `bh_ingest_zip` / `adcs_post_process` / `dcsync_check` / `delegation_audit` / `gpo_audit` / `shadow_creds_audit` / `adcs_audit` tools emit `DeprecationWarning` on every call and will move to `decepticon.compat` next minor.
 
 ### Sandbox (`sandbox-net`)
 
@@ -159,6 +176,7 @@ Orchestrator reads OPPLAN
 |----------|-------------|
 | Sandbox → Management services | Separate Docker networks; LiteLLM/PostgreSQL/LangGraph/Web are not routable from `sandbox-net` |
 | LangGraph → Sandbox | Docker socket only (no TCP) |
-| Sandbox → Neo4j | Allowed (intentional shared service for attack graph writes) |
-| Credential isolation | Provider API keys live on `decepticon-net`; the sandbox never sees them |
+| Sandbox → KGStore Neo4j | Allowed (intentional shared service for cross-domain attack graph writes) |
+| Sandbox → BHCE API / BHCE Neo4j | Blocked — BHCE lives on `decepticon-net` only; the sandbox produces SharpHound ZIPs and hands them to the agent, which then ingests via `bhce_ingest_zip`. There is no sandbox-side bolt or REST path into BHCE. |
+| Credential isolation | Provider API keys + the BHCE HMAC token live on `decepticon-net`; the sandbox never sees them |
 | Host isolation | All commands run inside Docker; no host filesystem access except the engagement-scoped `/workspace` bind mount |
