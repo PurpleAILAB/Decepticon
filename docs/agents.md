@@ -1,6 +1,6 @@
 # Agents
 
-Decepticon ships **24 specialist agents** organized by kill chain phase. Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
+Decepticon ships **24 agents** organized by kill chain phase (21 specialists plus the Decepticon and Vulnresearch orchestrators and the Soundwave planner). Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
 
 ---
 
