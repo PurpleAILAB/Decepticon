@@ -547,11 +547,104 @@ services:
       - decepticon-net
     restart: unless-stopped
 
+  # ── BloodHound Community Edition (BHCE) sidecar ────────────────────
+  #
+  # Provides the AD attack-graph layer for the agent.  Replaces the
+  # in-house tools/ad/* ingest + ADCS post-process (PR #560..#578),
+  # which are deprecated by ADR-0005.  The agent calls BHCE v9.2.2
+  # over its official REST API via decepticon.tools.ad.bhce_client.
+  #
+  # Why a dedicated Neo4j: Neo4j Community Edition only allows one
+  # user database per server, and our KGStore already occupies the
+  # `neo4j` database on the `neo4j` container.  BHCE writes its own
+  # ADCS / AD label schema via its `dawgs` driver, so it gets its
+  # own Neo4j instance to avoid label/constraint collisions.
+  # See docs/adr/0005-bloodhound-via-bhce-rest-client.md §Context.
+  #
+  # Why reuse Postgres: BHCE only needs one Postgres database
+  # (`bloodhound`) with the `pg_trgm` extension.  We pre-create both
+  # in containers/postgres-init/02-bloodhound-db.sh so BHCE's goose
+  # migrations bootstrap cleanly against our existing Postgres
+  # instance — no second Postgres container.
+  bhce-neo4j:
+    image: neo4j:4.4.42-community
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${BHCE_NEO4J_PASSWORD:-decepticon-bhce-graph}
+      NEO4J_dbms_allow__upgrade: "true"
+    volumes:
+      - bhce_neo4j_data:/data
+      - bhce_neo4j_logs:/logs
+    networks:
+      - decepticon-net
+    # No host port exposure: only the BHCE API container needs bolt.
+    # `docker exec` into this container for cypher-shell debugging.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -O /dev/null -q http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
+  bhce:
+    # SpecterOps does not publish semver tags on Docker Hub — every
+    # build is `edge` or `sha-<commit>[-<timestamp>]`.  Default below
+    # pins the v9.2.2 release commit (1a7b3df, 2026-06-01).  Verify
+    # against https://github.com/SpecterOps/BloodHound/releases/tag/v9.2.2
+    # when bumping; tags are immutable on Hub but `edge` is not.
+    image: docker.io/specterops/bloodhound:${BHCE_TAG:-sha-1a7b3df18a836051643ea3dcb777d20abdb469de}
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce
+    environment:
+      # Cypher policy: keep the v9.2.2 defaults — complexity limit on,
+      # mutations disabled.  Flip via env if a red-team scenario
+      # demands write-cypher (rare; tracked in ADR-0005 follow-up).
+      bhe_disable_cypher_complexity_limit: "false"
+      bhe_enable_cypher_mutations: "false"
+      bhe_graph_query_memory_limit: "2"
+      # External Postgres — our existing `postgres` container, with
+      # the `bloodhound` DB + `pg_trgm` pre-created by
+      # containers/postgres-init/02-bloodhound-db.sh.
+      bhe_database_connection: >-
+        user=${BHCE_POSTGRES_USER:-bloodhound}
+        password=${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
+        dbname=${BHCE_POSTGRES_DB:-bloodhound}
+        host=postgres
+        sslmode=disable
+      # External Neo4j — dedicated `bhce-neo4j` container.
+      bhe_neo4j_connection: "neo4j://neo4j:${BHCE_NEO4J_PASSWORD:-decepticon-bhce-graph}@bhce-neo4j:7687/"
+      bhe_graph_driver: "neo4j"
+      bhe_recreate_default_admin: "${BHCE_RECREATE_DEFAULT_ADMIN:-false}"
+      bhe_default_admin_email: "${BHCE_DEFAULT_ADMIN_EMAIL:-admin@decepticon.local}"
+      bhe_default_admin_password: "${BHCE_DEFAULT_ADMIN_PASSWORD:-DecepticonBhceLocal2026!}"
+      bhe_default_admin_principal_name: "${BHCE_DEFAULT_ADMIN_USERNAME:-admin}"
+      # JWT signing key — pin this to a persisted secret in any
+      # non-dev deployment; default value is for local dogfood only.
+      bhe_crypto_jwt_signing_key: "${BHCE_JWT_SIGNING_KEY:-decepticon-bhce-jwt-signing-key-do-not-use-in-prod-do-not-use-in-prod}"
+    ports:
+      - "127.0.0.1:${BHCE_PORT:-8081}:8080"
+    networks:
+      - decepticon-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bhce-neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/version >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 90s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   sliver_data:
   neo4j_data:
   neo4j_logs:
+  bhce_neo4j_data:
+  bhce_neo4j_logs:
 
 networks:
   decepticon-net:
