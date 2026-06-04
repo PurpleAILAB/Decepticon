@@ -120,9 +120,7 @@ def create_forensicator_agent(
 
 # Module-level graph for LangGraph Platform (langgraph serve)
 if is_bundle_enabled("standard"):
-    graph = (
-        create_forensicator_agent()
-    )  # lgtm[py/unused-global-variable]  # consumed by langgraph at runtime
+    graph = create_forensicator_agent()
 
 
 SUBAGENT_SPEC = SubAgentSpec(
