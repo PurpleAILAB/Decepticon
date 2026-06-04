@@ -125,7 +125,6 @@ extended-thinking/Deep-Think (LLM factory `reasoning_effort`), large-tool-output
 (`tools/bash/bash.py` 3-tier inline/offload/summary), TruffleHog (one more engine into the
 gitleaks-SARIF path; live-validation gap already captured by Tier-2 #8), reverse-shells/Command-Whisperer
 (interactive tmux session model; already in the declined list), WPScan (restrictively licensed, niche).
-
 ## Cross-cutting constraints (apply to every port)
 
 - **Build the `Technology` NodeKind + `V004` migration first** — load-bearing prerequisite for the whole AI-surface cluster *and* the tech-detection upgrade.
