@@ -20,6 +20,7 @@ from decepticon.mcp_server.models import (
     StartResult,
     StatusResult,
 )
+from decepticon_core.utils.engagement_scope import is_valid_engagement_label
 
 
 def default_engagement_name() -> str:
@@ -62,6 +63,11 @@ def register_lifecycle_tools(
         to pull results.
         """
         name = engagement_name or default_engagement_name()
+        if not is_valid_engagement_label(name):
+            raise ValueError(
+                f"invalid engagement_name {name!r}; must match "
+                "[A-Za-z0-9][A-Za-z0-9._-]{0,127} (no path separators or '..')"
+            )
         return await engagements.start(
             targets=targets,
             instruction=instruction,
@@ -85,6 +91,7 @@ def register_lifecycle_tools(
         status = str(latest.get("status", "unknown")) if latest else "none"
         findings_available = (
             bool(engagement_name)
+            and is_valid_engagement_label(engagement_name)
             and (engagement_workspace(engagement_name) / "graph.json").exists()
         )
         return StatusResult(

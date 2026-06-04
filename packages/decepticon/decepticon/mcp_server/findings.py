@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from decepticon.mcp_server.models import FindingsResult
+from decepticon_core.utils.engagement_scope import is_valid_engagement_label
 from decepticon_core.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -27,7 +28,19 @@ def engagement_workspace(engagement_name: str) -> Path:
     Mirrors ``decepticon.cli.scan._load_findings_graph`` so the MCP bridge and
     the headless CLI resolve the same path (``DECEPTICON_ENGAGEMENT_WORKSPACE``
     override, else ``~/.decepticon/workspace/<slug>``).
+
+    ``engagement_name`` arrives from a remote MCP caller, so it is validated
+    against the engagement-label contract before it is ever joined onto a
+    filesystem path. Without this guard a value like ``../../etc`` or an
+    absolute ``/root/.ssh`` would escape the workspace root (pathlib discards
+    the left operand of ``/`` when the right side is absolute), turning the
+    findings/status tools into an arbitrary-file read + existence oracle.
     """
+    if not is_valid_engagement_label(engagement_name):
+        raise ValueError(
+            f"invalid engagement name {engagement_name!r}; must match "
+            "[A-Za-z0-9][A-Za-z0-9._-]{0,127} (no path separators or '..')"
+        )
     override = os.environ.get("DECEPTICON_ENGAGEMENT_WORKSPACE")
     if override:
         return Path(override)
@@ -35,7 +48,15 @@ def engagement_workspace(engagement_name: str) -> Path:
 
 
 def load_findings_graph(engagement_name: str) -> KnowledgeGraph | None:
-    """Load the engagement KnowledgeGraph, or ``None`` when none was persisted."""
+    """Load the engagement KnowledgeGraph, or ``None`` when none was persisted.
+
+    An unsafe ``engagement_name`` is treated as "no findings" (returns ``None``)
+    rather than reading an attacker-chosen path, so the findings tool never
+    surfaces an out-of-tree file or distinguishes "rejected" from "absent".
+    """
+    if not is_valid_engagement_label(engagement_name):
+        log.warning("rejecting unsafe engagement name %r for findings load", engagement_name)
+        return None
     graph_path = engagement_workspace(engagement_name) / "graph.json"
     if not graph_path.exists():
         log.info("no graph.json at %s; treating as zero findings", graph_path)
