@@ -645,6 +645,31 @@ def _ingest_dump_smsa_password(state: _IngestState, computer_key: str, obj: dict
         )
 
 
+def _ingest_root_ca_for(state: _IngestState, root_ca_key: str, obj: dict[str, Any]) -> None:
+    """RootCA ``DomainSID`` → ``ROOT_CA_FOR`` edge to the trusted Domain.
+
+    BHCE 5.x emits ``rootcas[].DomainSID`` (top-level) and mirrors it
+    into ``Properties.domainsid``; we accept both and synthesise
+    ``RootCA --ROOT_CA_FOR--> Domain`` so every ESC* / GoldenCert path
+    can anchor against the trust chain root.
+    """
+    domain_sid = obj.get("DomainSID")
+    if not isinstance(domain_sid, str) or not domain_sid:
+        props = obj.get("Properties")
+        if isinstance(props, dict):
+            domain_sid = props.get("domainsid")
+    if not isinstance(domain_sid, str) or not domain_sid:
+        return
+    domain_key = _ensure_placeholder(state, sid=domain_sid, default_type="Domain")
+    state.add_edge(
+        src_key=root_ca_key,
+        dst_key=domain_key,
+        kind=EdgeKind.ROOT_CA_FOR,
+        weight=0.2,
+        props={"bh_right": "RootCAFor"},
+    )
+
+
 def _ingest_has_sid_history(state: _IngestState, src_key: str, obj: dict[str, Any]) -> None:
     """User/Group ``HasSIDHistory[]`` → ``HAS_SID_HISTORY`` edges.
 
@@ -1035,6 +1060,8 @@ def _merge_one_payload(state: _IngestState, data: dict[str, Any], *, type_hint: 
             _ingest_enterprise_ca_edges(state, src_key, obj)
         if type_singular == "IssuancePolicy":
             _ingest_issuance_policy_link(state, src_key, obj)
+        if type_singular == "RootCA":
+            _ingest_root_ca_for(state, src_key, obj)
         if type_singular == "User":
             _ingest_spn_targets(state, src_key, obj)
             _ingest_has_sid_history(state, src_key, obj)

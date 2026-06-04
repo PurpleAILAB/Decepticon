@@ -979,6 +979,59 @@ class TestSpnTargetsIngest:
         )
 
 
+class TestRootCaForIngest:
+    def test_top_level_domain_sid_emits_root_ca_for(self) -> None:
+        bh = {
+            "meta": {"type": "rootcas"},
+            "data": [
+                {
+                    "ObjectIdentifier": "ROOT-THUMB-AABB",
+                    "Properties": {"name": "ROOT-CA@LAB.LOCAL"},
+                    "DomainSID": "S-1-5-21-1-1-1",
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("ROOT_CA_FOR")
+        assert any(
+            "ROOT-THUMB-AABB" in s and "S-1-5-21-1-1-1" in d and p.get("bh_right") == "RootCAFor"
+            for s, d, p in edges
+        )
+
+    def test_properties_domainsid_fallback(self) -> None:
+        bh = {
+            "meta": {"type": "rootcas"},
+            "data": [
+                {
+                    "ObjectIdentifier": "ROOT-THUMB-CCDD",
+                    "Properties": {
+                        "name": "ROOT-CA@LAB.LOCAL",
+                        "domainsid": "S-1-5-21-2-2-2",
+                    },
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("ROOT_CA_FOR")
+        assert any("CCDD" in s and "S-1-5-21-2-2-2" in d for s, d, _p in edges)
+
+    def test_missing_domain_sid_skipped(self) -> None:
+        bh = {
+            "meta": {"type": "rootcas"},
+            "data": [
+                {
+                    "ObjectIdentifier": "ROOT-NODS",
+                    "Properties": {"name": "stray-root"},
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        assert store.edges_of_kind("ROOT_CA_FOR") == []
+
+
 class TestHasSidHistoryIngest:
     def test_user_has_sid_history_emits_edge(self) -> None:
         bh = {
