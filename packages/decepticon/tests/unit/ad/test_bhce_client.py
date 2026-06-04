@@ -62,13 +62,15 @@ def test_sign_post_empty_body_negative_offset_matches_go_reference() -> None:
 # ── Behavioural contracts on the sign_request helper ────────────────
 
 
-def test_sign_strips_query_string_from_uri_in_signature() -> None:
-    """BHCE signs ``request.URL.Path`` only — query is excluded.
-
-    If we accidentally fed the query through, ``…/self?a=1`` would
-    produce a different signature than ``…/self``, but per
-    ``signature.go:160`` (``request.URL.Path``) BHCE strips it before
-    the HMAC.  Sanity-check that we strip it too.
+def test_sign_includes_query_string_in_signature() -> None:
+    """BHCE's *server-side* verifier feeds ``request.RequestURI`` —
+    path + query — into the signature (``cmd/api/src/api/auth.go:355``),
+    even though its Go *client* signs only ``request.URL.Path``
+    (``signature.go:160``).  We match the server because that is what
+    decides accept/reject.  Verified empirically against the live
+    v9.2.2 sidecar on the paginated ``GET /api/v2/file-upload?skip=…``
+    poll path (signature mismatched when we stripped query, matched
+    when we included it).
     """
     without_query = sign_request(
         "id", "s", "GET", "http://h/api/v2/self", b"", request_date="2026-06-05T07:00:00Z"
@@ -81,7 +83,7 @@ def test_sign_strips_query_string_from_uri_in_signature() -> None:
         b"",
         request_date="2026-06-05T07:00:00Z",
     )["Signature"]
-    assert without_query == with_query
+    assert without_query != with_query
 
 
 def test_sign_truncates_datetime_to_hour_for_signature_only() -> None:

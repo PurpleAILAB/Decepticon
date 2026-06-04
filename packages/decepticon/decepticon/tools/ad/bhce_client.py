@@ -21,10 +21,16 @@ Signature scheme (HMAC 3-chain, ``cmd/api/src/api/signature.go:97-145``):
 Where:
 
 - ``METHOD`` is the upper-case HTTP verb (``GET``/``POST``/...).
-- ``URI_PATH`` is ``request.URL.Path`` in the Go reference — **path only,
-  no query string**.  This matters because BHCE's server-side
-  verification feeds the same path-only string back into the same
-  algorithm; signing with a query string attached will hash-mismatch.
+- ``URI_PATH`` is the **full Request-URI** including the query string
+  when present (i.e. ``path?query`` when ``query`` is non-empty, else
+  just ``path``).  BHCE's server-side verifier feeds
+  ``request.RequestURI`` into the signature (``cmd/api/src/api/auth.go:355``),
+  while its Go client signs only ``request.URL.Path``
+  (``signature.go:160``) — an internal asymmetry that doesn't matter
+  for query-less requests but breaks every signed GET that carries
+  query parameters (e.g. paginated ``/api/v2/file-upload``).  We
+  match the **server** side because that is what determines accept /
+  reject.
 - ``RFC3339[:13]`` is the first 13 characters of the RFC3339 datetime,
   i.e. truncated to the hour (e.g. ``2026-06-05T07``).  The header
   ``RequestDate`` carries the **full** RFC3339 datetime; only the
@@ -92,9 +98,10 @@ def sign_request(
             "Token ID" in the BHCE UI's ``Admin → Manage Users``).
         token_secret: BHCE API token secret (the private half).
         method: Upper-case HTTP verb.
-        url: Fully-qualified request URL.  Only ``urlsplit(url).path`` is
-            fed into the signature; the host/scheme/query are ignored to
-            match ``request.URL.Path`` in ``signature.go:160``.
+        url: Fully-qualified request URL.  The path and query string
+            are fed into the signature (matching the server-side
+            ``request.RequestURI`` per ``auth.go:355``); scheme and
+            host are ignored.
         body: Request body bytes.  Use ``b""`` for empty.
         request_date: Optional RFC3339 datetime override (used by tests
             for deterministic signatures).  Defaults to ``_rfc3339_now()``.
@@ -104,11 +111,14 @@ def sign_request(
         ``Authorization``, ``RequestDate``, ``Signature``.
     """
     datetime_str = request_date or _rfc3339_now()
-    path = urlsplit(url).path or "/"
+    parts = urlsplit(url)
+    request_uri = parts.path or "/"
+    if parts.query:
+        request_uri = f"{request_uri}?{parts.query}"
 
     op_key = hmac.new(
         token_secret.encode("utf-8"),
-        (method.upper() + path).encode("utf-8"),
+        (method.upper() + request_uri).encode("utf-8"),
         hashlib.sha256,
     ).digest()
     date_key = hmac.new(op_key, datetime_str[:13].encode("utf-8"), hashlib.sha256).digest()
@@ -298,8 +308,33 @@ class BHCEClient:
         self._request("POST", f"/api/v2/file-upload/{job_id}/end")
 
     def get_upload_job(self, job_id: int) -> dict[str, Any]:
-        """``GET /api/v2/file-upload/{job_id}`` — poll for status."""
-        return self._request("GET", f"/api/v2/file-upload/{job_id}").json()
+        """Return the FileUploadJob payload for ``job_id``.
+
+        BHCE v9.2.2 only exposes ``GET /api/v2/file-upload`` (paginated
+        list) and ``GET /api/v2/file-upload/{id}/completed-tasks`` —
+        there is **no** ``GET /api/v2/file-upload/{id}`` route
+        (``cmd/api/src/api/registration/v2.go`` shows only POST on the
+        ``/{id}`` and ``/{id}/end`` paths).  We page through the list
+        until we find the matching id, then return the wrapped object
+        in a ``{data: …}`` envelope so callers can treat single-job
+        and list responses uniformly.
+        """
+        skip = 0
+        page_size = 100
+        while True:
+            page = self._request(
+                "GET",
+                f"/api/v2/file-upload?skip={skip}&limit={page_size}",
+            ).json()
+            items = page.get("data") if isinstance(page, dict) else None
+            if not isinstance(items, list) or not items:
+                return {"data": None}
+            for item in items:
+                if isinstance(item, dict) and item.get("id") == job_id:
+                    return {"data": item}
+            if len(items) < page_size:
+                return {"data": None}
+            skip += page_size
 
     def get_domain(self, object_id: str) -> dict[str, Any]:
         """``GET /api/v2/domains/{object_id}``."""
