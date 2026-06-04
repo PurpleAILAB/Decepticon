@@ -45,7 +45,7 @@ at the virtual prefix `/skills/`. The tree has three roots:
 
 - `/skills/standard/<dir>/` — built-in OSS roles. The default source list for a
   standard role is `[f"/skills/standard/{role}/", "/skills/shared/"]`
-  (`agents/middleware_slots.py:98`).
+  (`skills_sources_for`, `agents/middleware_slots.py:102`).
 - `/skills/plugins/<name>/` — plugin specialists. These agents pass an explicit
   `skill_sources=` kwarg to `build_middleware` rather than relying on the
   `/skills/standard/{role}/` fallback.
@@ -64,8 +64,8 @@ at the virtual prefix `/skills/`. The tree has three roots:
 | `/skills/standard/reverser/` | Reverser | Static analysis, dynamic analysis, decompilation, binary patching |
 | `/skills/standard/analyst/` | Analyst | Research, graph querying, executive summaries |
 | `/skills/standard/phisher/` | Phisher | Lure deconfliction and phishing operations |
-| `/skills/standard/mobile/` | MobileOperator | Android / iOS application attacks (see role-vs-directory note below) |
-| `/skills/standard/wireless/` | WirelessOperator | Wireless / RF attacks (see role-vs-directory note below) |
+| `/skills/standard/mobile/` | MobileOperator | Android / iOS application attacks |
+| `/skills/standard/wireless/` | WirelessOperator | Wireless / RF attacks |
 | `/skills/standard/decepticon/` | Decepticon | Core orchestration procedures (engagement lifecycle, kill-chain analysis, final report) |
 | `/skills/plugins/scanner/` | Scanner | Vulnerability scanning, automated tool integration |
 | `/skills/plugins/exploiter/` | Exploiter | PoC generation, CVE reproduction, weaponization |
@@ -87,11 +87,14 @@ at the virtual prefix `/skills/`. The tree has three roots:
 > | `ad_operator` | `/skills/standard/ad_operator/` | `/skills/standard/ad/` |
 > | `cloud_hunter` | `/skills/standard/cloud_hunter/` | `/skills/standard/cloud/` |
 > | `contract_auditor` | `/skills/standard/contract_auditor/` | `/skills/standard/contracts/` |
-> | `mobile_operator` | `/skills/standard/mobile_operator/` | `/skills/standard/mobile/` |
-> | `wireless_operator` | `/skills/standard/wireless_operator/` | `/skills/standard/wireless/` |
 >
 > The directories in the table above reflect where the skills actually live. This
 > mismatch is a code bug being fixed separately.
+>
+> `mobile_operator` and `wireless_operator` are **not** affected: their factories
+> pass an explicit `skill_sources=` kwarg (`/skills/standard/mobile/` and
+> `/skills/standard/wireless/` respectively), so they bypass the `{role}` fallback
+> and resolve correctly.
 
 ### Library categories (no consuming agent yet)
 
@@ -235,7 +238,7 @@ The skill is automatically available to agents whose source paths include your s
 ## Agent–Skill Mapping
 
 Standard roles use the default `[f"/skills/standard/{role}/", "/skills/shared/"]`
-fallback (`agents/middleware_slots.py:98`). Plugin specialists pass an explicit
+fallback (`skills_sources_for`, `agents/middleware_slots.py:102`). Plugin specialists pass an explicit
 `skill_sources=` list instead of relying on that fallback; the bash-executing
 plugins (scanner, exploiter, detector, verifier, patcher) additionally pull
 `/skills/standard/analyst/`.
@@ -253,8 +256,8 @@ plugins (scanner, exploiter, detector, verifier, patcher) additionally pull
 | Reverser (`reverser`) | `/skills/standard/reverser/`, `/skills/shared/` |
 | Analyst (`analyst`) | `/skills/standard/analyst/`, `/skills/shared/` |
 | Phisher (`phisher`) | `/skills/standard/phisher/`, `/skills/shared/` |
-| MobileOperator (`mobile_operator`) | `/skills/standard/mobile_operator/`, `/skills/shared/` (see role-vs-directory note above) |
-| WirelessOperator (`wireless_operator`) | `/skills/standard/wireless_operator/`, `/skills/shared/` (see role-vs-directory note above) |
+| MobileOperator (`mobile_operator`) | `/skills/standard/mobile/`, `/skills/shared/` |
+| WirelessOperator (`wireless_operator`) | `/skills/standard/wireless/`, `/skills/shared/` |
 | Vulnresearch (`vulnresearch`) | `/skills/plugins/vulnresearch/`, `/skills/shared/` |
 | Scanner (`scanner`) | `/skills/plugins/scanner/`, `/skills/standard/analyst/`, `/skills/shared/` |
 | Exploiter (`exploiter`) | `/skills/plugins/exploiter/`, `/skills/standard/analyst/`, `/skills/shared/` |
