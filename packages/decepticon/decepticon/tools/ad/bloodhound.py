@@ -645,6 +645,36 @@ def _ingest_dump_smsa_password(state: _IngestState, computer_key: str, obj: dict
         )
 
 
+def _ingest_has_sid_history(state: _IngestState, src_key: str, obj: dict[str, Any]) -> None:
+    """User/Group ``HasSIDHistory[]`` → ``HAS_SID_HISTORY`` edges.
+
+    Each entry is a ``TypedPrincipal`` whose SID appears in the
+    principal's SID history; the principal inherits that SID's access
+    cross-domain (the SIDHistory primitive — see Trimarc / SpecterOps).
+    We emit ``principal --HAS_SID_HISTORY--> historic-principal`` so
+    chain analysis can lift SIDHistory escalations.
+    """
+    entries = obj.get("HasSIDHistory") or []
+    if not isinstance(entries, list):
+        return
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        sid = entry.get("ObjectIdentifier")
+        if not isinstance(sid, str) or not sid:
+            continue
+        target_type = entry.get("ObjectType") or "User"
+        target_type = target_type if target_type in _BH_TYPE_SINGULAR.values() else "User"
+        target_key = _ensure_placeholder(state, sid=sid, default_type=target_type)
+        state.add_edge(
+            src_key=src_key,
+            dst_key=target_key,
+            kind=EdgeKind.HAS_SID_HISTORY,
+            weight=0.3,
+            props={"bh_right": "HasSIDHistory"},
+        )
+
+
 _LOCAL_GROUP_RID_TO_EDGE: dict[str, tuple[EdgeKind, float]] = {
     "500": (EdgeKind.ADMIN_TO, 0.3),
     "555": (EdgeKind.CAN_ACCESS, 0.6),  # CanRDP
@@ -1007,6 +1037,9 @@ def _merge_one_payload(state: _IngestState, data: dict[str, Any], *, type_hint: 
             _ingest_issuance_policy_link(state, src_key, obj)
         if type_singular == "User":
             _ingest_spn_targets(state, src_key, obj)
+            _ingest_has_sid_history(state, src_key, obj)
+        if type_singular == "Group":
+            _ingest_has_sid_history(state, src_key, obj)
         if type_singular == "Computer":
             _ingest_local_groups(state, src_key, obj)
             _ingest_gpo_changes(state, src_key, obj)

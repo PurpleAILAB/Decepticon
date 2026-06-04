@@ -979,6 +979,46 @@ class TestSpnTargetsIngest:
         )
 
 
+class TestHasSidHistoryIngest:
+    def test_user_has_sid_history_emits_edge(self) -> None:
+        bh = {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-1000",
+                    "Properties": {"name": "user"},
+                    "HasSIDHistory": [
+                        {"ObjectIdentifier": "S-1-5-21-9-9-9-500", "ObjectType": "User"},
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("HAS_SID_HISTORY")
+        assert any(
+            "1000" in s and "500" in d and p.get("bh_right") == "HasSIDHistory" for s, d, p in edges
+        )
+
+    def test_group_has_sid_history_emits_edge(self) -> None:
+        bh = {
+            "meta": {"type": "groups"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-512",
+                    "Properties": {"name": "Domain Admins"},
+                    "HasSIDHistory": [
+                        {"ObjectIdentifier": "S-1-5-21-9-9-9-512", "ObjectType": "Group"},
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("HAS_SID_HISTORY")
+        assert any("1-512" in s and "9-512" in d for s, d, _p in edges)
+
+
 class TestDumpSmsaPasswordIngest:
     def test_dump_smsa_emits_dump_smsa_password_edge(self) -> None:
         bh = {
