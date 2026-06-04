@@ -116,12 +116,15 @@ command string, not the full tool-arguments dict.
 ## What gets gated
 
 The middleware only evaluates tool calls whose name is in
-`GATED_TOOL_NAMES`:
+`GATED_TOOL_NAMES` (`decepticon/middleware/roe.py`):
 
 ```
 bash
 bash_output
 bash_kill
+http_request
+proxy_send_request
+browser_action
 ```
 
 Any other tool call passes through as an allow-default and is not
@@ -181,8 +184,11 @@ are written to the audit ledger.
 - `max_concurrent_connections` and `min_inter_request_delay_ms` are
   carried in the schema but are advisory — they are not throttled by this
   middleware.
-- Enforcement covers the gated bash tools only; HTTP-style tools must be
-  added to `gated_tools` explicitly.
+- Enforcement covers the six `GATED_TOOL_NAMES` tools by default — the three
+  bash tools plus `http_request`, `proxy_send_request`, and `browser_action`.
+  A caller may pass a custom `gated_tools` set to the middleware to narrow or
+  extend that list; any tool name outside the active set passes through as an
+  allow-default and is not recorded.
 
 ## See also
 
