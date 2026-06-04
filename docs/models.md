@@ -118,7 +118,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                       | Fallback |
 |------------------|-------------------------------|----------|
 | decepticon (HIGH)| `anthropic/claude-opus-4-7`   | —        |
-| exploit (MID)    | `anthropic/claude-sonnet-4-6` | —        |
+| detector (MID)   | `anthropic/claude-sonnet-4-6` | —        |
 | recon (LOW)      | `anthropic/claude-haiku-4-5`  | —        |
 
 No fallback — only one credential.
@@ -133,7 +133,7 @@ OPENAI_API_KEY=sk-...
 | Agent (tier)     | Primary               | Fallback |
 |------------------|------------------------|----------|
 | decepticon (HIGH)| `openai/gpt-5.5`      | —        |
-| exploit (MID)    | `openai/gpt-5.4`      | —        |
+| detector (MID)   | `openai/gpt-5.4`      | —        |
 | recon (LOW)      | `openai/gpt-5-nano` | —        |
 
 ### Claude Code OAuth + Anthropic API (subscription primary, paid fallback)
@@ -147,7 +147,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                  | Fallback                         |
 |------------------|---------------------------|----------------------------------|
 | decepticon (HIGH)| `auth/claude-opus-4-7`   | `anthropic/claude-opus-4-7`     |
-| exploit (MID)    | `auth/claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6`   |
+| detector (MID)   | `auth/claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6`   |
 | recon (LOW)      | `auth/claude-haiku-4-5`  | `anthropic/claude-haiku-4-5`    |
 
 OAuth runs primary (no API cost). When the subscription quota hits, fallback drops to the paid API key — same model family, same quality.
@@ -163,7 +163,7 @@ OPENAI_API_KEY=sk-...
 | Agent (tier)     | Primary                       | Fallback                |
 |------------------|-------------------------------|-------------------------|
 | decepticon (HIGH)| `anthropic/claude-opus-4-7`   | `openai/gpt-5.5`        |
-| exploit (MID)    | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
+| detector (MID)   | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
 | recon (LOW)      | `anthropic/claude-haiku-4-5`  | `openai/gpt-5-nano`   |
 
 Cross-provider fallback — when Anthropic hits a rate limit or outage, OpenAI takes over seamlessly.
@@ -179,7 +179,7 @@ OLLAMA_MODEL=qwen3-coder:30b
 | Agent (tier)     | Primary                          | Fallback |
 |------------------|----------------------------------|----------|
 | decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | —        |
-| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | —        |
+| detector (MID)   | `ollama_chat/qwen3-coder:30b`    | —        |
 | recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | —        |
 
 Same model across all tiers because local hardware typically can't
@@ -217,7 +217,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                          | Fallback                       |
 |------------------|----------------------------------|--------------------------------|
 | decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-opus-4-7`    |
-| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-sonnet-4-6`  |
+| detector (MID)   | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-sonnet-4-6`  |
 | recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-haiku-4-5`   |
 
 Local model handles routine work; when the local model fails (OOM,
@@ -236,7 +236,7 @@ LLAMACPP_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 | Agent (tier)     | Primary                                                  | Fallback |
 |------------------|----------------------------------------------------------|----------|
 | decepticon (HIGH)| `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
-| exploit (MID)    | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| detector (MID)   | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
 | recon (LOW)      | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
 
 Run a GGUF model with llama.cpp's OpenAI-compatible server:
@@ -270,7 +270,7 @@ MINIMAX_API_KEY=eyJ...
 | Agent (tier)     | Primary                | Notes                                     |
 |------------------|------------------------|-------------------------------------------|
 | decepticon (HIGH)| `minimax/MiniMax-M2.5` | OK                                        |
-| exploit (MID)    | `minimax/MiniMax-M2.5-lightning` | OK                                        |
+| detector (MID)   | `minimax/MiniMax-M2.5-lightning` | OK                                        |
 | recon (LOW)      | *(role unassigned)*    | MiniMax has no LOW model and no fallback method |
 
 The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e.g. `openai_api`) to fill the LOW slot.
