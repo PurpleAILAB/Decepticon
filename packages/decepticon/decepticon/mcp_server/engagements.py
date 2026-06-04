@@ -35,6 +35,24 @@ log = get_logger("mcp_server.engagements")
 _ACTIVE_STATUSES = frozenset({"pending", "running"})
 
 
+def _split_model_command(message: str) -> tuple[str | None, str]:
+    """Pull a leading ``/model <id>`` directive off an operator message.
+
+    Mirrors the CLI's client-side slash command: the override travels to the
+    server in ``config.configurable.model_override`` (the path
+    ``ModelOverrideMiddleware`` reads), not as literal chat text. Returns
+    ``(model_override, remaining_message)``:
+
+      ``/model anthropic/claude-opus-4-8 keep going`` -> ``("…opus-4-8", "keep going")``
+      ``/model openai/gpt-5.5``                       -> ``("…gpt-5.5", "")``
+      ``focus on the API`` / ``/model`` (no id)        -> ``(None, <original>)``
+    """
+    parts = message.lstrip().split(maxsplit=2)
+    if len(parts) < 2 or parts[0].lower() != "/model":
+        return None, message
+    return parts[1], (parts[2] if len(parts) > 2 else "")
+
+
 class EngagementClient:
     """Async bridge from MCP tool calls to a running Decepticon LangGraph server.
 
@@ -151,12 +169,23 @@ class EngagementClient:
         if resolved is None:
             latest = await self.latest_run(thread_id)
             resolved = str(latest.get("assistant_id")) if latest else self._config.default_assistant
-        run = await client.runs.create(
-            thread_id,
-            assistant_id=resolved,
-            input={"messages": [{"role": "user", "content": message}]},
-            multitask_strategy="enqueue",
-        )
+
+        override, body = _split_model_command(message)
+        create_kwargs: dict[str, Any] = {
+            "assistant_id": resolved,
+            "multitask_strategy": "enqueue",
+        }
+        if override is None:
+            create_kwargs["input"] = {"messages": [{"role": "user", "content": message}]}
+        else:
+            # ``/model <id>`` switches the orchestrator's model for this turn via
+            # the same config field the CLI uses; any trailing text is the turn's
+            # actual message (a bare ``/model <id>`` just rebinds the model).
+            create_kwargs["input"] = {
+                "messages": [{"role": "user", "content": body}] if body else []
+            }
+            create_kwargs["config"] = {"configurable": {"model_override": override}}
+        run = await client.runs.create(thread_id, **create_kwargs)
         return RunHandle(
             thread_id=thread_id,
             run_id=str(run["run_id"]),

@@ -124,6 +124,35 @@ async def test_send_message_explicit_assistant_skips_lookup() -> None:
     assert handle.assistant == "soundwave"
 
 
+async def test_send_message_model_command_sets_override_and_body() -> None:
+    fake = _FakeClient(runs=[{"run_id": "r", "assistant_id": "decepticon", "status": "success"}])
+    client = EngagementClient(_config(), client=fake)
+    await client.send_message(
+        thread_id="t-1", message="/model anthropic/claude-opus-4-8 keep digging"
+    )
+    call = fake.runs.create_calls[0]
+    assert call["config"]["configurable"]["model_override"] == "anthropic/claude-opus-4-8"
+    assert call["input"]["messages"] == [{"role": "user", "content": "keep digging"}]
+
+
+async def test_send_message_bare_model_command_rebinds_without_message() -> None:
+    fake = _FakeClient(runs=[{"run_id": "r", "assistant_id": "decepticon", "status": "success"}])
+    client = EngagementClient(_config(), client=fake)
+    await client.send_message(thread_id="t-1", message="/model openai/gpt-5.5")
+    call = fake.runs.create_calls[0]
+    assert call["config"]["configurable"]["model_override"] == "openai/gpt-5.5"
+    assert call["input"]["messages"] == []
+
+
+async def test_send_message_plain_text_passes_no_override_config() -> None:
+    fake = _FakeClient(runs=[{"run_id": "r", "assistant_id": "recon", "status": "success"}])
+    client = EngagementClient(_config(), client=fake)
+    await client.send_message(thread_id="t-1", message="/modeller is not a command")
+    call = fake.runs.create_calls[0]
+    assert "config" not in call
+    assert call["input"]["messages"] == [{"role": "user", "content": "/modeller is not a command"}]
+
+
 async def test_list_engagements_maps_threads() -> None:
     fake = _FakeClient(
         threads=[
