@@ -584,6 +584,67 @@ def _ingest_gp_links(state: _IngestState, src_key: str, obj: dict[str, Any]) -> 
         )
 
 
+def _ingest_spn_targets(state: _IngestState, user_key: str, obj: dict[str, Any]) -> None:
+    """User ``SPNTargets[]`` → ``WRITE_SPN`` edges per target computer.
+
+    Each entry is ``{ComputerSID, Port, Service}`` and marks a SPN
+    the user could write (Targeted Kerberoasting primitive). BHCE
+    emits these as raw ACE data; we flip into ``user --WRITE_SPN-->
+    computer`` with the SPN metadata preserved on the edge so chain
+    analysis can score by service / port.
+    """
+    targets = obj.get("SPNTargets") or []
+    if not isinstance(targets, list):
+        return
+    for entry in targets:
+        if not isinstance(entry, dict):
+            continue
+        comp_sid = entry.get("ComputerSID")
+        if not isinstance(comp_sid, str) or not comp_sid:
+            continue
+        comp_key = _ensure_placeholder(state, sid=comp_sid, default_type="Computer")
+        state.add_edge(
+            src_key=user_key,
+            dst_key=comp_key,
+            kind=EdgeKind.WRITE_SPN,
+            weight=0.4,
+            props={
+                "bh_right": "SPNTarget",
+                "port": entry.get("Port"),
+                "service": entry.get("Service"),
+            },
+        )
+
+
+def _ingest_dump_smsa_password(state: _IngestState, computer_key: str, obj: dict[str, Any]) -> None:
+    """Computer ``DumpSMSAPassword[]`` → ``DUMP_SMSA_PASSWORD`` edges.
+
+    Each entry is a ``TypedPrincipal`` pointing at the sMSA / gMSA
+    whose password the computer can extract. We emit
+    ``computer --DUMP_SMSA_PASSWORD--> principal`` so chain analysis
+    sees the credential primitive.
+    """
+    entries = obj.get("DumpSMSAPassword") or []
+    if not isinstance(entries, list):
+        return
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        sid = entry.get("ObjectIdentifier")
+        if not isinstance(sid, str) or not sid:
+            continue
+        target_type = entry.get("ObjectType") or "User"
+        target_type = target_type if target_type in _BH_TYPE_SINGULAR.values() else "User"
+        target_key = _ensure_placeholder(state, sid=sid, default_type=target_type)
+        state.add_edge(
+            src_key=computer_key,
+            dst_key=target_key,
+            kind=EdgeKind.DUMP_SMSA_PASSWORD,
+            weight=0.3,
+            props={"bh_right": "DumpSMSAPassword"},
+        )
+
+
 _LOCAL_GROUP_RID_TO_EDGE: dict[str, tuple[EdgeKind, float]] = {
     "500": (EdgeKind.ADMIN_TO, 0.3),
     "555": (EdgeKind.CAN_ACCESS, 0.6),  # CanRDP
@@ -944,10 +1005,13 @@ def _merge_one_payload(state: _IngestState, data: dict[str, Any], *, type_hint: 
             _ingest_enterprise_ca_edges(state, src_key, obj)
         if type_singular == "IssuancePolicy":
             _ingest_issuance_policy_link(state, src_key, obj)
+        if type_singular == "User":
+            _ingest_spn_targets(state, src_key, obj)
         if type_singular == "Computer":
             _ingest_local_groups(state, src_key, obj)
             _ingest_gpo_changes(state, src_key, obj)
             _ingest_user_rights(state, src_key, obj)
+            _ingest_dump_smsa_password(state, src_key, obj)
         if hasattr(state.stats, counter_attr):
             setattr(state.stats, counter_attr, getattr(state.stats, counter_attr) + 1)
 

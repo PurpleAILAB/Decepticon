@@ -177,7 +177,7 @@ class EdgeKind(StrEnum):
     ROOT_CA_FOR = "ROOT_CA_FOR"
     ISSUED_SIGNED_BY = "ISSUED_SIGNED_BY"
     TRUSTED_FOR_NTAUTH = "TRUSTED_FOR_NTAUTH"
-    DUMP_SMSA_PASSWORD = "DumpSMSAPassword"
+    DUMP_SMSA_PASSWORD = "DUMP_SMSA_PASSWORD"
     MEMBER_OF_LOCAL_GROUP = "MEMBER_OF_LOCAL_GROUP"
     # Trust (4-way split from BHCE 5.x — replaces the single legacy
     # ``TrustedBy`` edge, branched on ``TrustType`` + ``IsTransitive``).

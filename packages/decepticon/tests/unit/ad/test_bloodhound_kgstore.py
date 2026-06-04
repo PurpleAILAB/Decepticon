@@ -943,3 +943,63 @@ class TestUserRightsIngest:
         # produce no edges.
         all_edges = store.edges()
         assert not any(p.get("via_privilege") for _s, _k, _d, p in all_edges)
+
+
+# ── User SPNTargets + Computer DumpSMSAPassword ingest ─────────────
+
+
+class TestSpnTargetsIngest:
+    def test_spn_target_emits_write_spn_edge(self) -> None:
+        bh = {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "user"},
+                    "SPNTargets": [
+                        {
+                            "ComputerSID": "S-1-5-21-1-1-1-1001",
+                            "Port": 1433,
+                            "Service": "MSSQLSvc",
+                        }
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        write_spn = store.edges_of_kind("WRITE_SPN")
+        assert any(
+            "500" in s
+            and "1001" in d
+            and p.get("bh_right") == "SPNTarget"
+            and p.get("port") == 1433
+            and p.get("service") == "MSSQLSvc"
+            for s, d, p in write_spn
+        )
+
+
+class TestDumpSmsaPasswordIngest:
+    def test_dump_smsa_emits_dump_smsa_password_edge(self) -> None:
+        bh = {
+            "meta": {"type": "computers"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-1001",
+                    "Properties": {"name": "ws01"},
+                    "DumpSMSAPassword": [
+                        {
+                            "ObjectIdentifier": "S-1-5-21-1-1-1-2000",
+                            "ObjectType": "User",
+                        }
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("DUMP_SMSA_PASSWORD")
+        assert any(
+            "1001" in s and "2000" in d and p.get("bh_right") == "DumpSMSAPassword"
+            for s, d, p in edges
+        )
