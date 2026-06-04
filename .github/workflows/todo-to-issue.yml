@@ -1,0 +1,60 @@
+name: TODO → Issue
+
+# Scans commits landing on main for newly-added TODO / FIXME / HACK
+# comments and opens issues so they're tracked instead of buried in
+# source. Closes the corresponding issue when the TODO is removed.
+#
+# Scope choices:
+#   * Runs on push to main only — PR review is the right place to
+#     discuss whether a TODO should exist at all, and double-opening
+#     on branch-then-merge would create noise.
+#   * `INSERT_ISSUE_URLS: false` — the action will NOT push back to
+#     main to annotate source with issue links. Issues are tracked
+#     by file:line in the issue body; that's enough.
+#   * Path-ignore mirrors ci.yml so doc-only commits don't trigger.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "!CHANGELOG.md"
+      - LICENSE
+      - docs/**
+      - assets/**
+      - .gitignore
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: todo-to-issue-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Open / close issues for TODOs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the action can diff the pushed range
+          # accurately on force-pushes / merge commits.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan for TODO / FIXME / HACK
+        uses: alstr/todo-to-issue-action@v5
+        with:
+          IDENTIFIERS: >-
+            [
+              {"name": "TODO",  "labels": ["todo"]},
+              {"name": "FIXME", "labels": ["todo", "bug"]},
+              {"name": "HACK",  "labels": ["todo", "tech-debt"]}
+            ]
+          AUTO_P: false
+          INSERT_ISSUE_URLS: false
+          CLOSE_ISSUES: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
