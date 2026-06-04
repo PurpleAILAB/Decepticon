@@ -18,7 +18,6 @@ on:
     branches: [main]
     paths-ignore:
       - "*.md"
-      - "!CHANGELOG.md"
       - LICENSE
       - docs/**
       - assets/**
@@ -45,7 +44,11 @@ jobs:
           persist-credentials: false
 
       - name: Scan for TODO / FIXME / HACK
-        uses: alstr/todo-to-issue-action@v5
+        # Pinned to a full commit SHA (not the floating @v5 tag): this third-party
+        # action runs on trusted ``main`` with ``issues: write`` + GITHUB_TOKEN, so
+        # it must be immutable like the repo's other 3rd-party actions (trivy,
+        # trufflehog, scorecard) — satisfies OpenSSF Scorecard Pinned-Dependencies.
+        uses: alstr/todo-to-issue-action@64aca8fda7023259aada83ba44ad988c4c443657 # v5.1.14
         with:
           IDENTIFIERS: >-
             [
@@ -54,6 +57,13 @@ jobs:
               {"name": "HACK",  "labels": ["todo", "tech-debt"]}
             ]
           AUTO_P: false
+          # INSERT_ISSUE_URLS stays false so the action never pushes annotation
+          # commits back to ``main`` (keeps contents: read + persist-credentials:
+          # false). Trade-off: with CLOSE_ISSUES on, the action re-derives a
+          # removed TODO's identity from file/line/title rather than an embedded
+          # URL, so a TODO that is moved far or heavily re-indented may miss its
+          # auto-close. Acceptable here — issues are cheap to close by hand and
+          # this avoids granting the workflow write access to the trunk.
           INSERT_ISSUE_URLS: false
           CLOSE_ISSUES: true
         env:
