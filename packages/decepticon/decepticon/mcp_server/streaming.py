@@ -58,5 +58,8 @@ async def watch_run(
     try:
         await asyncio.wait_for(_collect(), timeout=max_seconds)
     except asyncio.TimeoutError:
+        # Timeout is expected: return whatever events were collected within
+        # max_seconds. The caller distinguishes a timed-out partial result
+        # from a complete one via the `truncated` flag and the event count.
         pass
     return events, truncated
