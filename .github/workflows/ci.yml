@@ -5,24 +5,23 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  # NOTE: paths-ignore intentionally NOT used here — see issue #561.
+  # When the workflow is path-filtered out, the required-status-check
+  # rulesets (`Python (lint + typecheck + test)` / `CLI (ubuntu-latest)` /
+  # `CLI (macos-latest)` / `Web (lint + build)` / `Security (pip-audit +
+  # gitleaks)`) never report, which leaves docs-only PRs permanently
+  # BLOCKED.
+  #
+  # Instead the workflow always starts, the `changes` job below (uses
+  # dorny/paths-filter) computes per-scope outputs, and every expensive
+  # job is gated with `if: needs.changes.outputs.<scope> == 'true'`.
+  # Docs-only PRs run the cheap `changes` step, the expensive jobs are
+  # skipped, and GitHub treats `skipped` as passing for ruleset
+  # purposes — merge gates clear automatically.
   push:
     branches: [main]
-    paths-ignore:
-      - "*.md"
-      - "!CHANGELOG.md"   # release notes — required ruleset checks must run
-      - LICENSE
-      - docs/**
-      - assets/**
-      - .gitignore
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "*.md"
-      - "!CHANGELOG.md"   # release notes — required ruleset checks must run
-      - LICENSE
-      - docs/**
-      - assets/**
-      - .gitignore
 
 permissions:
   contents: read
