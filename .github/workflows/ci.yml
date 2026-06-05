@@ -5,24 +5,30 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  # NOTE: paths-ignore intentionally NOT used here — see issue #561
+  # and docs.github.com → "Troubleshooting required status checks →
+  # Handling skipped but required checks".
+  #
+  # Quote from that page:
+  #   "If a workflow is skipped due to path filtering [...] then checks
+  #    associated with that workflow will remain in a 'Pending' state.
+  #    A pull request that requires those checks to be successful will
+  #    be blocked from merging.
+  #    If, however, a job within a workflow is skipped due to a
+  #    conditional, it will report its status as 'Success'."
+  #
+  # The workflow therefore always starts.  Per-scope cost gating lives
+  # in the `changes` job below (dorny/paths-filter) and the
+  # `if: needs.changes.outputs.<scope> == 'true'` guard on every
+  # expensive job, so docs-only PRs hit the cheap `changes` step,
+  # every expensive job ends in `skipped`, and the required-check
+  # ruleset clears.  Each scope still runs only when its lane is
+  # actually touched — the original "don't run unnecessary lanes"
+  # intent is preserved by the job-level guards, not by the trigger.
   push:
     branches: [main]
-    paths-ignore:
-      - "*.md"
-      - "!CHANGELOG.md"   # release notes — required ruleset checks must run
-      - LICENSE
-      - docs/**
-      - assets/**
-      - .gitignore
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "*.md"
-      - "!CHANGELOG.md"   # release notes — required ruleset checks must run
-      - LICENSE
-      - docs/**
-      - assets/**
-      - .gitignore
 
 permissions:
   contents: read
