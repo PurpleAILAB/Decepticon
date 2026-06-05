@@ -28,7 +28,10 @@ from urllib.parse import urlparse
 
 import defusedxml.ElementTree as ET
 
-from decepticon.middleware.kg_internal.ai_surface import technology_for_port
+from decepticon.middleware.kg_internal.ai_surface import (
+    technology_for_path,
+    technology_for_port,
+)
 from decepticon.middleware.kg_internal.store import KGStore
 from decepticon_core.utils.logging import get_logger
 
@@ -382,6 +385,27 @@ def _adapt_httpx_jsonl(
         svc_key = f"service::{host_value}:{port_int}"
         ep_key = f"entrypoint::{url}"
 
+        service_obs: dict[str, Any] = {
+            "kind": "Service",
+            "key": svc_key,
+            "label": f"{host_value}:{port_int}/tcp",
+            "props": {
+                "port": port_int,
+                "scheme": scheme,
+                "status_code": status_code,
+                "source": "httpx",
+            },
+        }
+        # AI-surface: a probed AI inference route (Ollama /api/tags, the
+        # OpenAI-compatible /v1/* surface) becomes a typed Technology the
+        # service RUNS, so the llm-redteam plugin can find it (ADR-0007).
+        status_int = status_code if isinstance(status_code, int) else None
+        classified = technology_for_path(parsed_url.path, status_int, "httpx")
+        if classified is not None:
+            tech_node, runs_edge = classified
+            service_obs["edges_out"] = [runs_edge]
+            observations.append(tech_node)
+
         observations.extend(
             [
                 {
@@ -390,17 +414,7 @@ def _adapt_httpx_jsonl(
                     "label": host_value,
                     "props": {"hostname": host_value, "source": "httpx"},
                 },
-                {
-                    "kind": "Service",
-                    "key": svc_key,
-                    "label": f"{host_value}:{port_int}/tcp",
-                    "props": {
-                        "port": port_int,
-                        "scheme": scheme,
-                        "status_code": status_code,
-                        "source": "httpx",
-                    },
-                },
+                service_obs,
                 {
                     "kind": "Entrypoint",
                     "key": ep_key,

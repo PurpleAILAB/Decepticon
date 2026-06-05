@@ -29,6 +29,7 @@ from typing import Any
 from decepticon_core.types.kg import TechnologyCategory, technology_key
 
 DETECTED_BY_PORT = "port-catalog"
+DETECTED_BY_PATH = "endpoint-path"
 
 # port -> (category, product, dedicated)
 _AI_PORT_CATALOG: dict[int, tuple[TechnologyCategory, str, bool]] = {
@@ -36,6 +37,45 @@ _AI_PORT_CATALOG: dict[int, tuple[TechnologyCategory, str, bool]] = {
     7860: (TechnologyCategory.AI_FRAMEWORK, "gradio", False),
     8265: (TechnologyCategory.AI_FRAMEWORK, "ray", False),
 }
+
+# Exact request paths that name an AI inference interface. Ollama's REST
+# routes are product-specific; the OpenAI-compatible routes are the
+# de-facto standard vLLM / LiteLLM / LocalAI / text-generation-webui all
+# expose, so they identify the *interface* even when the product is not
+# yet pinned. path -> (category, product, dedicated).
+_AI_PATH_CATALOG: dict[str, tuple[TechnologyCategory, str, bool]] = {
+    "/api/tags": (TechnologyCategory.AI_RUNTIME, "ollama", True),
+    "/api/version": (TechnologyCategory.AI_RUNTIME, "ollama", True),
+    "/api/generate": (TechnologyCategory.AI_RUNTIME, "ollama", True),
+    "/api/chat": (TechnologyCategory.AI_RUNTIME, "ollama", True),
+    "/v1/chat/completions": (TechnologyCategory.AI_RUNTIME, "openai-compatible-api", True),
+    "/v1/completions": (TechnologyCategory.AI_RUNTIME, "openai-compatible-api", True),
+    "/v1/embeddings": (TechnologyCategory.AI_RUNTIME, "openai-compatible-api", True),
+    "/v1/models": (TechnologyCategory.AI_RUNTIME, "openai-compatible-api", True),
+}
+
+# Path prefixes (sub-routed APIs).
+_AI_PATH_PREFIXES: tuple[tuple[str, TechnologyCategory, str, bool], ...] = (
+    ("/sdapi/v1", TechnologyCategory.AI_FRAMEWORK, "automatic1111", True),
+)
+
+
+def _classification(
+    category: TechnologyCategory, product: str, *, detected_by: str, source: str, dedicated: bool
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build the ``(Technology node, RUNS edge)`` observation pair."""
+    key = technology_key(category, product)
+    props: dict[str, Any] = {
+        "name": product,
+        "category": category.value,
+        "detected_by": detected_by,
+        "source": source,
+    }
+    if not dedicated:
+        props["guess"] = True
+    node = {"kind": "Technology", "key": key, "label": product, "props": props}
+    edge = {"to_key": key, "kind": "RUNS", "props": {"detected_by": detected_by}}
+    return node, edge
 
 
 def technology_for_port(port: int, source: str) -> tuple[dict[str, Any], dict[str, Any]] | None:
@@ -50,15 +90,33 @@ def technology_for_port(port: int, source: str) -> tuple[dict[str, Any], dict[st
     if entry is None:
         return None
     category, product, dedicated = entry
-    key = technology_key(category, product)
-    props: dict[str, Any] = {
-        "name": product,
-        "category": category.value,
-        "detected_by": DETECTED_BY_PORT,
-        "source": source,
-    }
-    if not dedicated:
-        props["guess"] = True
-    node = {"kind": "Technology", "key": key, "label": product, "props": props}
-    edge = {"to_key": key, "kind": "RUNS", "props": {"detected_by": DETECTED_BY_PORT}}
-    return node, edge
+    return _classification(
+        category, product, detected_by=DETECTED_BY_PORT, source=source, dedicated=dedicated
+    )
+
+
+def technology_for_path(
+    path: str, status_code: int | None, source: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Classify a probed URL path as an AI inference interface.
+
+    A ``404`` means the path was probed and is absent, so it is never
+    classified; any other response (200/401/403/405 — auth or
+    method-not-allowed still prove the route exists) is eligible.
+    Returns the same ``(node, edge)`` pair shape as :func:`technology_for_port`.
+    """
+    if status_code == 404:
+        return None
+    normalized = path.split("?", 1)[0].rstrip("/").lower() or "/"
+    entry = _AI_PATH_CATALOG.get(normalized)
+    if entry is None:
+        for prefix, category, product, dedicated in _AI_PATH_PREFIXES:
+            if normalized.startswith(prefix):
+                entry = (category, product, dedicated)
+                break
+    if entry is None:
+        return None
+    category, product, dedicated = entry
+    return _classification(
+        category, product, detected_by=DETECTED_BY_PATH, source=source, dedicated=dedicated
+    )

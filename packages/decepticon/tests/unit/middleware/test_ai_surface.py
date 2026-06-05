@@ -1,14 +1,17 @@
-"""Unit tests for the AI-surface port classifier (ADR-0007).
+"""Unit tests for the AI-surface classifiers (ADR-0007).
 
-``technology_for_port`` turns a scanned port into a typed ``Technology``
-node + a ``RUNS`` edge the owning service carries, so the ``llm-redteam``
-plugin can find an exposed AI runtime recon already saw.
+``technology_for_port`` / ``technology_for_path`` turn a scanned port or a
+probed URL path into a typed ``Technology`` node + a ``RUNS`` edge the
+owning service carries, so the ``llm-redteam`` plugin can find an exposed
+AI runtime recon already saw.
 """
 
 from __future__ import annotations
 
 from decepticon.middleware.kg_internal.ai_surface import (
+    DETECTED_BY_PATH,
     DETECTED_BY_PORT,
+    technology_for_path,
     technology_for_port,
 )
 from decepticon_core.types.kg import TechnologyCategory, technology_key
@@ -51,3 +54,35 @@ def test_unknown_port_is_not_classified() -> None:
 def test_edge_to_key_matches_node_key() -> None:
     node, edge = technology_for_port(11434, "nmap")  # type: ignore[misc]
     assert edge["to_key"] == node["key"]
+
+
+def test_ollama_native_path_is_classified() -> None:
+    node, edge = technology_for_path("/api/tags", 200, "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-runtime:ollama"
+    assert node["props"]["detected_by"] == DETECTED_BY_PATH
+    assert edge["to_key"] == "ai-runtime:ollama"
+
+
+def test_openai_compatible_path_is_classified() -> None:
+    node, _ = technology_for_path("/v1/chat/completions", 405, "httpx")  # type: ignore[misc]
+    # 405 (GET on a POST-only route) still proves the endpoint exists.
+    assert node["key"] == "ai-runtime:openai-compatible-api"
+
+
+def test_path_prefix_match_for_subrouted_api() -> None:
+    node, _ = technology_for_path("/sdapi/v1/txt2img", 200, "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-framework:automatic1111"
+
+
+def test_path_with_trailing_slash_and_query_normalizes() -> None:
+    assert technology_for_path("/api/tags/?pretty=1", 200, "httpx") is not None
+
+
+def test_404_path_is_not_classified() -> None:
+    # The route was probed and is absent — not a detection.
+    assert technology_for_path("/v1/chat/completions", 404, "httpx") is None
+
+
+def test_non_ai_path_is_not_classified() -> None:
+    assert technology_for_path("/", 200, "httpx") is None
+    assert technology_for_path("/admin/login", 200, "httpx") is None

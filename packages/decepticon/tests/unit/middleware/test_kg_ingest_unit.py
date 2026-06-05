@@ -368,6 +368,45 @@ def test_httpx_adapter_extracts_host_service_entrypoint(tmp_path: Path) -> None:
     assert "Entrypoint" in kinds
 
 
+def test_httpx_adapter_classifies_ai_endpoint_path(tmp_path: Path) -> None:
+    f = tmp_path / "httpx.jsonl"
+    f.write_text(
+        json.dumps(
+            {
+                "url": "http://10.0.0.5:11434/api/tags",
+                "host": "10.0.0.5",
+                "port": 11434,
+                "status-code": 200,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_httpx_jsonl(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    tech = next(o for o in obs if o["kind"] == "Technology")
+    assert tech["key"] == "ai-runtime:ollama"
+    assert tech["props"]["detected_by"] == "endpoint-path"
+    svc = next(o for o in obs if o["kind"] == "Service")
+    assert any(e["to_key"] == "ai-runtime:ollama" and e["kind"] == "RUNS" for e in svc["edges_out"])
+
+
+def test_httpx_adapter_ignores_404_and_non_ai_paths(tmp_path: Path) -> None:
+    f = tmp_path / "httpx.jsonl"
+    f.write_text(
+        json.dumps({"url": "http://h:8080/v1/chat/completions", "host": "h", "status-code": 404})
+        + "\n"
+        + json.dumps({"url": "http://h:8080/", "host": "h", "status-code": 200})
+        + "\n",
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_httpx_jsonl(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    assert not any(o["kind"] == "Technology" for o in obs)
+
+
 def test_httpx_adapter_skips_rows_without_url(tmp_path: Path) -> None:
     f = tmp_path / "httpx.jsonl"
     f.write_text(json.dumps({"status-code": 200}) + "\n", encoding="utf-8")
