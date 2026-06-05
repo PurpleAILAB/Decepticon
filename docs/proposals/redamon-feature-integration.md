@@ -108,6 +108,24 @@ missing prerequisite. Pursue opportunistically.
 
 ---
 
+## Addendum — completeness sweep (the 9 unclassified features)
+
+A follow-up pass classified the 9 features the first run failed to verdict. Net result: **3 genuine
+gaps**, the rest already-present or minor variants. The headline correction: **Decepticon has no
+open-web search and no semantic-RAG layer at all** — neither was represented above.
+
+| # | Feature | Status | Value / Effort | Note |
+|---|---------|--------|----------------|------|
+| G1 | **Open-web `web_search` tool** | absent | medium-high / low | Decepticon has **no internet-search tool** (no Tavily/SerpAPI in the agent surface) and **no embeddings/FAISS/cross-encoder** anywhere. Adopt the open-web `web_search` half (one RoE-gated egress tool + `UntrustedOutput` wrapper — model it on `tools/references/tools.py:46`). **Decline** Redamon's heavy FAISS+reranker RAG stack (~1.9 GB models; partially redundant with the existing git-clone+ripgrep `references` corpus). → **Tier 1.** |
+| G2 | **Target guardrail — categorical hard-block deny-list** | partial | medium / low | Always-on refusal of `.gov`/`.mil`/`.edu`/`.int` (+ LLM classifier for gov/bigtech/financial/social) independent of operator RoE. Today the only categorical default-deny is cloud-metadata IMDS (`types/roe.py:57`); clean injection point is `evaluate_target` (`roe.py:229`). Hardens an existing invariant. → **Tier 1 (safety).** |
+| G3 | **Wildcard-DNS / puredns poisoning filter** | absent | low / low-med | Recon-hygiene helper so wildcard-poisoned subdomains don't flood the graph; provision `puredns` (Apache-2.0, CLI-only) or add a wildcard-collapse heuristic to `kg_ingest_subfinder` (`tools.py:911`). → **Tier 3.** |
+
+**Verified already-present (no action):** Tradecraft Lookup (= the `references` module, fully present),
+extended-thinking/Deep-Think (LLM factory `reasoning_effort`), large-tool-output auto-offload
+(`tools/bash/bash.py` 3-tier inline/offload/summary), TruffleHog (one more engine into the
+gitleaks-SARIF path; live-validation gap already captured by Tier-2 #8), reverse-shells/Command-Whisperer
+(interactive tmux session model; already in the declined list), WPScan (restrictively licensed, niche).
+
 ## Cross-cutting constraints (apply to every port)
 
 - **Build the `Technology` NodeKind + `V004` migration first** — load-bearing prerequisite for the whole AI-surface cluster *and* the tech-detection upgrade.
