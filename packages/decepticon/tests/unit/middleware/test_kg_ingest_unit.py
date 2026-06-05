@@ -208,6 +208,63 @@ def test_nmap_adapter_extracts_host_service_entrypoint(tmp_path: Path) -> None:
     assert any(e["kind"] == "HOSTS" for e in host_obs.get("edges_out", []))
 
 
+def test_nmap_adapter_classifies_ai_port_as_technology(tmp_path: Path) -> None:
+    f = tmp_path / "scan.xml"
+    f.write_text(
+        """<?xml version="1.0"?>
+        <nmaprun>
+          <host>
+            <status state="up"/>
+            <address addr="10.0.0.7" addrtype="ipv4"/>
+            <ports>
+              <port portid="11434" protocol="tcp">
+                <state state="open"/>
+                <service name="unknown"/>
+              </port>
+            </ports>
+          </host>
+        </nmaprun>
+        """,
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_nmap_xml(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+
+    obs = store.calls[0]["observations"]
+    tech = next(o for o in obs if o["kind"] == "Technology")
+    assert tech["key"] == "ai-runtime:ollama"
+    assert tech["props"]["detected_by"] == "port-catalog"
+    # The owning Service must RUNS-> the Technology so the planner can traverse.
+    svc = next(o for o in obs if o["kind"] == "Service")
+    assert {
+        "to_key": "ai-runtime:ollama",
+        "kind": "RUNS",
+        "props": {"detected_by": "port-catalog"},
+    } in svc.get("edges_out", [])
+
+
+def test_nmap_adapter_leaves_non_ai_ports_unclassified(tmp_path: Path) -> None:
+    f = tmp_path / "scan.xml"
+    f.write_text(
+        """<?xml version="1.0"?>
+        <nmaprun>
+          <host>
+            <status state="up"/>
+            <address addr="10.0.0.8" addrtype="ipv4"/>
+            <ports>
+              <port portid="22" protocol="tcp"><state state="open"/><service name="ssh"/></port>
+            </ports>
+          </host>
+        </nmaprun>
+        """,
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_nmap_xml(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    assert not any(o["kind"] == "Technology" for o in obs)
+
+
 def test_nmap_adapter_skips_down_hosts(tmp_path: Path) -> None:
     f = tmp_path / "scan.xml"
     f.write_text(

@@ -28,6 +28,7 @@ from urllib.parse import urlparse
 
 import defusedxml.ElementTree as ET
 
+from decepticon.middleware.kg_internal.ai_surface import technology_for_port
 from decepticon.middleware.kg_internal.store import KGStore
 from decepticon_core.utils.logging import get_logger
 
@@ -172,21 +173,27 @@ def _adapt_nmap_xml(
             version = svc_el.get("version") if svc_el is not None else ""
             svc_key = f"service::{ip}:{port}"
             host_edges.append({"to_key": svc_key, "kind": "HOSTS", "weight": 0.5})
-            observations.append(
-                {
-                    "kind": "Service",
-                    "key": svc_key,
-                    "label": f"{ip}:{port}/{proto}",
-                    "props": {
-                        "port": port,
-                        "protocol": proto,
-                        "service": svc_name,
-                        "product": product or "",
-                        "version": version or "",
-                        "source": "nmap",
-                    },
-                }
-            )
+            service_obs: dict[str, Any] = {
+                "kind": "Service",
+                "key": svc_key,
+                "label": f"{ip}:{port}/{proto}",
+                "props": {
+                    "port": port,
+                    "protocol": proto,
+                    "service": svc_name,
+                    "product": product or "",
+                    "version": version or "",
+                    "source": "nmap",
+                },
+            }
+            # AI-surface: a recognized AI port becomes a typed Technology node
+            # the service RUNS, so the llm-redteam plugin can find it (ADR-0007).
+            classified = technology_for_port(port, "nmap")
+            if classified is not None:
+                tech_node, runs_edge = classified
+                service_obs["edges_out"] = [runs_edge]
+                observations.append(tech_node)
+            observations.append(service_obs)
             services_count += 1
 
             if port in _WEB_PORTS:
