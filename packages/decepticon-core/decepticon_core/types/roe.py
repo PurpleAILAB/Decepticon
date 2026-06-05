@@ -62,6 +62,14 @@ _DEFAULT_FORBIDDEN_DESTS: tuple[str, ...] = (
     "100.100.100.200",
 )
 
+# Categorical high-collateral TLDs. A typo or an over-broad subdomain glob
+# that wanders onto a government, military, education, or international-org
+# host is the kind of mistake that turns an authorized engagement into a CFAA
+# / law-enforcement incident, so they are denied by default and the operator
+# must consciously opt in (``allow_sensitive_tlds: true``) to scope one — the
+# same default-deny posture as the cloud-metadata endpoints above.
+_DEFAULT_SENSITIVE_TLDS: tuple[str, ...] = (".gov", ".mil", ".edu", ".int")
+
 
 @dataclass(frozen=True, slots=True)
 class ScopeRule:
@@ -99,6 +107,7 @@ class MachineEnforcement:
     forbidden_destinations: tuple[str, ...] = field(default_factory=tuple)
     forbidden_command_patterns: tuple[str, ...] = field(default_factory=tuple)
     allow_cloud_metadata: bool = False
+    allow_sensitive_tlds: bool = False
     max_concurrent_connections: int | None = None
     min_inter_request_delay_ms: int = 0
     authorized_windows: tuple[tuple[datetime, datetime], ...] = field(default_factory=tuple)
@@ -120,6 +129,7 @@ class MachineEnforcement:
             forbidden_destinations=tuple(data.get("forbidden_destinations") or ()),
             forbidden_command_patterns=tuple(data.get("forbidden_command_patterns") or ()),
             allow_cloud_metadata=bool(data.get("allow_cloud_metadata", False)),
+            allow_sensitive_tlds=bool(data.get("allow_sensitive_tlds", False)),
             max_concurrent_connections=data.get("max_concurrent_connections"),
             min_inter_request_delay_ms=int(data.get("min_inter_request_delay_ms") or 0),
             authorized_windows=tuple(_parse_windows(data.get("authorized_windows") or ())),
@@ -226,6 +236,26 @@ def _matches_rule(rule: ScopeRule, target: str) -> bool:
     return rule.pattern.rstrip(".").lower() == norm_target.lower()
 
 
+def _sensitive_tld_match(target: str, tlds: tuple[str, ...]) -> str | None:
+    """Return the sensitive TLD ``target``'s hostname ends with, else None.
+
+    IP literals have no TLD, so they are never matched. A trailing ``:port``
+    is stripped first so ``foo.gov:8443`` is caught.
+    """
+    host = target.strip().lower()
+    if not host:
+        return None
+    try:
+        ipaddress.ip_address(host)
+        return None
+    except ValueError:
+        pass
+    base, _, port = host.rpartition(":")
+    if base and port.isdigit():
+        host = base
+    return next((tld for tld in tlds if host.endswith(tld)), None)
+
+
 def evaluate_target(
     target: str,
     rules: MachineEnforcement,
@@ -240,6 +270,19 @@ def evaluate_target(
                 code="FORBIDDEN_DESTINATION",
                 detail=f"{target!r} matches forbidden destination {forbidden!r}",
                 matched=(forbidden,),
+            )
+
+    if not rules.allow_sensitive_tlds:
+        sensitive = _sensitive_tld_match(target, _DEFAULT_SENSITIVE_TLDS)
+        if sensitive is not None:
+            return Decision.refuse(
+                code="SENSITIVE_TLD",
+                detail=(
+                    f"{target!r} is on the high-collateral {sensitive!r} TLD; set "
+                    f"allow_sensitive_tlds to scope it deliberately"
+                ),
+                matched=(sensitive,),
+                risk="high",
             )
 
     for rule in rules.out_of_scope:
