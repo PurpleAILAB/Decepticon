@@ -66,6 +66,11 @@ Use [`template.md`](template.md) as the starting point.
 | [0002](0002-pr-tiering-and-blast-radius.md) | PR tiering by blast radius | Accepted |
 | [0003](0003-ai-contributor-self-review.md) | AI-assisted contribution self-review charter | Accepted |
 | [0004](0004-zero-ai-slop-policy.md) | Zero AI-slop policy — the 100% quality bar | Accepted |
+<<<<<<< HEAD
 | [0005](0005-bloodhound-via-bhce-rest-client.md) | Integrate BloodHound via the official BHCE REST API, not via in-house reimplementation | Accepted |
+=======
+| [0005](0005-bloodhound-via-bhce-rest-client.md) | Integrate BloodHound via the official BHCE REST API, not via in-house reimplementation | Proposed |
+| [0006](0006-agent-driven-container-lifecycle.md) | Agent-driven domain-tool container lifecycle via an ops-control sidecar | Proposed |
+>>>>>>> 5c84da3c (docs(adr): 0006 — agent-driven domain-tool container lifecycle)
 
 Keep this index in sync when you land a new ADR.
