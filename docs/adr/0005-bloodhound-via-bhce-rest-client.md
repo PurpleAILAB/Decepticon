@@ -1,6 +1,6 @@
 # 0005. Integrate BloodHound via the official BHCE REST API, not via in-house reimplementation
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-05
 - **Deciders:** @PurpleCHOIms
 - **Related:** PR #560, #562, #563, #565, #567, #569, #570, #571, #572, #573, #574, #575, #576, #577, #578 (KGStore-direct ingest + ADCS post-process — to be deprecated); BloodHound CE v9.2.2 (2026-06-01)
