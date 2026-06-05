@@ -243,6 +243,64 @@ def test_nmap_adapter_classifies_ai_port_as_technology(tmp_path: Path) -> None:
     } in svc.get("edges_out", [])
 
 
+def test_nmap_adapter_classifies_ai_runtime_banner_on_nonstandard_port(tmp_path: Path) -> None:
+    f = tmp_path / "scan.xml"
+    f.write_text(
+        """<?xml version="1.0"?>
+        <nmaprun>
+          <host>
+            <status state="up"/>
+            <address addr="10.0.0.9" addrtype="ipv4"/>
+            <ports>
+              <port portid="8000" protocol="tcp">
+                <state state="open"/>
+                <service name="http" product="vLLM" version="0.6.3"/>
+              </port>
+            </ports>
+          </host>
+        </nmaprun>
+        """,
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_nmap_xml(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    tech = next(o for o in obs if o["kind"] == "Technology")
+    assert tech["key"] == "ai-runtime:vllm"
+    assert tech["props"]["detected_by"] == "nmap-banner"
+
+
+def test_nmap_adapter_dedups_port_and_banner_double_hit(tmp_path: Path) -> None:
+    # 11434 (port catalog) AND product "Ollama" (banner) both say Ollama;
+    # the service must end up with exactly one Technology node + RUNS edge.
+    f = tmp_path / "scan.xml"
+    f.write_text(
+        """<?xml version="1.0"?>
+        <nmaprun>
+          <host>
+            <status state="up"/>
+            <address addr="10.0.0.10" addrtype="ipv4"/>
+            <ports>
+              <port portid="11434" protocol="tcp">
+                <state state="open"/>
+                <service name="http" product="Ollama"/>
+              </port>
+            </ports>
+          </host>
+        </nmaprun>
+        """,
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_nmap_xml(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    techs = [o for o in obs if o["kind"] == "Technology"]
+    assert len(techs) == 1
+    assert techs[0]["key"] == "ai-runtime:ollama"
+    svc = next(o for o in obs if o["kind"] == "Service")
+    assert len(svc["edges_out"]) == 1
+
+
 def test_nmap_adapter_leaves_non_ai_ports_unclassified(tmp_path: Path) -> None:
     f = tmp_path / "scan.xml"
     f.write_text(

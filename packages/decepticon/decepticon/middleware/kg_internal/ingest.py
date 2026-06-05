@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 import defusedxml.ElementTree as ET
 
 from decepticon.middleware.kg_internal.ai_surface import (
+    technology_for_banner,
     technology_for_path,
     technology_for_port,
     technology_for_title,
@@ -190,13 +191,24 @@ def _adapt_nmap_xml(
                     "source": "nmap",
                 },
             }
-            # AI-surface: a recognized AI port becomes a typed Technology node
-            # the service RUNS, so the llm-redteam plugin can find it (ADR-0007).
-            classified = technology_for_port(port, "nmap")
-            if classified is not None:
-                tech_node, runs_edge = classified
-                service_obs["edges_out"] = [runs_edge]
-                observations.append(tech_node)
+            # AI-surface: a recognized AI port or a service banner naming an
+            # AI runtime becomes a typed Technology the service RUNS, so the
+            # llm-redteam plugin can find it (ADR-0007). Deduped by tech key
+            # so a port+banner double-hit lands one node.
+            banner = " ".join(p for p in (product, version, svc_name) if p)
+            ai_nodes: dict[str, dict[str, Any]] = {}
+            ai_edges: dict[str, dict[str, Any]] = {}
+            for classified in (
+                technology_for_port(port, "nmap"),
+                technology_for_banner(banner, "nmap"),
+            ):
+                if classified is not None:
+                    tech_node, runs_edge = classified
+                    ai_nodes.setdefault(tech_node["key"], tech_node)
+                    ai_edges.setdefault(runs_edge["to_key"], runs_edge)
+            if ai_edges:
+                service_obs["edges_out"] = list(ai_edges.values())
+                observations.extend(ai_nodes.values())
             observations.append(service_obs)
             services_count += 1
 

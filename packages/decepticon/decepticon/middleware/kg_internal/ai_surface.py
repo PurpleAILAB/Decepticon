@@ -24,6 +24,7 @@ recall.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from decepticon_core.types.kg import TechnologyCategory, technology_key
@@ -31,6 +32,22 @@ from decepticon_core.types.kg import TechnologyCategory, technology_key
 DETECTED_BY_PORT = "port-catalog"
 DETECTED_BY_PATH = "endpoint-path"
 DETECTED_BY_TITLE = "frontend-title"
+DETECTED_BY_BANNER = "nmap-banner"
+
+# Word-boundary banner markers naming an AI runtime/proxy/framework in a
+# service-fingerprint string (nmap product/version/name). A banner that
+# names the product is strong evidence, so these are first-class (not
+# guesses) — and they catch a runtime on a non-catalog port. Matched as
+# whole tokens so "ollama" does not fire on "follama". marker ->
+# (category, product).
+_AI_BANNER_CATALOG: tuple[tuple[str, TechnologyCategory, str], ...] = (
+    ("ollama", TechnologyCategory.AI_RUNTIME, "ollama"),
+    ("vllm", TechnologyCategory.AI_RUNTIME, "vllm"),
+    ("text-generation-inference", TechnologyCategory.AI_RUNTIME, "text-generation-inference"),
+    ("llama.cpp", TechnologyCategory.AI_RUNTIME, "llama.cpp"),
+    ("litellm", TechnologyCategory.AI_PROXY, "litellm"),
+    ("mlflow", TechnologyCategory.AI_FRAMEWORK, "mlflow"),
+)
 
 # Distinctive HTML <title> substrings of AI web front-ends. A page title
 # is operator-controllable, so every title hit is recorded guess=True
@@ -151,5 +168,26 @@ def technology_for_title(
         if needle in normalized:
             return _classification(
                 category, product, detected_by=DETECTED_BY_TITLE, source=source, dedicated=False
+            )
+    return None
+
+
+def technology_for_banner(
+    banner: str | None, source: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Classify a service-fingerprint banner that names an AI runtime.
+
+    A banner naming the product (nmap ``product``/``version``/``name``) is
+    strong evidence, so hits are first-class — and they catch a runtime on
+    a non-catalog port. Matched on token boundaries so ``ollama`` does not
+    fire inside ``follama``. Returns ``None`` for an empty/unmatched banner.
+    """
+    if not banner:
+        return None
+    normalized = banner.strip().lower()
+    for marker, category, product in _AI_BANNER_CATALOG:
+        if re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", normalized):
+            return _classification(
+                category, product, detected_by=DETECTED_BY_BANNER, source=source, dedicated=True
             )
     return None

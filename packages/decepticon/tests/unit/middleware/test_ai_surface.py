@@ -9,9 +9,11 @@ AI runtime recon already saw.
 from __future__ import annotations
 
 from decepticon.middleware.kg_internal.ai_surface import (
+    DETECTED_BY_BANNER,
     DETECTED_BY_PATH,
     DETECTED_BY_PORT,
     DETECTED_BY_TITLE,
+    technology_for_banner,
     technology_for_path,
     technology_for_port,
     technology_for_title,
@@ -108,3 +110,30 @@ def test_empty_or_unknown_title_is_not_classified() -> None:
     assert technology_for_title(None, "httpx") is None
     assert technology_for_title("", "httpx") is None
     assert technology_for_title("Welcome to nginx!", "httpx") is None
+
+
+def test_banner_naming_runtime_is_confident() -> None:
+    node, edge = technology_for_banner("Ollama 0.1.32", "nmap")  # type: ignore[misc]
+    assert node["key"] == "ai-runtime:ollama"
+    assert node["props"]["detected_by"] == DETECTED_BY_BANNER
+    # A banner naming the product is strong evidence — not a guess.
+    assert "guess" not in node["props"]
+    assert edge["to_key"] == "ai-runtime:ollama"
+
+
+def test_banner_proxy_category() -> None:
+    node, _ = technology_for_banner("LiteLLM proxy", "nmap")  # type: ignore[misc]
+    assert node["key"] == "ai-proxy:litellm"
+
+
+def test_banner_matches_on_token_boundary_only() -> None:
+    # "ollama" must not fire inside an unrelated token.
+    assert technology_for_banner("follamatic 1.0", "nmap") is None
+    # but punctuation-delimited is a real hit.
+    assert technology_for_banner("server: ollama/0.1", "nmap") is not None
+
+
+def test_empty_or_unmatched_banner_is_not_classified() -> None:
+    assert technology_for_banner(None, "nmap") is None
+    assert technology_for_banner("", "nmap") is None
+    assert technology_for_banner("nginx 1.18", "nmap") is None
