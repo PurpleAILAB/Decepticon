@@ -656,6 +656,13 @@ services:
       context: .
       dockerfile: containers/ops-control.Dockerfile
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-ops-control
+    # The image runs as the non-root `ops` user (containers/ops-control.Dockerfile),
+    # so grant it the host docker-socket group rather than root. Set DOCKER_GID
+    # to `stat -c %g /var/run/docker.sock` on the host (999 on most Debian/Ubuntu
+    # installs, hence the default); a wrong value only affects ops-control, which
+    # 400-rejects everything outside OPS_PROFILE_ALLOWLIST regardless.
+    group_add:
+      - "${DOCKER_GID:-999}"
     environment:
       # Allowlist seeded for the imminent sprint-2 cutover; ADR-0006
       # sub-decision §3.  Profiles not listed here are 400-rejected

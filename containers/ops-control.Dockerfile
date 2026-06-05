@@ -7,6 +7,13 @@
 # the host's Docker socket.  Its HTTP API exposes an allowlisted
 # subset of `docker compose --profile <name> up/stop -d` and nothing
 # else; no raw `docker run`, no image pull, no volume / network edits.
+#
+# It runs as the non-root `ops` user (UID 10001).  The container only
+# *reads* its own /app payload at runtime, so dropping root costs it
+# nothing; the one privileged operation — talking to the bind-mounted
+# /var/run/docker.sock — is granted out-of-band by adding the host's
+# docker-socket GID to the process via `group_add` in docker-compose.yml
+# (DOCKER_GID), NOT by running as root.
 # ─────────────────────────────────────────────────────────────────────
 
 FROM alpine:3.20
@@ -30,6 +37,13 @@ COPY containers/ops-control/requirements.txt /app/requirements.txt
 RUN python3 -m pip install --break-system-packages --no-cache-dir -r /app/requirements.txt
 
 COPY containers/ops-control/main.py /app/main.py
+
+# Drop to a non-root user (Trivy DS-0002 / CIS-Docker 4.1). The app only
+# reads /app, so root-owned 0644 files stay readable; socket access is
+# granted at runtime via `group_add` (see docker-compose.yml), so this
+# image needs no docker group baked in.
+RUN addgroup -S ops && adduser -S -G ops -h /app -u 10001 ops
+USER ops
 
 # Default config; overridden by docker-compose.yml at runtime.
 ENV OPS_PROFILE_ALLOWLIST="" \
