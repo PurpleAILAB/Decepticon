@@ -33,6 +33,21 @@ DETECTED_BY_PORT = "port-catalog"
 DETECTED_BY_PATH = "endpoint-path"
 DETECTED_BY_TITLE = "frontend-title"
 DETECTED_BY_BANNER = "nmap-banner"
+DETECTED_BY_HEADER = "http-header"
+
+# Distinctive HTTP *response-header* name markers (matched against httpx's
+# normalized header keys, e.g. ``x-litellm-version`` -> ``x_litellm_version``).
+# These are the vendor-documented headers each product emits — LiteLLM's
+# ``x-litellm-*`` proxy headers and text-generation-inference's
+# ``x-compute-*`` / ``x-prompt-tokens`` telemetry. A header can be added by
+# a fronting proxy, so every hit is corroborating-only (guess=True): it
+# flags a likely AI backend for the port/banner passes to confirm.
+# key-substring (normalized) -> (category, product).
+_AI_HEADER_CATALOG: tuple[tuple[str, TechnologyCategory, str], ...] = (
+    ("litellm", TechnologyCategory.AI_PROXY, "litellm"),
+    ("x_compute_type", TechnologyCategory.AI_RUNTIME, "text-generation-inference"),
+    ("x_prompt_tokens", TechnologyCategory.AI_RUNTIME, "text-generation-inference"),
+)
 
 # Word-boundary banner markers naming an AI runtime/proxy/framework in a
 # service-fingerprint string (nmap product/version/name). A banner that
@@ -189,5 +204,27 @@ def technology_for_banner(
         if re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", normalized):
             return _classification(
                 category, product, detected_by=DETECTED_BY_BANNER, source=source, dedicated=True
+            )
+    return None
+
+
+def technology_for_headers(
+    headers: dict[str, Any] | None, source: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Classify a response-header set that carries an AI product's headers.
+
+    Always corroborating-only (``guess=True``): a header can be injected by
+    a fronting proxy, so a hit flags a likely AI backend for the
+    port/banner passes to confirm, never anchors a chain. ``headers`` is
+    httpx's normalized name->value map; matching is on header *names*.
+    Returns ``None`` for empty headers or no match.
+    """
+    if not isinstance(headers, dict) or not headers:
+        return None
+    keys = [str(k).lower() for k in headers]
+    for marker, category, product in _AI_HEADER_CATALOG:
+        if any(marker in key for key in keys):
+            return _classification(
+                category, product, detected_by=DETECTED_BY_HEADER, source=source, dedicated=False
             )
     return None

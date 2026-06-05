@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from decepticon.middleware.kg_internal.ai_surface import (
     DETECTED_BY_BANNER,
+    DETECTED_BY_HEADER,
     DETECTED_BY_PATH,
     DETECTED_BY_PORT,
     DETECTED_BY_TITLE,
     technology_for_banner,
+    technology_for_headers,
     technology_for_path,
     technology_for_port,
     technology_for_title,
@@ -137,3 +139,32 @@ def test_empty_or_unmatched_banner_is_not_classified() -> None:
     assert technology_for_banner(None, "nmap") is None
     assert technology_for_banner("", "nmap") is None
     assert technology_for_banner("nginx 1.18", "nmap") is None
+
+
+def test_litellm_proxy_header_is_corroborating_guess() -> None:
+    headers = {
+        "server": "uvicorn",
+        "x_litellm_version": "1.40.0",
+        "content_type": "application/json",
+    }
+    node, edge = technology_for_headers(headers, "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-proxy:litellm"
+    assert node["props"]["detected_by"] == DETECTED_BY_HEADER
+    # A header is proxy-injectable -> guess-only (ADR-0007).
+    assert node["props"]["guess"] is True
+    assert edge["to_key"] == "ai-proxy:litellm"
+
+
+def test_tgi_compute_header_is_classified() -> None:
+    node, _ = technology_for_headers({"x_compute_type": "gpu", "x_prompt_tokens": "12"}, "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-runtime:text-generation-inference"
+
+
+def test_headers_without_ai_marker_are_not_classified() -> None:
+    assert technology_for_headers({"server": "nginx", "content_type": "text/html"}, "httpx") is None
+
+
+def test_empty_or_non_dict_headers_are_not_classified() -> None:
+    assert technology_for_headers(None, "httpx") is None
+    assert technology_for_headers({}, "httpx") is None
+    assert technology_for_headers("server: nginx", "httpx") is None  # type: ignore[arg-type]

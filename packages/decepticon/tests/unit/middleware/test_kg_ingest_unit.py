@@ -475,6 +475,31 @@ def test_httpx_adapter_classifies_ai_ui_title(tmp_path: Path) -> None:
     assert any(e["to_key"] == "ai-framework:comfyui" for e in svc["edges_out"])
 
 
+def test_httpx_adapter_classifies_ai_response_header(tmp_path: Path) -> None:
+    f = tmp_path / "httpx.jsonl"
+    f.write_text(
+        json.dumps(
+            {
+                "url": "http://10.0.0.7:4000/",
+                "host": "10.0.0.7",
+                "port": 4000,
+                "status-code": 200,
+                "header": {"server": "uvicorn", "x_litellm_version": "1.40.0"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    store = _StubStore()
+    _adapt_httpx_jsonl(f, store, "acme", "recon", "ep-1")  # type: ignore[arg-type]
+    obs = store.calls[0]["observations"]
+    tech = next(o for o in obs if o["kind"] == "Technology")
+    assert tech["key"] == "ai-proxy:litellm"
+    assert tech["props"]["detected_by"] == "http-header"
+    svc = next(o for o in obs if o["kind"] == "Service")
+    assert any(e["to_key"] == "ai-proxy:litellm" for e in svc["edges_out"])
+
+
 def test_httpx_adapter_ignores_404_and_non_ai_paths(tmp_path: Path) -> None:
     f = tmp_path / "httpx.jsonl"
     f.write_text(

@@ -30,6 +30,7 @@ import defusedxml.ElementTree as ET
 
 from decepticon.middleware.kg_internal.ai_surface import (
     technology_for_banner,
+    technology_for_headers,
     technology_for_path,
     technology_for_port,
     technology_for_title,
@@ -410,21 +411,25 @@ def _adapt_httpx_jsonl(
             },
         }
         # AI-surface: a probed AI inference route (Ollama /api/tags, the
-        # OpenAI-compatible /v1/* surface) or a recognized AI web-UI title
-        # becomes a typed Technology the service RUNS, so the llm-redteam
-        # plugin can find it (ADR-0007).
+        # OpenAI-compatible /v1/* surface), a recognized AI web-UI title, or
+        # an AI product's response headers becomes a typed Technology the
+        # service RUNS, so the llm-redteam plugin can find it (ADR-0007).
+        # Deduped by tech key so multiple signals for one product land one node.
         status_int = status_code if isinstance(status_code, int) else None
-        ai_edges: list[dict[str, Any]] = []
+        ai_nodes: dict[str, dict[str, Any]] = {}
+        ai_edges: dict[str, dict[str, Any]] = {}
         for classified in (
             technology_for_path(parsed_url.path, status_int, "httpx"),
             technology_for_title(row.get("title"), "httpx"),
+            technology_for_headers(row.get("header"), "httpx"),
         ):
             if classified is not None:
                 tech_node, runs_edge = classified
-                observations.append(tech_node)
-                ai_edges.append(runs_edge)
+                ai_nodes.setdefault(tech_node["key"], tech_node)
+                ai_edges.setdefault(runs_edge["to_key"], runs_edge)
         if ai_edges:
-            service_obs["edges_out"] = ai_edges
+            service_obs["edges_out"] = list(ai_edges.values())
+            observations.extend(ai_nodes.values())
 
         observations.extend(
             [
