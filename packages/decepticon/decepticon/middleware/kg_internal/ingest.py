@@ -31,6 +31,7 @@ import defusedxml.ElementTree as ET
 from decepticon.middleware.kg_internal.ai_surface import (
     technology_for_path,
     technology_for_port,
+    technology_for_title,
 )
 from decepticon.middleware.kg_internal.store import KGStore
 from decepticon_core.utils.logging import get_logger
@@ -397,14 +398,21 @@ def _adapt_httpx_jsonl(
             },
         }
         # AI-surface: a probed AI inference route (Ollama /api/tags, the
-        # OpenAI-compatible /v1/* surface) becomes a typed Technology the
-        # service RUNS, so the llm-redteam plugin can find it (ADR-0007).
+        # OpenAI-compatible /v1/* surface) or a recognized AI web-UI title
+        # becomes a typed Technology the service RUNS, so the llm-redteam
+        # plugin can find it (ADR-0007).
         status_int = status_code if isinstance(status_code, int) else None
-        classified = technology_for_path(parsed_url.path, status_int, "httpx")
-        if classified is not None:
-            tech_node, runs_edge = classified
-            service_obs["edges_out"] = [runs_edge]
-            observations.append(tech_node)
+        ai_edges: list[dict[str, Any]] = []
+        for classified in (
+            technology_for_path(parsed_url.path, status_int, "httpx"),
+            technology_for_title(row.get("title"), "httpx"),
+        ):
+            if classified is not None:
+                tech_node, runs_edge = classified
+                observations.append(tech_node)
+                ai_edges.append(runs_edge)
+        if ai_edges:
+            service_obs["edges_out"] = ai_edges
 
         observations.extend(
             [

@@ -11,8 +11,10 @@ from __future__ import annotations
 from decepticon.middleware.kg_internal.ai_surface import (
     DETECTED_BY_PATH,
     DETECTED_BY_PORT,
+    DETECTED_BY_TITLE,
     technology_for_path,
     technology_for_port,
+    technology_for_title,
 )
 from decepticon_core.types.kg import TechnologyCategory, technology_key
 
@@ -86,3 +88,23 @@ def test_404_path_is_not_classified() -> None:
 def test_non_ai_path_is_not_classified() -> None:
     assert technology_for_path("/", 200, "httpx") is None
     assert technology_for_path("/admin/login", 200, "httpx") is None
+
+
+def test_ai_ui_title_is_corroborating_guess() -> None:
+    node, edge = technology_for_title("ComfyUI", "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-framework:comfyui"
+    assert node["props"]["detected_by"] == DETECTED_BY_TITLE
+    # A title is operator-controllable -> always guess-only (ADR-0007).
+    assert node["props"]["guess"] is True
+    assert edge["to_key"] == "ai-framework:comfyui"
+
+
+def test_ai_ui_title_matches_substring_case_insensitively() -> None:
+    node, _ = technology_for_title("My Open WebUI - chat", "httpx")  # type: ignore[misc]
+    assert node["key"] == "ai-framework:open-webui"
+
+
+def test_empty_or_unknown_title_is_not_classified() -> None:
+    assert technology_for_title(None, "httpx") is None
+    assert technology_for_title("", "httpx") is None
+    assert technology_for_title("Welcome to nginx!", "httpx") is None

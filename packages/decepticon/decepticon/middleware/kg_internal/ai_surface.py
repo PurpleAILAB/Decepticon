@@ -30,6 +30,19 @@ from decepticon_core.types.kg import TechnologyCategory, technology_key
 
 DETECTED_BY_PORT = "port-catalog"
 DETECTED_BY_PATH = "endpoint-path"
+DETECTED_BY_TITLE = "frontend-title"
+
+# Distinctive HTML <title> substrings of AI web front-ends. A page title
+# is operator-controllable, so every title hit is recorded guess=True
+# (corroborating-only, ADR-0007) — it flags a likely AI UI for the
+# header/port passes to confirm, never anchors an exploit chain alone.
+# lowercase-substring -> (category, product).
+_AI_TITLE_CATALOG: tuple[tuple[str, TechnologyCategory, str], ...] = (
+    ("comfyui", TechnologyCategory.AI_FRAMEWORK, "comfyui"),
+    ("open webui", TechnologyCategory.AI_FRAMEWORK, "open-webui"),
+    ("text generation web ui", TechnologyCategory.AI_FRAMEWORK, "text-generation-webui"),
+    ("stable diffusion", TechnologyCategory.AI_FRAMEWORK, "stable-diffusion"),
+)
 
 # port -> (category, product, dedicated)
 _AI_PORT_CATALOG: dict[int, tuple[TechnologyCategory, str, bool]] = {
@@ -120,3 +133,23 @@ def technology_for_path(
     return _classification(
         category, product, detected_by=DETECTED_BY_PATH, source=source, dedicated=dedicated
     )
+
+
+def technology_for_title(
+    title: str | None, source: str
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Classify an HTML page title as a likely AI web front-end.
+
+    Always corroborating-only (``guess=True``): a title is operator
+    controllable, so it flags an AI UI for a confirming pass, never
+    anchors a chain. Returns ``None`` for an empty or unrecognized title.
+    """
+    if not title:
+        return None
+    normalized = title.strip().lower()
+    for needle, category, product in _AI_TITLE_CATALOG:
+        if needle in normalized:
+            return _classification(
+                category, product, detected_by=DETECTED_BY_TITLE, source=source, dedicated=False
+            )
+    return None
