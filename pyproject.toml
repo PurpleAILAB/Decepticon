@@ -120,6 +120,11 @@ known-first-party = ["decepticon", "decepticon_core", "decepticon_sdk"]
 "clients/**" = ["TID251"]
 "scripts/**" = ["TID251"]
 "config/**" = ["TID251"]
+# Sidecar binaries shipped under containers/ are their own runtime
+# images, not part of decepticon-core's importable surface; they may
+# depend on whatever HTTP / docker libs make sense for that sidecar
+# (e.g. ops-control's fastapi).
+"containers/**" = ["TID251"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

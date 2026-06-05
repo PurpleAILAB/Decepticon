@@ -638,6 +638,50 @@ services:
       start_period: 90s
     restart: unless-stopped
 
+  # ── ops-control sidecar — single lifecycle surface ─────────────────
+  #
+  # ADR-0006.  The only container in the management plane that
+  # bind-mounts the host's Docker socket.  Exposes an allowlisted
+  # HTTP API on decepticon-net so the orchestrator agent can call
+  # docker compose --profile <name> up/stop -d for domain-specific
+  # sidecars (ad, c2-sliver, reversing, …) at runtime.
+  #
+  # No host port: only langgraph (and friends on decepticon-net)
+  # reach it over the bridge.  No raw `docker run` / image pull /
+  # volume / network surface — those code paths don't exist in
+  # main.py.
+  ops-control:
+    image: ghcr.io/purpleailab/decepticon-ops-control:${DECEPTICON_VERSION:-latest}
+    build:
+      context: .
+      dockerfile: containers/ops-control.Dockerfile
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-ops-control
+    environment:
+      # Allowlist seeded for the imminent sprint-2 cutover; ADR-0006
+      # sub-decision §3.  Profiles not listed here are 400-rejected
+      # without touching docker.
+      OPS_PROFILE_ALLOWLIST: ${OPS_PROFILE_ALLOWLIST:-ad,c2-sliver,c2-havoc,reversing}
+      OPS_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME:-decepticon}
+      OPS_COMPOSE_FILE: /host/docker-compose.yml
+    volumes:
+      # Docker socket bind — the entire reason ops-control exists in
+      # this plane.  Not read-only: docker compose up needs write
+      # access to the engine.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Repo root mounted read-only so docker compose can see the
+      # same docker-compose.yml + .env that the host runs.  Compose
+      # never writes back through this path.
+      - ./:/host:ro
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8090/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
 volumes:
   postgres_data:
   sliver_data:
