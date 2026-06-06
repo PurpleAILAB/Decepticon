@@ -272,10 +272,13 @@ jobs:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
-    # Belt-and-braces: even if the runner choked, this job must never
-    # block a PR. Required-status enforcement lives in branch
-    # protection, but `continue-on-error` makes the non-blocking intent
-    # explicit in the workflow file itself.
+    # The real non-blocking guarantee is that this job is NOT in the
+    # required-status list in branch protection — that is what keeps a
+    # red result here from blocking merge. `continue-on-error: true` is
+    # a secondary safety net at the workflow level: if a step fails, the
+    # workflow run's overall conclusion stays `success` (so the commit
+    # status check posted by GitHub Actions never goes red), even though
+    # the job's own conclusion in the run UI will still read `failure`.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
