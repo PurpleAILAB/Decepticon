@@ -133,6 +133,94 @@ service activation through it.  Four sub-decisions:
    `ops-control`).  Domain services are inert until something
    `ops_start`s them.
 
+### Workload catalog
+
+The allowlist in §1' enumerates the workloads the agent system may
+spawn.  The catalog below is the full specialist-to-workload mapping
+at v1.2.0 candidate scope, expanded from the §1' seed
+(`ad`, `c2-sliver`, `c2-havoc`, `reversing`, `wireless`, …) to cover
+the WAVE-3 specialist expansion landed in PR #542 plus the existing
+16 standard specialists.
+
+Each row is the logical workload name (the value passed to
+`ops_start("<name>")` and matched against the daemon-side allowlist),
+the specialist(s) that drive it, the docker-compose profile that gates
+the services, the canonical service set, and which compose network
+the spawned services bind to.  Workloads marked **`(future)`** are
+reserved in the allowlist but their compose services are not yet
+shipped; adding one is a `(profile, services)` tuple in
+`docker-compose.yml` + one entry in the daemon's allowlist + (if the
+service is a Decepticon-built image) one row in
+`.github/workflows/release.yml`'s docker matrix.
+
+| Workload | Driven by | Compose profile | Services | Network |
+|---|---|---|---|---|
+| `ad` | `ad_operator` | `[ad]` | `bhce`, `bhce-neo4j` | `decepticon-net` |
+| `c2-sliver` | `postexploit`, `exploit` | `[c2-sliver]` | `c2-sliver` | `decepticon-net` |
+| `c2-havoc` *(future)* | `postexploit`, `exploit` | `[c2-havoc]` | havoc team server + agent profile | `decepticon-net` |
+| `reversing` | `reverser` | `[reversing]` | `ghidra-mcp` (sandbox-derivative image) | `sandbox-net` |
+| `phishing` *(future)* | `phisher` | `[phishing]` | `gophish`, `evilginx2`, lookalike-domain proxy | `decepticon-net` |
+| `mobile` *(future)* | `mobile_operator` | `[mobile]` | Android emulator + Frida server | `sandbox-net` |
+| `wireless` *(future)* | `wireless_operator` | `[wireless]` | HackRF / wifi rig (host-attached) | `sandbox-net` |
+| `cloud` *(future)* | `cloud_hunter` | `[cloud]` | LocalStack / minikube cloud-emulation lab | `decepticon-net` |
+| `iot` *(future)* | `iot_operator` (#542) | `[iot]` | firmadyne, MQTT / CoAP brokers, IoT firmware images | `sandbox-net` |
+| `ics` *(future)* | `ics_operator` (#542) | `[ics]` | OpenPLC + Modbus / S7comm / DNP3 simulators | `sandbox-net` |
+| `forensics` *(future)* | `forensicator` (#542) | `[forensics]` | DFIR toolchain (Plaso, Volatility, sleuthkit) | `sandbox-net` |
+| `supply-chain` *(future)* | `supply_chain_operator` (#542) | `[supply-chain]` | CI/CD lab (Gitea, Drone, signing-key store) | `decepticon-net` |
+
+Specialists whose entire toolchain runs inside the always-on
+`sandbox` container — `recon`, `analyst`, `decepticon`, `soundwave`,
+`detector`, `verifier`, `vulnresearch`, `patcher`, `contract_auditor`,
+`osint_operator` (#542) — do not appear in the catalog: they neither
+start nor stop any sidecar.  They consume the core plane only, so
+their dispatch sequence is `task()` → specialist runs against the
+sandbox, with no `ops_start` / `ops_stop` wrapping.
+
+Two cross-cutting constraints the catalog enforces:
+
+- **Network placement.**  Adversary-facing services (the offensive
+  half of every spawn) land on `sandbox-net` so a compromised target
+  cannot reach the management plane.  Defense / OSINT / orchestration
+  services that the agent reads from over HTTP (BHCE, gophish admin,
+  LocalStack control APIs) land on `decepticon-net`.  A workload that
+  needs both a target-facing service and a management-facing UI ships
+  two compose services under the same profile, each on the
+  appropriate network — see `bhce` (decepticon-net) + `bhce-neo4j`
+  (decepticon-net only, no sandbox-net bridge) for the canonical
+  pattern.
+- **Workload uniqueness.**  A specialist may drive at most one
+  workload at a time per engagement: `postexploit` chooses
+  `c2-sliver` *or* `c2-havoc`, not both.  This is an orchestrator-side
+  policy rather than a daemon-side one — the daemon admits both names
+  and an orchestrator that issues both `ops_start` calls gets both,
+  but the system-prompt policy in §2 selects one based on the
+  engagement's RoE / customer preference.
+
+### Catalog extension protocol
+
+Adding a new workload after this revision lands does **not** require
+re-amending this ADR.  The shape is fixed; the catalog entries are
+data, not decisions.  Extension steps for an OSS workload:
+
+1. Add the `(profile, services)` tuple to `docker-compose.yml` under
+   the appropriate compose profile, choosing `sandbox-net` vs
+   `decepticon-net` per the network-placement rule above.
+2. If the workload includes a Decepticon-built image, add the matrix
+   row to `.github/workflows/release.yml`.
+3. Add the workload name string to the daemon-side allowlist (default
+   `(ad, c2-sliver, c2-havoc, reversing, phishing, mobile, wireless,
+   cloud, iot, ics, forensics, supply-chain)`).  The
+   default allowlist lives in the daemon binary, not in user-visible
+   config, so OSS users don't gain `ops_start("ad")` rights by
+   editing `.env`.
+4. Add the specialist binding to the orchestrator's system prompt so
+   it knows to call `ops_start(<name>)` before delegating.
+
+SaaS / community workloads — `KubernetesBackend` namespaces,
+`CloudRunBackend` services, etc. — extend the catalog through the
+`decepticon.workload_backends` entry-point group (§5') rather than by
+amending this ADR.
+
 4. **HITL is an orthogonal toggle.**  An optional
    `HumanInTheLoopMiddleware` slot intercepts `ops_start` /
    `ops_stop` calls when `OPS_REQUIRE_APPROVAL=true` is set on the
@@ -287,7 +375,14 @@ is amended (separate docs PR) to:
     deleted (PR #592 closed as superseded).
   - Sprint 2: add `profiles: [ad]` to `bhce` + `bhce-neo4j`; remove
     `COMPOSE_PROFILES=c2-sliver` default from `.env.example`; update
-    orchestrator system prompt to call `ops_start` / `ops_stop`.
+    orchestrator system prompt to call `ops_start` / `ops_stop`.  At
+    sprint-2 close, the catalog above's *shipped* rows (`ad`,
+    `c2-sliver`, `reversing`) are reachable via `ops_start`; the
+    *(future)* rows are reserved-but-inert until their workload PRs
+    land (each follows the four-step extension protocol).  Workload
+    PRs land independently after sprint 2 — no further ADR-0006
+    amendments are required for catalog entries; the catalog is
+    extended through the extension-protocol above.
   - Sprint 3: BHCE token bootstrap moves into `opscontrol`'s start
     handler; langgraph receives the token via the daemon's
     bootstrap-token handle pattern (`ops_start` returns
