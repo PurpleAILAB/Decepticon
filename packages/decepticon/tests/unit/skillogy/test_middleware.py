@@ -99,9 +99,19 @@ def test_env_flag_recognizes_truthy_values(monkeypatch):
 
 
 def test_env_flag_recognizes_falsy_values(monkeypatch):
-    for v in ("0", "false", "", "no", "off"):
+    """Explicit falsy values disable Skillogy under the default-on
+    semantics.  Blank string is NOT a disable — anything that isn't an
+    explicit ``0`` / ``false`` / ``no`` / ``off`` keeps the default-on
+    behaviour, so a blank ``DECEPTICON_USE_SKILLOGY`` (often the shape
+    a misconfigured ``.env`` produces) leaves Skillogy on rather than
+    silently swapping back to the file-system backend.
+    """
+    monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
+    for v in ("0", "false", "no", "off"):
         monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", v)
-        assert _is_enabled() is False
+        assert _is_enabled() is False, f"explicit {v!r} should disable Skillogy"
+    monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "")
+    assert _is_enabled() is True, "blank string should NOT disable (default-on)"
 
 
 def test_maybe_install_skillogy_swaps_skills_middleware_when_enabled(monkeypatch):

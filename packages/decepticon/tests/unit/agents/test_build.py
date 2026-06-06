@@ -470,12 +470,19 @@ def _build_skills_stack():
 
 
 def test_build_middleware_keeps_skills_when_skillogy_disabled(monkeypatch):
-    """Default runtime (flag unset): the stack carries the file-system
-    SkillsMiddleware and no SkillogyMiddleware."""
+    """Explicit opt-out (``DECEPTICON_USE_SKILLOGY=0``): the stack
+    carries the file-system SkillsMiddleware and no SkillogyMiddleware.
+
+    Skillogy is on by default now (see ``decepticon.middleware.skillogy._is_enabled``);
+    the file-system fallback is reachable only through an explicit
+    disable flag, so this test pins that opt-out semantics rather than
+    the previous unset-equals-disabled assumption.
+    """
     from decepticon.middleware.skillogy import SkillogyMiddleware
     from decepticon.middleware.skills import SkillsMiddleware
 
-    monkeypatch.delenv("DECEPTICON_USE_SKILLOGY", raising=False)
+    monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "0")
+    monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
     result = _build_skills_stack()
 
     assert any(isinstance(mw, SkillsMiddleware) for mw in result)
