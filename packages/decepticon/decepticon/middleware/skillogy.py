@@ -166,7 +166,16 @@ def _backend_factory():
     )
 
 
-def _make_load_skill_tool(backend):
+def _make_load_skill_tool(backend, allowed_path_prefixes: list[str] | None = None):
+    # Per ADR-0008 — when the closure has no allowlist (library / pytest
+    # path), omit the kwarg entirely so legacy fakes that don't accept
+    # ``**kwargs`` still work. When the allowlist is populated we forward
+    # it and rely on the backend (Neo4jBackend, RestSkillogyClient, or a
+    # role-aware fake) to honor it.
+    _acl_kwargs: dict[str, Any] = (
+        {"allowed_path_prefixes": allowed_path_prefixes} if allowed_path_prefixes else {}
+    )
+
     @tool
     def load_skill(name_or_path: str) -> str:
         """Fetch one SKILL.md's body + metadata from the skillogy graph.
@@ -177,18 +186,18 @@ def _make_load_skill_tool(backend):
         """
         try:
             if name_or_path.startswith("/skills/"):
-                props = backend.load_skill(name_or_path)
+                props = backend.load_skill(name_or_path, **_acl_kwargs)
             else:
                 # Resolve by name via a single-shot find. This keeps
                 # load_skill's signature agent-friendly; the agent does
                 # not need to remember paths.
-                hits = backend.find_skill(query=name_or_path, limit=10)
+                hits = backend.find_skill(query=name_or_path, limit=10, **_acl_kwargs)
                 exact = [h for h in hits if h.get("name") == name_or_path]
                 if not exact:
                     return json.dumps(
                         {"error": f"no Skill with name or path matching {name_or_path!r}"}
                     )
-                props = backend.load_skill(exact[0]["path"])
+                props = backend.load_skill(exact[0]["path"], **_acl_kwargs)
             if props is None:
                 return json.dumps({"error": f"no Skill at path {name_or_path!r}"})
             return json.dumps(props, ensure_ascii=False, default=str)
@@ -198,7 +207,11 @@ def _make_load_skill_tool(backend):
     return load_skill
 
 
-def _make_find_skill_tool(backend):
+def _make_find_skill_tool(backend, allowed_path_prefixes: list[str] | None = None):
+    _acl_kwargs: dict[str, Any] = (
+        {"allowed_path_prefixes": allowed_path_prefixes} if allowed_path_prefixes else {}
+    )
+
     @tool
     def find_skill(
         query: str | None = None,
@@ -225,6 +238,7 @@ def _make_find_skill_tool(backend):
                 tag=tag,
                 tactic_id=tactic_id,
                 limit=limit,
+                **_acl_kwargs,
             )
             return json.dumps({"count": len(hits), "hits": hits}, ensure_ascii=False, default=str)
         except ValueError as exc:
@@ -235,7 +249,11 @@ def _make_find_skill_tool(backend):
     return find_skill
 
 
-def _make_traverse_tool(backend):
+def _make_traverse_tool(backend, allowed_path_prefixes: list[str] | None = None):
+    _acl_kwargs: dict[str, Any] = (
+        {"allowed_path_prefixes": allowed_path_prefixes} if allowed_path_prefixes else {}
+    )
+
     @tool
     def traverse(
         from_path: str,
@@ -252,7 +270,12 @@ def _make_traverse_tool(backend):
         connected it.
         """
         try:
-            rows = backend.traverse(from_path, edge_types=edge_types, depth=depth)
+            rows = backend.traverse(
+                from_path,
+                edge_types=edge_types,
+                depth=depth,
+                **_acl_kwargs,
+            )
             return json.dumps({"count": len(rows), "rows": rows}, ensure_ascii=False, default=str)
         except Exception as exc:  # noqa: BLE001
             return json.dumps({"error": f"traverse failed: {exc!r}"})
@@ -293,23 +316,41 @@ class SkillogyMiddleware(AgentMiddleware):
         agent_phase: str | None = None,
         backend: Any = None,
         append_policy_to_system: bool = True,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> None:
         super().__init__()
         self._backend = backend or _backend_factory()
         self._phase = agent_phase
         self._append_policy = append_policy_to_system
+        # ADR-0008 — per-role path-prefix ACL. Carries the legacy
+        # ``FilesystemBackend`` contract (``skills_sources_for(role)``)
+        # forward so the two skill backends are interchangeable from an
+        # authorization standpoint. ``None`` keeps the library /
+        # standalone-CLI path unrestricted, which is how the underlying
+        # backend interprets the kwarg as well.
+        self._allowed_path_prefixes: list[str] | None = (
+            list(allowed_path_prefixes) if allowed_path_prefixes else None
+        )
         self.tools = [
-            _make_find_skill_tool(self._backend),
-            _make_load_skill_tool(self._backend),
-            _make_traverse_tool(self._backend),
+            _make_find_skill_tool(self._backend, self._allowed_path_prefixes),
+            _make_load_skill_tool(self._backend, self._allowed_path_prefixes),
+            _make_traverse_tool(self._backend, self._allowed_path_prefixes),
         ]
         # Render the phase block once at boot. Failures are non-fatal —
         # the agent keeps the schema cheat-sheet and the three tools.
         self._phase_block: str = self._render_phase_block() if self._phase else ""
 
     @classmethod
-    def from_env(cls, *, agent_phase: str | None = None) -> SkillogyMiddleware:
-        return cls(agent_phase=agent_phase)
+    def from_env(
+        cls,
+        *,
+        agent_phase: str | None = None,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> SkillogyMiddleware:
+        return cls(
+            agent_phase=agent_phase,
+            allowed_path_prefixes=allowed_path_prefixes,
+        )
 
     def _render_phase_block(self) -> str:
         """Build the dynamic ``[Phase context]`` block for this agent's phase.
@@ -393,7 +434,12 @@ class SkillogyMiddleware(AgentMiddleware):
         return await handler(request)
 
 
-def maybe_install_skillogy(middleware_stack: list[Any], *, role: str | None = None) -> list[Any]:
+def maybe_install_skillogy(
+    middleware_stack: list[Any],
+    *,
+    role: str | None = None,
+    skill_sources: list[str] | None = None,
+) -> list[Any]:
     """Substitute ``SkillogyMiddleware`` for ``SkillsMiddleware`` when the
     backend flag is set. Idempotent; swap-only (does not append).
 
@@ -405,6 +451,15 @@ def maybe_install_skillogy(middleware_stack: list[Any], *, role: str | None = No
             to the agent's phase. ``None`` (or an unknown role) yields a
             middleware with no phase block — the agent still gets the
             schema cheat-sheet and the three tools.
+        skill_sources: per-role path-prefix allowlist (ADR-0008). Same
+            list ``_make_skills`` threads into the legacy
+            ``SkillsMiddleware``: e.g.
+            ``["/skills/standard/recon/", "/skills/shared/"]``. When
+            ``None`` is passed but a ``role`` is known, the helper falls
+            back to ``skills_sources_for(role)`` so the two skill
+            backends share one source-of-truth for "what does this role
+            see". When neither is supplied (library use, pytest), the
+            ACL stays unrestricted to match the unwrapped backend.
     """
     if not _is_enabled():
         return middleware_stack
@@ -413,10 +468,52 @@ def maybe_install_skillogy(middleware_stack: list[Any], *, role: str | None = No
     except ImportError:
         return middleware_stack
     phase = _PHASE_FOR_ROLE.get(role) if role else None
+    prefixes = _resolve_allowed_path_prefixes(role=role, skill_sources=skill_sources)
     out: list[Any] = []
     for mw in middleware_stack:
         if isinstance(mw, SkillsMiddleware):
-            out.append(SkillogyMiddleware.from_env(agent_phase=phase))
+            out.append(
+                SkillogyMiddleware.from_env(
+                    agent_phase=phase,
+                    allowed_path_prefixes=prefixes,
+                )
+            )
         else:
             out.append(mw)
     return out
+
+
+def _resolve_allowed_path_prefixes(
+    *,
+    role: str | None,
+    skill_sources: list[str] | None,
+) -> list[str] | None:
+    """Resolve the path-prefix ACL the middleware should enforce.
+
+    Priority order, mirroring how the legacy ``SkillsMiddleware``
+    ``sources`` argument is handled:
+
+    1. Explicit ``skill_sources`` from the caller wins (lets benchmark
+       mode and plugin extensions inject extra paths).
+    2. ``role`` falls back to ``skills_sources_for(role)`` so the two
+       skill backends share one role → sources contract.
+    3. Otherwise ``None`` — the ACL stays disabled, matching how the
+       backend interprets the kwarg when no role context exists.
+    """
+    if skill_sources:
+        return list(skill_sources)
+    if not role:
+        return None
+    try:
+        from decepticon.agents.middleware_slots import skills_sources_for  # noqa: PLC0415
+    except ImportError:
+        return None
+    try:
+        return list(skills_sources_for(role))
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "skills_sources_for(%r) failed; Skillogy ACL stays disabled: %s",
+            role,
+            exc,
+        )
+        return None
