@@ -61,11 +61,18 @@ def test_every_slot_role_has_a_model_tier():
 
 
 def test_langgraph_manifest_covers_standard_graphs():
-    """The shipped ``langgraph.json`` must list every standard graph."""
+    """The shipped ``langgraph.json`` must list *exactly* the standard graphs.
+
+    Equality (not subset) so a stale manifest entry left behind after a rename
+    is caught too, not only a missing one.
+    """
     manifest = json.loads(_find_repo_file("langgraph.json").read_text(encoding="utf-8"))
     served = set(manifest["graphs"])
-    missing = sorted(set(STANDARD_GRAPHS) - served)
+    expected = set(STANDARD_GRAPHS)
+    missing = sorted(expected - served)
+    extra = sorted(served - expected)
     assert not missing, f"standard graphs absent from langgraph.json: {missing}"
+    assert not extra, f"langgraph.json lists graphs not in STANDARD_GRAPHS: {extra}"
 
 
 @pytest.mark.parametrize(
