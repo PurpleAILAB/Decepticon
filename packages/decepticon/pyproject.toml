@@ -83,7 +83,9 @@ telemetry = [
 # MCP server — exposes Decepticon engagement control over the Model
 # Context Protocol so external agents (OpenClaw, Hermes, or any MCP
 # client) can drive engagements. Provides the ``decepticon-mcp`` script.
-mcp = ["mcp>=1.9.0"]
+# pyjwt[crypto] backs the JWT (OAuth 2.1 resource-server) auth mode on the
+# streamable-http transport; shared-secret + stdio modes never import it.
+mcp = ["mcp>=1.9.0", "pyjwt[crypto]>=2.10"]
 all = ["decepticon[neo4j,telemetry,mcp]"]
 
 [project.scripts]
