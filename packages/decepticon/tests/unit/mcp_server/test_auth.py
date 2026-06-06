@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import asyncio
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 
-from decepticon.mcp_server.auth import (
+# The bridge's bearer auth is built on the MCP SDK, which only ships with the
+# optional [mcp] extra. Skip the whole module when it's absent (default CI lane)
+# so collection doesn't error; the mcp-installed lane exercises it.
+pytest.importorskip("mcp")
+
+import jwt  # noqa: E402
+from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+
+from decepticon.mcp_server.auth import (  # noqa: E402
     build_auth,
     is_loopback_host,
     open_bind_error,
     resolve_auth_mode,
 )
-from decepticon.mcp_server.config import ServerConfig
+from decepticon.mcp_server.config import ServerConfig  # noqa: E402
 
 
 def _cfg(**kw: object) -> ServerConfig:
