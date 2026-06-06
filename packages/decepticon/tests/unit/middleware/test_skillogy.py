@@ -47,26 +47,44 @@ class TestIsEnabled:
         monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
         assert _is_enabled() is True
 
-    @pytest.mark.parametrize("val", ["0", "false", "no", "off", "", "maybe"])
-    def test_legacy_falsy_values_disable(self, monkeypatch: pytest.MonkeyPatch, val: str) -> None:
+    @pytest.mark.parametrize("val", ["0", "false", "no", "off"])
+    def test_explicit_falsy_values_disable(self, monkeypatch: pytest.MonkeyPatch, val: str) -> None:
         monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", val)
         monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
         assert _is_enabled() is False
+
+    @pytest.mark.parametrize("val", ["", "maybe"])
+    def test_non_falsy_values_enable(self, monkeypatch: pytest.MonkeyPatch, val: str) -> None:
+        """Anything that isn't an explicit ``0``/``false``/``no``/``off``
+        keeps the default-on behaviour — including unrecognised strings.
+        """
+        monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", val)
+        monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
+        assert _is_enabled() is True
 
     def test_preferred_skillogy_brain_enables(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("DECEPTICON_USE_SKILLOGY", raising=False)
         monkeypatch.setenv("DECEPTICON_SKILL_BACKEND", "skillogy_brain")
         assert _is_enabled() is True
 
-    def test_preferred_other_value_does_not_enable(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DECEPTICON_USE_SKILLOGY", raising=False)
+    def test_preferred_other_value_does_not_force_enable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Only ``DECEPTICON_SKILL_BACKEND=skillogy_brain`` is the explicit
+        opt-in rail. Any other value is inert; whether Skillogy ends up
+        installed is then up to ``DECEPTICON_USE_SKILLOGY`` (which now
+        defaults to enabled). An explicit ``DECEPTICON_USE_SKILLOGY=0``
+        plus any other ``DECEPTICON_SKILL_BACKEND`` value still disables.
+        """
+        monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "0")
         monkeypatch.setenv("DECEPTICON_SKILL_BACKEND", "skills")
         assert _is_enabled() is False
 
-    def test_unset_disables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_unset_enables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Default-on: leaving both env vars unset enables Skillogy."""
         monkeypatch.delenv("DECEPTICON_USE_SKILLOGY", raising=False)
         monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
-        assert _is_enabled() is False
+        assert _is_enabled() is True
 
 
 # ── _PHASE_FOR_ROLE — mapping completeness ─────────────────────────────
@@ -449,8 +467,16 @@ class TestInject:
 
 
 class TestMaybeInstallSkillogy:
-    def test_env_disabled_returns_stack_identity(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("DECEPTICON_USE_SKILLOGY", raising=False)
+    def test_env_explicitly_disabled_returns_stack_identity(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """With Skillogy default-on, the identity short-circuit only
+        triggers when the operator opts out via explicit
+        ``DECEPTICON_USE_SKILLOGY=0`` (or ``false`` / ``no`` / ``off``).
+        Default-unset now installs Skillogy, not the file-system
+        ``SkillsMiddleware``.
+        """
+        monkeypatch.setenv("DECEPTICON_USE_SKILLOGY", "0")
         monkeypatch.delenv("DECEPTICON_SKILL_BACKEND", raising=False)
         from decepticon.middleware.skills import SkillsMiddleware
 
