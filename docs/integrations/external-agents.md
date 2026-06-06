@@ -55,7 +55,10 @@ DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport stdio
 > **`DECEPTICON_SKIP_BOOT=1`** — always set this for the bridge. It drives a
 > *separate* LangGraph server and never builds agents in-process, so the eager
 > framework boot is pure cold-start overhead. With it, the server starts in a
-> few seconds instead of ~30s; the wiring below sets it for you.
+> few seconds instead of ~30s; the wiring below sets it for you. It does **not**
+> weaken Rules-of-Engagement: RoE is enforced inside the LangGraph server the
+> bridge talks to, not in this process, so skipping the in-process boot leaves
+> scope enforcement untouched.
 
 The bridge connects to `DECEPTICON_API_URL` (default `http://localhost:2024`).
 Override with `--langgraph-url` or the env var.
@@ -132,13 +135,38 @@ auto-discovers it under the `red-teaming` category.
 
 ## 5. Remote / networked use (optional)
 
+The bridge can launch authorized engagements, so the `streamable-http`
+transport **refuses to bind a non-loopback `--host` without authentication** —
+a bare `--host 0.0.0.0` exits with an error unless one of the modes below is
+configured. Auth is enforced by the MCP SDK's bearer backend (a missing or
+invalid `Authorization: Bearer` token gets a 401 before any tool runs).
+
+**Shared-secret (OSS / single operator).** The token is read only from the
+environment, never from argv:
+
 ```bash
+DECEPTICON_MCP_TOKEN=$(openssl rand -hex 32) \
 DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport streamable-http \
   --host 0.0.0.0 --port 8765 --langgraph-url http://decepticon-host:2024
 ```
 
-Point the agent's MCP client at `http://<bridge-host>:8765/mcp`. Restrict
-exposure to a trusted network — the bridge can launch authorized engagements.
+Clients send `Authorization: Bearer <token>`.
+
+**JWT (OAuth 2.1 resource server — SaaS / shared deployments).** Validates the
+bearer JWT's signature, `iss`, and `aud` against your identity provider's JWKS
+(or a static public key via `--auth-public-key`). This is the posture the MCP
+June-2025 spec prescribes for remote servers:
+
+```bash
+DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport streamable-http \
+  --host 0.0.0.0 --port 8765 --langgraph-url http://decepticon-host:2024 \
+  --issuer https://issuer.example.com --audience decepticon-mcp \
+  --jwks-uri https://issuer.example.com/.well-known/jwks.json \
+  --required-scope engage
+```
+
+Point the agent's MCP client at `http://<bridge-host>:8765/mcp`. Loopback
+(`--host 127.0.0.1`) stays auth-free for local stdio-equivalent use.
 
 ## Authorization
 

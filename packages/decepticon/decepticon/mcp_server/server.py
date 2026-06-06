@@ -25,6 +25,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from decepticon.mcp_server.auth import build_auth
 from decepticon.mcp_server.config import ServerConfig, load_config
 from decepticon.mcp_server.engagements import EngagementClient
 from decepticon.mcp_server.tools_interactive import register_interactive_tools
@@ -45,7 +46,8 @@ def build_server(
     """
     cfg = config or load_config()
     engagements = EngagementClient(cfg, client=client)
-    mcp = FastMCP("decepticon", host=host, port=port)
+    verifier, auth = build_auth(cfg, host=host, port=port)
+    mcp = FastMCP("decepticon", host=host, port=port, token_verifier=verifier, auth=auth)
     register_lifecycle_tools(mcp, engagements, cfg)
     register_interactive_tools(mcp, engagements)
     return mcp
