@@ -122,6 +122,10 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     "ics_operator": "ics-ot",
     "forensicator": "dfir",
     "supply_chain_operator": "supply-chain",
+    # Blue Cell is the purple-team detection-validation agent (defensive sibling
+    # of the Red Cell); adversary-emulation is the seeded meta phase for the
+    # red/blue validation bridge — there is no dedicated blue-team phase.
+    "blue_cell": "adversary-emulation",
     "soundwave": "planning",
     "decepticon": "orchestration",
 }
