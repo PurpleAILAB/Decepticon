@@ -91,7 +91,7 @@ class TestIsEnabled:
 
 
 class TestPhaseForRoleMapping:
-    """The 18 OSS standard agents (orchestrators + specialists) must each resolve to a known phase.
+    """The 19 OSS standard agents (orchestrators + specialists) must each resolve to a known phase.
 
     Without this, ``maybe_install_skillogy`` quietly hands the middleware
     no phase block and the agent loses its MoC summary. The mapping is
@@ -117,6 +117,7 @@ class TestPhaseForRoleMapping:
             "ics_operator",
             "forensicator",
             "supply_chain_operator",
+            "blue_cell",
             "soundwave",
             "decepticon",
         }
