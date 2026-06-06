@@ -11,7 +11,11 @@ name: TODO → Issue
 #   * `INSERT_ISSUE_URLS: false` — the action will NOT push back to
 #     main to annotate source with issue links. Issues are tracked
 #     by file:line in the issue body; that's enough.
-#   * Path-ignore mirrors ci.yml so doc-only commits don't trigger.
+#   * Path-ignore: docs / license / asset-only commits don't trigger a
+#     scan. ci.yml deliberately has no paths-ignore (see #561 — skipped
+#     required checks stay Pending and block PRs), but that constraint
+#     does not apply here because this workflow runs on `push`, not
+#     `pull_request`, so a skipped run never gates a merge.
 
 on:
   push:

@@ -48,7 +48,7 @@ jobs:
       compose: ${{ steps.app.outputs.compose }}
       docker-images: ${{ steps.docker.outputs.changes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: app
         with:
@@ -136,7 +136,7 @@ jobs:
     if: ${{ needs.changes.outputs.compose == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # The compose files reference a project-local ``.env`` for the
       # runtime stack. CI doesn't ship one (and shouldn't — keys live
       # in the user's $DECEPTICON_HOME), so the validator runs against
@@ -165,7 +165,7 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.8.15"
@@ -281,7 +281,7 @@ jobs:
     # the job's own conclusion in the run UI will still read `failure`.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.8.15"
@@ -350,7 +350,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.cli != 'true'
         run: 'echo "No CLI-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.cli == 'true'
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.cli == 'true'
@@ -399,7 +399,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.web != 'true'
         run: 'echo "No Web-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.web == 'true'
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.web == 'true'
@@ -448,7 +448,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.launcher != 'true'
         run: 'echo "No Launcher-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.launcher == 'true'
       - uses: actions/setup-go@v5
         if: needs.changes.outputs.launcher == 'true'
@@ -474,7 +474,7 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.changes.outputs.docker-images) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -531,7 +531,7 @@ jobs:
       matrix:
         image: [cli, langgraph]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - name: Build linux/arm64 image (no push)
@@ -559,7 +559,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
@@ -593,7 +593,7 @@ jobs:
     name: actionlint (workflows)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
