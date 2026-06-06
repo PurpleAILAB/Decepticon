@@ -70,5 +70,6 @@ Use [`template.md`](template.md) as the starting point.
 | [0006](0006-agent-driven-container-lifecycle.md) | Agent-driven domain-tool container lifecycle via an ops-control sidecar | Proposed |
 | [0007](0007-ai-surface-technology-node.md) | Add a Technology KG node kind for AI-surface / tech-detection signals | Accepted |
 | [0009](0009-hitl-langgraph-native-migration.md) | Migrate HITL to LangGraph-native `interrupt()` + explicit-policy sets | Proposed |
+| [0010](0010-open-web-acquisition-scrapling.md) | Acquire open-web content via Scrapling, behind RoE-gated tools | Proposed |
 
 Keep this index in sync when you land a new ADR.
