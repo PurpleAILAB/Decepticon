@@ -360,9 +360,12 @@ services:
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
-      # Skillogy: opt-in via env var; agents use it instead of the
-      # file-system-backed SkillsMiddleware when DECEPTICON_USE_SKILLOGY=1.
-      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-0}
+      # Skillogy is the canonical skill-retrieval backend (Neo4j-backed,
+      # phase-scoped retrieval). The in-process file-system
+      # ``SkillsMiddleware`` stays available as an explicit opt-out via
+      # ``DECEPTICON_USE_SKILLOGY=0`` for standalone library use and
+      # pytest where the skillogy container isn't running.
+      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-1}
       - DECEPTICON_SKILLOGY_URL=http://skillogy:9100
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
       # BENCHMARK_MODE flows in via `env_file: .env` above — no need to

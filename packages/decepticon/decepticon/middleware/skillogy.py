@@ -130,10 +130,22 @@ def _resolve_skillogy_api_key() -> str | None:
     return os.environ.get("DECEPTICON_SKILLOGY_API_KEY") or None
 
 
+_USE_SKILLOGY_FALSY: frozenset[str] = frozenset({"0", "false", "no", "off"})
+
+
 def _is_enabled() -> bool:
-    if os.environ.get("DECEPTICON_USE_SKILLOGY", "").strip().lower() in {"1", "true", "yes", "on"}:
+    # Skillogy is the canonical skill-retrieval backend; the in-process
+    # FilesystemBackend stays available as an explicit opt-out for
+    # standalone library use and pytest. Treat an unset / blank
+    # ``DECEPTICON_USE_SKILLOGY`` as enabled; honor an explicit falsy
+    # value as a disable. Backward compat: the legacy
+    # ``DECEPTICON_SKILL_BACKEND=skillogy_brain`` rail still flips it on
+    # even when ``DECEPTICON_USE_SKILLOGY=0`` (explicit user request via
+    # the new env name wins).
+    if os.environ.get("DECEPTICON_SKILL_BACKEND", "").strip().lower() == "skillogy_brain":
         return True
-    return os.environ.get("DECEPTICON_SKILL_BACKEND", "").strip().lower() == "skillogy_brain"
+    raw = os.environ.get("DECEPTICON_USE_SKILLOGY", "").strip().lower()
+    return raw not in _USE_SKILLOGY_FALSY
 
 
 def _backend_factory():
@@ -251,8 +263,13 @@ def _make_traverse_tool(backend):
 class SkillogyMiddleware(AgentMiddleware):
     """Wire the agent to the skillogy knowledge graph (Neo4j).
 
-    Activation: set ``DECEPTICON_SKILL_BACKEND=skillogy_brain`` (preferred)
-    or the legacy ``DECEPTICON_USE_SKILLOGY=1``. The agent factory's
+    Activation: **on by default.** Skillogy is the canonical
+    skill-retrieval backend; the in-process ``FilesystemBackend`` stays
+    available as an explicit opt-out for standalone library use and
+    pytest via ``DECEPTICON_USE_SKILLOGY=0`` (or ``false`` / ``no`` /
+    ``off``). The legacy ``DECEPTICON_SKILL_BACKEND=skillogy_brain`` rail
+    still flips it on even when ``DECEPTICON_USE_SKILLOGY=0`` (explicit
+    user request via the new env name wins). The agent factory's
     ``maybe_install_skillogy`` swaps ``SkillsMiddleware`` for this class
     and threads the agent's role through so the per-phase MoC summary
     fires for the correct phase.
