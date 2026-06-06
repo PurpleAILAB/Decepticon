@@ -630,12 +630,19 @@ services:
         condition: service_healthy
       bhce-neo4j:
         condition: service_healthy
+    # BHCE healthcheck is intentionally disabled: the SpecterOps upstream
+    # image is distroless, so it ships with no `/bin/sh`, no `wget`, no
+    # `curl`, and no `ls` — only the `/bloodhound` Go binary. The previous
+    # `CMD-SHELL "wget ... /api/version"` test failed with `exec: /bin/sh:
+    # no such file or directory` and the `/api/version` endpoint requires
+    # authentication besides (only `/api/v2/spec` is unauthenticated per
+    # ADR-0005), so even rewriting the test would not fix the missing
+    # tooling. Downstream services do not gate on `bhce.condition:
+    # service_healthy`, so the disabled healthcheck does not affect the
+    # rest of the stack — clients (`bhce_client` in tools/ad) carry their
+    # own ready-check retry loop against `/api/v2/spec`.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/version >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 18
-      start_period: 90s
+      disable: true
     restart: unless-stopped
 
 volumes:
