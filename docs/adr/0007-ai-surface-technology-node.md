@@ -1,10 +1,11 @@
 # 0007. Add a Technology knowledge-graph node kind for AI-surface and tech-detection signals
 
-- **Status:** Proposed
-- **Date:** 2026-06-05
+- **Status:** Accepted
+- **Date:** 2026-06-06
 - **Deciders:** @PurpleCHOIms
 - **Related:** #593 (Redamon integration roadmap), `docs/proposals/redamon-feature-integration.md`,
-  `docs/proposals/redamon-top3-integration-plan.md`
+  `docs/proposals/redamon-top3-integration-plan.md`; PR #598 (Technology NodeKind on KGStore),
+  PR #600 / #601 / #602 / #603 / #604 (AI-surface classifier ingests on nmap + httpx)
 
 ## Context
 
