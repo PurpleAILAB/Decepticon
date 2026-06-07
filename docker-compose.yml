@@ -565,10 +565,43 @@ services:
   # See docs/adr/0005-bloodhound-via-bhce-rest-client.md §Context.
   #
   # Why reuse Postgres: BHCE only needs one Postgres database
-  # (`bloodhound`) with the `pg_trgm` extension.  We pre-create both
-  # in containers/postgres-init/02-bloodhound-db.sh so BHCE's goose
-  # migrations bootstrap cleanly against our existing Postgres
-  # instance — no second Postgres container.
+  # (`bloodhound`) with the `pg_trgm` extension.  The idempotent
+  # `bhce-postgres-init` sidecar below creates/repairs that state on
+  # both fresh installs and upgrades with an existing `postgres_data`
+  # volume, so users do not have to delete data after BHCE is added.
+  bhce-postgres-init:
+    image: postgres:17-alpine
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-postgres-init
+    environment:
+      POSTGRES_USER: decepticon
+      POSTGRES_DB: litellm
+      PGPASSWORD: ${POSTGRES_PASSWORD:-decepticon}
+      PGHOST: postgres
+      BHCE_POSTGRES_DB: ${BHCE_POSTGRES_DB:-bloodhound}
+      BHCE_POSTGRES_USER: ${BHCE_POSTGRES_USER:-bloodhound}
+      BHCE_POSTGRES_PASSWORD: ${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
+    volumes:
+      - ./containers/postgres-init/02-bloodhound-db.sh:/decepticon/ensure-bloodhound-db.sh:ro
+    command:
+      - bash
+      - -c
+      - |
+        bash /decepticon/ensure-bloodhound-db.sh
+        exec sleep 2147483647
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test "$$(psql -v ON_ERROR_STOP=1 --username "$${POSTGRES_USER}" --dbname "$${BHCE_POSTGRES_DB}" -tAc "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')")" = "t"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
+      - decepticon-net
   bhce-neo4j:
     image: neo4j:4.4.42-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
@@ -606,8 +639,8 @@ services:
       bhe_enable_cypher_mutations: "false"
       bhe_graph_query_memory_limit: "2"
       # External Postgres — our existing `postgres` container, with
-      # the `bloodhound` DB + `pg_trgm` pre-created by
-      # containers/postgres-init/02-bloodhound-db.sh.
+      # the `bloodhound` DB + `pg_trgm` ensured by the idempotent
+      # `bhce-postgres-init` sidecar above.
       bhe_database_connection: >-
         user=${BHCE_POSTGRES_USER:-bloodhound}
         password=${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
@@ -631,21 +664,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      bhce-postgres-init:
+        condition: service_healthy
       bhce-neo4j:
         condition: service_healthy
-    # BHCE healthcheck is intentionally disabled: the SpecterOps upstream
-    # image is distroless, so it ships with no `/bin/sh`, no `wget`, no
-    # `curl`, and no `ls` — only the `/bloodhound` Go binary. The previous
-    # `CMD-SHELL "wget ... /api/version"` test failed with `exec: /bin/sh:
-    # no such file or directory` and the `/api/version` endpoint requires
-    # authentication besides (only `/api/v2/spec` is unauthenticated per
-    # ADR-0005), so even rewriting the test would not fix the missing
-    # tooling. Downstream services do not gate on `bhce.condition:
-    # service_healthy`, so the disabled healthcheck does not affect the
-    # rest of the stack — clients (`bhce_client` in tools/ad) carry their
-    # own ready-check retry loop against `/api/v2/spec`.
+    # The upstream image is distroless: no `/bin/sh`, curl, wget, or Python.
+    # Docker Compose `up --wait` rejects services with no healthcheck, so use
+    # the only executable the image provides as a liveness check. API clients
+    # still perform the real readiness probe/retry against `/api/v2/spec`;
+    # this check exists to keep compose wait semantics from failing before the
+    # client-level readiness loop can run.
     healthcheck:
-      disable: true
+      test: ["CMD", "/bloodhound", "-version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:
