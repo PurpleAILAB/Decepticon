@@ -85,8 +85,8 @@ class TestMethodModels:
 
     def test_minimax_no_low_tier(self):
         m = METHOD_MODELS[AuthMethod.MINIMAX_API]
-        assert m[Tier.HIGH] == "minimax/MiniMax-M2.5"
-        assert m[Tier.MID] == "minimax/MiniMax-M2.5-lightning"
+        assert m[Tier.HIGH] == "minimax/MiniMax-M3"
+        assert m[Tier.MID] == "minimax/MiniMax-M2.7-highspeed"
         assert Tier.LOW not in m
 
 
@@ -489,7 +489,7 @@ class TestLLMModelMapping:
             "anthropic/claude-opus-4-7",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.5",
+            "minimax/MiniMax-M3",
         ]
 
     def test_from_credentials_full_chain_low_tier_skips_minimax(self):
@@ -524,7 +524,7 @@ class TestLLMModelMapping:
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         with pytest.raises(KeyError):
             m.get_assignment("recon")
-        assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M2.5"
+        assert m.get_assignment("decepticon").primary == "minimax/MiniMax-M3"
 
     def test_max_profile_promotes_recon_to_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
@@ -543,7 +543,7 @@ class TestLLMModelMapping:
         assert a.fallbacks == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.5",
+            "minimax/MiniMax-M3",
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",

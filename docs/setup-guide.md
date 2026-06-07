@@ -652,7 +652,7 @@ Complete list of all supported LLM providers and their pre-configured models:
 | Together AI | Llama 3.3 70B Turbo + any | API key | Per token |
 | Fireworks AI | Llama 405B + any | API key | Per token |
 | Perplexity | Sonar Pro, Sonar | API key | Per token |
-| MiniMax | MiniMax-M2.5, MiniMax-M2.5-lightning | API key | Per token |
+| MiniMax | MiniMax-M3, MiniMax-M2.7-highspeed | API key | Per token |
 | OpenRouter | Any model via routing | API key | Per token |
 | Azure OpenAI | Any Azure-deployed model | API key + endpoint | Per token |
 | AWS Bedrock | Any Bedrock model | AWS credentials | Per token |

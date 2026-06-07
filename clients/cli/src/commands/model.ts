@@ -59,7 +59,7 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "gemini-sub/gemini-2.5-flash",
   ],
   // Other vendors
-  "MiniMax": ["minimax/MiniMax-M2.5", "minimax/MiniMax-M2.5-lightning"],
+  "MiniMax": ["minimax/MiniMax-M3", "minimax/MiniMax-M2.7-highspeed"],
   "DeepSeek": ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash"],
   "xAI Grok API": ["xai/grok-4.3", "xai/grok-4-1-fast-reasoning"],
   "SuperGrok OAuth": ["grok-sub/grok-4.3", "grok-sub/grok-4-1-fast-reasoning"],

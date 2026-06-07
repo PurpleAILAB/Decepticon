@@ -39,7 +39,7 @@ Tier × AuthMethod matrix
   openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
   openai_oauth     auth/gpt-5.5                  auth/gpt-5.4                   auth/gpt-5.4-mini
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
-  minimax_api      MiniMax-M2.5                  MiniMax-M2.5-lightning         — (falls through)
+  minimax_api      MiniMax-M3                    MiniMax-M2.7-highspeed         — (falls through)
   openrouter_api   claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
   nvidia_api       llama-3.3-70b-instruct        nemotron-70b-instruct          llama-3.2-3b-instruct
   xai_api          grok-4.3                      grok-4-1-fast-reasoning        — (falls through)
@@ -193,8 +193,8 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.LOW: "gemini/gemini-2.5-flash-lite",
     },
     AuthMethod.MINIMAX_API: {
-        Tier.HIGH: "minimax/MiniMax-M2.5",
-        Tier.MID: "minimax/MiniMax-M2.5-lightning",
+        Tier.HIGH: "minimax/MiniMax-M3",
+        Tier.MID: "minimax/MiniMax-M2.7-highspeed",
     },
     AuthMethod.OPENAI_OAUTH: {
         Tier.HIGH: "auth/gpt-5.5",
