@@ -31,7 +31,7 @@ class _FakeBackend:
         self.load_calls: list[str] = []
         self.find_calls: list[dict] = []
 
-    def load_skill(self, path):
+    def load_skill(self, path, **kwargs):
         self.load_calls.append(path)
         return {
             "name": "t1",

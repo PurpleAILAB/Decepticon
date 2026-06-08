@@ -105,6 +105,7 @@ class RestSkillogyClient:
         tag: str | None = None,
         tactic_id: str | None = None,
         limit: int = 20,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         payload: dict[str, Any] = {"limit": limit}
         if query is not None:
@@ -117,6 +118,11 @@ class RestSkillogyClient:
             payload["tag"] = tag
         if tactic_id is not None:
             payload["tactic_id"] = tactic_id
+        # ADR-0008: per-role path-prefix ACL. Sent only when populated so
+        # the unrestricted CLI / library path keeps using the existing
+        # request shape.
+        if allowed_path_prefixes:
+            payload["allowed_path_prefixes"] = list(allowed_path_prefixes)
         try:
             data = self._post("/v1/skills:find", payload)
         except SkillogyClientError as exc:
@@ -128,8 +134,16 @@ class RestSkillogyClient:
             raise
         return list(data.get("hits") or [])
 
-    def load_skill(self, path: str) -> dict[str, Any] | None:
-        data = self._post("/v1/skills:load", {"name_or_path": path})
+    def load_skill(
+        self,
+        path: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        payload: dict[str, Any] = {"name_or_path": path}
+        if allowed_path_prefixes:
+            payload["allowed_path_prefixes"] = list(allowed_path_prefixes)
+        data = self._post("/v1/skills:load", payload)
         if data.get("_status") == 404:
             return None
         return dict(data.get("props") or {})
@@ -139,10 +153,14 @@ class RestSkillogyClient:
         from_path: str,
         edge_types: list[str] | None = None,
         depth: int = 2,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         payload: dict[str, Any] = {"from_path": from_path, "depth": depth}
         if edge_types is not None:
             payload["edge_types"] = edge_types
+        if allowed_path_prefixes:
+            payload["allowed_path_prefixes"] = list(allowed_path_prefixes)
         data = self._post("/v1/skills:traverse", payload)
         return list(data.get("rows") or [])
 

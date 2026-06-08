@@ -34,10 +34,20 @@ mocs:
   # Smart contracts
   - {name: defi-attacks,        parent_phase: smart-contracts,   description: "Flash-loan, oracle, reentrancy, governance"}
 
-  # ICS / IoT / Mobile
+  # ICS / IoT / Mobile / Wireless
   - {name: ics-disruption,      parent_phase: ics-ot,            description: "PLC firmware mode, Modbus AiTM"}
   - {name: iot-firmware,        parent_phase: iot,               description: "Firmware extraction, default-cred hunting"}
   - {name: mobile-app-attacks,  parent_phase: mobile,            description: "iOS/Android dynamic instrumentation, SSL-pinning bypass"}
+  - {name: wireless-attacks,    parent_phase: wireless,          description: "WPA2/WPA3 handshake + PMKID, evil-twin, BLE/Zigbee/Z-Wave/sub-GHz"}
+
+  # Recon-intel / Phishing
+  - {name: osint-collection,    parent_phase: osint,             description: "Domain/email/employee/breach/code-leak/infra footprinting"}
+  - {name: phishing-campaigns,  parent_phase: phishing,          description: "GoPhish, evilginx2 AiTM, O365 token harvest, lookalike domains"}
+
+  # Reverse-engineering / DFIR / Supply-chain
+  - {name: binary-re,           parent_phase: reverse-engineering, description: "ELF/PE/Mach-O triage, packers, ROP inventories, decompilation"}
+  - {name: dfir-triage,         parent_phase: dfir,              description: "Memory/disk/log/network timeline, IOC extraction, attack to detection"}
+  - {name: supply-chain-compromise, parent_phase: supply-chain,  description: "Dependency confusion, typosquat, malicious packages, CI/CD poisoning"}
 
   # Post-exploit
   - {name: lateral-movement,    parent_phase: lateral-movement,  description: "SMB exec, WMI, WinRM, SSH chains"}

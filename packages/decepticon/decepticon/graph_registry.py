@@ -41,6 +41,14 @@ STANDARD_GRAPHS: dict[str, str] = {
     "cloud_hunter": "./decepticon/agents/standard/cloud_hunter.py:graph",
     "ad_operator": "./decepticon/agents/standard/ad_operator.py:graph",
     "blue_cell": "./decepticon/agents/standard/blue_cell.py:graph",
+    "phisher": "./decepticon/agents/standard/phisher.py:graph",
+    "mobile_operator": "./decepticon/agents/standard/mobile_operator.py:graph",
+    "wireless_operator": "./decepticon/agents/standard/wireless_operator.py:graph",
+    "osint_operator": "./decepticon/agents/standard/osint_operator.py:graph",
+    "iot_operator": "./decepticon/agents/standard/iot_operator.py:graph",
+    "ics_operator": "./decepticon/agents/standard/ics_operator.py:graph",
+    "forensicator": "./decepticon/agents/standard/forensicator.py:graph",
+    "supply_chain_operator": "./decepticon/agents/standard/supply_chain_operator.py:graph",
 }
 
 # Plugins bundle — vulnresearch family (community-plugin shape demonstrated

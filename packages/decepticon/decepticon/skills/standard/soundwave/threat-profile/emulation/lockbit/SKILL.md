@@ -50,7 +50,7 @@ metadata:
 | # | Phase | MITRE | Emulated action | Executing agent → skill |
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Initial Access | T1190 / T1133 / T1078 | Broker creds / edge exploit / RDP-VPN logon | exploit → `/skills/standard/exploit/web/cve/SKILL.md`, `/skills/standard/exploit/web/ato-methodology/SKILL.md` |
-| 2 | Initial Access (alt) | T1566 | Phishing loader | phisher → `/skills/standard/phish/SKILL.md` |
+| 2 | Initial Access (alt) | T1566 | Phishing loader | phisher → `/skills/standard/phisher/SKILL.md` |
 | 3 | C2 | T1071.001 | Beacon for hands-on-keyboard ops | post-exploit → `/skills/standard/post-exploit/c2-sliver/SKILL.md` |
 | 4 | Discovery / AD | T1018 / T1083 | Enumerate hosts, shares, AD attack paths | ad → `/skills/standard/ad/bloodhound-query/SKILL.md` |
 | 5 | Credential Access | T1003.001 / T1558.003 | LSASS dump; Kerberoast | post-exploit → `/skills/standard/post-exploit/credential-access/SKILL.md`; `/skills/standard/ad/kerberoasting/SKILL.md` |

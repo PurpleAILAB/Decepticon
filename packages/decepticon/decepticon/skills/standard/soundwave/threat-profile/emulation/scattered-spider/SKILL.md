@@ -49,8 +49,8 @@ metadata:
 | # | Phase | MITRE | Emulated action | Executing agent → skill |
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Recon (PII) | T1589 | Harvest employee names, roles, phone numbers, help-desk reset process | recon → `/skills/standard/recon/osint/SKILL.md`, `/skills/standard/osint/SKILL.md` |
-| 2 | Initial Access | T1656 / T1598 / T1566.004 | Vish the help desk as a target employee → password reset + MFA transfer | phisher → `/skills/standard/phish/SKILL.md` |
-| 3 | MFA bypass | T1621 / T1556.006 | MFA-fatigue push OR register attacker-controlled MFA device | phisher/exploit → `/skills/standard/phish/SKILL.md`, `/skills/standard/exploit/web/oauth/SKILL.md` |
+| 2 | Initial Access | T1656 / T1598 / T1566.004 | Vish the help desk as a target employee → password reset + MFA transfer | phisher → `/skills/standard/phisher/SKILL.md` |
+| 3 | MFA bypass | T1621 / T1556.006 | MFA-fatigue push OR register attacker-controlled MFA device | phisher/exploit → `/skills/standard/phisher/SKILL.md`, `/skills/standard/exploit/web/oauth/SKILL.md` |
 | 4 | Cloud foothold | T1078.004 | Sign in to Okta/Entra/AWS as the reset account | cloud → `/skills/standard/cloud/aws-iam-enum/SKILL.md`, `/skills/standard/cloud/azure-managed-identity/SKILL.md` |
 | 5 | Scope expansion | T1098.003 / T1098.005 | Self-assign apps in Okta; add roles/credentials; passrole chains | cloud → `/skills/standard/cloud/aws-iam-passrole-chain/SKILL.md` |
 | 6 | Persistence | T1219 | Deploy engagement-owned RMM (AnyDesk/ConnectWise); create rogue VM | post-exploit → `/skills/standard/post-exploit/lateral-movement/SKILL.md`, `/skills/standard/post-exploit/c2-sliver/SKILL.md` |

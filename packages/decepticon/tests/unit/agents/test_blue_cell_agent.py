@@ -29,6 +29,7 @@ def test_role_registered_as_readonly_base_slots() -> None:
 def test_standard_tools_are_readonly() -> None:
     names = set(agent_mod._STANDARD_TOOLS)
     assert "blue_cell_scan" in names
+    assert {"defense_brief", "export_attack_navigator"} <= names  # Defense Brief deliverables
     assert {"kg_query", "kg_neighbors", "kg_stats"} <= names
     # No attack surface and no hand-written graph mutation.
     assert "bash" not in names

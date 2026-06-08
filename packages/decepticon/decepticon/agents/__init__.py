@@ -1,4 +1,4 @@
-# Standard bundle — decepticon main agent + 8 official subagents + soundwave.
+# Standard bundle — decepticon main agent + 16 official subagents + soundwave.
 # Plugins bundle — vulnresearch main agent + its 5 subagents (community-plugin
 # shape demonstrated from inside OSS). See decepticon/agents/plugins/__init__.py.
 from decepticon.agents.plugins.detector import create_detector_agent
@@ -14,12 +14,17 @@ from decepticon.agents.standard.cloud_hunter import create_cloud_hunter_agent
 from decepticon.agents.standard.contract_auditor import create_contract_auditor_agent
 from decepticon.agents.standard.decepticon import create_decepticon_agent
 from decepticon.agents.standard.exploit import create_exploit_agent
+from decepticon.agents.standard.forensicator import create_forensicator_agent
+from decepticon.agents.standard.ics_operator import create_ics_operator_agent
+from decepticon.agents.standard.iot_operator import create_iot_operator_agent
 from decepticon.agents.standard.mobile_operator import create_mobile_operator_agent
+from decepticon.agents.standard.osint_operator import create_osint_operator_agent
 from decepticon.agents.standard.phisher import create_phisher_agent
 from decepticon.agents.standard.postexploit import create_postexploit_agent
 from decepticon.agents.standard.recon import create_recon_agent
 from decepticon.agents.standard.reverser import create_reverser_agent
 from decepticon.agents.standard.soundwave import create_soundwave_agent
+from decepticon.agents.standard.supply_chain_operator import create_supply_chain_operator_agent
 from decepticon.agents.standard.wireless_operator import create_wireless_operator_agent
 
 __all__ = [
@@ -37,6 +42,12 @@ __all__ = [
     "create_mobile_operator_agent",
     "create_wireless_operator_agent",
     "create_blue_cell_agent",
+    # WAVE-3 specialists — lit up over the pre-existing skill trees.
+    "create_osint_operator_agent",
+    "create_iot_operator_agent",
+    "create_ics_operator_agent",
+    "create_forensicator_agent",
+    "create_supply_chain_operator_agent",
     # Vulnresearch pipeline (five-stage modular)
     "create_scanner_agent",
     "create_detector_agent",
