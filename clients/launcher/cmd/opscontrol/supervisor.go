@@ -14,24 +14,106 @@ import (
 )
 
 // EnsureRunning is the launcher-side entry point: `decepticon start`
-// calls it before `compose up`. The function is idempotent — if a
-// healthy daemon is already running, it returns without starting a
-// new one.
+// calls it before `compose up`. It returns the host socket path so
+// the caller can export it to docker compose (used by
+// docker-compose.opscontrol.yml).
 //
-// It returns the host socket path so the caller can export it to
-// docker compose (used by docker-compose.opscontrol.yml).
+// Three modes, picked in order:
+//
+//  1. **Managed-service mode** (Alt A, preferred): a systemd user
+//     unit or launchd LaunchAgent is installed and active. The
+//     daemon lifecycle is owned by the init system — survives
+//     reboot, restarts on crash. The launcher does not start or
+//     stop the daemon; it only waits for the socket to be ready
+//     (in case the service was just installed and is still
+//     warming up).
+//
+//  2. **Managed-service-but-inactive**: the unit is installed but
+//     stopped (e.g., operator ran `decepticon opscontrol stop` by
+//     hand). EnsureRunning asks the manager to start it.
+//
+//  3. **Launcher-spawn fallback**: no service manager is available
+//     on this host (Windows, WSL2 without systemd, Linux without
+//     per-user systemd). The launcher forks a detached daemon and
+//     writes a PID file the way it did pre-Alt-A.
+//
+// All three modes are idempotent — calling EnsureRunning twice in
+// quick succession is safe.
 func EnsureRunning() (socketPath string, err error) {
 	if err := internal.EnsureRunDir(); err != nil {
 		return "", err
 	}
 	socketPath = internal.HostSocketPath()
 
+	mgr := internal.DetectServiceManager()
+	if mgr.Available() {
+		installed, err := mgr.Installed()
+		if err != nil {
+			return "", err
+		}
+		if installed {
+			active, err := mgr.Active()
+			if err != nil {
+				return "", err
+			}
+			if !active {
+				if err := mgr.Start(); err != nil {
+					return "", err
+				}
+			}
+			if err := waitForSocket(socketPath, 5*time.Second); err != nil {
+				return "", fmt.Errorf("opscontrol: managed service did not bind socket: %w "+
+					"(check `decepticon opscontrol status`)", err)
+			}
+			return socketPath, nil
+		}
+		// Service manager is available but no unit installed yet —
+		// fall through to launcher-spawn. The user can opt into
+		// managed-service mode later with `decepticon opscontrol
+		// install`.
+	}
+
+	// Fallback path: launcher-spawn. Same logic as the original
+	// Sprint 1 supervisor.
+	return ensureRunningLauncherSpawn(socketPath)
+}
+
+// Stop is called by `decepticon stop` AFTER `compose down`. In
+// managed-service mode the daemon is intentionally NOT killed — it
+// lives across launcher sessions so `decepticon start` does not pay
+// the daemon-warmup cost every time. Operators who want the daemon
+// down call `decepticon opscontrol stop` explicitly or run
+// `decepticon opscontrol uninstall`.
+//
+// In launcher-spawn fallback mode Stop sends SIGTERM and waits up to
+// 5s for the daemon to exit, then unlinks the socket.
+func Stop() error {
+	mgr := internal.DetectServiceManager()
+	if mgr.Available() {
+		installed, err := mgr.Installed()
+		if err != nil {
+			return err
+		}
+		if installed {
+			// Managed-service mode: the daemon stays up. Compose
+			// teardown is already done by the caller; the daemon's
+			// own workloads are gone with it.
+			return nil
+		}
+	}
+	return stopLauncherSpawn()
+}
+
+// ensureRunningLauncherSpawn implements the pre-Alt-A behavior. Kept
+// as a fallback for environments without a recognized init system.
+func ensureRunningLauncherSpawn(socketPath string) (string, error) {
 	if pid, alive := readPID(); alive {
-		// Daemon already running. Make sure the socket file is too;
-		// if not, the daemon is unhealthy → kill and respawn.
+		// Daemon already running. Confirm the socket is too.
 		if info, err := os.Stat(socketPath); err == nil && info.Mode()&os.ModeSocket != 0 {
 			return socketPath, nil
 		}
+		// Daemon is alive but socket missing — unhealthy. Kill +
+		// respawn.
 		_ = syscall.Kill(pid, syscall.SIGTERM)
 		_ = os.Remove(internal.PIDFilePath())
 	}
@@ -40,8 +122,6 @@ func EnsureRunning() (socketPath string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("opscontrol: locate self: %w", err)
 	}
-	// Spawn the daemon as a detached child of init. `setsid` puts it
-	// in a new session so it survives the launcher exit.
 	cmd := exec.Command(exe, "opscontrol", "daemon") //nolint:gosec // own binary
 	cmd.Stdin = nil
 	logf, lerr := os.OpenFile(daemonLogPath(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
@@ -54,26 +134,16 @@ func EnsureRunning() (socketPath string, err error) {
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("opscontrol: spawn daemon: %w", err)
 	}
-	// Detach: don't Wait so it keeps running. Release the process
-	// reference so the launcher can exit cleanly.
 	_ = cmd.Process.Release()
 
-	// Wait for the socket to appear so `compose up` doesn't race
-	// against an unbound mount target. 5s cap is generous; the
-	// daemon binds in <100ms in practice.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if info, err := os.Stat(socketPath); err == nil && info.Mode()&os.ModeSocket != 0 {
-			return socketPath, nil
-		}
-		time.Sleep(50 * time.Millisecond)
+	if err := waitForSocket(socketPath, 5*time.Second); err != nil {
+		return "", fmt.Errorf("opscontrol: launcher-spawn daemon failed to bind socket: %w "+
+			"(see %s)", err, daemonLogPath())
 	}
-	return "", errors.New("opscontrol: daemon failed to bind socket within 5s; check " + daemonLogPath())
+	return socketPath, nil
 }
 
-// Stop signals the daemon and waits up to 5s for it to exit. Called
-// by `decepticon stop` after `compose down`.
-func Stop() error {
+func stopLauncherSpawn() error {
 	pid, alive := readPID()
 	if !alive {
 		return nil
@@ -92,6 +162,21 @@ func Stop() error {
 	return errors.New("opscontrol: daemon did not exit within 5s")
 }
 
+// waitForSocket polls until the socket file appears as a real Unix
+// socket or the deadline expires. 50ms cadence — the daemon binds in
+// <100ms in practice, so this is one or two iterations on the happy
+// path.
+func waitForSocket(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return fmt.Errorf("socket %s did not appear within %s", path, timeout)
+}
+
 // readPID returns the recorded daemon PID and whether the process is
 // currently alive. A stale PID file (process gone) returns
 // (pid, false), and callers usually treat that as "no daemon".
@@ -104,7 +189,6 @@ func readPID() (int, bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	// Signal 0 probes liveness without delivering anything.
 	if err := syscall.Kill(pid, syscall.Signal(0)); err != nil {
 		return pid, false
 	}
