@@ -47,20 +47,36 @@ func New() *Compose {
 	}
 }
 
-// Profiles defines available Docker Compose profiles.
+// Profiles defines the Docker Compose profile names this launcher
+// recognizes. The shipped catalog (cli + every specialist workload)
+// is the union — `cli` is always activated by `decepticon start`;
+// the specialist workloads come up on demand through ADR-0006's
+// opscontrol daemon. The launcher keeps the names here as constants
+// only so `down` / `stop` can sweep every container regardless of
+// which workloads the agent ended up spawning.
 var Profiles = struct {
-	CLI string
-	C2  string
+	CLI       string
+	C2        string
+	AD        string
+	Reversing string
 }{
-	CLI: "cli",
-	C2:  "c2-sliver",
+	CLI:       "cli",
+	C2:        "c2-sliver",
+	AD:        "ad",
+	Reversing: "reversing",
 }
 
-// AllProfiles returns all profile flags for complete teardown.
+// AllProfiles returns every profile flag the launcher should pass
+// to `docker compose down`. Workloads the agent never spawned are
+// silently no-ops; the cost of listing them is one cli-arg per
+// profile, which beats orphaning containers when an engagement
+// brought up an ad-hoc combination of specialists.
 func AllProfiles() []string {
 	return []string{
 		"--profile", Profiles.CLI,
 		"--profile", Profiles.C2,
+		"--profile", Profiles.AD,
+		"--profile", Profiles.Reversing,
 	}
 }
 

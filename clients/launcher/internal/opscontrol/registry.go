@@ -90,3 +90,19 @@ func (r *registry) snapshot() []WorkloadStatus {
 	}
 	return out
 }
+
+// workloadsForEngagement returns the names of every workload currently
+// associated with engagementID and not already in StateStopped. The
+// caller is responsible for taking per-workload mutexes before
+// stopping each one; this method is read-only.
+func (r *registry) workloadsForEngagement(engagementID string) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := []string{}
+	for workload, e := range r.entries {
+		if e.EngagementID == engagementID && e.State != StateStopped {
+			out = append(out, workload)
+		}
+	}
+	return out
+}

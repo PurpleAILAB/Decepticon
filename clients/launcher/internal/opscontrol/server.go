@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -97,6 +98,7 @@ func (s *Server) mux() http.Handler {
 	mux.HandleFunc("GET /v1/profiles", s.handleList)
 	mux.HandleFunc("POST /v1/profiles/{workload}/start", s.handleStart)
 	mux.HandleFunc("POST /v1/profiles/{workload}/stop", s.handleStop)
+	mux.HandleFunc("POST /v1/engagements/{engagement}/cleanup", s.handleCleanupEngagement)
 	return mux
 }
 
@@ -213,6 +215,51 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Registry.set(workload, StateStopped, "")
 	writeJSON(w, http.StatusAccepted, Handle{Workload: workload, State: StateStopped})
+}
+
+// cleanupResponse summarizes a bulk engagement teardown so the agent
+// can confirm what was stopped (or surface which workloads errored
+// out and stayed up).
+type cleanupResponse struct {
+	Engagement string   `json:"engagement"`
+	Stopped    []string `json:"stopped"`
+	Errors     map[string]string `json:"errors,omitempty"`
+}
+
+// engagementName matches what RFC 1123-style identifiers and our
+// engagement picker emit. We are intentionally lax (allow dots /
+// underscores) because engagement IDs are operator-chosen and have
+// no shell-injection blast radius — the daemon only uses the ID as a
+// registry key, never as a shell argument.
+var engagementName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+
+func (s *Server) handleCleanupEngagement(w http.ResponseWriter, r *http.Request) {
+	engagement := r.PathValue("engagement")
+	if !engagementName.MatchString(engagement) {
+		writeError(w, http.StatusBadRequest, "engagement id contains illegal characters")
+		return
+	}
+	targets := s.Registry.workloadsForEngagement(engagement)
+	resp := cleanupResponse{Engagement: engagement, Stopped: []string{}, Errors: map[string]string{}}
+	for _, workload := range targets {
+		lock := s.Registry.lockFor(workload)
+		lock.Lock()
+		err := s.Backend.Stop(r.Context(), workload)
+		if err != nil {
+			s.Logger.Error("opscontrol cleanup stop failed",
+				"engagement", engagement, "workload", workload, "err", err)
+			resp.Errors[workload] = err.Error()
+			lock.Unlock()
+			continue
+		}
+		s.Registry.set(workload, StateStopped, "")
+		resp.Stopped = append(resp.Stopped, workload)
+		lock.Unlock()
+	}
+	if len(resp.Errors) == 0 {
+		resp.Errors = nil
+	}
+	writeJSON(w, http.StatusAccepted, resp)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

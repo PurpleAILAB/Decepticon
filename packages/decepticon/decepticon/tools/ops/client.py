@@ -102,3 +102,6 @@ class OpsControlClient:
 
     def stop(self, workload: str) -> dict[str, Any]:
         return self._request("POST", f"/v1/profiles/{workload}/stop")
+
+    def cleanup_engagement(self, engagement_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/v1/engagements/{engagement_id}/cleanup")

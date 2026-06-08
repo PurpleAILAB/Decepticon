@@ -81,6 +81,34 @@ Every re-dispatch MUST include the output-redirection instruction (see section E
   - `find` / `ls -R` → pipe to `head -50` or `wc -l`
   - `nmap` / `gobuster` / `ffuf` → `-o file` then extract
   - Each multi-KB inline output triggers SummarizationMiddleware compaction next turn; compaction is expensive and disrupts progress.
+
+## F. Specialist Workload Lifecycle (ADR-0006)
+
+Domain-specific specialists need sidecar services to function — `ad_operator` calls BHCE for attack-graph queries, `postexploit` / `exploit` may need a Sliver C2 team server, `reverser` needs the Ghidra MCP bridge. These workloads are **opt-in**: they are not running when the engagement starts. You spawn them through the `ops_*` toolset (only the orchestrator carries those — sub-agents cannot start arbitrary infrastructure).
+
+| Specialist | Workload to spawn | When |
+|---|---|---|
+| `ad_operator` | `ad` | Recon SUMMARY.md reports an Active Directory environment (SMB / Kerberos / LDAP / DC banner / Windows-domain naming) |
+| `postexploit` (and `exploit` if it needs C2-bound payloads) | `c2-sliver` | After foothold — initial RCE / cred dump / sandbox shell is captured |
+| `reverser` | `reversing` | A binary needs decompilation / static analysis that bash cannot drive |
+
+**Workflow** (mandatory order):
+
+1. Before any `task("<specialist>", ...)` whose workload row above applies, call `ops_start("<workload>", engagement_id=$DECEPTICON_ENGAGEMENT)`. The tool returns a JSON envelope; treat `state: "running"` as ready. An `error: "opscontrol_unreachable"` diagnostic means the daemon is not installed on this host (`make dev` / `make smoke` are daemon-less by design) — record the gap and either invoke specialist tools that do not need the workload OR mark the AD/C2 objective `blocked` if the workload is mandatory.
+2. Dispatch the specialist `task()` as usual.
+3. After the specialist returns, decide whether the workload is still needed:
+   - **OPPLAN still has pending tasks that need it** → leave it running, do not call `ops_stop`.
+   - **No more uses of this workload** → call `ops_stop("<workload>")`. Idempotent — stopping an already-stopped workload returns 202.
+
+**At engagement close** (after the final-report sequence in `<COMPLETION_CRITERIA>` and before the final assistant message), call `ops_cleanup_engagement(engagement_id=$DECEPTICON_ENGAGEMENT)`. The daemon stops every workload tagged with the current engagement so the host returns to an idle baseline. Missing this is not a discipline violation in itself — the daemon survives across engagements — but it leaks idle BHCE / Sliver memory until the next `decepticon stop`.
+
+**`ops_status()`** is a read-only probe of the daemon's current view. Use it when an `ops_start` returned an unexpected error envelope, or when debugging "should this workload be up by now?" Do not poll it in a loop — workload state transitions are seconds, not turns.
+
+**Anti-patterns**:
+
+- Calling `ops_start("ad")` before recon has run on a non-AD target — wastes ~30 s of BHCE cold start for nothing. Spawn from observed evidence, not from the engagement tags or the target name alone.
+- Calling `ops_stop` between two sub-agent `task()` calls that both need the same workload — the second specialist will hit "BHCE unreachable" and report a false BLOCKED.
+- Forgetting `ops_cleanup_engagement` when many workloads accumulated — surfaces as `decepticon stop` looking slow because compose has to tear down every accumulated specialist.
 </CRITICAL_RULES>
 
 <COMPLETION_CRITERIA>

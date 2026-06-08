@@ -105,6 +105,46 @@ def ops_stop(workload: str) -> str:
 
 
 @tool
+def ops_cleanup_engagement(engagement_id: str | None = None) -> str:
+    """Stop every workload tagged with the given engagement_id.
+
+    Call this once at engagement close — typically after the final
+    report has been written but before the orchestrator returns its
+    completion summary. The daemon walks its registry and issues
+    ``stop`` for every workload whose ``engagement_id`` field matches.
+    Idempotent: an already-stopped workload is reported in
+    ``stopped`` exactly once.
+
+    ``engagement_id`` defaults to ``DECEPTICON_ENGAGEMENT`` from the
+    container env (set by the launcher's engagement picker) so the
+    orchestrator does not have to thread the id through every
+    response.
+
+    Returns a JSON envelope:
+        ``{"engagement": "eng-...", "stopped": ["ad", "c2-sliver"], "errors": {...}}``
+    or an error envelope on failure.
+    """
+    if engagement_id is None:
+        engagement_id = os.environ.get("DECEPTICON_ENGAGEMENT") or None
+    if not engagement_id:
+        return _envelope(
+            {
+                "error": "missing_engagement_id",
+                "hint": (
+                    "ops_cleanup_engagement requires an engagement_id "
+                    "(argument or DECEPTICON_ENGAGEMENT env)."
+                ),
+            }
+        )
+    try:
+        return _envelope(OpsControlClient().cleanup_engagement(engagement_id))
+    except OpsControlUnreachableError as exc:
+        return _diagnose_unreachable(exc)
+    except OpsControlError as exc:
+        return _diagnose_http(exc)
+
+
+@tool
 def ops_status() -> str:
     """List every workload the opscontrol daemon has touched this session.
 
@@ -131,4 +171,4 @@ def ops_status() -> str:
         return _diagnose_http(exc)
 
 
-OPS_TOOLS = [ops_start, ops_stop, ops_status]
+OPS_TOOLS = [ops_start, ops_stop, ops_cleanup_engagement, ops_status]

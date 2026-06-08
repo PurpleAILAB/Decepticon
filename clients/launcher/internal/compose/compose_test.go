@@ -26,11 +26,18 @@ func TestNew(t *testing.T) {
 
 func TestAllProfiles(t *testing.T) {
 	profiles := AllProfiles()
-	if len(profiles) != 4 {
-		t.Errorf("AllProfiles() len = %d, want 4 (2 pairs)", len(profiles))
+	// ADR-0006 Sprint 2 expanded the catalog to cover every workload
+	// the launcher may need to tear down: cli + c2-sliver + ad +
+	// reversing = 4 profiles = 8 cli args (--profile NAME).
+	expected := []string{
+		"--profile", "cli",
+		"--profile", "c2-sliver",
+		"--profile", "ad",
+		"--profile", "reversing",
 	}
-	// Verify pairs
-	expected := []string{"--profile", "cli", "--profile", "c2-sliver"}
+	if len(profiles) != len(expected) {
+		t.Fatalf("AllProfiles() len = %d, want %d", len(profiles), len(expected))
+	}
 	for i, v := range expected {
 		if profiles[i] != v {
 			t.Errorf("profiles[%d] = %q, want %q", i, profiles[i], v)

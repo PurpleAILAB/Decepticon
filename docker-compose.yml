@@ -481,8 +481,12 @@ services:
 
   # ── C2 Infrastructure (profile-based, default: c2-sliver) ───────────
   # Each C2 framework runs as a profile-based service on sandbox-net.
-  # Default: COMPOSE_PROFILES=c2-sliver in .env → starts with `docker compose up -d`
-  # Swap: change COMPOSE_PROFILES to c2-havoc, etc.
+  # ADR-0006 (v1.1.8+): C2 frameworks are opt-in workloads spawned by
+  # the orchestrator agent through opscontrol — the orchestrator calls
+  # `ops_start("c2-sliver")` after gaining a foothold. Default
+  # `decepticon start` keeps the C2 plane cold.
+  # Swap framework: change `ops_start("c2-sliver")` to
+  # `ops_start("c2-havoc")` once that workload ships.
   # Agent connects via: sliver-client (pre-installed in sandbox)
   c2-sliver:
     image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-latest}
@@ -602,6 +606,11 @@ services:
       start_period: 5s
     networks:
       - decepticon-net
+    # ADR-0006 §3 — workload is opt-in via the opscontrol daemon.
+    # Default `decepticon start` does NOT bring this up; the agent
+    # spawns it on demand via `ops_start("ad")`.
+    profiles:
+      - ad
   bhce-neo4j:
     image: neo4j:4.4.42-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
@@ -622,6 +631,10 @@ services:
       retries: 12
       start_period: 60s
     restart: unless-stopped
+    # ADR-0006 §3 — opt-in via `ops_start("ad")`. Default
+    # `decepticon start` does not spin up the AD graph DB.
+    profiles:
+      - ad
 
   bhce:
     # SpecterOps does not publish semver tags on Docker Hub — every
@@ -681,6 +694,11 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+    # ADR-0006 §3 — workload is opt-in. The orchestrator agent calls
+    # `ops_start("ad")` after recon identifies an AD environment;
+    # default `decepticon start` keeps the BHCE plane cold.
+    profiles:
+      - ad
 
 volumes:
   postgres_data:

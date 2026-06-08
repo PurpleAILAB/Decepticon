@@ -13,7 +13,13 @@ from typing import Any
 
 import pytest
 
-from decepticon.tools.ops import OPS_TOOLS, ops_start, ops_status, ops_stop
+from decepticon.tools.ops import (
+    OPS_TOOLS,
+    ops_cleanup_engagement,
+    ops_start,
+    ops_status,
+    ops_stop,
+)
 from decepticon.tools.ops.client import OpsControlError, OpsControlUnreachableError
 
 
@@ -50,6 +56,11 @@ class _FakeClient:
         self.calls.append(("stop", {"workload": workload}))
         self._maybe_raise("stop")
         return self._stop
+
+    def cleanup_engagement(self, engagement_id):
+        self.calls.append(("cleanup_engagement", {"engagement_id": engagement_id}))
+        self._maybe_raise("cleanup_engagement")
+        return {"engagement": engagement_id, "stopped": ["ad", "c2-sliver"]}
 
 
 @pytest.fixture
@@ -128,6 +139,28 @@ def test_ops_status_merges_health_and_profiles(patch_client) -> None:
     assert data["workloads"][0]["workload"] == "ad"
 
 
+def test_ops_cleanup_engagement_returns_envelope(patch_client) -> None:
+    out = ops_cleanup_engagement.invoke({"engagement_id": "eng-99"})
+    data = json.loads(out)
+    assert data == {"engagement": "eng-99", "stopped": ["ad", "c2-sliver"]}
+    assert patch_client.calls[0] == ("cleanup_engagement", {"engagement_id": "eng-99"})
+
+
+def test_ops_cleanup_engagement_pulls_from_env(monkeypatch, patch_client) -> None:
+    monkeypatch.setenv("DECEPTICON_ENGAGEMENT", "eng-from-env")
+    ops_cleanup_engagement.invoke({})
+    assert patch_client.calls[0][1]["engagement_id"] == "eng-from-env"
+
+
+def test_ops_cleanup_engagement_requires_engagement(monkeypatch) -> None:
+    monkeypatch.delenv("DECEPTICON_ENGAGEMENT", raising=False)
+    out = ops_cleanup_engagement.invoke({})
+    data = json.loads(out)
+    # No id provided and env unset — the tool must surface a clear
+    # diagnostic rather than calling the daemon with the empty string.
+    assert data["error"] == "missing_engagement_id"
+
+
 def test_tools_registered_in_OPS_TOOLS() -> None:
     names = {t.name for t in OPS_TOOLS}
-    assert names == {"ops_start", "ops_stop", "ops_status"}
+    assert names == {"ops_start", "ops_stop", "ops_cleanup_engagement", "ops_status"}

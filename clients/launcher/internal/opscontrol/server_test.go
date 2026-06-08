@@ -167,6 +167,75 @@ func TestServer_StopAfterStart(t *testing.T) {
 	}
 }
 
+func TestServer_CleanupEngagementStopsTaggedWorkloads(t *testing.T) {
+	s, be := newTestServer(t)
+
+	// Tag two workloads with eng-1, one with eng-2.
+	for _, payload := range []struct{ workload, engagement string }{
+		{"ad", "eng-1"},
+		{"c2-sliver", "eng-1"},
+		{"reversing", "eng-2"},
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost,
+			"/v1/profiles/"+payload.workload+"/start?engagement="+payload.engagement, nil)
+		s.mux().ServeHTTP(w, r)
+		if w.Code != http.StatusAccepted {
+			t.Fatalf("seed start %s: %d", payload.workload, w.Code)
+		}
+	}
+
+	// Cleanup eng-1.
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/engagements/eng-1/cleanup", nil)
+	s.mux().ServeHTTP(w, r)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("cleanup status = %d", w.Code)
+	}
+	var resp cleanupResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Stopped) != 2 {
+		t.Errorf("stopped = %v; want 2 entries", resp.Stopped)
+	}
+	if be.stopCount.Load() != 2 {
+		t.Errorf("backend.Stop called %d times; want 2", be.stopCount.Load())
+	}
+	// reversing (eng-2) must still be running.
+	be.mu.Lock()
+	stillUp := be.running["reversing"]
+	be.mu.Unlock()
+	if !stillUp {
+		t.Error("reversing (eng-2) was stopped; cleanup must only touch its own engagement")
+	}
+}
+
+func TestServer_CleanupEngagementRejectsBadID(t *testing.T) {
+	s, _ := newTestServer(t)
+	for _, bad := range []string{
+		"../etc",
+		"with space",
+		"$(rm -rf)",
+		"",
+	} {
+		w := httptest.NewRecorder()
+		// Replace whitespace so http.NewRequest accepts the URL; the
+		// handler validation must still reject it.
+		urlPath := "/v1/engagements/" + strings.ReplaceAll(bad, " ", "%20") + "/cleanup"
+		r := httptest.NewRequest(http.MethodPost, urlPath, nil)
+		s.mux().ServeHTTP(w, r)
+		// ServeMux returns 301 (path normalization) for `../etc` and
+		// empty-segment paths before our handler runs; that is still
+		// "rejected before the backend was called", which is the
+		// security property we care about. The handler-level 400 covers
+		// names that survive mux normalization.
+		if w.Code < 300 || w.Code >= 500 {
+			t.Errorf("engagement=%q got status %d; want a 3xx/4xx rejection", bad, w.Code)
+		}
+	}
+}
+
 func TestServer_ListReflectsRegistry(t *testing.T) {
 	s, _ := newTestServer(t)
 	// Empty before any start.
