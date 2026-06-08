@@ -223,6 +223,8 @@ def _make_opscontrol_notification(**_: Any):
     installs) the middleware degrades to a no-op so boot does not break.
     """
     return OpsControlNotificationMiddleware()
+
+
 def _make_detection_feedback(**_: Any):
     return DetectionFeedbackMiddleware(mttd_threshold=detection_mttd_threshold())
 
