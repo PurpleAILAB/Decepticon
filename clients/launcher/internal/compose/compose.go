@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/runtime"
 )
 
@@ -46,20 +47,36 @@ func New() *Compose {
 	}
 }
 
-// Profiles defines available Docker Compose profiles.
+// Profiles defines the Docker Compose profile names this launcher
+// recognizes. The shipped catalog (cli + every specialist workload)
+// is the union — `cli` is always activated by `decepticon start`;
+// the specialist workloads come up on demand through ADR-0006's
+// opscontrol daemon. The launcher keeps the names here as constants
+// only so `down` / `stop` can sweep every container regardless of
+// which workloads the agent ended up spawning.
 var Profiles = struct {
-	CLI string
-	C2  string
+	CLI       string
+	C2        string
+	AD        string
+	Reversing string
 }{
-	CLI: "cli",
-	C2:  "c2-sliver",
+	CLI:       "cli",
+	C2:        "c2-sliver",
+	AD:        "ad",
+	Reversing: "reversing",
 }
 
-// AllProfiles returns all profile flags for complete teardown.
+// AllProfiles returns every profile flag the launcher should pass
+// to `docker compose down`. Workloads the agent never spawned are
+// silently no-ops; the cost of listing them is one cli-arg per
+// profile, which beats orphaning containers when an engagement
+// brought up an ad-hoc combination of specialists.
 func AllProfiles() []string {
 	return []string{
 		"--profile", Profiles.CLI,
 		"--profile", Profiles.C2,
+		"--profile", Profiles.AD,
+		"--profile", Profiles.Reversing,
 	}
 }
 
@@ -77,8 +94,35 @@ func (c *Compose) baseArgs() []string {
 		prefix = []string{"compose"}
 	}
 	args := append([]string{}, prefix...)
+	// `-p` is explicit so the launcher's project name matches what the
+	// opscontrol daemon uses on its own compose calls (DockerComposeBackend
+	// reads the same helper). Without `-p`, compose defaults to the
+	// sanitized basename of $DECEPTICON_HOME — that agrees by accident in
+	// normal flows but breaks the moment any caller passes a different
+	// `-p` (CI, manual debugging, …) and produces a "container_name in
+	// use by another project" conflict on the next ops_start.
+	args = append(args, "-p", opscontrol.ComposeProjectName())
 	args = append(args, "-f", c.ComposeFile, "--env-file", c.EnvFile)
+	// ADR-0006 Sprint 1: include the opscontrol overlay only when
+	// the file exists AND the host socket has been bound. Attaching
+	// the overlay without DECEPTICON_OPSCONTROL_SOCK_HOST exported
+	// would mount /dev/null into langgraph (the old `:-/dev/null`
+	// fallback in the overlay) — that's a wiring bug masquerading
+	// as a "daemon unreachable" diagnostic at agent runtime,
+	// which is much harder to debug than a missing overlay at boot.
+	// EnsureRunning() exports the env var on success; the user-side
+	// fallback (no service manager + spawn failed) keeps the overlay
+	// out so the boot doesn't silently regress to the broken state.
+	if override := filepath.Join(c.Home, "docker-compose.opscontrol.yml"); fileExists(override) &&
+		os.Getenv("DECEPTICON_OPSCONTROL_SOCK_HOST") != "" {
+		args = append(args, "-f", override)
+	}
 	return args
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // ContainerName builds the docker container name for a Decepticon
@@ -115,22 +159,14 @@ func (c *Compose) readVersion() string {
 // user may have written into .env and avoids the silent `:latest` drift
 // that occurs when the variable is unset.
 func (c *Compose) composeEnv() []string {
-	env := os.Environ()
+	// Single source of truth for compose interpolation env (STACK_NAME +
+	// COMPOSE_PROJECT). The daemon's DockerComposeBackend reads from the
+	// same helper so the two never write DIFFERENT container_name
+	// values into the SAME compose project. See
+	// opscontrol.ComposeCommandEnv() for the rationale.
+	env := opscontrol.ComposeCommandEnv()
 	if v := c.readVersion(); v != "" {
 		env = append(env, "DECEPTICON_VERSION="+imageTag(v))
-	}
-	// Ensure DECEPTICON_STACK_NAME is always *set* (empty when the
-	// operator didn't choose a stack) so docker compose's interpolation
-	// of ${DECEPTICON_STACK_NAME:+...} in container_name never emits a
-	// `The "DECEPTICON_STACK_NAME" variable is not set` warning. Compose
-	// versions before ~2.24 warn on the nested reference even though the
-	// `:+` form leaves it unused — an empty-but-set value is
-	// interpolation-equivalent to unset for `:+`. The .env.example
-	// declaration (#238) only covers fresh installs from that release on;
-	// this also silences the warning for users whose pre-#238 .env
-	// predates the declaration, without forcing a re-onboard.
-	if _, ok := os.LookupEnv("DECEPTICON_STACK_NAME"); !ok {
-		env = append(env, "DECEPTICON_STACK_NAME=")
 	}
 	// Inject DOCKER_HOST for Podman so nested Docker-API clients in
 	// containers (testcontainers, kubectl-with-docker-shim) find the

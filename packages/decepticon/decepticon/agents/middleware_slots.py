@@ -54,6 +54,9 @@ from decepticon.middleware.hitl import (
 )
 from decepticon.middleware.model_override import ModelOverrideMiddleware
 from decepticon.middleware.notifications import SandboxNotificationMiddleware
+from decepticon.middleware.opscontrol_notifications import (
+    OpsControlNotificationMiddleware,
+)
 from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
 from decepticon.middleware.roe import build_default_sink
 
@@ -206,6 +209,18 @@ def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
     return SandboxNotificationMiddleware(sandbox=sandbox)
 
 
+def _make_opscontrol_notification(**_: Any):
+    """ADR-0006 workload-state-transition delivery for the orchestrator.
+
+    Returns a middleware that polls the opscontrol UDS once per turn and
+    injects ``<system-reminder>`` blocks for state transitions
+    (starting → running / stopped / unknown). When the daemon is
+    unreachable (``make dev`` / ``make smoke`` paths, or pre-Sprint-1
+    installs) the middleware degrades to a no-op so boot does not break.
+    """
+    return OpsControlNotificationMiddleware()
+
+
 def _make_model_override(**_: Any):
     return ModelOverrideMiddleware()
 
@@ -346,6 +361,7 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.KG: _make_kg,
     MiddlewareSlot.EVENT_LOG: _make_event_log,
     MiddlewareSlot.SANDBOX_NOTIFICATION: _make_sandbox_notification,
+    MiddlewareSlot.OPSCONTROL_NOTIFICATION: _make_opscontrol_notification,
     MiddlewareSlot.BUDGET: _make_budget,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,

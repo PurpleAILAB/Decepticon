@@ -121,8 +121,9 @@ func compareSemver(a, b string) int {
 func SyncConfigFiles(branch string, release *Release) error {
 	home := config.DecepticonHome()
 	files := map[string]string{
-		"docker-compose.yml":  filepath.Join(home, "docker-compose.yml"),
-		"config/litellm.yaml": filepath.Join(home, "config", "litellm.yaml"),
+		"docker-compose.yml":            filepath.Join(home, "docker-compose.yml"),
+		"docker-compose.opscontrol.yml": filepath.Join(home, "docker-compose.opscontrol.yml"),
+		"config/litellm.yaml":           filepath.Join(home, "config", "litellm.yaml"),
 	}
 
 	client := &http.Client{Timeout: 30 * time.Second}
