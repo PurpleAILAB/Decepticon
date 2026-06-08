@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	internal "github.com/PurpleAILAB/Decepticon/clients/launcher/internal/opscontrol"
@@ -114,7 +113,7 @@ func ensureRunningLauncherSpawn(socketPath string) (string, error) {
 		}
 		// Daemon is alive but socket missing — unhealthy. Kill +
 		// respawn.
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		_ = terminateDaemon(pid)
 		_ = os.Remove(internal.PIDFilePath())
 	}
 
@@ -129,7 +128,7 @@ func ensureRunningLauncherSpawn(socketPath string) (string, error) {
 		cmd.Stdout = logf
 		cmd.Stderr = logf
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	setDetached(cmd)
 	cmd.Env = append(os.Environ(), "DECEPTICON_OPSCONTROL_CHILD=1")
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("opscontrol: spawn daemon: %w", err)
@@ -148,7 +147,7 @@ func stopLauncherSpawn() error {
 	if !alive {
 		return nil
 	}
-	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+	if err := terminateDaemon(pid); err != nil {
 		return fmt.Errorf("opscontrol: signal daemon: %w", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -189,7 +188,7 @@ func readPID() (int, bool) {
 	if err != nil || pid <= 0 {
 		return 0, false
 	}
-	if err := syscall.Kill(pid, syscall.Signal(0)); err != nil {
+	if !processAlive(pid) {
 		return pid, false
 	}
 	return pid, true
