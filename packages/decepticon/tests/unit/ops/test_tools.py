@@ -77,9 +77,6 @@ def test_ops_start_pulls_engagement_from_env(monkeypatch, patch_client) -> None:
 
 
 def test_ops_start_unreachable_diagnostic(monkeypatch) -> None:
-    def factory():
-        raise OpsControlUnreachableError("socket missing")
-
     # Patch the factory so the tool sees an immediate construction-time
     # error — equivalent to "no socket file at the default path".
     monkeypatch.setattr(
