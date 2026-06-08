@@ -71,6 +71,7 @@ func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ str
 		"--wait-timeout", fmt.Sprintf("%d", b.WaitTimeoutSeconds),
 	)
 	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = ComposeCommandEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return Handle{}, fmt.Errorf("compose up --profile %s: %w: %s", workload, err, strings.TrimSpace(string(out)))
@@ -85,6 +86,7 @@ func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ str
 func (b *DockerComposeBackend) Stop(ctx context.Context, workload string) error {
 	args := append(b.baseArgs(), "--profile", workload, "stop")
 	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = ComposeCommandEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("compose stop --profile %s: %w: %s", workload, err, strings.TrimSpace(string(out)))

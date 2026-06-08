@@ -102,24 +102,73 @@ func ServiceUnitName() string {
 	return "decepticon-opscontrol-" + suffix
 }
 
+// ComposeProjectEnv is the explicit override env var. Setting it pins
+// both the launcher's and the daemon's compose project so dynamic
+// workloads spawn INTO that project alongside any services the user
+// already manages there (saas-dev compose stack, plugin-managed
+// projects, etc.) rather than into a separate "decepticon" project.
+const ComposeProjectEnv = "DECEPTICON_COMPOSE_PROJECT"
+
 // ComposeProjectName returns the docker compose `-p PROJECT` value
 // the launcher AND the daemon must both pass on every compose call.
-// Without an explicit `-p`, compose derives the project name from the
-// directory containing the compose file (sanitized basename of
-// $DECEPTICON_HOME). That agrees by coincidence in normal flows but
-// breaks the instant any caller deviates — e.g. a CI harness invokes
-// `docker compose -p X up` for isolation while the daemon keeps
-// defaulting to the basename. Since `container_name:` fields in
-// docker-compose.yml are global, the two compose projects fight for
-// the same container_name and the second one fails with
-// "Conflict. The container name '/decepticon-…' is already in use".
 //
-// Single source of truth: this helper. Stack-scoped form:
-// "decepticon-stack2".
+// Resolution order:
+//
+//  1. DECEPTICON_COMPOSE_PROJECT env — explicit user override. Use
+//     this to target an existing compose project (e.g. set
+//     DECEPTICON_COMPOSE_PROJECT=decepticon-saas-dev so ops_start("ad")
+//     adds bhce to the running saas-dev stack rather than spinning
+//     up its own decepticon-* containers).
+//  2. Stack-name fallback — "decepticon[-${DECEPTICON_STACK_NAME}]".
+//     Stable, deterministic, never hardcoded into the binary.
+//
+// The point of having a single helper called from both sides is that
+// "container_name:" fields in docker-compose.yml are global to the
+// docker daemon — two compose projects competing for the same
+// container_name produce "Conflict. The container name
+// '/decepticon-…' is already in use". This helper plus
+// ComposeCommandEnv guarantee the launcher and the opscontrol daemon
+// agree on the same project.
 func ComposeProjectName() string {
+	if v := strings.TrimSpace(os.Getenv(ComposeProjectEnv)); v != "" {
+		return v
+	}
 	suffix := StackName()
 	if suffix == "" {
 		return "decepticon"
 	}
 	return "decepticon-" + suffix
+}
+
+// ComposeCommandEnv returns the environment every docker compose call
+// should run with. Both the launcher's Compose wrapper and the
+// daemon's DockerComposeBackend pass this slice to exec.Cmd so the
+// two never disagree on container_name interpolation
+// (DECEPTICON_STACK_NAME) or project name (DECEPTICON_COMPOSE_PROJECT).
+//
+// Why this matters: compose interpolates ${DECEPTICON_STACK_NAME} into
+// the container_name field of every service. If the launcher process
+// has it unset and the daemon process has it set (via the
+// --env-file fallback), the two write DIFFERENT container_name values
+// into the SAME compose project. The next `compose up` from either
+// side then sees "config drift", marks the existing containers
+// "Recreate", and tears them down mid-engagement.
+//
+// Normalisation:
+//
+//   - If the variable is missing from the process environment, we
+//     append "VAR=" to the returned env. That forces compose to
+//     interpolate the empty string (not the --env-file value, not
+//     the literal "${VAR}" placeholder).
+func ComposeCommandEnv() []string {
+	env := os.Environ()
+	for _, key := range []string{
+		"DECEPTICON_STACK_NAME",
+		ComposeProjectEnv,
+	} {
+		if _, ok := os.LookupEnv(key); !ok {
+			env = append(env, key+"=")
+		}
+	}
+	return env
 }

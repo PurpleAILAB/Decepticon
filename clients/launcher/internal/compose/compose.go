@@ -137,22 +137,14 @@ func (c *Compose) readVersion() string {
 // user may have written into .env and avoids the silent `:latest` drift
 // that occurs when the variable is unset.
 func (c *Compose) composeEnv() []string {
-	env := os.Environ()
+	// Single source of truth for compose interpolation env (STACK_NAME +
+	// COMPOSE_PROJECT). The daemon's DockerComposeBackend reads from the
+	// same helper so the two never write DIFFERENT container_name
+	// values into the SAME compose project. See
+	// opscontrol.ComposeCommandEnv() for the rationale.
+	env := opscontrol.ComposeCommandEnv()
 	if v := c.readVersion(); v != "" {
 		env = append(env, "DECEPTICON_VERSION="+imageTag(v))
-	}
-	// Ensure DECEPTICON_STACK_NAME is always *set* (empty when the
-	// operator didn't choose a stack) so docker compose's interpolation
-	// of ${DECEPTICON_STACK_NAME:+...} in container_name never emits a
-	// `The "DECEPTICON_STACK_NAME" variable is not set` warning. Compose
-	// versions before ~2.24 warn on the nested reference even though the
-	// `:+` form leaves it unused — an empty-but-set value is
-	// interpolation-equivalent to unset for `:+`. The .env.example
-	// declaration (#238) only covers fresh installs from that release on;
-	// this also silences the warning for users whose pre-#238 .env
-	// predates the declaration, without forcing a re-onboard.
-	if _, ok := os.LookupEnv("DECEPTICON_STACK_NAME"); !ok {
-		env = append(env, "DECEPTICON_STACK_NAME=")
 	}
 	// Inject DOCKER_HOST for Podman so nested Docker-API clients in
 	// containers (testcontainers, kubectl-with-docker-shim) find the

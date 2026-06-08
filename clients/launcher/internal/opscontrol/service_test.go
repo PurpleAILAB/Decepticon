@@ -1,6 +1,7 @@
 package opscontrol
 
 import (
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -61,6 +62,47 @@ func TestDetectServiceManager_ReturnsCorrectShape(t *testing.T) {
 		if _, ok := m.(noopManager); !ok {
 			t.Errorf("GOOS=%s returned %T; want noopManager", runtime.GOOS, m)
 		}
+	}
+}
+
+func TestComposeProjectName_EnvOverrideWins(t *testing.T) {
+	t.Setenv("DECEPTICON_STACK_NAME", "stack2")
+	t.Setenv(ComposeProjectEnv, "decepticon-saas-dev")
+	if got := ComposeProjectName(); got != "decepticon-saas-dev" {
+		t.Errorf("ComposeProjectName = %q; want explicit override %q", got, "decepticon-saas-dev")
+	}
+}
+
+func TestComposeProjectName_FallsBackToStackName(t *testing.T) {
+	t.Setenv(ComposeProjectEnv, "")
+	t.Setenv("DECEPTICON_STACK_NAME", "stack2")
+	if got := ComposeProjectName(); got != "decepticon-stack2" {
+		t.Errorf("ComposeProjectName = %q; want fallback %q", got, "decepticon-stack2")
+	}
+	t.Setenv("DECEPTICON_STACK_NAME", "")
+	if got := ComposeProjectName(); got != "decepticon" {
+		t.Errorf("ComposeProjectName = %q; want fallback %q", got, "decepticon")
+	}
+}
+
+func TestComposeCommandEnv_NormalizesUnsetVars(t *testing.T) {
+	os.Unsetenv("DECEPTICON_STACK_NAME")
+	os.Unsetenv(ComposeProjectEnv)
+	env := ComposeCommandEnv()
+	var sawStack, sawProject bool
+	for _, e := range env {
+		if e == "DECEPTICON_STACK_NAME=" {
+			sawStack = true
+		}
+		if e == ComposeProjectEnv+"=" {
+			sawProject = true
+		}
+	}
+	if !sawStack {
+		t.Error("ComposeCommandEnv must inject empty DECEPTICON_STACK_NAME so compose's --env-file does not silently disagree with the launcher")
+	}
+	if !sawProject {
+		t.Error("ComposeCommandEnv must inject empty DECEPTICON_COMPOSE_PROJECT for the same reason")
 	}
 }
 
