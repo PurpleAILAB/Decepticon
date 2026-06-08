@@ -413,7 +413,11 @@ def build_middleware(
     # is set. No-op otherwise, so the default runtime is unchanged. Role is
     # threaded through so the SkillogyMiddleware can scope its MoC summary
     # block to the agent's phase (see _PHASE_FOR_ROLE in middleware/skillogy.py).
-    result = maybe_install_skillogy(result, role=role)
+    # ``skill_sources`` mirrors what ``_make_skills`` already threads into
+    # the legacy SkillsMiddleware — ADR-0008 makes the Skillogy backend
+    # honor the same path-prefix allowlist so the two backends agree on
+    # per-role visibility.
+    result = maybe_install_skillogy(result, role=role, skill_sources=skill_sources)
 
     return result
 

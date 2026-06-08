@@ -58,7 +58,7 @@ rows into `add_objective` calls; the **executing agent** loads the named skill.
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Recon | T1593 / T1589.002 | Map tenant, federation, employees, exposed apps/OWA, email format | recon → `/skills/standard/recon/osint/SKILL.md`, `/skills/standard/recon/cloud-recon/SKILL.md` |
 | 2 | Initial Access | T1110.003 | Slow password spray against legacy/no-MFA cloud auth | exploit → `/skills/standard/exploit/web/ato-methodology/SKILL.md` |
-| 3 | Initial Access (alt) | T1566.002 | Device-code / consent phishing (Teams/email lure) | phisher → `/skills/standard/phish/SKILL.md` |
+| 3 | Initial Access (alt) | T1566.002 | Device-code / consent phishing (Teams/email lure) | phisher → `/skills/standard/phisher/SKILL.md` |
 | 4 | Initial Access (alt) | T1195.002 | CI/CD or dependency supply-chain foothold | exploit → `/skills/standard/exploit/supplychain/dep-confusion/SKILL.md` |
 | 5 | Credential/Token | T1528 / T1550.001 | Steal & replay OAuth app access tokens (skip password+MFA) | exploit → `/skills/standard/exploit/web/oauth/SKILL.md` |
 | 6 | Persistence (cloud) | T1098.001 / T1098.003 | Add app credentials + high Graph roles; consent malicious OAuth app | cloud → `/skills/standard/cloud/azure-managed-identity/SKILL.md`, `/skills/standard/cloud/aws-iam-passrole-chain/SKILL.md` |

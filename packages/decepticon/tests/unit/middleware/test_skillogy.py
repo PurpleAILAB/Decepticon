@@ -91,7 +91,7 @@ class TestIsEnabled:
 
 
 class TestPhaseForRoleMapping:
-    """The 13 OSS standard specialists must each resolve to a known phase.
+    """The 19 OSS standard agents (orchestrators + specialists) must each resolve to a known phase.
 
     Without this, ``maybe_install_skillogy`` quietly hands the middleware
     no phase block and the agent loses its MoC summary. The mapping is
@@ -99,7 +99,7 @@ class TestPhaseForRoleMapping:
     Skillogy graph's ``:Phase.name`` keys.
     """
 
-    def test_thirteen_oss_roles_mapped(self) -> None:
+    def test_oss_standard_roles_mapped(self) -> None:
         expected = {
             "recon",
             "exploit",
@@ -112,6 +112,12 @@ class TestPhaseForRoleMapping:
             "analyst",
             "contract_auditor",
             "reverser",
+            "osint_operator",
+            "iot_operator",
+            "ics_operator",
+            "forensicator",
+            "supply_chain_operator",
+            "blue_cell",
             "soundwave",
             "decepticon",
         }

@@ -32,6 +32,7 @@ class PhaseSeed:
 class AssetTypeSeed:
     name: str
     category: str
+    phases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +105,11 @@ def load_asset_types() -> list[AssetTypeSeed]:
         if name in seen:
             raise ValueError(f"{ASSET_TYPES_YAML}: duplicate asset type name {name!r}")
         seen.add(name)
-        out.append(AssetTypeSeed(name=name, category=category))
+        raw_phases = entry.get("phases") or []
+        if isinstance(raw_phases, str):
+            raw_phases = [raw_phases]
+        phases = tuple(str(p) for p in raw_phases)
+        out.append(AssetTypeSeed(name=name, category=category, phases=phases))
     # Sanity check: every non-root category must also exist as a node.
     names = {at.name for at in out}
     for at in out:
@@ -113,6 +118,14 @@ def load_asset_types() -> list[AssetTypeSeed]:
                 f"{ASSET_TYPES_YAML}: asset type {at.name!r} points at category "
                 f"{at.category!r} which is not declared as an asset type"
             )
+    # Sanity check: every declared phase must reference a real phase.
+    phase_names = {p.name for p in load_phases()}
+    for at in out:
+        for phase in at.phases:
+            if phase not in phase_names:
+                raise ValueError(
+                    f"{ASSET_TYPES_YAML}: asset type {at.name!r} references unknown phase {phase!r}"
+                )
     return out
 
 

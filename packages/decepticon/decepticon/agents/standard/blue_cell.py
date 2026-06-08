@@ -46,13 +46,17 @@ from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
 from decepticon.tools.defense.blue_cell import blue_cell_scan
+from decepticon.tools.defense.brief import defense_brief, export_attack_navigator
 from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 # Name-keyed baseline tools. Read-only by construction: the detection-coverage
-# scanner plus the KG query subset — no bash, no kg_add_node/kg_add_edge.
+# scanner + Defense Brief deliverables plus the KG query subset — no bash, no
+# kg_add_node/kg_add_edge.
 _STANDARD_TOOLS: dict[str, Any] = {
     "blue_cell_scan": blue_cell_scan,
+    "defense_brief": defense_brief,
+    "export_attack_navigator": export_attack_navigator,
     "kg_query": kg_query,
     "kg_neighbors": kg_neighbors,
     "kg_stats": kg_stats,

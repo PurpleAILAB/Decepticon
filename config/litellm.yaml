@@ -145,31 +145,29 @@ model_list:
 
   # ── MiniMax ──────────────────────────────────────────────────────────
   # Native LiteLLM minimax/ provider — registry-registered model IDs.
-  # Per-1M USD as of 2026-05-14 (api.minimax.io):
-  #   M2.5            $0.15 / $1.20   (50 tok/s, base rate)
-  #   M2.5-lightning  $0.30 / $2.40   (100 tok/s, ~2× output cost)
-  # LiteLLM's built-in map quotes $0.30 input for M2.5 — out of date
-  # against the M2.5 launch post; override.
+  # Per-1M USD as of 2026-06-07 (api.minimax.io):
+  #   M3              $0.60 / $2.40   (512K context, base rate)
+  #   M2.7-highspeed  $0.30 / $1.20   (throughput-tuned previous gen)
+  # LiteLLM's built-in map may be out of date for M3; override.
   # HIGH tier
-  - model_name: minimax/MiniMax-M2.5
+  - model_name: minimax/MiniMax-M3
     litellm_params:
-      model: minimax/MiniMax-M2.5
+      model: minimax/MiniMax-M3
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
     model_info:
-      input_cost_per_token: 0.00000015
-      output_cost_per_token: 0.0000012
+      input_cost_per_token: 0.0000006
+      output_cost_per_token: 0.0000024
 
-  # MID tier (throughput-tuned variant of M2.5 — 2x output token cost,
-  # higher rate ceiling)
-  - model_name: minimax/MiniMax-M2.5-lightning
+  # MID tier (throughput-tuned variant from previous generation)
+  - model_name: minimax/MiniMax-M2.7-highspeed
     litellm_params:
-      model: minimax/MiniMax-M2.5-lightning
+      model: minimax/MiniMax-M2.7-highspeed
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
     model_info:
       input_cost_per_token: 0.0000003
-      output_cost_per_token: 0.0000024
+      output_cost_per_token: 0.0000012
 
   # ── Claude Code Auth (OAuth subscription) ────────────────────────────
   # ``additional_drop_params: ["temperature"]`` matches the api-key opus entry —
@@ -721,7 +719,7 @@ litellm_settings:
     - {"gemini/gemini-2.5-flash": ["gemini/gemini-2.5-flash-lite"]}
     # Gemini Advanced subscription fallbacks (registered dynamically)
     # MiniMax (no LOW tier)
-    - {"minimax/MiniMax-M2.5": ["minimax/MiniMax-M2.5-lightning"]}
+    - {"minimax/MiniMax-M3": ["minimax/MiniMax-M2.7-highspeed"]}
     # DeepSeek — v4-flash falls through to legacy deepseek-chat (non-thinking)
     # so a thinking-mode 400 caused by missing reasoning_content turn-state
     # still has a route to keep the agent alive (closes #220, #201).
