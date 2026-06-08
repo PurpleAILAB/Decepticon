@@ -130,38 +130,69 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	engagementID := strings.TrimSpace(r.URL.Query().Get("engagement"))
 
-	// Per-workload mutex (P3 from the design review): two concurrent
-	// ops_start("ad") requests serialize through the same lock so
-	// docker compose is never invoked twice for the same workload at
-	// once.
+	// Async control plane (ADR-0006 §1' converges with Fly Machines /
+	// Modal Sandbox / Anthropic Bash run_in_background): the HTTP
+	// handler returns IMMEDIATELY with the registry state. Long-running
+	// compose calls (BHCE cold start measured 90-300s) run in a
+	// goroutine bound to the daemon's own context, and the
+	// OpsControlNotificationMiddleware delivers state transitions to
+	// the agent through <system-reminder> blocks on its next turn.
+	// Holding the HTTP request open for 5+ minutes invites
+	// load-balancer timeouts, NAT eviction, and silent client
+	// disconnects — none of which the agent loop can recover from.
+
 	lock := s.Registry.lockFor(workload)
 	lock.Lock()
-	defer lock.Unlock()
 
-	// Idempotency check: if the registry already records the workload
-	// as running for this engagement, return the existing handle
-	// without re-running compose up. Different engagements are not
-	// deduped here — the orchestrator may legitimately re-tag.
-	if existing, ok := s.Registry.get(workload); ok && existing.State == StateRunning {
-		writeJSON(w, http.StatusAccepted, Handle{
-			Workload:     workload,
-			State:        existing.State,
-			EngagementID: existing.EngagementID,
-		})
-		return
+	// State-aware fast paths run while holding the lock so a
+	// race-in second request observes the in-flight Starting state
+	// instead of duplicating the spawn.
+	if existing, ok := s.Registry.get(workload); ok {
+		switch existing.State {
+		case StateRunning, StateStarting:
+			lock.Unlock()
+			writeJSON(w, http.StatusAccepted, Handle{
+				Workload:     workload,
+				State:        existing.State,
+				EngagementID: existing.EngagementID,
+			})
+			return
+		}
 	}
 
 	s.Registry.set(workload, StateStarting, engagementID)
-	handle, err := s.Backend.Start(r.Context(), workload, engagementID)
-	if err != nil {
-		s.Registry.set(workload, StateUnknown, engagementID)
-		s.Logger.Error("opscontrol start failed", "workload", workload, "engagement", engagementID, "err", err)
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	handle.EngagementID = engagementID
-	s.Registry.set(workload, handle.State, engagementID)
-	writeJSON(w, http.StatusAccepted, handle)
+
+	// The goroutine owns the lock for the full duration of the spawn.
+	// We deliberately use a daemon-scoped context, not r.Context() —
+	// the request returns in milliseconds, so a request-scoped
+	// context would cancel compose mid-spawn the moment the client
+	// disconnects.
+	go func() {
+		defer lock.Unlock()
+		ctx := context.Background()
+		handle, err := s.Backend.Start(ctx, workload, engagementID)
+		if err != nil {
+			s.Registry.set(workload, StateUnknown, engagementID)
+			s.Logger.Error("opscontrol start failed",
+				"workload", workload,
+				"engagement", engagementID,
+				"err", err,
+			)
+			return
+		}
+		s.Registry.set(workload, handle.State, engagementID)
+		s.Logger.Info("opscontrol start ok",
+			"workload", workload,
+			"engagement", engagementID,
+			"state", string(handle.State),
+		)
+	}()
+
+	writeJSON(w, http.StatusAccepted, Handle{
+		Workload:     workload,
+		State:        StateStarting,
+		EngagementID: engagementID,
+	})
 }
 
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {

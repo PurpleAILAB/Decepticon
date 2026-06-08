@@ -187,19 +187,25 @@ func TestServer_ListReflectsRegistry(t *testing.T) {
 			t.Fatalf("start: %d", w.Code)
 		}
 	}
-	{
+	// Start is async — poll the list endpoint until the registry
+	// transitions out of "starting" or a generous deadline expires.
+	// The fakeBackend's zero start delay makes this resolve in a
+	// single iteration in the happy path.
+	var got []WorkloadStatus
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodGet, "/v1/profiles", nil)
 		s.mux().ServeHTTP(w, r)
-		if w.Code != http.StatusOK {
-			t.Fatalf("list: %d", w.Code)
-		}
-		var got []WorkloadStatus
 		if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if len(got) != 1 || got[0].Workload != "ad" || got[0].EngagementID != "eng-xyz" || got[0].State != StateRunning {
-			t.Errorf("list = %+v; want [{ad, eng-xyz, running}]", got)
+		if len(got) == 1 && got[0].State == StateRunning {
+			break
 		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(got) != 1 || got[0].Workload != "ad" || got[0].EngagementID != "eng-xyz" || got[0].State != StateRunning {
+		t.Errorf("list = %+v; want [{ad, eng-xyz, running}] after async start completes", got)
 	}
 }
