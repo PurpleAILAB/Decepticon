@@ -170,5 +170,22 @@ func ComposeCommandEnv() []string {
 			env = append(env, key+"=")
 		}
 	}
+	// COMPOSE_PROFILES is special: docker compose treats it as an
+	// implicit `--profile` source whose values UNION with explicit
+	// `--profile X` flags. ADR-0006 turns specialist workloads into
+	// agent-driven spawns, so the only legal source of profile
+	// activation is the launcher's `--profile cli` and the daemon's
+	// `--profile <workload>`. Force COMPOSE_PROFILES="" in every
+	// compose subprocess so a pre-ADR-0006 install's
+	// `COMPOSE_PROFILES=c2-sliver` in $DECEPTICON_HOME/.env does not
+	// silently bleed into every up/stop/config call -- if it does,
+	// compose merges that c2-sliver into the daemon's "ad" call and
+	// the launcher's "cli" call alike, the resulting config-hash
+	// drifts between them, and ops_start tags every live container
+	// "Recreate" mid-engagement.
+	//
+	// Last-set-wins in child env so this OVERRIDES whatever the
+	// parent process inherited from .env or the operator's shell.
+	env = append(env, "COMPOSE_PROFILES=")
 	return env
 }

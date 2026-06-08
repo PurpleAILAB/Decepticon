@@ -190,6 +190,19 @@ func (s *SystemdManager) renderUnit(spec InstallSpec) string {
 	if spec.StackName != "" {
 		stackEnv = fmt.Sprintf("Environment=DECEPTICON_STACK_NAME=%s\n", spec.StackName)
 	}
+	// WorkingDirectory MUST be $DECEPTICON_HOME because compose's
+	// config-hash mixes the project working dir into the per-container
+	// label. Without this the daemon spawns containers with
+	// `com.docker.compose.project.working_dir=/` and the launcher's
+	// containers with `working_dir=<wherever the launcher was run>`,
+	// producing different config-hashes for the *same* services and
+	// forcing `compose up` to mark every existing container "Recreate"
+	// on the next ops_start.
+	//
+	// EnvironmentFile pulls $DECEPTICON_HOME/.env so the daemon's
+	// compose subprocess sees the same interpolation env (image tags,
+	// ports, passwords, …) the launcher saw. The leading `-` keeps
+	// install tolerant of `.env` not existing yet.
 	return fmt.Sprintf(`[Unit]
 Description=Decepticon opscontrol daemon (ADR-0006)
 Documentation=https://github.com/PurpleAILAB/Decepticon/blob/main/docs/adr/0006-agent-driven-container-lifecycle.md
@@ -199,6 +212,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%s opscontrol daemon
+WorkingDirectory=%s
+EnvironmentFile=-%s/.env
 Environment=DECEPTICON_HOME=%s
 %sRestart=on-failure
 RestartSec=5s
@@ -210,5 +225,5 @@ SyslogIdentifier=%s
 
 [Install]
 WantedBy=default.target
-`, spec.BinaryPath, spec.HomePath, stackEnv, spec.HomePath, s.UnitName)
+`, spec.BinaryPath, spec.HomePath, spec.HomePath, spec.HomePath, stackEnv, spec.HomePath, s.UnitName)
 }

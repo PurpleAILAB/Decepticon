@@ -1,30 +1,27 @@
 # docker-compose.opscontrol.yml — ADR-0006 Sprint 1 overlay
 # ---------------------------------------------------------
-# Added by the Decepticon launcher (`decepticon start`) only.
-# `make dev` / `make smoke` deliberately do NOT include this file, so
-# stacks brought up outside the launcher stay daemon-less and the
-# `decepticon.tools.ops` LangChain tools return a "daemon unreachable"
-# diagnostic instead of crashing the boot.
+# Bind-mounts the host opscontrol UDS at $DECEPTICON_HOME/run/ops.sock
+# into the langgraph container at /var/run/decepticon-ops.sock (the
+# ADR-mandated path the OpsControlClient defaults to). langgraph is
+# the ONLY container that receives the mount — capability granted by
+# socket file, not network membership.
 #
-# What this override does:
-#   - Bind-mounts the host UDS at $DECEPTICON_HOME/run/ops.sock into
-#     the langgraph container at /var/run/decepticon-ops.sock (the
-#     ADR-mandated path the OpsControlClient defaults to).
+# Inclusion is conditional: both the launcher (`decepticon start`)
+# and the opscontrol daemon attach this file to their compose call
+# only when the host socket really exists. `make dev` / `make smoke`
+# never include the file, so daemon-less stacks stay daemon-less.
 #
-# The langgraph container is the ONLY container that receives the
-# bind-mount — capability granted by socket file, not network
-# membership. Other services on decepticon-net cannot reach the
-# daemon API even though they share the bridge.
+# DECEPTICON_OPSCONTROL_SOCK_HOST is REQUIRED when this file is
+# attached. There is no `${VAR:-/dev/null}` fallback: a missing
+# socket path means the wiring is broken, and an empty interpolation
+# would mount /dev/null into the container as a character device.
+# That fails LATER, mid-engagement, when the agent calls ops_start
+# and httpx raises ECONNREFUSED — a much harder failure to debug
+# than `compose up` refusing to interpolate an empty value at boot.
 #
 # Spec: docs/adr/0006-agent-driven-container-lifecycle.md §1', §2.
 
 services:
   langgraph:
     volumes:
-      # `:-/dev/null` keeps `compose up` from failing the interpolation
-      # check when the launcher hasn't exported the host socket path
-      # (e.g., direct `docker compose` invocations). In that mode the
-      # container sees a char device at the mount point and Python's
-      # OpsControlClient surfaces a "daemon unreachable" diagnostic
-      # instead of crashing the boot.
-      - "${DECEPTICON_OPSCONTROL_SOCK_HOST:-/dev/null}:/var/run/decepticon-ops.sock:rw"
+      - "${DECEPTICON_OPSCONTROL_SOCK_HOST}:/var/run/decepticon-ops.sock:rw"

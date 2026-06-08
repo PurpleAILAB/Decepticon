@@ -49,6 +49,18 @@ func runDaemon(_ *cobra.Command, _ []string) error {
 		backend.ExtraFiles = append(backend.ExtraFiles, overridePath)
 	}
 
+	// The overlay templates ${DECEPTICON_OPSCONTROL_SOCK_HOST} into
+	// langgraph's bind mount. Export it BEFORE the first compose call
+	// so the daemon's spawn of bhce / c2-sliver / … produces the same
+	// langgraph mount the launcher would have produced. Without this
+	// the overlay either fails to interpolate (compose errors loudly)
+	// or, with the old `:-/dev/null` fallback, silently mounts
+	// /dev/null and the agent-side OpsControlClient hits ECONNREFUSED
+	// at runtime.
+	if err := os.Setenv("DECEPTICON_OPSCONTROL_SOCK_HOST", internal.HostSocketPath()); err != nil {
+		return fmt.Errorf("opscontrol: export socket path: %w", err)
+	}
+
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	server := internal.NewServer(backend, allow, logger)
 

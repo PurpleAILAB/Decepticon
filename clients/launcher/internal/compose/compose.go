@@ -87,12 +87,18 @@ func (c *Compose) baseArgs() []string {
 	// use by another project" conflict on the next ops_start.
 	args = append(args, "-p", opscontrol.ComposeProjectName())
 	args = append(args, "-f", c.ComposeFile, "--env-file", c.EnvFile)
-	// ADR-0006 Sprint 1: include the opscontrol override so langgraph
-	// receives the daemon's UDS bind-mount. The file is shipped to
-	// $DECEPTICON_HOME alongside docker-compose.yml by SyncConfigFiles;
-	// installs predating that release stay daemon-less (file absent
-	// → silently skipped, ops_* tools surface "unreachable" diagnostics).
-	if override := filepath.Join(c.Home, "docker-compose.opscontrol.yml"); fileExists(override) {
+	// ADR-0006 Sprint 1: include the opscontrol overlay only when
+	// the file exists AND the host socket has been bound. Attaching
+	// the overlay without DECEPTICON_OPSCONTROL_SOCK_HOST exported
+	// would mount /dev/null into langgraph (the old `:-/dev/null`
+	// fallback in the overlay) — that's a wiring bug masquerading
+	// as a "daemon unreachable" diagnostic at agent runtime,
+	// which is much harder to debug than a missing overlay at boot.
+	// EnsureRunning() exports the env var on success; the user-side
+	// fallback (no service manager + spawn failed) keeps the overlay
+	// out so the boot doesn't silently regress to the broken state.
+	if override := filepath.Join(c.Home, "docker-compose.opscontrol.yml"); fileExists(override) &&
+		os.Getenv("DECEPTICON_OPSCONTROL_SOCK_HOST") != "" {
 		args = append(args, "-f", override)
 	}
 	return args
