@@ -101,3 +101,25 @@ func ServiceUnitName() string {
 	}
 	return "decepticon-opscontrol-" + suffix
 }
+
+// ComposeProjectName returns the docker compose `-p PROJECT` value
+// the launcher AND the daemon must both pass on every compose call.
+// Without an explicit `-p`, compose derives the project name from the
+// directory containing the compose file (sanitized basename of
+// $DECEPTICON_HOME). That agrees by coincidence in normal flows but
+// breaks the instant any caller deviates — e.g. a CI harness invokes
+// `docker compose -p X up` for isolation while the daemon keeps
+// defaulting to the basename. Since `container_name:` fields in
+// docker-compose.yml are global, the two compose projects fight for
+// the same container_name and the second one fails with
+// "Conflict. The container name '/decepticon-…' is already in use".
+//
+// Single source of truth: this helper. Stack-scoped form:
+// "decepticon-stack2".
+func ComposeProjectName() string {
+	suffix := StackName()
+	if suffix == "" {
+		return "decepticon"
+	}
+	return "decepticon-" + suffix
+}

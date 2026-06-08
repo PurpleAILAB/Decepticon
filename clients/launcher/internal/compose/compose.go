@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/runtime"
 )
 
@@ -77,6 +78,14 @@ func (c *Compose) baseArgs() []string {
 		prefix = []string{"compose"}
 	}
 	args := append([]string{}, prefix...)
+	// `-p` is explicit so the launcher's project name matches what the
+	// opscontrol daemon uses on its own compose calls (DockerComposeBackend
+	// reads the same helper). Without `-p`, compose defaults to the
+	// sanitized basename of $DECEPTICON_HOME — that agrees by accident in
+	// normal flows but breaks the moment any caller passes a different
+	// `-p` (CI, manual debugging, …) and produces a "container_name in
+	// use by another project" conflict on the next ops_start.
+	args = append(args, "-p", opscontrol.ComposeProjectName())
 	args = append(args, "-f", c.ComposeFile, "--env-file", c.EnvFile)
 	// ADR-0006 Sprint 1: include the opscontrol override so langgraph
 	// receives the daemon's UDS bind-mount. The file is shipped to

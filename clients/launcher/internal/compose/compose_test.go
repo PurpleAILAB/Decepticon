@@ -39,14 +39,45 @@ func TestAllProfiles(t *testing.T) {
 }
 
 func TestBaseArgs(t *testing.T) {
+	t.Setenv("DECEPTICON_STACK_NAME", "")
 	c := &Compose{
 		Home:        "/test",
 		ComposeFile: "/test/docker-compose.yml",
 		EnvFile:     "/test/.env",
 	}
 	args := c.baseArgs()
-	if args[0] != "compose" || args[2] != "/test/docker-compose.yml" || args[4] != "/test/.env" {
-		t.Errorf("baseArgs = %v", args)
+	// Expected shape: ["compose", "-p", "decepticon", "-f",
+	//                  "/test/docker-compose.yml", "--env-file", "/test/.env"]
+	// `-p decepticon` is explicit so the launcher and the opscontrol
+	// daemon both target the same compose project; otherwise the
+	// daemon's no-`-p` default ("decepticon" via dir basename) drifts
+	// the moment any caller passes `-p X` themselves.
+	want := []string{
+		"compose",
+		"-p", "decepticon",
+		"-f", "/test/docker-compose.yml",
+		"--env-file", "/test/.env",
+	}
+	if len(args) != len(want) {
+		t.Fatalf("baseArgs len = %d (%v); want %d (%v)", len(args), args, len(want), want)
+	}
+	for i, v := range want {
+		if args[i] != v {
+			t.Errorf("args[%d] = %q, want %q", i, args[i], v)
+		}
+	}
+}
+
+func TestBaseArgs_StackNameOverridesProjectName(t *testing.T) {
+	t.Setenv("DECEPTICON_STACK_NAME", "stack2")
+	c := &Compose{
+		Home:        "/test",
+		ComposeFile: "/test/docker-compose.yml",
+		EnvFile:     "/test/.env",
+	}
+	args := c.baseArgs()
+	if args[2] != "decepticon-stack2" {
+		t.Errorf("expected -p decepticon-stack2 for DECEPTICON_STACK_NAME=stack2; got args=%v", args)
 	}
 }
 

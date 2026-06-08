@@ -41,9 +41,20 @@ func NewDockerComposeBackend() *DockerComposeBackend {
 
 func (b *DockerComposeBackend) Name() string { return "docker-compose" }
 
-// baseArgs returns the shared prefix for every compose call.
+// baseArgs returns the shared prefix for every compose call. The
+// `-p PROJECT` flag is explicit and shares the value with the
+// launcher's compose.baseArgs() through ComposeProjectName(), so both
+// sides own the same compose project — that guarantees the daemon
+// can adopt containers the launcher already created (and vice versa)
+// instead of getting a "container_name already in use" conflict from
+// docker when the two project names accidentally drift apart.
 func (b *DockerComposeBackend) baseArgs() []string {
-	args := []string{"compose", "-f", b.ComposeFile, "--env-file", b.EnvFile}
+	args := []string{
+		"compose",
+		"-p", ComposeProjectName(),
+		"-f", b.ComposeFile,
+		"--env-file", b.EnvFile,
+	}
 	for _, f := range b.ExtraFiles {
 		args = append(args, "-f", f)
 	}
