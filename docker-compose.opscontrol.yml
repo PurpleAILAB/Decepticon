@@ -1,0 +1,27 @@
+# docker-compose.opscontrol.yml — ADR-0006 Sprint 1 overlay
+# ---------------------------------------------------------
+# Bind-mounts the host opscontrol UDS at $DECEPTICON_HOME/run/ops.sock
+# into the langgraph container at /var/run/decepticon-ops.sock (the
+# ADR-mandated path the OpsControlClient defaults to). langgraph is
+# the ONLY container that receives the mount — capability granted by
+# socket file, not network membership.
+#
+# Inclusion is conditional: both the launcher (`decepticon start`)
+# and the opscontrol daemon attach this file to their compose call
+# only when the host socket really exists. `make dev` / `make smoke`
+# never include the file, so daemon-less stacks stay daemon-less.
+#
+# DECEPTICON_OPSCONTROL_SOCK_HOST is REQUIRED when this file is
+# attached. There is no `${VAR:-/dev/null}` fallback: a missing
+# socket path means the wiring is broken, and an empty interpolation
+# would mount /dev/null into the container as a character device.
+# That fails LATER, mid-engagement, when the agent calls ops_start
+# and httpx raises ECONNREFUSED — a much harder failure to debug
+# than `compose up` refusing to interpolate an empty value at boot.
+#
+# Spec: docs/adr/0006-agent-driven-container-lifecycle.md §1', §2.
+
+services:
+  langgraph:
+    volumes:
+      - "${DECEPTICON_OPSCONTROL_SOCK_HOST}:/var/run/decepticon-ops.sock:rw"
