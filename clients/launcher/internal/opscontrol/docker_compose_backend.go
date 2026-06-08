@@ -64,10 +64,21 @@ func (b *DockerComposeBackend) baseArgs() []string {
 // Start runs `docker compose --profile <workload> up -d --wait`. The
 // caller (server.go) has already taken the per-workload mutex, so
 // concurrent calls on the same workload are serialized.
+//
+// `--no-recreate` is load-bearing for the agent-driven flow. Without
+// it, compose's incremental model rebuilds the merged config every
+// time the daemon adds a profile on top of what the launcher already
+// activated -- the resulting per-service config-hash differs from
+// what the launcher wrote, and compose tags every live container
+// "Recreate" mid-engagement. Workload spawn is purely ADDITIVE
+// (langgraph / litellm / sandbox were correctly running BEFORE
+// ops_start; they must keep running AFTER). `--no-recreate` tells
+// compose to skip the hash diff and only create services the
+// requested profile activates that are not already running.
 func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ string) (Handle, error) {
 	args := append(b.baseArgs(),
 		"--profile", workload,
-		"up", "-d", "--no-build", "--wait",
+		"up", "-d", "--no-build", "--no-recreate", "--wait",
 		"--wait-timeout", fmt.Sprintf("%d", b.WaitTimeoutSeconds),
 	)
 	cmd := exec.CommandContext(ctx, "docker", args...)
