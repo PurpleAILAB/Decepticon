@@ -53,7 +53,7 @@ def _resolve_workspace(workspace_path: str, config: RunnableConfig | None) -> st
     return os.environ.get("DECEPTICON_WORKSPACE_PATH", "/workspace")
 
 
-def _node_techniques(node: Node) -> set[str]:
+def node_techniques(node: Node) -> set[str]:
     """MITRE technique IDs a node carries, across the prop spellings in use."""
     out: set[str] = set()
     for key in ("technique_id", "technique", "mitre", "mitre_techniques"):
@@ -70,7 +70,7 @@ def _attribution_targets(graph: KnowledgeGraph, technique: str) -> list[Node]:
     return [
         node
         for node in graph.nodes.values()
-        if node.kind in _ATTRIBUTABLE and technique in _node_techniques(node)
+        if node.kind in _ATTRIBUTABLE and technique in node_techniques(node)
     ]
 
 

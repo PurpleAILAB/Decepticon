@@ -180,6 +180,11 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "phisher": _BASH_AGENT_SLOTS,
     "mobile_operator": _BASH_AGENT_SLOTS,
     "wireless_operator": _BASH_AGENT_SLOTS,
+    "osint_operator": _BASH_AGENT_SLOTS,
+    "iot_operator": _BASH_AGENT_SLOTS,
+    "ics_operator": _BASH_AGENT_SLOTS,
+    "forensicator": _BASH_AGENT_SLOTS,
+    "supply_chain_operator": _BASH_AGENT_SLOTS,
     # ── Plugin orchestrator (no EngagementContext per the existing
     # vulnresearch factory — it consumes its parent's context) ──
     "vulnresearch": _BASE_SLOTS | {MiddlewareSlot.SUBAGENT, MiddlewareSlot.OPPLAN},

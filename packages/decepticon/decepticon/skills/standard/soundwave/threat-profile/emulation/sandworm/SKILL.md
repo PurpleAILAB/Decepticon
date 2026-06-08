@@ -51,7 +51,7 @@ metadata:
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Recon | T1590 / T1595 | Map external surface + IT/OT (Purdue) boundary; fingerprint ICS protocols | recon → `/skills/standard/recon/active-recon/SKILL.md`; route ICS via `/skills/standard/exploit/ics-ot/SKILL.md` |
 | 2 | Initial Access | T1190 | Exploit edge/VPN/public-facing app | exploit → `/skills/standard/exploit/web/cve/SKILL.md` |
-| 3 | Initial Access (alt) | T1566.001 | Spearphishing attachment to IT staff | phisher → `/skills/standard/phish/SKILL.md` |
+| 3 | Initial Access (alt) | T1566.001 | Spearphishing attachment to IT staff | phisher → `/skills/standard/phisher/SKILL.md` |
 | 4 | Initial Access (alt) | T1195.002 | Trojanized software-update / supply chain (NotPetya pattern) | exploit → `/skills/standard/exploit/supplychain/dep-confusion/SKILL.md` |
 | 5 | Credential Access | T1003.001 | LSASS dump on IT hosts (LOTL) | post-exploit → `/skills/standard/post-exploit/credential-access/SKILL.md` |
 | 6 | Lateral (IT) | T1021.002 / T1570 | SMB admin-share spread + lateral tool transfer | post-exploit → `/skills/standard/post-exploit/lateral-movement/SKILL.md`; `/skills/standard/ad/netexec/SKILL.md` |

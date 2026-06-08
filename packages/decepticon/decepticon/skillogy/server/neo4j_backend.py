@@ -45,6 +45,20 @@ _WRITE_KEYWORDS = (
 )
 
 
+def _path_under_any_prefix(path: str | None, prefixes: list[str]) -> bool:
+    """Return True iff ``path`` starts with any of the given prefixes.
+
+    Used to enforce the per-role path-prefix ACL (ADR-0008). An empty
+    or missing ``path`` (e.g. a non-``:Skill`` neighbour in a traverse
+    result) is treated as "not gated" so the caller can apply the
+    label-based skip itself; the empty-prefix list short-circuit lives
+    at the call site.
+    """
+    if not path:
+        return False
+    return any(path.startswith(p) for p in prefixes)
+
+
 class CypherWriteRejected(ValueError):
     """Raised when a client query trips the write-keyword denylist."""
 
@@ -128,9 +142,23 @@ class Neo4jBackend:
 
     # ---- skill ops ----
 
-    def load_skill(self, path: str) -> dict[str, Any] | None:
+    def load_skill(
+        self,
+        path: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> dict[str, Any] | None:
         """Fetch one ``:Skill`` node by canonical path. Returns its full
-        property dict, or ``None`` if no such skill exists."""
+        property dict, or ``None`` if no such skill exists.
+
+        When ``allowed_path_prefixes`` is non-empty, paths not under any
+        listed prefix return ``None`` (the same shape the agent sees for
+        a genuinely missing skill — ADR-0008). ``None`` / empty list
+        preserves the unrestricted behaviour for the standalone library,
+        the skillogy CLI, and pytest, where no role context exists.
+        """
+        if allowed_path_prefixes and not _path_under_any_prefix(path, allowed_path_prefixes):
+            return None
         query = "MATCH (s:Skill {path: $path}) RETURN properties(s) AS props"
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
             result = session.run(query, path=path).single()
@@ -155,6 +183,7 @@ class Neo4jBackend:
         tag: str | None = None,
         tactic_id: str | None = None,
         limit: int = 20,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Relationship-aware skill discovery.
 
@@ -208,6 +237,14 @@ class Neo4jBackend:
             raise ValueError(
                 "find_skill requires at least one of: query, subdomain, mitre_id, tag, tactic_id"
             )
+        # Per ADR-0008 — narrow the candidate set to the per-role
+        # path-prefix allowlist when the caller (agent middleware)
+        # supplied one. When the parameter is missing/empty we leave the
+        # query unrestricted so the standalone CLI, pytest, and the
+        # library entrypoint keep their existing behaviour.
+        if allowed_path_prefixes:
+            wheres.append("ANY(p IN $allowed_path_prefixes WHERE s.path STARTS WITH p)")
+            params["allowed_path_prefixes"] = list(allowed_path_prefixes)
         match_clauses = " AND ".join(wheres)
         cypher = (
             "MATCH (s:Skill) "
@@ -256,14 +293,28 @@ class Neo4jBackend:
     # ---- explicit graph traversal (used by traverse RPC) ----
 
     def traverse(
-        self, from_path: str, edge_types: list[str] | None = None, depth: int = 2
+        self,
+        from_path: str,
+        edge_types: list[str] | None = None,
+        depth: int = 2,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Variable-length BFS from a Skill node along whitelisted edge types.
 
         Returns the neighbouring nodes flattened, each with its
         ``label``, key identifier, depth from the seed, and a string
         representation of the connecting edge type.
+
+        When ``allowed_path_prefixes`` is non-empty (ADR-0008), the seed
+        path must match a listed prefix or the call returns an empty
+        list; ``:Skill`` neighbours that fall outside the allowlist are
+        filtered from the result. Non-``:Skill`` neighbours (``:Tag``,
+        ``:Technique``, ``:Tactic``, ``:MoC``) stay visible because
+        they are classification metadata, not skill content.
         """
+        if allowed_path_prefixes and not _path_under_any_prefix(from_path, allowed_path_prefixes):
+            return []
         depth = max(1, min(int(depth), 5))
         # Default edge whitelist mirrors the spec §5.7.2 list.
         whitelist = edge_types or [
@@ -282,23 +333,38 @@ class Neo4jBackend:
             f"MATCH path = (seed)-{rel_pattern}-(neighbour) "
             "RETURN labels(neighbour) AS labels, "
             "       coalesce(neighbour.name, neighbour.id, neighbour.path) AS key, "
+            "       neighbour.path AS neighbour_path, "
             "       length(path) AS hop_depth, "
             "       [rel IN relationships(path) | type(rel)] AS edge_chain "
             "LIMIT $cap"
         )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            return [
-                {
-                    "labels": list(rec["labels"]),
-                    "key": rec["key"],
-                    "depth": int(rec["hop_depth"]),
-                    "edge_chain": list(rec["edge_chain"]),
-                }
-                for rec in session.run(
-                    cypher,
-                    parameters={"from_path": from_path, "cap": self._max_rows},
+            rows: list[dict[str, Any]] = []
+            for rec in session.run(
+                cypher,
+                parameters={"from_path": from_path, "cap": self._max_rows},
+            ):
+                labels = list(rec["labels"])
+                # Per ADR-0008 — drop ``:Skill`` neighbours that fall
+                # outside the role's path-prefix allowlist. Non-Skill
+                # neighbours (Tag/Technique/Tactic/MoC) are classification
+                # metadata, not skill content, and stay visible so the
+                # agent can still pivot via shared graph structure.
+                if (
+                    allowed_path_prefixes
+                    and "Skill" in labels
+                    and not _path_under_any_prefix(rec["neighbour_path"], allowed_path_prefixes)
+                ):
+                    continue
+                rows.append(
+                    {
+                        "labels": labels,
+                        "key": rec["key"],
+                        "depth": int(rec["hop_depth"]),
+                        "edge_chain": list(rec["edge_chain"]),
+                    }
                 )
-            ]
+            return rows
 
     # ---- read-only cypher escape hatch (used by run_cypher_read RPC, Phase 1a) ----
 
