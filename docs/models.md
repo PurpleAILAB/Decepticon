@@ -28,7 +28,7 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 | `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5.4-mini`                           |
 | `google_api`          | `gemini/gemini-2.5-pro`                   | `gemini/gemini-2.5-flash`                     | `gemini/gemini-2.5-flash-lite`                |
 | `google_oauth`        | `gemini-sub/gemini-2.5-pro`               | `gemini-sub/gemini-2.5-flash`                 | — *(falls through)*                           |
-| `minimax_api`         | `minimax/MiniMax-M2.5`                    | `minimax/MiniMax-M2.5-lightning`              | — *(falls through)*                           |
+| `minimax_api`         | `minimax/MiniMax-M3`                      | `minimax/MiniMax-M2.7-highspeed`              | — *(falls through)*                           |
 | `deepseek_api`        | `deepseek/deepseek-v4-pro`                | `deepseek/deepseek-v4-flash`                   | `deepseek/deepseek-v4-flash`                   |
 | `xai_api`             | `xai/grok-4.3`                            | `xai/grok-4-1-fast-reasoning`                 | — *(falls through)*                           |
 | `grok_oauth`          | `grok-sub/grok-4.3`                       | `grok-sub/grok-4-1-fast-reasoning`            | — *(falls through)*                           |
@@ -269,8 +269,8 @@ MINIMAX_API_KEY=eyJ...
 
 | Agent (tier)     | Primary                | Notes                                     |
 |------------------|------------------------|-------------------------------------------|
-| decepticon (HIGH)| `minimax/MiniMax-M2.5` | OK                                        |
-| detector (MID)   | `minimax/MiniMax-M2.5-lightning` | OK                                        |
+| decepticon (HIGH)| `minimax/MiniMax-M3` | OK                                        |
+| detector (MID)   | `minimax/MiniMax-M2.7-highspeed` | OK                                        |
 | recon (LOW)      | *(role unassigned)*    | MiniMax has no LOW model and no fallback method |
 
 The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e.g. `openai_api`) to fill the LOW slot.

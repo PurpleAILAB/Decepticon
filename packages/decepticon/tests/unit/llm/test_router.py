@@ -42,7 +42,7 @@ class TestModelRouter:
             "anthropic/claude-opus-4-7",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
-            "minimax/MiniMax-M2.5",
+            "minimax/MiniMax-M3",
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",

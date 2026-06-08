@@ -28,6 +28,13 @@ from urllib.parse import urlparse
 
 import defusedxml.ElementTree as ET
 
+from decepticon.middleware.kg_internal.ai_surface import (
+    technology_for_banner,
+    technology_for_headers,
+    technology_for_path,
+    technology_for_port,
+    technology_for_title,
+)
 from decepticon.middleware.kg_internal.store import KGStore
 from decepticon_core.utils.logging import get_logger
 
@@ -172,21 +179,38 @@ def _adapt_nmap_xml(
             version = svc_el.get("version") if svc_el is not None else ""
             svc_key = f"service::{ip}:{port}"
             host_edges.append({"to_key": svc_key, "kind": "HOSTS", "weight": 0.5})
-            observations.append(
-                {
-                    "kind": "Service",
-                    "key": svc_key,
-                    "label": f"{ip}:{port}/{proto}",
-                    "props": {
-                        "port": port,
-                        "protocol": proto,
-                        "service": svc_name,
-                        "product": product or "",
-                        "version": version or "",
-                        "source": "nmap",
-                    },
-                }
-            )
+            service_obs: dict[str, Any] = {
+                "kind": "Service",
+                "key": svc_key,
+                "label": f"{ip}:{port}/{proto}",
+                "props": {
+                    "port": port,
+                    "protocol": proto,
+                    "service": svc_name,
+                    "product": product or "",
+                    "version": version or "",
+                    "source": "nmap",
+                },
+            }
+            # AI-surface: a recognized AI port or a service banner naming an
+            # AI runtime becomes a typed Technology the service RUNS, so the
+            # llm-redteam plugin can find it (ADR-0007). Deduped by tech key
+            # so a port+banner double-hit lands one node.
+            banner = " ".join(p for p in (product, version, svc_name) if p)
+            ai_nodes: dict[str, dict[str, Any]] = {}
+            ai_edges: dict[str, dict[str, Any]] = {}
+            for classified in (
+                technology_for_port(port, "nmap"),
+                technology_for_banner(banner, "nmap"),
+            ):
+                if classified is not None:
+                    tech_node, runs_edge = classified
+                    ai_nodes.setdefault(tech_node["key"], tech_node)
+                    ai_edges.setdefault(runs_edge["to_key"], runs_edge)
+            if ai_edges:
+                service_obs["edges_out"] = list(ai_edges.values())
+                observations.extend(ai_nodes.values())
+            observations.append(service_obs)
             services_count += 1
 
             if port in _WEB_PORTS:
@@ -375,6 +399,38 @@ def _adapt_httpx_jsonl(
         svc_key = f"service::{host_value}:{port_int}"
         ep_key = f"entrypoint::{url}"
 
+        service_obs: dict[str, Any] = {
+            "kind": "Service",
+            "key": svc_key,
+            "label": f"{host_value}:{port_int}/tcp",
+            "props": {
+                "port": port_int,
+                "scheme": scheme,
+                "status_code": status_code,
+                "source": "httpx",
+            },
+        }
+        # AI-surface: a probed AI inference route (Ollama /api/tags, the
+        # OpenAI-compatible /v1/* surface), a recognized AI web-UI title, or
+        # an AI product's response headers becomes a typed Technology the
+        # service RUNS, so the llm-redteam plugin can find it (ADR-0007).
+        # Deduped by tech key so multiple signals for one product land one node.
+        status_int = status_code if isinstance(status_code, int) else None
+        ai_nodes: dict[str, dict[str, Any]] = {}
+        ai_edges: dict[str, dict[str, Any]] = {}
+        for classified in (
+            technology_for_path(parsed_url.path, status_int, "httpx"),
+            technology_for_title(row.get("title"), "httpx"),
+            technology_for_headers(row.get("header"), "httpx"),
+        ):
+            if classified is not None:
+                tech_node, runs_edge = classified
+                ai_nodes.setdefault(tech_node["key"], tech_node)
+                ai_edges.setdefault(runs_edge["to_key"], runs_edge)
+        if ai_edges:
+            service_obs["edges_out"] = list(ai_edges.values())
+            observations.extend(ai_nodes.values())
+
         observations.extend(
             [
                 {
@@ -383,17 +439,7 @@ def _adapt_httpx_jsonl(
                     "label": host_value,
                     "props": {"hostname": host_value, "source": "httpx"},
                 },
-                {
-                    "kind": "Service",
-                    "key": svc_key,
-                    "label": f"{host_value}:{port_int}/tcp",
-                    "props": {
-                        "port": port_int,
-                        "scheme": scheme,
-                        "status_code": status_code,
-                        "source": "httpx",
-                    },
-                },
+                service_obs,
                 {
                     "kind": "Entrypoint",
                     "key": ep_key,

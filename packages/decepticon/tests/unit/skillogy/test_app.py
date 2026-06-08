@@ -60,6 +60,7 @@ class _FakeBackend:
         tag: str | None = None,
         tactic_id: str | None = None,
         limit: int = 20,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict]:
         self.find_calls.append(
             {
@@ -69,13 +70,19 @@ class _FakeBackend:
                 "tag": tag,
                 "tactic_id": tactic_id,
                 "limit": limit,
+                "allowed_path_prefixes": allowed_path_prefixes,
             }
         )
         if self._find_exc is not None:
             raise self._find_exc
         return self._find_response
 
-    def load_skill(self, path: str) -> dict | None:
+    def load_skill(
+        self,
+        path: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> dict | None:
         self.load_calls.append(path)
         return self._load_response
 
@@ -84,9 +91,16 @@ class _FakeBackend:
         from_path: str,
         edge_types: list[str] | None = None,
         depth: int = 2,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict]:
         self.traverse_calls.append(
-            {"from_path": from_path, "edge_types": edge_types, "depth": depth}
+            {
+                "from_path": from_path,
+                "edge_types": edge_types,
+                "depth": depth,
+                "allowed_path_prefixes": allowed_path_prefixes,
+            }
         )
         return self._traverse_response
 
@@ -158,6 +172,9 @@ class TestFind:
                 "tag": "kerberoasting",
                 "tactic_id": None,
                 "limit": 5,
+                # ADR-0008 — request body omits ``allowed_path_prefixes``
+                # for the standalone CLI path, so the backend sees ``None``.
+                "allowed_path_prefixes": None,
             }
         ]
 
@@ -259,6 +276,9 @@ class TestTraverse:
                 "from_path": "/skills/x/SKILL.md",
                 "edge_types": ["IN_PHASE"],
                 "depth": 3,
+                # ADR-0008 — request body omits ``allowed_path_prefixes``,
+                # so the backend sees ``None``.
+                "allowed_path_prefixes": None,
             }
         ]
 

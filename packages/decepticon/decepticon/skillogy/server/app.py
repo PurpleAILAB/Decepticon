@@ -53,17 +53,24 @@ if BaseModel is not None:
         tag: str | None = None
         tactic_id: str | None = None
         limit: int = 20
+        # Per ADR-0008 — optional path-prefix allowlist enforced server-side
+        # so the agent middleware's role context cannot be widened by a
+        # tool-call argument. Unset / null preserves the unrestricted
+        # behaviour for the standalone CLI, library use, and pytest.
+        allowed_path_prefixes: list[str] | None = None
 
     class LoadReq(BaseModel):
         # Accept either a canonical /skills/.../SKILL.md path or a unique
         # frontmatter ``name``. The server resolves the name route via a
         # single-shot find before loading.
         name_or_path: str
+        allowed_path_prefixes: list[str] | None = None  # ADR-0008
 
     class TraverseReq(BaseModel):
         from_path: str
         edge_types: list[str] | None = None
         depth: int = 2
+        allowed_path_prefixes: list[str] | None = None  # ADR-0008
 
     class MocReq(BaseModel):
         phase: str
@@ -143,6 +150,7 @@ def build_app(
                 tag=req.tag,
                 tactic_id=req.tactic_id,
                 limit=req.limit,
+                allowed_path_prefixes=req.allowed_path_prefixes,
             )
         except ValueError as exc:
             # find_skill raises ValueError when no filters are passed —
@@ -153,24 +161,41 @@ def build_app(
     @app.post("/v1/skills:load", dependencies=_protected)
     async def load_skill(req: LoadReq) -> dict[str, Any]:
         target = req.name_or_path
+        allowed = req.allowed_path_prefixes
         if target.startswith("/skills/"):
-            props = backend.load_skill(target)
+            props = backend.load_skill(target, allowed_path_prefixes=allowed)
         else:
-            hits = backend.find_skill(query=target, limit=10)
+            # Resolve the name through find_skill so the same path-prefix
+            # ACL guards the name → path lookup the agent sees (otherwise
+            # a name match would leak the existence of skills outside the
+            # allowlist via 404 vs success).
+            try:
+                hits = backend.find_skill(
+                    query=target,
+                    limit=10,
+                    allowed_path_prefixes=allowed,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
             exact = [h for h in hits if h.get("name") == target]
             if not exact:
                 raise HTTPException(
                     status_code=404,
                     detail=f"no Skill with name or path matching {target!r}",
                 )
-            props = backend.load_skill(exact[0]["path"])
+            props = backend.load_skill(exact[0]["path"], allowed_path_prefixes=allowed)
         if props is None:
             raise HTTPException(status_code=404, detail=f"no Skill at path {target!r}")
         return {"props": props}
 
     @app.post("/v1/skills:traverse", dependencies=_protected)
     async def traverse(req: TraverseReq) -> dict[str, Any]:
-        rows = backend.traverse(req.from_path, edge_types=req.edge_types, depth=req.depth)
+        rows = backend.traverse(
+            req.from_path,
+            edge_types=req.edge_types,
+            depth=req.depth,
+            allowed_path_prefixes=req.allowed_path_prefixes,
+        )
         return {"count": len(rows), "rows": rows}
 
     @app.post("/v1/skills:moc", dependencies=_protected)

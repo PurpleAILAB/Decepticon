@@ -1,6 +1,6 @@
 # Agents
 
-Decepticon ships **16 specialist agents** organized by kill chain phase. Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
+Decepticon ships **24 agents** organized by kill chain phase (21 specialists plus the Decepticon and Vulnresearch orchestrators and the Soundwave planner). Each agent starts with a **fresh context window** per objective — no accumulated noise, no context degradation. Findings persist to disk (`workspace/`) and the knowledge graph, not agent memory.
 
 ---
 
@@ -10,7 +10,7 @@ Decepticon ships **16 specialist agents** organized by kill chain phase. Each ag
 
 | Agent | Role |
 |-------|------|
-| **Decepticon** | Main red-team orchestrator. Reads the OPPLAN, dispatches objectives to specialist sub-agents, and tracks status transitions. Sub-agents: `recon`, `exploit`, `postexploit`, `analyst`, `reverser`, `contract_auditor`, `cloud_hunter`, `ad_operator`, `phisher`, `mobile_operator`, `wireless_operator`. |
+| **Decepticon** | Main red-team orchestrator. Reads the OPPLAN, dispatches objectives to specialist sub-agents, and tracks status transitions. Sub-agents: `recon`, `exploit`, `postexploit`, `analyst`, `reverser`, `contract_auditor`, `cloud_hunter`, `ad_operator`, `phisher`, `mobile_operator`, `wireless_operator`, `osint_operator`, `iot_operator`, `ics_operator`, `forensicator`, `supply_chain_operator`. |
 | **Vulnresearch** | Vulnerability research orchestrator — runs the five-stage pipeline (`scanner → detector → verifier → patcher → exploiter`) with state passed between stages exclusively through the knowledge graph. |
 | **Soundwave** | Engagement planner. Standalone graph (not a sub-agent of Decepticon). Interviews the operator and writes the eight-document engagement bundle — RoE, Threat Profile, CONOPS, Deconfliction, Contact, Data Handling, Abort, Cleanup. The orchestrator builds the OPPLAN. |
 
@@ -48,9 +48,14 @@ Sub-agents of the **Vulnresearch** orchestrator. State flows between stages via 
 | **Contract Auditor** | Solidity / EVM smart contract audits — reentrancy, oracle manipulation, flash loan abuse, access control. |
 | **Reverser** | Binary analysis and reverse engineering — ELF/PE/Mach-O triage, packer detection, ROP gadget inventories, Ghidra/radare2 recon. |
 | **Analyst** | Vulnerability research and reporting — source code review, static analysis (semgrep/bandit/gitleaks), dependency CVE sweeps, multi-hop exploit chain construction. |
-| **Phisher** | Initial-access via phishing / social engineering (MITRE T1566.\*) — email phishing, evilginx2 token capture, M365 OAuth device-code, lookalike domains. Coordinates lure deconfliction with the blue team before sending. |
+| **Phisher** | Initial-access via phishing / social engineering (MITRE T1566.\*) — GoPhish campaigns, evilginx2 MFA-bypass token capture, M365/O365 OAuth device-code harvest, lookalike domains, pretext engineering. Mandatory lure deconfliction with the blue team before sending. |
 | **Mobile Operator** | Android / iOS application attacks — static analysis (apktool/jadx/class-dump), dynamic instrumentation (frida/objection), SSL pinning + root/jailbreak bypass, exported-component abuse, WebView JS bridge exploitation, MobSF. |
 | **Wireless Operator** | Wi-Fi / BLE / Zigbee / sub-GHz attacks — WPA2 handshake / PMKID capture, WPA3-SAE downgrade, WPA-Enterprise evil-twin, KARMA / Mana, deauth, WPS Pixie Dust, BLE GATT, Zigbee Touchlink, sub-GHz replay. Requires hardware passthrough or an SSH dropbox. |
+| **OSINT Operator** | Passive open-source intelligence — domain/email/employee/breach/code-leak/infra footprinting. Read-only; feeds Recon and Exploit. |
+| **IoT Operator** | IoT / embedded device attacks — firmware acquisition + binwalk extraction, hardcoded credentials, U-Boot / `/dev/mem`, and BLE/Zigbee/Z-Wave/sub-GHz/LoRaWAN radios. |
+| **ICS Operator** | ICS / OT / SCADA attacks (Modbus, DNP3, S7comm, BACnet, OPC-UA). RoE-gated; read-only enumeration first, lab/canary-only for writes. |
+| **Forensicator** | DFIR / purple-team validation — disk/memory/log/network timeline analysis, IOC extraction, attack→detection mapping. |
+| **Supply Chain Operator** | Software supply-chain attacks — dependency confusion, typosquatting, malicious packages (npm/PyPI/crates), CI/CD + build-step compromise. |
 
 ---
 

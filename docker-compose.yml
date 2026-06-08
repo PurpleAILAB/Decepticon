@@ -360,9 +360,12 @@ services:
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
-      # Skillogy: opt-in via env var; agents use it instead of the
-      # file-system-backed SkillsMiddleware when DECEPTICON_USE_SKILLOGY=1.
-      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-0}
+      # Skillogy is the canonical skill-retrieval backend (Neo4j-backed,
+      # phase-scoped retrieval). The in-process file-system
+      # ``SkillsMiddleware`` stays available as an explicit opt-out via
+      # ``DECEPTICON_USE_SKILLOGY=0`` for standalone library use and
+      # pytest where the skillogy container isn't running.
+      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-1}
       - DECEPTICON_SKILLOGY_URL=http://skillogy:9100
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
       # BENCHMARK_MODE flows in via `env_file: .env` above — no need to
@@ -562,10 +565,43 @@ services:
   # See docs/adr/0005-bloodhound-via-bhce-rest-client.md §Context.
   #
   # Why reuse Postgres: BHCE only needs one Postgres database
-  # (`bloodhound`) with the `pg_trgm` extension.  We pre-create both
-  # in containers/postgres-init/02-bloodhound-db.sh so BHCE's goose
-  # migrations bootstrap cleanly against our existing Postgres
-  # instance — no second Postgres container.
+  # (`bloodhound`) with the `pg_trgm` extension.  The idempotent
+  # `bhce-postgres-init` sidecar below creates/repairs that state on
+  # both fresh installs and upgrades with an existing `postgres_data`
+  # volume, so users do not have to delete data after BHCE is added.
+  bhce-postgres-init:
+    image: postgres:17-alpine
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-postgres-init
+    environment:
+      POSTGRES_USER: decepticon
+      POSTGRES_DB: litellm
+      PGPASSWORD: ${POSTGRES_PASSWORD:-decepticon}
+      PGHOST: postgres
+      BHCE_POSTGRES_DB: ${BHCE_POSTGRES_DB:-bloodhound}
+      BHCE_POSTGRES_USER: ${BHCE_POSTGRES_USER:-bloodhound}
+      BHCE_POSTGRES_PASSWORD: ${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
+    volumes:
+      - ./containers/postgres-init/02-bloodhound-db.sh:/decepticon/ensure-bloodhound-db.sh:ro
+    command:
+      - bash
+      - -c
+      - |
+        bash /decepticon/ensure-bloodhound-db.sh
+        exec sleep 2147483647
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test "$$(psql -v ON_ERROR_STOP=1 --username "$${POSTGRES_USER}" --dbname "$${BHCE_POSTGRES_DB}" -tAc "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')")" = "t"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
+      - decepticon-net
   bhce-neo4j:
     image: neo4j:4.4.42-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
@@ -603,8 +639,8 @@ services:
       bhe_enable_cypher_mutations: "false"
       bhe_graph_query_memory_limit: "2"
       # External Postgres — our existing `postgres` container, with
-      # the `bloodhound` DB + `pg_trgm` pre-created by
-      # containers/postgres-init/02-bloodhound-db.sh.
+      # the `bloodhound` DB + `pg_trgm` ensured by the idempotent
+      # `bhce-postgres-init` sidecar above.
       bhe_database_connection: >-
         user=${BHCE_POSTGRES_USER:-bloodhound}
         password=${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
@@ -628,14 +664,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      bhce-postgres-init:
+        condition: service_healthy
       bhce-neo4j:
         condition: service_healthy
+    # The upstream image is distroless: no `/bin/sh`, curl, wget, or Python.
+    # Docker Compose `up --wait` rejects services with no healthcheck, so use
+    # the only executable the image provides as a liveness check. API clients
+    # still perform the real readiness probe/retry against `/api/v2/spec`;
+    # this check exists to keep compose wait semantics from failing before the
+    # client-level readiness loop can run.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/version >/dev/null 2>&1 || exit 1"]
-      interval: 10s
+      test: ["CMD", "/bloodhound", "-version"]
+      interval: 30s
       timeout: 5s
-      retries: 18
-      start_period: 90s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

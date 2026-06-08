@@ -115,6 +115,11 @@ class NodeKind(StrEnum):
     SOLIDITY_ENUM = "Enum"
     SOLIDITY_STRUCT = "Struct"
     SOLIDITY_PRAGMA = "Pragma"
+    # Technology — a named product/runtime detected on or behind a Service
+    # (AI runtimes, AI proxies, web frameworks). Recon classifiers (header /
+    # port / banner / title) write here so detections become typed, queryable
+    # graph data instead of flat Service props. See ADR-0007.
+    TECHNOLOGY = "Technology"
 
 
 class EdgeKind(StrEnum):
@@ -131,6 +136,7 @@ class EdgeKind(StrEnum):
     ROUTES_TO = "ROUTES_TO"
     PART_OF = "PART_OF"
     MANAGES = "MANAGES"
+    RUNS = "RUNS"  # Service/Host -[:RUNS]-> Technology (ADR-0007)
     # Access
     AUTHENTICATES_TO = "AUTHENTICATES_TO"
     HAS_SESSION = "HAS_SESSION"
@@ -248,6 +254,40 @@ class EdgeKind(StrEnum):
     WRITE_ACCOUNT_RESTRICTIONS = "WRITE_ACCOUNT_RESTRICTIONS"
     # Solidity (Slither) — function-call graph edge.
     CALLS = "CALLS"
+
+
+class TechnologyCategory(StrEnum):
+    """Closed vocabulary for a :attr:`NodeKind.TECHNOLOGY` node's ``category``.
+
+    Deliberately finite (ADR-0007): the category is half of a Technology
+    node's identity key, so an unbounded free-text vocabulary would split
+    the same product across spellings and defeat the parameterized,
+    injection-safe KG queries the chain planner runs against it.
+    """
+
+    # AI attack surface — the cluster this vocabulary exists to make queryable.
+    AI_RUNTIME = "ai-runtime"  # Ollama, vLLM, llama.cpp, TGI
+    AI_PROXY = "ai-proxy"  # LiteLLM, OpenRouter-style gateways
+    AI_FRAMEWORK = "ai-framework"  # LangChain server, LlamaIndex, MLflow
+    AI_SDK_CLIENT = "ai-sdk-client"  # in-page openai/anthropic SDK usage
+    # Generic web tech — tech-detection upgrade feeds CVE cross-referencing.
+    WEB_SERVER = "web-server"
+    WEB_FRAMEWORK = "web-framework"
+    CMS = "cms"
+    LANGUAGE_RUNTIME = "language-runtime"
+    DATABASE = "database"
+
+
+def technology_key(category: TechnologyCategory, name: str) -> str:
+    """Canonical ``(key, engagement)`` key for a Technology node (ADR-0007).
+
+    ``<category>:<normalized-name>`` so the same product detected by two
+    classifiers (header vs banner) MERGEs onto one node per engagement.
+    """
+    normalized = "-".join(name.strip().lower().split())
+    if not normalized:
+        raise ValueError("technology name must be non-empty")
+    return f"{category.value}:{normalized}"
 
 
 class Severity(StrEnum):

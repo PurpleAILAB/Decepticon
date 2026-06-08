@@ -295,6 +295,22 @@ def test_v002_creates_vector_index_for_future_semantic_recall() -> None:
     assert "cosine" in text
 
 
+def test_v004_creates_technology_key_engagement_constraint() -> None:
+    """V004 must enforce the ``(key, engagement)`` MERGE invariant for the
+    Technology label (ADR-0007) so corroborating classifier writes dedup."""
+    from decepticon.middleware.kg_internal.migration_runner import _DEFAULT_MIGRATIONS_DIR
+
+    v004 = next((_DEFAULT_MIGRATIONS_DIR).glob("V004__*.cypher"))
+    text = v004.read_text(encoding="utf-8")
+    stmts = _split_cypher_statements(text)
+    assert any("(n:Technology)" in s and "(n.key, n.engagement) IS UNIQUE" in s for s in stmts), (
+        "V004 must add the Technology (key, engagement) uniqueness constraint"
+    )
+    assert any("FOR (n:Technology) ON (n.engagement, n.category)" in s for s in stmts), (
+        "V004 must add the engagement-scoped category index"
+    )
+
+
 # ── KGStore record_observations must not interfere with migration log ───
 
 

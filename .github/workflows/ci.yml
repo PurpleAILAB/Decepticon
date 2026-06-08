@@ -48,7 +48,7 @@ jobs:
       compose: ${{ steps.app.outputs.compose }}
       docker-images: ${{ steps.docker.outputs.changes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3
         id: app
         with:
@@ -136,7 +136,7 @@ jobs:
     if: ${{ needs.changes.outputs.compose == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # The compose files reference a project-local ``.env`` for the
       # runtime stack. CI doesn't ship one (and shouldn't — keys live
       # in the user's $DECEPTICON_HOME), so the validator runs against
@@ -165,7 +165,7 @@ jobs:
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v5
         with:
           version: "0.8.15"
@@ -254,6 +254,79 @@ jobs:
           path: coverage.xml
           if-no-files-found: ignore
 
+  # ── PR coverage visibility (NON-BLOCKING) ───────────────────────────
+  # Informational coverage job that runs in PARALLEL with the blocking
+  # `python` job, so it does NOT add to merge latency. The blocking PR
+  # lane deliberately runs pytest WITHOUT coverage (see the comment in
+  # the `python` job above — coverage adds ~3x runtime and PR feedback
+  # latency is the priority). This job exists purely to surface a
+  # coverage delta to PR reviewers without contradicting that decision:
+  #   * uses `--cov-fail-under=0` (via `make ci-test-coverage-report`),
+  #     so a coverage drop NEVER fails the PR;
+  #   * is NOT in the repo's required-status set — keep it out of the
+  #     branch protection list so it remains advisory only;
+  #   * uploads coverage.xml as an artifact and writes a short summary
+  #     to $GITHUB_STEP_SUMMARY for at-a-glance review.
+  coverage-report:
+    name: Coverage report (PRs — informational, non-blocking)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    # The real non-blocking guarantee is that this job is NOT in the
+    # required-status list in branch protection — that is what keeps a
+    # red result here from blocking merge. `continue-on-error: true` is
+    # a secondary safety net at the workflow level: if a step fails, the
+    # workflow run's overall conclusion stays `success` (so the commit
+    # status check posted by GitHub Actions never goes red), even though
+    # the job's own conclusion in the run UI will still read `failure`.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.8.15"
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      # Share the cached .venv with the blocking `python` job (same key
+      # shape) so the cold-cache cost of this job is mostly checkout +
+      # pytest, not a full uv resolve.
+      - name: Cache .venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+      - run: uv sync --dev --locked
+      - name: Pytest with coverage (no threshold — `make ci-test-coverage-report`)
+        run: make ci-test-coverage-report
+      - name: Write coverage summary to step summary
+        if: always()
+        run: |
+          {
+            echo "## Coverage report (informational)"
+            echo ""
+            echo "This is a NON-BLOCKING coverage visibility job. The blocking PR"
+            echo "pytest step runs without coverage by design — see the comment in"
+            echo "the \`python\` job. Coverage threshold gating happens on main pushes."
+            echo ""
+            if [ -f coverage.xml ]; then
+              # line-rate is a fraction in [0,1] on the root <coverage> tag
+              rate=$(python -c "import xml.etree.ElementTree as ET; print(ET.parse('coverage.xml').getroot().attrib.get('line-rate','0'))")
+              pct=$(python -c "print(f'{float(\"$rate\")*100:.2f}')")
+              echo "**Line coverage:** ${pct}%"
+            else
+              echo "_coverage.xml not produced — see the pytest step logs._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-pr
+          path: coverage.xml
+          if-no-files-found: ignore
+
   cli:
     # Matrix mirrors the python job — Linux + macOS. Windows runner is
     # deferred until the cli test suite is verified on Windows in a
@@ -277,7 +350,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.cli != 'true'
         run: 'echo "No CLI-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.cli == 'true'
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.cli == 'true'
@@ -326,7 +399,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.web != 'true'
         run: 'echo "No Web-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.web == 'true'
       - uses: actions/setup-node@v6
         if: needs.changes.outputs.web == 'true'
@@ -375,7 +448,7 @@ jobs:
     steps:
       - if: needs.changes.outputs.launcher != 'true'
         run: 'echo "No Launcher-relevant changes — emitting success."'
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: needs.changes.outputs.launcher == 'true'
       - uses: actions/setup-go@v5
         if: needs.changes.outputs.launcher == 'true'
@@ -401,7 +474,7 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.changes.outputs.docker-images) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
       - uses: docker/build-push-action@v7
         with:
@@ -458,7 +531,7 @@ jobs:
       matrix:
         image: [cli, langgraph]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
       - name: Build linux/arm64 image (no push)
@@ -486,7 +559,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
@@ -520,7 +593,7 @@ jobs:
     name: actionlint (workflows)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Run actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7

@@ -48,7 +48,7 @@ metadata:
 | # | Phase | MITRE | Emulated action | Executing agent → skill |
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Recon | T1591 | Revenue-based target + staff shortlist (Crunchbase/D&B/ZoomInfo) | recon → `/skills/standard/recon/osint/SKILL.md`, `/skills/standard/osint/SKILL.md` |
-| 2 | Initial Access | T1566.001 | Business-themed spearphish attachment + phone follow-up | phisher → `/skills/standard/phish/SKILL.md` |
+| 2 | Initial Access | T1566.001 | Business-themed spearphish attachment + phone follow-up | phisher → `/skills/standard/phisher/SKILL.md` |
 | 3 | Execution / C2 | T1204.002 / T1059.001 | Macro → loader → Sliver beacon | post-exploit → `/skills/standard/post-exploit/c2-sliver/SKILL.md` |
 | 4 | Persistence | T1547.001 / T1053.005 | Run key + scheduled task | post-exploit → `/skills/standard/post-exploit/privilege-escalation/SKILL.md` |
 | 5 | Defense Evasion | T1562.001 | EDR tamper / BYOVD (AvNeutralizer pattern, authorized) | post-exploit → `/skills/standard/post-exploit/privilege-escalation/SKILL.md` (shared `defense-evasion` auto-loaded) |

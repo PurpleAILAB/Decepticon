@@ -83,6 +83,49 @@ class TestMachineEnforcementSchema:
         assert decision.allow
 
 
+class TestSensitiveTldGuardrail:
+    @pytest.mark.parametrize("host", ["whitehouse.gov", "ARMY.MIL", "mit.edu", "icann.int"])
+    def test_sensitive_tlds_denied_by_default(self, host: str) -> None:
+        rules = MachineEnforcement.from_dict({"in_scope": [host]})
+        decision = evaluate_target(host, rules)
+        assert not decision.allow
+        assert decision.reason_code == "SENSITIVE_TLD"
+
+    def test_subdomain_of_sensitive_tld_denied(self) -> None:
+        rules = MachineEnforcement.from_dict({"in_scope": ["*.mit.edu"]})
+        assert not evaluate_target("portal.mit.edu", rules).allow
+
+    def test_sensitive_tld_with_port_denied(self) -> None:
+        assert not evaluate_target("foo.gov:8443", MachineEnforcement()).allow
+
+    def test_sensitive_tld_allowed_when_opted_in(self) -> None:
+        rules = MachineEnforcement.from_dict(
+            {"in_scope": ["mit.edu"], "allow_sensitive_tlds": True}
+        )
+        decision = evaluate_target("mit.edu", rules)
+        assert decision.allow
+        assert decision.reason_code == "IN_SCOPE"
+
+    def test_block_precedes_in_scope_match(self) -> None:
+        # Even an explicit in-scope entry does not override the default-deny;
+        # the operator must opt in via allow_sensitive_tlds.
+        rules = MachineEnforcement.from_dict({"in_scope": ["target.gov"]})
+        assert evaluate_target("target.gov", rules).reason_code == "SENSITIVE_TLD"
+
+    def test_commercial_tld_unaffected(self) -> None:
+        rules = MachineEnforcement.from_dict({"in_scope": ["acme.com"]})
+        assert evaluate_target("acme.com", rules).allow
+
+    def test_ip_literal_never_matches_tld(self) -> None:
+        # IPs have no TLD; the guardrail must not touch them.
+        assert evaluate_target("8.8.8.8", MachineEnforcement()).allow
+
+    def test_substring_not_suffix_is_not_matched(self) -> None:
+        # ``.international`` is not ``.int``; only a full trailing label counts.
+        rules = MachineEnforcement.from_dict({"in_scope": ["foo.international.com"]})
+        assert evaluate_target("foo.international.com", rules).allow
+
+
 class TestEvaluateTarget:
     def test_no_in_scope_means_allow_with_out_of_scope_only(self) -> None:
         rules = MachineEnforcement.from_dict(
