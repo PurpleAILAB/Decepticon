@@ -78,7 +78,20 @@ func (c *Compose) baseArgs() []string {
 	}
 	args := append([]string{}, prefix...)
 	args = append(args, "-f", c.ComposeFile, "--env-file", c.EnvFile)
+	// ADR-0006 Sprint 1: include the opscontrol override so langgraph
+	// receives the daemon's UDS bind-mount. The file is shipped to
+	// $DECEPTICON_HOME alongside docker-compose.yml by SyncConfigFiles;
+	// installs predating that release stay daemon-less (file absent
+	// → silently skipped, ops_* tools surface "unreachable" diagnostics).
+	if override := filepath.Join(c.Home, "docker-compose.opscontrol.yml"); fileExists(override) {
+		args = append(args, "-f", override)
+	}
 	return args
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // ContainerName builds the docker container name for a Decepticon

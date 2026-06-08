@@ -153,9 +153,18 @@ def create_decepticon_agent(
         ]
 
     if tools is None:
+        # The orchestrator's domain tools are ``{}`` — all offensive
+        # work goes through ``task()`` to a specialist. The exception
+        # is ADR-0006 ``ops_*``: only the orchestrator may bring
+        # specialist workloads up or down (least-privilege per §2,
+        # so a compromised sub-agent cannot spin up unrelated
+        # infrastructure). Sub-agents see neither these tools nor the
+        # underlying daemon socket.
+        from decepticon.tools.ops import OPS_TOOLS
+
         tools = build_tools(
             role=_ROLE,
-            standard_tools={},  # orchestrator tools=[] — delegation only
+            standard_tools={t.name: t for t in OPS_TOOLS},
         )
     if middleware is None:
         middleware = build_middleware(

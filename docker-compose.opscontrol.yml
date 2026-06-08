@@ -1,0 +1,30 @@
+# docker-compose.opscontrol.yml — ADR-0006 Sprint 1 overlay
+# ---------------------------------------------------------
+# Added by the Decepticon launcher (`decepticon start`) only.
+# `make dev` / `make smoke` deliberately do NOT include this file, so
+# stacks brought up outside the launcher stay daemon-less and the
+# `decepticon.tools.ops` LangChain tools return a "daemon unreachable"
+# diagnostic instead of crashing the boot.
+#
+# What this override does:
+#   - Bind-mounts the host UDS at $DECEPTICON_HOME/run/ops.sock into
+#     the langgraph container at /var/run/decepticon-ops.sock (the
+#     ADR-mandated path the OpsControlClient defaults to).
+#
+# The langgraph container is the ONLY container that receives the
+# bind-mount — capability granted by socket file, not network
+# membership. Other services on decepticon-net cannot reach the
+# daemon API even though they share the bridge.
+#
+# Spec: docs/adr/0006-agent-driven-container-lifecycle.md §1', §2.
+
+services:
+  langgraph:
+    volumes:
+      # `:-/dev/null` keeps `compose up` from failing the interpolation
+      # check when the launcher hasn't exported the host socket path
+      # (e.g., direct `docker compose` invocations). In that mode the
+      # container sees a char device at the mount point and Python's
+      # OpsControlClient surfaces a "daemon unreachable" diagnostic
+      # instead of crashing the boot.
+      - "${DECEPTICON_OPSCONTROL_SOCK_HOST:-/dev/null}:/var/run/decepticon-ops.sock:rw"
