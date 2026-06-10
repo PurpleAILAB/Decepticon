@@ -38,6 +38,21 @@ _SANDBOX_CONTAINER = os.environ.get("DECEPTICON_SANDBOX_CONTAINER", "decepticon-
 _LANGGRAPH_CONTAINER = os.environ.get("DECEPTICON_LANGGRAPH_CONTAINER", "decepticon-langgraph")
 
 
+def _run_docker(
+    args: list[str], timeout: float | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a docker CLI command, degrading gracefully when docker is absent.
+
+    Container hygiene is best-effort: hosts without docker (unit tests,
+    bare-metal benchmark runs) must not crash the harness mid-challenge.
+    Returns a synthetic returncode-127 result when docker is not on PATH.
+    """
+    if shutil.which("docker") is None:
+        log.warning("harness.docker: docker not on PATH — skipping: %s", " ".join(args))
+        return subprocess.CompletedProcess(args, returncode=127, stdout=b"", stderr=b"")
+    return subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+
+
 @dataclass
 class AgentResponse:
     """Structured response from a LangGraph agent invocation.
@@ -450,6 +465,11 @@ class Harness:
 
     async def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
+        if shutil.which("docker") is None:
+            log.warning(
+                "harness.services: docker not found on PATH — skipping service health check and restart logic"
+            )
+            return
         # Check LiteLLM: verify models are loaded via /v1/models endpoint
         litellm_url = self.config.litellm_url
         litellm_ready = False
@@ -512,14 +532,15 @@ class Harness:
         sub-agents. Per user policy, always do a full container restart —
         simpler than trying to enumerate stale sessions.
         """
+        if shutil.which("docker") is None:
+            log.warning("harness.sandbox: docker not found on PATH — skipping sandbox reset")
+            return
         async with self._restart_lock:
             log.info("harness.sandbox: restarting sandbox container for fresh state")
             restart = await self._run_docker(
                 ["docker", "compose", "restart", "sandbox"], timeout=60
             )
             if restart is None:
-                # Docker itself is unavailable — the readiness probe below
-                # can never succeed, so don't burn the whole wait budget.
                 return
             # Reconnect to required networks (compose restart usually preserves
             # them but be defensive for benchmark / make dev variants)

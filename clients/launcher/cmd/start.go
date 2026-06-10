@@ -36,7 +36,31 @@ func nullDevice() string {
 var (
 	isWSLFn     = platform.IsWSL
 	wslHostIPFn = platform.WSLHostIP
+
+	// Indirected so tests can assert which AUTO_UPDATE branch ran
+	// without making network calls into GitHub.
+	autoUpdateFn   = updater.AutoUpdateIfAvailable
+	promptUpdateFn = updater.PromptIfUpdateAvailable
 )
+
+// applyAutoUpdate dispatches the self-update check based on AUTO_UPDATE.
+// See the inline comment in start() (section 2.5) for the value table
+// and rationale for default-on behaviour.
+func applyAutoUpdate(env map[string]string, version string) {
+	val := strings.ToLower(strings.TrimSpace(config.Get(env, "AUTO_UPDATE", "")))
+	switch val {
+	case "", "true", "1", "yes", "on":
+		if _, err := autoUpdateFn(version); err != nil {
+			ui.Warning("Auto-update: " + err.Error())
+		}
+	case "false", "0", "no", "off":
+		// self-update disabled
+	default:
+		if _, err := promptUpdateFn(version); err != nil {
+			ui.Warning("Update check: " + err.Error())
+		}
+	}
+}
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -166,25 +190,23 @@ func runStart(cmd *cobra.Command, args []string) error {
 	}
 
 	// 2.5. Update check, gated by AUTO_UPDATE in .env:
-	//   unset (default) → interactive prompt on a TTY, passive notice otherwise
-	//   true            → fully unattended: apply the update + re-exec
+	//   unset (default) → fully unattended: apply the update + re-exec
+	//   true / 1 / yes  → same as default (kept for backwards-compat)
+	//   prompt / ask    → interactive prompt on a TTY, passive notice otherwise
 	//   false           → skip entirely (air-gapped / version-pinned deploys)
+	//
+	// Default-on rationale: every released hotfix is dead weight until the
+	// operator picks it up. The previous default ("prompt on TTY, notice
+	// otherwise") meant a bug-fix release sat on the user's machine,
+	// un-applied, until they noticed the notice and re-ran. Silent self-
+	// update collapses the "fix shipped" → "fix running on user host" gap
+	// from days/weeks to the next `decepticon start`, which is the same
+	// behaviour Discord/Slack/electron-updater apps already use.
+	//
 	// Synchronous on purpose: the prompt + unattended paths apply and re-exec
 	// before the rest of `start` proceeds. The GitHub fetch fails fast so a
 	// slow network never blocks startup.
-	switch strings.ToLower(strings.TrimSpace(config.Get(env, "AUTO_UPDATE", ""))) {
-	case "false", "0", "no", "off":
-		// self-update disabled
-	case "true", "1", "yes", "on":
-		if _, err := updater.AutoUpdateIfAvailable(version); err != nil {
-			ui.Warning("Auto-update: " + err.Error())
-		}
-	default:
-		if _, err := updater.PromptIfUpdateAvailable(version); err != nil {
-			// Non-fatal — warn and continue on the current launcher.
-			ui.Warning("Update check: " + err.Error())
-		}
-	}
+	applyAutoUpdate(env, version)
 
 	// 2.6. One-time GitHub star ask. Idempotent across launches — the
 	// ack file at $DECEPTICON_HOME/.starred suppresses the prompt

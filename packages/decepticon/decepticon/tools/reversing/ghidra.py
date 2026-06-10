@@ -483,7 +483,7 @@ def ghidra_get_xrefs(binary: str, address: str) -> list[GhidraXref]:
         return []
 
 
-def ghidra_available() -> dict[str, bool]:
+def ghidra_available() -> dict[str, bool | str]:
     """Report which Ghidra backends are available."""
     return {
         "headless": _find_analyze_headless() is not None,

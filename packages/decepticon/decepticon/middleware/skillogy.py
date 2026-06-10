@@ -43,7 +43,7 @@ import os
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.tools import tool
 from typing_extensions import override
 
@@ -433,14 +433,6 @@ class SkillogyMiddleware(AgentMiddleware):
             new_content = [{"type": "text", "text": injected_text}]
         new_system = SystemMessage(content=new_content)
         return request.override(system_message=new_system)
-
-    @override
-    def wrap_tool_call(self, request, handler) -> ToolMessage:
-        return handler(request)
-
-    @override
-    async def awrap_tool_call(self, request, handler) -> ToolMessage:
-        return await handler(request)
 
 
 def maybe_install_skillogy(

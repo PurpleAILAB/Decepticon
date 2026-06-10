@@ -79,6 +79,27 @@ LangGraph, sandbox) keeps the always-on contract.
   `ops_start("ad")`. v1.1.8 adds an idempotent `bhce-postgres-init`
   init service that creates the database (and the BHCE role) before
   BHCE starts, on every cold start. (#618)
+- **Benchmark harness no longer crashes on hosts without docker.**
+  Every `docker compose` / `docker exec` / `docker network` hygiene
+  call in `benchmark/harness.py` now routes through a `_run_docker`
+  helper that degrades to a logged no-op (synthetic exit 127) when
+  the docker CLI is not on `PATH` — previously `run_challenge()`
+  died with `FileNotFoundError` before the provider ever ran, and
+  the harness unit tests could only pass on docker-equipped hosts.
+- **`HTTPSandbox` retry helper could `raise None`.** When
+  `_retry_on_connection_error` was called with `max_retries <= 0`
+  the loop body never ran and the trailing `raise last_exc` raised
+  `None`; it now raises a `SandboxError` naming the misconfiguration.
+- `decepticon.middleware.skillogy`: dropped the no-op
+  `wrap_tool_call` / `awrap_tool_call` passthrough overrides (base
+  `AgentMiddleware` behavior is identical) and their stale
+  `ToolMessage` return annotations.
+- `tools.reversing.ghidra_available()` return annotation corrected
+  to `dict[str, bool | str]` (it reports install dir / MCP URL
+  strings alongside the booleans).
+- `test_subagent_streaming` None-id guard tests updated for the
+  `session_id` parameter added to `StreamingRunnable._process_messages`
+  in v1.1.10 — the fast test lane was red.
 
 ## [1.1.6] — 2026-06-01
 

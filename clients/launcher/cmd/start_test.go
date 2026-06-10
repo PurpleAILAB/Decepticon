@@ -103,3 +103,64 @@ func TestCandidateProbeURLs_PreservesScheme(t *testing.T) {
 		t.Errorf("scheme/path should be preserved across candidates:\n got %v\nwant %v", got, want)
 	}
 }
+
+// withUpdateStubs swaps the auto-update / prompt-update function variables
+// for the duration of one test, restoring them via t.Cleanup. The stubs
+// record which branch ran (and how many times) without touching GitHub.
+func withUpdateStubs(t *testing.T) (auto, prompt *int) {
+	t.Helper()
+	autoCount, promptCount := 0, 0
+	prevAuto := autoUpdateFn
+	prevPrompt := promptUpdateFn
+	autoUpdateFn = func(string) (bool, error) { autoCount++; return false, nil }
+	promptUpdateFn = func(string) (bool, error) { promptCount++; return false, nil }
+	t.Cleanup(func() {
+		autoUpdateFn = prevAuto
+		promptUpdateFn = prevPrompt
+	})
+	return &autoCount, &promptCount
+}
+
+func TestApplyAutoUpdate_RoutingMatrix(t *testing.T) {
+	cases := []struct {
+		envValue     string
+		wantAuto     int
+		wantPrompt   int
+		description  string
+	}{
+		// Default-on: unset triggers silent auto-update. This is the
+		// key behaviour change from v1.1.12 — fix-shipped → fix-applied
+		// no longer requires the user to act.
+		{"", 1, 0, "unset → silent auto-update"},
+		{"  ", 1, 0, "whitespace-only → silent auto-update"},
+		{"true", 1, 0, "true → silent auto-update (backwards-compat)"},
+		{"1", 1, 0, "1 → silent auto-update (backwards-compat)"},
+		{"yes", 1, 0, "yes → silent auto-update (backwards-compat)"},
+		{"on", 1, 0, "on → silent auto-update (backwards-compat)"},
+		{"TRUE", 1, 0, "case-insensitive: TRUE → silent auto-update"},
+		// Opt-in to the pre-v1.1.12 default of prompting on a TTY.
+		{"prompt", 0, 1, "prompt → interactive prompt"},
+		{"ask", 0, 1, "ask → interactive prompt"},
+		{"interactive", 0, 1, "interactive → interactive prompt"},
+		{"PROMPT", 0, 1, "case-insensitive: PROMPT → interactive prompt"},
+		// Air-gapped / version-pinned: skip entirely.
+		{"false", 0, 0, "false → skip"},
+		{"0", 0, 0, "0 → skip"},
+		{"no", 0, 0, "no → skip"},
+		{"off", 0, 0, "off → skip"},
+		// Unrecognized / garbage values default to prompt, not silent auto-update
+		{"disabled", 0, 1, "unrecognized value disabled → interactive prompt"},
+		{"skip", 0, 1, "unrecognized value skip → interactive prompt"},
+		{"garbage", 0, 1, "unrecognized value garbage → interactive prompt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.description, func(t *testing.T) {
+			auto, prompt := withUpdateStubs(t)
+			applyAutoUpdate(map[string]string{"AUTO_UPDATE": tc.envValue}, "v0.0.0-test")
+			if *auto != tc.wantAuto || *prompt != tc.wantPrompt {
+				t.Errorf("AUTO_UPDATE=%q: got auto=%d prompt=%d, want auto=%d prompt=%d",
+					tc.envValue, *auto, *prompt, tc.wantAuto, tc.wantPrompt)
+			}
+		})
+	}
+}

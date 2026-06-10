@@ -198,23 +198,33 @@ def start_llm_span(model: str) -> Iterator[Any]:
             _active_llm_span.reset(llm_token)
 
 
+def _set_span_attribute(span: Any, key: str, value: Any) -> bool:
+    """Set a span attribute, returning False if the SDK rejected it.
+
+    Telemetry is observability, never control flow: a failed write must not
+    propagate to the caller. We log at debug instead of swallowing silently
+    so a broken exporter is diagnosable.
+    """
+    try:
+        span.set_attribute(key, value)
+        return True
+    except Exception as exc:
+        log.debug("otel set_attribute failed key=%s: %s", key, exc)
+        return False
+
+
 def record_llm_cost(cost_usd: float | None) -> None:
     """Attach cost to the active llm_call span, or to engagement as fallback."""
     if cost_usd is None:
         return
     llm_span = _active_llm_span.get()
-    if llm_span is not None:
-        try:
-            llm_span.set_attribute("decepticon.llm.cost_usd", float(cost_usd))
-            return
-        except Exception:
-            pass
+    if llm_span is not None and _set_span_attribute(
+        llm_span, "decepticon.llm.cost_usd", float(cost_usd)
+    ):
+        return
     eng_span = _active_engagement_span.get()
     if eng_span is not None:
-        try:
-            eng_span.set_attribute("decepticon.llm.cost_usd", float(cost_usd))
-        except Exception:
-            pass
+        _set_span_attribute(eng_span, "decepticon.llm.cost_usd", float(cost_usd))
 
 
 def record_llm_token_usage(
@@ -225,15 +235,9 @@ def record_llm_token_usage(
     if span is None:
         return
     if prompt_tokens is not None:
-        try:
-            span.set_attribute("decepticon.llm.prompt_tokens", int(prompt_tokens))
-        except Exception:
-            pass
+        _set_span_attribute(span, "decepticon.llm.prompt_tokens", int(prompt_tokens))
     if completion_tokens is not None:
-        try:
-            span.set_attribute("decepticon.llm.completion_tokens", int(completion_tokens))
-        except Exception:
-            pass
+        _set_span_attribute(span, "decepticon.llm.completion_tokens", int(completion_tokens))
 
 
 def set_current_objective_id(objective_id: str | None) -> object | None:
