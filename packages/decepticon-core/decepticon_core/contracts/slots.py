@@ -28,6 +28,7 @@ class MiddlewareSlot(StrEnum):
     """
 
     ENGAGEMENT_CONTEXT = "engagement-context"
+    GUIDANCE = "guidance"
     ROE_GUARDRAIL = "roe-guardrail"
     HITL_APPROVAL = "hitl-approval"
     UNTRUSTED_OUTPUT = "untrusted-output"
@@ -155,6 +156,7 @@ _BASE_SLOTS: frozenset[MiddlewareSlot] = _TAIL_SLOTS | {
     MiddlewareSlot.EVENT_LOG,
     MiddlewareSlot.PROMPT_INJECTION_SHIELD,
     MiddlewareSlot.BUDGET,
+    MiddlewareSlot.GUIDANCE,
 }
 
 # Standard bash-executing agents (recon/exploit/postexploit/analyst/
