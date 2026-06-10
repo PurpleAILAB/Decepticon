@@ -412,6 +412,20 @@ async def bash(
 
     await _prune_old_scratch(workspace_path)
 
+    # Strip leading/trailing newlines before sending to the sandbox.
+    # LLM agents frequently wrap commands in block-form like
+    # ``"\necho foo\n"`` (the trailing newline is especially common
+    # because Claude likes to terminate code blocks with a newline);
+    # the sandbox's PS1-marker output capture treats that trailing
+    # newline as a fresh prompt cycle and swallows the real stdout,
+    # so every block-formatted command returns
+    # ``[Command completed with no output. Exit code: 0]`` despite
+    # actually running. is_input=True is exempt because control
+    # sequences (C-c / C-z / etc.) are literal byte payloads, not
+    # commands; stripping them would corrupt the signal.
+    if command and not is_input:
+        command = command.strip("\n")
+
     # Background mode: send command and return immediately
     if background and command:
         _reset_passive_read(workspace_path, session)
