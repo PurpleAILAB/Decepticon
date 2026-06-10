@@ -1,4 +1,5 @@
 from decepticon.middleware._command_targets import extract_targets
+from decepticon_core.types.roe import MachineEnforcement, evaluate_target
 
 
 def test_userinfo_decoy_yields_real_host_not_in_scope_label():
@@ -19,6 +20,46 @@ def test_decimal_encoded_imds_normalized_to_dotted_quad():
 def test_hex_encoded_imds_normalized_to_dotted_quad():
     targets = extract_targets("curl http://0xa9fea9fe/latest/meta-data/")
     assert "169.254.169.254" in targets
+
+
+def test_octal_encoded_imds_normalized_to_dotted_quad():
+    # 0251.0376.0251.0376 == 169.254.169.254 (octal per octet). libc inet_aton
+    # — what curl/wget use on the engagement host — routes it to IMDS, so the
+    # canonicaliser must collapse it to the dotted quad the deny rule matches.
+    targets = extract_targets("curl http://0251.0376.0251.0376/latest/meta-data/")
+    assert "169.254.169.254" in targets
+
+
+def test_dotted_hex_encoded_imds_normalized_to_dotted_quad():
+    targets = extract_targets("curl http://0xa9.0xfe.0xa9.0xfe/latest/meta-data/")
+    assert "169.254.169.254" in targets
+
+
+def test_short_octet_form_normalized_to_dotted_quad():
+    # 127.1 is the classic short form for 127.0.0.1.
+    assert "127.0.0.1" in extract_targets("curl http://127.1/")
+
+
+def test_out_of_range_numeric_dotted_token_not_mangled_into_ip():
+    # Numeric-looking but out of range: must not raise and must not be coerced
+    # into a (wrong) dotted quad — it passes through as a non-IP token.
+    targets = extract_targets("curl http://999.999.999.999/")
+    assert not any(t.count(".") == 3 and t != "999.999.999.999" for t in targets)
+
+
+def test_encoded_imds_command_refused_by_forbidden_destination_gate():
+    # End-to-end: the alternate encodings must produce a target the RoE
+    # forbidden-destination gate refuses in enforce mode — the bypass is closed.
+    rules = MachineEnforcement.from_dict({"in_scope": ["10.0.0.0/8"]})
+    for cmd in (
+        "curl http://0251.0376.0251.0376/latest/meta-data/",
+        "curl http://0xa9.0xfe.0xa9.0xfe/latest/meta-data/",
+    ):
+        targets = extract_targets(cmd)
+        assert "169.254.169.254" in targets
+        assert any(
+            evaluate_target(t, rules).reason_code == "FORBIDDEN_DESTINATION" for t in targets
+        )
 
 
 def test_ipv6_literal_url_host_extracted():
