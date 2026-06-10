@@ -199,7 +199,12 @@ class TestNoneIdToolCallGuard:
                 ],
             )
             wrapper._process_messages(
-                [msg], active, renderer=None, has_renderer=False, writer=writer, session_id="test-session"
+                [msg],
+                active,
+                renderer=None,
+                has_renderer=False,
+                writer=writer,
+                session_id="test-session",
             )
         finally:
             target.removeHandler(handler)
