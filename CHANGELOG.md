@@ -6,6 +6,80 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [1.1.8] — Unreleased
+
+The agent-driven dynamic infrastructure release. Specialist workloads
+(BloodHound CE, Sliver C2, Ghidra MCP, …) and the web dashboard no
+longer come up on `decepticon start` — the orchestrator brings them
+up on demand. Core management plane (LiteLLM, PostgreSQL, Skillogy,
+LangGraph, sandbox) keeps the always-on contract.
+
+### Added
+
+- **ADR-0006 agent-driven container lifecycle.** A host-binary
+  `opscontrol` daemon, supervised by systemd (Linux) / launchd (macOS),
+  owns the docker socket and exposes a Unix-domain socket bind-mounted
+  into the langgraph container. The orchestrator's `ops_start("ad")`,
+  `ops_stop("ad")`, `ops_status` tools route through that socket.
+  Async control plane: `ops_start` returns immediately with
+  `state: "starting"`; the daemon's background goroutine runs the
+  compose-up off the request path. The orchestrator's
+  `OpsControlNotificationMiddleware` polls the registry once per turn
+  and injects a `<system-reminder>` HumanMessage when a workload
+  transitions to `running` / `stopped` / `unknown`, so the agent
+  learns about completions without polling `ops_status`. (#619, #620)
+- **`/web` slash command in the CLI.** The web dashboard is now
+  dynamic-spawn — bring it up with `/web` (`/web up` / `/web stop` /
+  `/web url` / alias `/dashboard`) from inside the terminal CLI.
+  The CLI image ships with `docker-ce-cli` + `docker-compose-plugin`;
+  the compose entry bind-mounts the host docker socket and the
+  operator's `$DECEPTICON_HOME` so the slash command shells out
+  against the operator's compose project. OSS scope only — SaaS
+  bundles override these volumes via a separate compose overlay. (#625)
+- **One-shot upgrade migration** for the stale
+  `COMPOSE_PROFILES=c2-sliver` line that pre-ADR-0006 (v1.1.7 and
+  earlier) shipped in `.env.example`. On first v1.1.8 launch the
+  launcher rewrites that line to a comment (preserving the original
+  value inline) and writes a single `.env.bak` backup. Idempotent on
+  repeat starts; the backup is not overwritten when an operator
+  reintroduces the active line. (#624)
+
+### Changed
+
+- `docker-compose.yml`: the `web` service moves from default-start
+  to `profiles: [web]`. Specialist workload services (`bhce` /
+  `bhce-neo4j` / `bhce-postgres-init` under `[ad]`, `c2-sliver`,
+  `ghidra-mcp` under `[reversing]`) keep their profile gates and are
+  now driven exclusively by the orchestrator's `ops_start(...)`
+  calls. (#620, #625)
+- `decepticon start` UX: the message in the README and the launcher
+  banner now states "Start the core stack and drop into the terminal
+  CLI" rather than "Start everything" — the dashboard and specialist
+  workloads no longer come up by default.
+
+### Fixed
+
+- **`SandboxNotificationMiddleware` background-completion delivery.**
+  `build_sandbox_backend()` was returning a fresh `HTTPSandbox` from
+  every graph factory; with 11 graphs in `langgraph dev`, the bash
+  tool registered jobs on instance A (via the `set_sandbox` last-wins
+  module-level fallback) while every middleware instance polled its
+  own factory-time instance B — every `_jobs.pending_completions()`
+  returned an empty list and the `● Background command "..."
+  completed (exit code N)` reminder never reached the agent.
+  `build_sandbox_backend()` is now `(base_url, token)`-keyed
+  cached so every graph + middleware + tool sees the same
+  `BackgroundJobTracker`. Tests that monkeypatch the env keep their
+  isolation; multi-tenant SaaS pools targeting different daemons
+  keep separate clients. (#623)
+- **BHCE PostgreSQL bootstrap on v1.1.6/v1.1.7 → v1.1.8 upgrades.**
+  The Postgres `init.d` script only runs on an empty data volume, so
+  any existing user upgrading into the BHCE-Neo4j topology hit a
+  `database "bloodhound" does not exist` failure on the first
+  `ops_start("ad")`. v1.1.8 adds an idempotent `bhce-postgres-init`
+  init service that creates the database (and the BHCE role) before
+  BHCE starts, on every cold start. (#618)
+
 ## [1.1.6] — 2026-06-01
 
 Re-cut of `v1.1.5` to restore version coherence — no functional change.

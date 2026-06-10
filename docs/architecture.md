@@ -101,18 +101,30 @@ Hardened Kali Linux container. Runs:
 
 The sandbox is the only place where commands actually execute. LangGraph reaches it via the Docker socket, not the network.
 
-### C2 Server (`sandbox-net`, Sliver)
+### C2 Server (`sandbox-net`, Sliver — dynamic-spawn)
 
 Sliver team server runs alongside the sandbox on the operational network. Features:
 - mTLS, HTTPS, and DNS-based C2 channels
 - Implant generation (Windows, Linux, macOS)
 - Session management for post-exploitation
 
-Activated via `COMPOSE_PROFILES=c2-sliver` (default). Future profiles: `c2-havoc`.
+Brought up on demand by the orchestrator via `ops_start("c2-sliver")` after a foothold is gained — see [ADR-0006](adr/0006-agent-driven-container-lifecycle.md). Default `decepticon start` keeps the C2 plane cold. Future profile: `c2-havoc` (slated for a later release; the orchestrator's prompt and the opscontrol allowlist already accept it).
 
-### Web Dashboard (`decepticon-net`, port 3000 + terminal WebSocket on 3003)
+### Web Dashboard (`decepticon-net`, port 3000 + terminal WebSocket on 3003 — dynamic-spawn)
 
-Next.js 16 application providing a browser-based control plane. See [Web Dashboard](web-dashboard.md).
+Next.js 16 application providing a browser-based control plane. v1.1.8 made this dynamic: it no longer comes up on `decepticon start`. From inside the CLI, run `/web` to spawn it; `/web url` prints the URL; `/web down` stops the container without removing it. See [Web Dashboard](web-dashboard.md).
+
+### Dynamic Workload Lifecycle ([ADR-0006](adr/0006-agent-driven-container-lifecycle.md))
+
+The orchestrator (and only the orchestrator) controls specialist infrastructure through three tools:
+
+- `ops_start("<workload>")` — returns immediately with `state: "starting"`. The opscontrol daemon (a host-binary supervised by systemd / launchd) calls `docker compose --profile <workload> up -d` in a background goroutine and tracks the state machine `starting → running → stopped` per workload.
+- `ops_status` — fallback for daemon reachability checks; routine polling is discouraged because the middleware below already delivers transitions.
+- `ops_stop("<workload>")` — graceful shutdown via `docker compose stop`.
+
+The `OpsControlNotificationMiddleware` polls the daemon's `/v1/profiles` socket once per turn and, when a workload's state changes, injects a `<system-reminder>` HumanMessage on the very next inference — so the agent learns about a BHCE cold-start completion (or failure) without polling. Same shape as Claude Code's background-bash auto-notification pattern.
+
+Allowed workloads: `ad`, `c2-sliver`, `c2-havoc`, `reversing`, `cloud`, `mobile`, `phishing`, `forensics`, `ics`, `iot`, `supply-chain`, `wireless`. Today's compose ships sidecar services for `ad`, `c2-sliver`, and `reversing`; the rest of the allowlist names workloads whose specialist agents work directly inside the sandbox.
 
 ---
 
