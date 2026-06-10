@@ -369,8 +369,9 @@ class Harness:
                     if r.status_code == 200:
                         log.info("harness.escalation: langgraph healthy after restart")
                         break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Suppress connection/timeout errors while waiting for container boot
+                    log.debug("langgraph health check failed during boot: %s", exc)
             else:
                 log.warning(
                     "harness.escalation: langgraph did NOT become healthy within %ds",
@@ -465,8 +466,9 @@ class Harness:
                             log.info("LiteLLM ready with %d models", len(models))
                             litellm_ready = True
                             break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Suppress connection/timeout errors during model initialization
+                    log.debug("litellm health check failed: %s", exc)
                 if attempt == 0:
                     log.warning("LiteLLM not ready (waiting for models to initialize)...")
                 await asyncio.sleep(4)
@@ -479,8 +481,8 @@ class Harness:
                 r = await client.get(f"{self.config.langgraph_url}/ok")
             if r.status_code == 200:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("pre-restart langgraph check failed: %s", exc)
 
         async with self._restart_lock:
             log.warning("LangGraph unreachable — restarting container")
@@ -497,8 +499,9 @@ class Harness:
                     if r.status_code == 200:
                         log.info("LangGraph restarted successfully")
                         return
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Suppress connection/timeout errors while waiting for container restart
+                    log.debug("langgraph restart health check failed: %s", exc)
             log.error("LangGraph failed to restart after %ds", self.config.langgraph_ready_timeout)
 
     async def _reset_sandbox_state(self) -> None:
