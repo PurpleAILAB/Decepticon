@@ -12,6 +12,7 @@ type WorkloadState string
 const (
 	StateRunning  WorkloadState = "running"
 	StateStarting WorkloadState = "starting"
+	StateStopping WorkloadState = "stopping"
 	StateStopped  WorkloadState = "stopped"
 	StateUnknown  WorkloadState = "unknown"
 )
