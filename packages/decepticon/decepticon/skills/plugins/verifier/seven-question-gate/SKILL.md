@@ -145,7 +145,7 @@ on a validated finding. Specifically:
 
 ```
 1. validate_finding(...) returns success
-2. load_skill("/skills/verifier/seven-question-gate/SKILL.md")
+2. load_skill("/skills/plugins/verifier/seven-question-gate/SKILL.md")
 3. Walk through Q1-Q7 — write each answer to the finding's KG node:
      kg_add_node(kind="vulnerability", key=<finding>,
                  props={"gate_q1_scope": "yes",
