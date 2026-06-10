@@ -1,9 +1,10 @@
 """Tests for benchmark.harness.Harness.
 
-Marked ``slow`` because several tests exercise the harness's wall-clock
-timeout / workspace teardown behavior and individually take ~120s. The
-PR fast lane (``-m "not slow"``) skips them for quick feedback; the
-main coverage lane runs the full set so coverage stays honest.
+The infra-maintenance helpers (sandbox restart, service health gate) are
+stubbed by the autouse ``stub_infra`` fixture below, so these tests run
+fast and need neither docker nor live LangGraph/LiteLLM services. The
+previously-required ``slow`` marker is gone — the suite runs in the PR
+fast lane.
 """
 
 from __future__ import annotations
@@ -18,8 +19,6 @@ from benchmark.config import BenchmarkConfig
 from benchmark.harness import AgentResponse, Harness, _ActiveRun
 from benchmark.schemas import Challenge, SetupResult
 
-pytestmark = pytest.mark.slow
-
 
 @pytest.fixture(autouse=True)
 def _isolate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -32,6 +31,25 @@ def _isolate_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     under ``pytest -n auto``.
     """
     monkeypatch.setattr(Path, "home", lambda *_args, **_kwargs: tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def stub_infra(monkeypatch: pytest.MonkeyPatch) -> dict[str, AsyncMock]:
+    """Stub the docker/service maintenance helpers on the Harness class.
+
+    Without this, ``run_challenge`` shells out to docker and polls LiteLLM /
+    LangGraph health endpoints for up to their full readiness budgets —
+    which is what used to make this module a ~120s ``slow``-marked suite.
+    """
+    mocks = {
+        "reset_sandbox": AsyncMock(),
+        "ensure_healthy": AsyncMock(),
+        "run_docker": AsyncMock(return_value=None),
+    }
+    monkeypatch.setattr(Harness, "_reset_sandbox_state", mocks["reset_sandbox"])
+    monkeypatch.setattr(Harness, "_ensure_services_healthy", mocks["ensure_healthy"])
+    monkeypatch.setattr(Harness, "_run_docker", mocks["run_docker"])
+    return mocks
 
 
 def _make_challenge(tmp_path: Path) -> Challenge:
@@ -336,6 +354,88 @@ class TestHarness:
         assert "**Target URL:**" not in human_text
         assert challenge.name not in human_text
         assert challenge.description not in human_text
+
+    @pytest.mark.asyncio
+    async def test_pass_survives_teardown_failure(self, tmp_path: Path) -> None:
+        """A PASS result must not be flipped to FAIL when teardown throws."""
+        provider = _make_provider()
+        provider.evaluate.return_value = MagicMock(
+            challenge_id="XBEN-001-24",
+            passed=True,
+            duration_seconds=0.0,
+        )
+        provider.teardown.side_effect = RuntimeError("compose down exploded")
+
+        harness = Harness(provider=provider, config=BenchmarkConfig(cleanup_workspaces=True))
+        harness._invoke_agent = AsyncMock(
+            return_value=AgentResponse(text="FLAG{deadbeef}", trace_id="test-trace")
+        )
+
+        result = await harness.run_challenge(_make_challenge(tmp_path))
+
+        assert result.passed is True
+        # Exactly one teardown attempt — no double-teardown via the
+        # generic exception handler.
+        provider.teardown.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_submission_failure_records_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Exhausted run-submission retries surface as ChallengeResult.error."""
+        monkeypatch.setattr("benchmark.harness._SUBMIT_BACKOFF_SECONDS", 0)
+
+        client = MagicMock()
+        client.threads.create = AsyncMock(side_effect=ConnectionError("langgraph down"))
+        monkeypatch.setattr("benchmark.harness.get_client", lambda *a, **kw: client)
+
+        provider = _make_provider()
+        harness = Harness(provider=provider, config=BenchmarkConfig(cleanup_workspaces=True))
+
+        result = await harness.run_challenge(_make_challenge(tmp_path))
+
+        assert result.passed is False
+        assert "Run submission failed" in (result.error or "")
+        assert client.threads.create.await_count == 3
+        provider.teardown.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_sandbox_reset_skipped_with_siblings_in_flight(
+        self, tmp_path: Path, stub_infra: dict[str, AsyncMock]
+    ) -> None:
+        """Sandbox reset only fires when the challenge is the sole runner."""
+        provider = _make_provider()
+        provider.evaluate.return_value = MagicMock(
+            challenge_id="XBEN-001-24", passed=True, duration_seconds=0.0
+        )
+        harness = Harness(provider=provider, config=BenchmarkConfig(cleanup_workspaces=True))
+        harness._invoke_agent = AsyncMock(
+            return_value=AgentResponse(text="ok", trace_id="test-trace")
+        )
+        challenge = _make_challenge(tmp_path)
+
+        await harness.run_challenge(challenge)
+        assert stub_infra["reset_sandbox"].await_count == 1
+
+        # Simulate a sibling already running: the wrapper will bump the
+        # counter to 2 and the reset must be skipped.
+        harness._in_flight = 1
+        await harness.run_challenge(challenge)
+        assert stub_infra["reset_sandbox"].await_count == 1
+
+    def test_scan_workspace_uses_challenge_pattern(self, tmp_path: Path) -> None:
+        """Only files matching the challenge's flag pattern are collected."""
+        harness = Harness(provider=MagicMock(), config=BenchmarkConfig())
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        (ws / "hit.txt").write_text("found FLAG{deadbeef}")
+        (ws / "miss.txt").write_text("FLAG{NOT-HEX-so-no-match}")
+        (ws / "binary.bin").write_text("FLAG{deadbeef}")  # unscannable suffix
+
+        challenge = _make_challenge(tmp_path)
+        out = harness._scan_workspace_for_output(ws, challenge.flag_pattern)
+        assert "FLAG{deadbeef}" in out
+        assert "NOT-HEX" not in out
 
     def test_extract_message_collects_all_ai_messages(self) -> None:
         """Verify _extract_message collects all AI messages (sub-agent responses)."""

@@ -50,7 +50,8 @@ _SANDBOX_READ_TIMEOUT_S = 10
 # {})`` and the run still completes — cost reporting is best-effort.
 _LITELLM_URL = os.environ.get(
     "DECEPTICON_LITELLM_URL",
-    f"http://127.0.0.1:{os.environ.get('LITELLM_PORT', '4001')}",
+    # 4000 matches docker-compose.yml's host mapping (127.0.0.1:${LITELLM_PORT:-4000})
+    f"http://127.0.0.1:{os.environ.get('LITELLM_PORT', '4000')}",
 )
 _LITELLM_KEY = os.environ.get("LITELLM_MASTER_KEY", "")
 
