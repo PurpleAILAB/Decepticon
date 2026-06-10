@@ -1,3 +1,10 @@
+// Canonical ask_user_question option shape — defined once in the shared
+// streaming package (matches the backend event contract) and re-exported
+// here so existing `from "../types"` imports keep working.
+import type { AskUserOption } from "@decepticon/streaming";
+
+export type { AskUserOption } from "@decepticon/streaming";
+
 /** Message roles in the conversation. */
 export type Role = "user" | "assistant" | "tool";
 
@@ -46,12 +53,6 @@ export type AgentEventType =
   | "ask_user_question"
   | "ask_user_answer"
   | "background_complete";
-
-/** One choice in an ask_user_question picker. */
-export interface AskUserOption {
-  label: string;
-  description: string;
-}
 
 /** A single displayable event in the agent activity stream. */
 export interface AgentEvent {

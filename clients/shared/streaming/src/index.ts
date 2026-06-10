@@ -10,7 +10,12 @@
  */
 
 // Types
-export type { SubagentCustomEvent, SubagentEventType, StreamEvent } from "./types.js";
+export type {
+  AskUserOption,
+  SubagentCustomEvent,
+  SubagentEventType,
+  StreamEvent,
+} from "./types.js";
 
 // Constants
 export { STREAM_OPTIONS } from "./constants.js";
