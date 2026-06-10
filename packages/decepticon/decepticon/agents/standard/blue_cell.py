@@ -50,6 +50,8 @@ from decepticon.tools.defense.brief import defense_brief, export_attack_navigato
 from decepticon.tools.research.tools import kg_neighbors, kg_query, kg_stats
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
+__all__ = ["create_blue_cell_agent", "graph", "SUBAGENT_SPEC"]
+
 # Name-keyed baseline tools. Read-only by construction: the detection-coverage
 # scanner + Defense Brief deliverables plus the KG query subset — no bash, no
 # kg_add_node/kg_add_edge.
