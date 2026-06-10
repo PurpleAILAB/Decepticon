@@ -15,13 +15,19 @@ metadata:
 # Supply Chain Operator Skill Catalog
 
 Supply-chain attacks have grown 1,300% since 2020 per Decepticon's own
-[ai-red-teaming.md](../../red-team/tools-techniques.md). This catalog
-gives the agent the playbooks to simulate the most common patterns —
+`docs/red-team/ai-red-teaming.md` (repo docs; not shipped in the skills
+tree). This catalog gives the agent the playbooks to simulate the most
+common patterns —
 all in a sandbox-isolated mode that publishes to a local mock registry by
 default and to a real one only with `supply_chain_real_publish=true` in
 ConOps.
 
 ## Playbooks
+
+> NOTE: the sub-skills tabled below are planned but NOT yet authored —
+> `load_skill` on these paths will fail. Treat each row as a workflow
+> summary and apply the guidance in this catalog directly until the
+> split skills land.
 
 | Skill | Use for |
 |---|---|
