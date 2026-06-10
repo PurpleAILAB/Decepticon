@@ -28,7 +28,7 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 | `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5.4-mini`                           |
 | `google_api`          | `gemini/gemini-2.5-pro`                   | `gemini/gemini-2.5-flash`                     | `gemini/gemini-2.5-flash-lite`                |
 | `google_oauth`        | `gemini-sub/gemini-2.5-pro`               | `gemini-sub/gemini-2.5-flash`                 | — *(falls through)*                           |
-| `minimax_api`         | `minimax/MiniMax-M2.5`                    | `minimax/MiniMax-M2.5-lightning`              | — *(falls through)*                           |
+| `minimax_api`         | `minimax/MiniMax-M3`                      | `minimax/MiniMax-M2.7-highspeed`              | — *(falls through)*                           |
 | `deepseek_api`        | `deepseek/deepseek-v4-pro`                | `deepseek/deepseek-v4-flash`                   | `deepseek/deepseek-v4-flash`                   |
 | `xai_api`             | `xai/grok-4.3`                            | `xai/grok-4-1-fast-reasoning`                 | — *(falls through)*                           |
 | `grok_oauth`          | `grok-sub/grok-4.3`                       | `grok-sub/grok-4-1-fast-reasoning`            | — *(falls through)*                           |
@@ -53,9 +53,9 @@ Each agent runs at the tier suited to its workload:
 
 | Tier  | Agents                                                                                          |
 |-------|-------------------------------------------------------------------------------------------------|
-| HIGH  | `decepticon`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`              |
-| MID   | `exploit`, `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser` |
-| LOW   | `soundwave`, `recon`, `scanner`                                                                 |
+| HIGH  | `decepticon`, `exploit`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`   |
+| MID   | `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser`, `phisher`, `mobile_operator` |
+| LOW   | `soundwave`, `recon`, `scanner`, `wireless_operator`                                            |
 
 ### `max` — every agent on HIGH
 
@@ -72,10 +72,11 @@ For development / CI. Forces every agent to the cheapest tier (Haiku-class).
 Your inventory is built at startup from environment variables, written by `decepticon onboard`.
 
 ```bash
-# Priority order (first = preferred). Empty value uses the default fallback
-# order: anthropic_oauth, anthropic_api, openai_oauth, openai_api,
-#        google_api, minimax_api, deepseek_api, xai_api, mistral_api,
-#        openrouter_api, nvidia_api, ollama_local
+# Priority order (first = preferred). When unset, the factory's built-in
+# `_DEFAULT_AUTH_PRIORITY` order applies (OAuth subscriptions ahead of their
+# paid per-token peers, hosted providers before local endpoints, with
+# unconfigured methods skipped at runtime). See `_DEFAULT_AUTH_PRIORITY` in
+# `decepticon/llm/factory.py` for the full ordered list.
 DECEPTICON_AUTH_PRIORITY=anthropic_oauth,openai_api
 
 # Set true if you have an active Claude Code OAuth subscription
@@ -117,7 +118,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                       | Fallback |
 |------------------|-------------------------------|----------|
 | decepticon (HIGH)| `anthropic/claude-opus-4-7`   | —        |
-| exploit (MID)    | `anthropic/claude-sonnet-4-6` | —        |
+| detector (MID)   | `anthropic/claude-sonnet-4-6` | —        |
 | recon (LOW)      | `anthropic/claude-haiku-4-5`  | —        |
 
 No fallback — only one credential.
@@ -132,7 +133,7 @@ OPENAI_API_KEY=sk-...
 | Agent (tier)     | Primary               | Fallback |
 |------------------|------------------------|----------|
 | decepticon (HIGH)| `openai/gpt-5.5`      | —        |
-| exploit (MID)    | `openai/gpt-5.4`      | —        |
+| detector (MID)   | `openai/gpt-5.4`      | —        |
 | recon (LOW)      | `openai/gpt-5-nano` | —        |
 
 ### Claude Code OAuth + Anthropic API (subscription primary, paid fallback)
@@ -146,7 +147,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                  | Fallback                         |
 |------------------|---------------------------|----------------------------------|
 | decepticon (HIGH)| `auth/claude-opus-4-7`   | `anthropic/claude-opus-4-7`     |
-| exploit (MID)    | `auth/claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6`   |
+| detector (MID)   | `auth/claude-sonnet-4-6` | `anthropic/claude-sonnet-4-6`   |
 | recon (LOW)      | `auth/claude-haiku-4-5`  | `anthropic/claude-haiku-4-5`    |
 
 OAuth runs primary (no API cost). When the subscription quota hits, fallback drops to the paid API key — same model family, same quality.
@@ -162,7 +163,7 @@ OPENAI_API_KEY=sk-...
 | Agent (tier)     | Primary                       | Fallback                |
 |------------------|-------------------------------|-------------------------|
 | decepticon (HIGH)| `anthropic/claude-opus-4-7`   | `openai/gpt-5.5`        |
-| exploit (MID)    | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
+| detector (MID)   | `anthropic/claude-sonnet-4-6` | `openai/gpt-5.4`        |
 | recon (LOW)      | `anthropic/claude-haiku-4-5`  | `openai/gpt-5-nano`   |
 
 Cross-provider fallback — when Anthropic hits a rate limit or outage, OpenAI takes over seamlessly.
@@ -178,7 +179,7 @@ OLLAMA_MODEL=qwen3-coder:30b
 | Agent (tier)     | Primary                          | Fallback |
 |------------------|----------------------------------|----------|
 | decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | —        |
-| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | —        |
+| detector (MID)   | `ollama_chat/qwen3-coder:30b`    | —        |
 | recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | —        |
 
 Same model across all tiers because local hardware typically can't
@@ -216,7 +217,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 | Agent (tier)     | Primary                          | Fallback                       |
 |------------------|----------------------------------|--------------------------------|
 | decepticon (HIGH)| `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-opus-4-7`    |
-| exploit (MID)    | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-sonnet-4-6`  |
+| detector (MID)   | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-sonnet-4-6`  |
 | recon (LOW)      | `ollama_chat/qwen3-coder:30b`    | `anthropic/claude-haiku-4-5`   |
 
 Local model handles routine work; when the local model fails (OOM,
@@ -235,7 +236,7 @@ LLAMACPP_MODEL=qwen2.5-coder-7b-instruct-q4_k_m
 | Agent (tier)     | Primary                                                  | Fallback |
 |------------------|----------------------------------------------------------|----------|
 | decepticon (HIGH)| `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
-| exploit (MID)    | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
+| detector (MID)   | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
 | recon (LOW)      | `llamacpp/qwen2.5-coder-7b-instruct-q4_k_m`              | —        |
 
 Run a GGUF model with llama.cpp's OpenAI-compatible server:
@@ -268,8 +269,8 @@ MINIMAX_API_KEY=eyJ...
 
 | Agent (tier)     | Primary                | Notes                                     |
 |------------------|------------------------|-------------------------------------------|
-| decepticon (HIGH)| `minimax/MiniMax-M2.5` | OK                                        |
-| exploit (MID)    | `minimax/MiniMax-M2.5-lightning` | OK                                        |
+| decepticon (HIGH)| `minimax/MiniMax-M3` | OK                                        |
+| detector (MID)   | `minimax/MiniMax-M2.7-highspeed` | OK                                        |
 | recon (LOW)      | *(role unassigned)*    | MiniMax has no LOW model and no fallback method |
 
 The Recon/Scanner/Soundwave roles fail to initialize. Add a second AuthMethod (e.g. `openai_api`) to fill the LOW slot.
@@ -302,7 +303,7 @@ Configuration: `config/litellm.yaml`. Authentication: `LITELLM_MASTER_KEY` in `.
 To wire in a new provider model:
 
 1. Add a `model_list` entry to `config/litellm.yaml` with the LiteLLM `provider/model` identifier and the env var that holds the key.
-2. Add the model identifier to the appropriate cell of `METHOD_MODELS` in `decepticon/llm/models.py`.
+2. Add the model identifier to the appropriate cell of `METHOD_MODELS` in `decepticon_core.types.llm`.
 3. If introducing a new AuthMethod, also add it to `AuthMethod`, the factory's `_API_METHOD_ENV` map, and the onboard wizard's option list.
 
 Tests in `tests/unit/llm/test_models.py` will catch dropped tiers or missing matrix entries.

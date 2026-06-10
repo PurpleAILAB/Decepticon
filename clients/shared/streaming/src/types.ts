@@ -69,4 +69,13 @@ export interface StreamEvent {
   status?: string;
   /** Raw backend error flag on `subagent_end` (the SubagentCustomEvent contract). */
   error?: boolean;
+  /**
+   * Per-invocation id emitted by the backend's StreamingRunnable. Lets
+   * `deriveSubAgentSessions` distinguish two concurrent dispatches of the
+   * SAME agent (e.g. orchestrator calling `task("recon", ...)` twice in
+   * parallel) — before this field existed the grouping was keyed on
+   * agent name and the second start silently collapsed the first
+   * session's stream into the second.
+   */
+  sessionId?: string;
 }

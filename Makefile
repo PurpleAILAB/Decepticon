@@ -47,7 +47,7 @@ export CODEX_AUTH_VOLUME ?= $(shell test -f $(HOME)/.codex/auth.json && echo $(H
         dogfood launcher smoke \
         dev cli-dev web-dev infra \
         quality quality-strict quality-cli test test-local lint lint-fix \
-        ci-lint ci-test ci-test-coverage \
+        ci-lint ci-test ci-test-coverage ci-test-coverage-report \
         web-build web-hotswap web-lint web-migrate \
         status logs health clean \
         node-install web-db-ensure \
@@ -74,6 +74,7 @@ help:
 	@echo "  make ci-lint        Lint + format + basedpyright errors-only (CI mirror)"
 	@echo "  make ci-test        pytest fast lane (-n auto -m \"not slow\", no coverage)"
 	@echo "  make ci-test-coverage  pytest with coverage gate (--cov-fail-under=60)"
+	@echo "  make ci-test-coverage-report  pytest fast lane with coverage report (no gate, PR-informational)"
 	@echo "  make test           pytest in container"
 	@echo "  make test-local     pytest locally (uv sync --dev; takes ARGS=)"
 	@echo "  make lint           Python lint + format check + basedpyright (all levels, local exploratory)"
@@ -251,6 +252,16 @@ check-skill-graph:
 ## main-push lane: slow included, coverage 60% gate (ratcheted from 35% in #380).
 ci-test-coverage:
 	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=60
+
+## PR-informational lane: coverage without any threshold, fast subset
+## (``-m "not slow"`` — matches the blocking PR ``ci-test`` lane so the
+## reported coverage % is for the same test set authors actually run on a
+## PR). Used by the non-blocking ``coverage-report`` job in ci.yml so PR
+## authors see a coverage delta without blocking merge (the documented
+## decision is to keep the blocking PR pytest step coverage-free — see
+## ci.yml comment).
+ci-test-coverage-report:
+	uv run pytest -n auto --cov --cov-report=xml --cov-report=term --cov-fail-under=0 -m "not slow"
 
 quality-cli: node-install
 	# streaming workspace must be built first — its package.json main

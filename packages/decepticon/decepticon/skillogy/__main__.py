@@ -26,6 +26,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -94,6 +95,30 @@ def _start_rest(backend: Neo4jBackend, port: int, started_at: float) -> None:
     uvicorn.Server(config).run()
 
 
+def _ingest_in_background(backend: Neo4jBackend) -> None:
+    """Run the boot-time cypher ingest off the main thread.
+
+    On a cold container the bundled ``skills.cypher`` is ~3.7 MB and
+    Neo4j MERGEs ~6000 statements over the bolt driver — that takes
+    several minutes on the first boot. Running it on the main thread
+    blocks ``uvicorn.run()`` from binding the listener until the
+    ingest finishes, which leaves ``/v1/health`` unreachable and
+    Docker's healthcheck flapping past ``start_period``. We move the
+    ingest to a daemon thread so the REST server comes up first and
+    the healthcheck passes immediately; the corpus then loads in the
+    background and the existing ``skill_count`` field in
+    ``/v1/health`` reports its progress.
+    """
+    try:
+        _maybe_ingest(backend)
+    except Exception as exc:  # noqa: BLE001
+        # Failing to ingest is loud but not fatal — the operator may
+        # be running against a Neo4j that was pre-loaded out of band
+        # (a different cypher file, or a manual seed). REST stays up
+        # so health probes can report the situation.
+        log.error("cypher ingest failed: %r — continuing without it", exc)
+
+
 def main() -> int:
     _setup_logging()
     rest_port = int(os.environ.get("SKILLOGY_REST_PORT", "9100"))
@@ -101,14 +126,17 @@ def main() -> int:
     backend = _build_backend()
     started_at = time.time()
 
-    try:
-        _maybe_ingest(backend)
-    except Exception as exc:  # noqa: BLE001
-        # Failing to ingest is loud but not fatal — the operator may
-        # be running against a Neo4j that was pre-loaded out of band
-        # (a different cypher file, or a manual seed). REST stays up so
-        # health probes can report the situation.
-        log.error("cypher ingest failed: %r — continuing without it", exc)
+    # Start the bulk cypher ingest off the main thread before serving so
+    # the REST listener comes up immediately. See ``_ingest_in_background``
+    # for the rationale. The thread is a daemon so a SIGTERM during ingest
+    # tears it down with the process.
+    ingest_thread = threading.Thread(
+        target=_ingest_in_background,
+        args=(backend,),
+        name="skillogy-ingest",
+        daemon=True,
+    )
+    ingest_thread.start()
 
     def _handle_term(_signum, _frame):
         log.info("SIGTERM received; closing backend and exiting")

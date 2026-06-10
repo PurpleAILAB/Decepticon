@@ -199,7 +199,12 @@ class TestNoneIdToolCallGuard:
                 ],
             )
             wrapper._process_messages(
-                [msg], active, renderer=None, has_renderer=False, writer=writer
+                [msg],
+                active,
+                renderer=None,
+                has_renderer=False,
+                writer=writer,
+                session_id="test-session",
             )
         finally:
             target.removeHandler(handler)
@@ -237,6 +242,7 @@ class TestNoneIdToolCallGuard:
             renderer=None,
             has_renderer=False,
             writer=writer,
+            session_id="test-session",
         )
 
         results = [e for e in events if e["type"] == "subagent_tool_result"]
@@ -271,6 +277,7 @@ class TestNoneIdToolCallGuard:
             renderer=None,
             has_renderer=False,
             writer=writer,
+            session_id="test-session",
         )
 
         # The id-less call did not displace the keyed call.

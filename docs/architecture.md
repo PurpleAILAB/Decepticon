@@ -24,15 +24,21 @@ Decepticon runs on two Docker networks. Management infrastructure (LLM proxy, da
 │  Web        :3000   │       │  Victim targets              │
 │                     │       │                              │
 │  Neo4j ◀────────────┼───────┼──▶ Neo4j  :7687/:7474        │
-│  (dual-homed bolt:// for agent + sandbox writes)            │
+│  (KGStore — dual-homed bolt:// for agent + sandbox writes)  │
+│                     │       │                              │
+│  BHCE       :8081   │       │                              │
+│  BHCE-Neo4j (intl.) │       │                              │
+│  (AD attack-graph sidecar, decepticon-net only)             │
 └─────────────────────┘       └──────────────────────────────┘
        Management                       Operations
    (LLM, persistence, UI)        (exploitation, C2, targets)
 ```
 
-**Network boundaries.** The sandbox cannot reach LiteLLM, PostgreSQL, the LangGraph API, or the web dashboard — none of the management services are routable from `sandbox-net`. The agent inside LangGraph cannot reach attack tooling over a TCP socket; the only channel into the sandbox is `docker exec` via the Docker socket bind-mount.
+**Network boundaries.** The sandbox cannot reach LiteLLM, PostgreSQL, the LangGraph API, the web dashboard, the BHCE API, or BHCE's Neo4j — none of the management services are routable from `sandbox-net`. The agent inside LangGraph cannot reach attack tooling over a TCP socket; the only channel into the sandbox is `docker exec` via the Docker socket bind-mount.
 
-**Neo4j is the one shared service** — it sits on both networks because the sandbox writes findings into it (`bolt://neo4j:7687` from inside Kali) and the agent reads them back (`bolt://neo4j:7687` from inside LangGraph). It's a knowledge store, not a privileged service: the agent's credentials never traverse it, and a compromised sandbox can't pivot through Neo4j to LiteLLM or the API surface.
+**KGStore Neo4j is the one cross-network shared service** — it sits on both networks because the sandbox writes findings into it (`bolt://neo4j:7687` from inside Kali) and the agent reads them back (`bolt://neo4j:7687` from inside LangGraph). It's a knowledge store, not a privileged service: the agent's credentials never traverse it, and a compromised sandbox can't pivot through Neo4j to LiteLLM or the API surface.
+
+**BHCE has its own dedicated Neo4j** on `decepticon-net` only. Neo4j Community Edition allows one user database per server and KGStore already occupies it, so BHCE gets a separate instance to avoid label/constraint collisions with its `dawgs` driver. See [ADR-0005](adr/0005-bloodhound-via-bhce-rest-client.md). The sandbox does **not** see the BHCE Neo4j — the AD attack-graph pipeline is a management-plane concern only; the sandbox produces SharpHound ZIPs and hands them to the agent, never talks to BHCE directly.
 
 ---
 
@@ -65,14 +71,25 @@ Persistent relational storage for:
 
 Two logical databases: `litellm` (managed by LiteLLM) and `decepticon_web` (managed via Prisma in the web dashboard).
 
-### Neo4j Knowledge Graph (`sandbox-net` + `decepticon-net`, port 7687 / browser 7474)
+### Neo4j Knowledge Graph — KGStore (`sandbox-net` + `decepticon-net`, port 7687 / browser 7474)
 
-Graph database for the attack graph. Stores:
+Graph database for the cross-domain attack graph (web, cloud, smart-contract findings plus the chain planner's view across all domains). Stores:
 - Hosts, services, vulnerabilities, credentials, accounts
 - Typed relationships (EXPLOITS, REQUIRES, AFFECTS, LEADS_TO)
 - Attack chain paths for multi-hop planning
 
 **Dual-homed by design**: the sandbox writes operational findings into the graph (`cypher-shell` from inside Kali), and the agent in LangGraph reads them back to plan the next objective. Both networks see the same Neo4j instance on the same `bolt://neo4j:7687` URI.
+
+### BloodHound Community Edition sidecar (`decepticon-net`, BHCE API on host port 8081)
+
+AD attack-graph layer, introduced by [ADR-0005](adr/0005-bloodhound-via-bhce-rest-client.md). Two containers:
+
+- `bhce` — `docker.io/specterops/bloodhound` pinned to the v9.2.2 release commit. Speaks the official BHCE REST API (HMAC-signed, OpenAPI 3.0.3 at `/api/v2/spec`).
+- `bhce-neo4j` — dedicated `neo4j:4.4.42-community` for BHCE's graph. No host port exposure; only the `bhce` container talks bolt to it.
+
+Postgres is reused from the existing `postgres` container — `containers/postgres-init/02-bloodhound-db.sh` pre-creates the `bloodhound` database plus the `pg_trgm` extension so BHCE's goose migrations bootstrap cleanly on first boot.
+
+Agents call BHCE through `decepticon.tools.ad.bh_tools.bhce_status` / `bhce_cypher` / `bhce_ingest_zip` and the shared `decepticon.tools.ad.bhce_client.BHCEClient` HMAC-3-chain signer. The in-house `bh_ingest_zip` / `adcs_post_process` / `dcsync_check` / `delegation_audit` / `gpo_audit` / `shadow_creds_audit` / `adcs_audit` tools emit `DeprecationWarning` on every call and will move to `decepticon.compat` next minor.
 
 ### Sandbox (`sandbox-net`)
 
@@ -84,18 +101,30 @@ Hardened Kali Linux container. Runs:
 
 The sandbox is the only place where commands actually execute. LangGraph reaches it via the Docker socket, not the network.
 
-### C2 Server (`sandbox-net`, Sliver)
+### C2 Server (`sandbox-net`, Sliver — dynamic-spawn)
 
 Sliver team server runs alongside the sandbox on the operational network. Features:
 - mTLS, HTTPS, and DNS-based C2 channels
 - Implant generation (Windows, Linux, macOS)
 - Session management for post-exploitation
 
-Activated via `COMPOSE_PROFILES=c2-sliver` (default). Future profiles: `c2-havoc`.
+Brought up on demand by the orchestrator via `ops_start("c2-sliver")` after a foothold is gained — see [ADR-0006](adr/0006-agent-driven-container-lifecycle.md). Default `decepticon start` keeps the C2 plane cold. Future profile: `c2-havoc` (slated for a later release; the orchestrator's prompt and the opscontrol allowlist already accept it).
 
-### Web Dashboard (`decepticon-net`, port 3000 + terminal WebSocket on 3003)
+### Web Dashboard (`decepticon-net`, port 3000 + terminal WebSocket on 3003 — dynamic-spawn)
 
-Next.js 16 application providing a browser-based control plane. See [Web Dashboard](web-dashboard.md).
+Next.js 16 application providing a browser-based control plane. v1.1.8 made this dynamic: it no longer comes up on `decepticon start`. From inside the CLI, run `/web` to spawn it; `/web url` prints the URL; `/web down` stops the container without removing it. See [Web Dashboard](web-dashboard.md).
+
+### Dynamic Workload Lifecycle ([ADR-0006](adr/0006-agent-driven-container-lifecycle.md))
+
+The orchestrator (and only the orchestrator) controls specialist infrastructure through three tools:
+
+- `ops_start("<workload>")` — returns immediately with `state: "starting"`. The opscontrol daemon (a host-binary supervised by systemd / launchd) calls `docker compose --profile <workload> up -d` in a background goroutine and tracks the state machine `starting → running → stopped` per workload.
+- `ops_status` — fallback for daemon reachability checks; routine polling is discouraged because the middleware below already delivers transitions.
+- `ops_stop("<workload>")` — graceful shutdown via `docker compose stop`.
+
+The `OpsControlNotificationMiddleware` polls the daemon's `/v1/profiles` socket once per turn and, when a workload's state changes, injects a `<system-reminder>` HumanMessage on the very next inference — so the agent learns about a BHCE cold-start completion (or failure) without polling. Same shape as Claude Code's background-bash auto-notification pattern.
+
+Allowed workloads: `ad`, `c2-sliver`, `c2-havoc`, `reversing`, `cloud`, `mobile`, `phishing`, `forensics`, `ics`, `iot`, `supply-chain`, `wireless`. Today's compose ships sidecar services for `ad`, `c2-sliver`, and `reversing`; the rest of the allowlist names workloads whose specialist agents work directly inside the sandbox.
 
 ---
 
@@ -159,6 +188,7 @@ Orchestrator reads OPPLAN
 |----------|-------------|
 | Sandbox → Management services | Separate Docker networks; LiteLLM/PostgreSQL/LangGraph/Web are not routable from `sandbox-net` |
 | LangGraph → Sandbox | Docker socket only (no TCP) |
-| Sandbox → Neo4j | Allowed (intentional shared service for attack graph writes) |
-| Credential isolation | Provider API keys live on `decepticon-net`; the sandbox never sees them |
+| Sandbox → KGStore Neo4j | Allowed (intentional shared service for cross-domain attack graph writes) |
+| Sandbox → BHCE API / BHCE Neo4j | Blocked — BHCE lives on `decepticon-net` only; the sandbox produces SharpHound ZIPs and hands them to the agent, which then ingests via `bhce_ingest_zip`. There is no sandbox-side bolt or REST path into BHCE. |
+| Credential isolation | Provider API keys + the BHCE HMAC token live on `decepticon-net`; the sandbox never sees them |
 | Host isolation | All commands run inside Docker; no host filesystem access except the engagement-scoped `/workspace` bind mount |

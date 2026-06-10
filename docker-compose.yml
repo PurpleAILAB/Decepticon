@@ -360,9 +360,12 @@ services:
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
-      # Skillogy: opt-in via env var; agents use it instead of the
-      # file-system-backed SkillsMiddleware when DECEPTICON_USE_SKILLOGY=1.
-      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-0}
+      # Skillogy is the canonical skill-retrieval backend (Neo4j-backed,
+      # phase-scoped retrieval). The in-process file-system
+      # ``SkillsMiddleware`` stays available as an explicit opt-out via
+      # ``DECEPTICON_USE_SKILLOGY=0`` for standalone library use and
+      # pytest where the skillogy container isn't running.
+      - DECEPTICON_USE_SKILLOGY=${DECEPTICON_USE_SKILLOGY:-1}
       - DECEPTICON_SKILLOGY_URL=http://skillogy:9100
       # Neo4j is the sole KG backend (no DECEPTICON_KG_BACKEND needed)
       # BENCHMARK_MODE flows in via `env_file: .env` above — no need to
@@ -450,6 +453,15 @@ services:
     networks:
       - decepticon-net
     restart: unless-stopped
+    # v1.1.8: web dashboard is no longer brought up by default `decepticon
+    # start`. The CLI exposes a `/web` slash command that runs
+    # `docker compose --profile web up -d web` against the operator's
+    # docker daemon (the CLI container has the host docker.sock mounted
+    # in OSS), so the web tier only spins up when the operator actually
+    # asks for it. Keeps idle cost low and removes the postgres-migration
+    # latency hit from cold starts.
+    profiles:
+      - web
 
   # Ink CLI — Interactive terminal UI
   # Runs via: docker compose run --rm cli
@@ -463,11 +475,34 @@ services:
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-cli
     stdin_open: true
     tty: true
+    # v1.1.8 `/web` slash command: the CLI shells out to `docker compose
+    # --profile web up -d web` against the host docker daemon. To do
+    # that it needs (a) the docker.sock so commands reach the host
+    # daemon and (b) the on-host compose project directory mounted at a
+    # known in-container path so `-f` and `--env-file` resolve.
+    #
+    # OSS scope: user == host owner. SaaS bundles never expose the
+    # docker socket to a tenant CLI — those deployments override this
+    # service's volumes via a compose overlay.
     environment:
       - DECEPTICON_API_URL=http://langgraph:2024
       - TERM=xterm-256color
       - COLORTERM=truecolor
       - DECEPTICON_VERSION=${DECEPTICON_VERSION:-}
+      - DECEPTICON_STACK_NAME=${DECEPTICON_STACK_NAME:-}
+      - DECEPTICON_HOME=/decepticon-home
+      - DECEPTICON_COMPOSE_FILE=/decepticon-home/docker-compose.yml
+      - DECEPTICON_COMPOSE_ENV_FILE=/decepticon-home/.env
+      - DECEPTICON_COMPOSE_PROJECT=decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}
+      - WEB_PORT=${WEB_PORT:-3000}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DECEPTICON_HOME:-~/.decepticon}:/decepticon-home
+    # Do NOT override WORKDIR — the cli image's entrypoint is
+    # `node dist/index.js` resolved relative to /app (set by
+    # containers/cli.Dockerfile). The slash command resolves the
+    # compose project via the DECEPTICON_COMPOSE_FILE / _ENV_FILE
+    # env vars above, so working_dir on this container is irrelevant.
     depends_on:
       langgraph:
         condition: service_healthy
@@ -478,8 +513,12 @@ services:
 
   # ── C2 Infrastructure (profile-based, default: c2-sliver) ───────────
   # Each C2 framework runs as a profile-based service on sandbox-net.
-  # Default: COMPOSE_PROFILES=c2-sliver in .env → starts with `docker compose up -d`
-  # Swap: change COMPOSE_PROFILES to c2-havoc, etc.
+  # ADR-0006 (v1.1.8+): C2 frameworks are opt-in workloads spawned by
+  # the orchestrator agent through opscontrol — the orchestrator calls
+  # `ops_start("c2-sliver")` after gaining a foothold. Default
+  # `decepticon start` keeps the C2 plane cold.
+  # Swap framework: change `ops_start("c2-sliver")` to
+  # `ops_start("c2-havoc")` once that workload ships.
   # Agent connects via: sliver-client (pre-installed in sandbox)
   c2-sliver:
     image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-latest}
@@ -547,11 +586,159 @@ services:
       - decepticon-net
     restart: unless-stopped
 
+  # ── BloodHound Community Edition (BHCE) sidecar ────────────────────
+  #
+  # Provides the AD attack-graph layer for the agent.  Replaces the
+  # in-house tools/ad/* ingest + ADCS post-process (PR #560..#578),
+  # which are deprecated by ADR-0005.  The agent calls BHCE v9.2.2
+  # over its official REST API via decepticon.tools.ad.bhce_client.
+  #
+  # Why a dedicated Neo4j: Neo4j Community Edition only allows one
+  # user database per server, and our KGStore already occupies the
+  # `neo4j` database on the `neo4j` container.  BHCE writes its own
+  # ADCS / AD label schema via its `dawgs` driver, so it gets its
+  # own Neo4j instance to avoid label/constraint collisions.
+  # See docs/adr/0005-bloodhound-via-bhce-rest-client.md §Context.
+  #
+  # Why reuse Postgres: BHCE only needs one Postgres database
+  # (`bloodhound`) with the `pg_trgm` extension.  The idempotent
+  # `bhce-postgres-init` sidecar below creates/repairs that state on
+  # both fresh installs and upgrades with an existing `postgres_data`
+  # volume, so users do not have to delete data after BHCE is added.
+  bhce-postgres-init:
+    image: postgres:17-alpine
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-postgres-init
+    environment:
+      POSTGRES_USER: decepticon
+      POSTGRES_DB: litellm
+      PGPASSWORD: ${POSTGRES_PASSWORD:-decepticon}
+      PGHOST: postgres
+      BHCE_POSTGRES_DB: ${BHCE_POSTGRES_DB:-bloodhound}
+      BHCE_POSTGRES_USER: ${BHCE_POSTGRES_USER:-bloodhound}
+      BHCE_POSTGRES_PASSWORD: ${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
+    volumes:
+      - ./containers/postgres-init/02-bloodhound-db.sh:/decepticon/ensure-bloodhound-db.sh:ro
+    command:
+      - bash
+      - -c
+      - |
+        bash /decepticon/ensure-bloodhound-db.sh
+        exec sleep 2147483647
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test "$$(psql -v ON_ERROR_STOP=1 --username "$${POSTGRES_USER}" --dbname "$${BHCE_POSTGRES_DB}" -tAc "SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_trgm')")" = "t"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
+      - decepticon-net
+    # ADR-0006 §3 — workload is opt-in via the opscontrol daemon.
+    # Default `decepticon start` does NOT bring this up; the agent
+    # spawns it on demand via `ops_start("ad")`.
+    profiles:
+      - ad
+  bhce-neo4j:
+    image: neo4j:4.4.42-community
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${BHCE_NEO4J_PASSWORD:-decepticon-bhce-graph}
+      NEO4J_dbms_allow__upgrade: "true"
+    volumes:
+      - bhce_neo4j_data:/data
+      - bhce_neo4j_logs:/logs
+    networks:
+      - decepticon-net
+    # No host port exposure: only the BHCE API container needs bolt.
+    # `docker exec` into this container for cypher-shell debugging.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -O /dev/null -q http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+    # ADR-0006 §3 — opt-in via `ops_start("ad")`. Default
+    # `decepticon start` does not spin up the AD graph DB.
+    profiles:
+      - ad
+
+  bhce:
+    # SpecterOps does not publish semver tags on Docker Hub — every
+    # build is `edge` or `sha-<commit>[-<timestamp>]`.  Default below
+    # pins the v9.2.2 release commit (1a7b3df, 2026-06-01).  Verify
+    # against https://github.com/SpecterOps/BloodHound/releases/tag/v9.2.2
+    # when bumping; tags are immutable on Hub but `edge` is not.
+    image: docker.io/specterops/bloodhound:${BHCE_TAG:-sha-1a7b3df18a836051643ea3dcb777d20abdb469de}
+    container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce
+    environment:
+      # Cypher policy: keep the v9.2.2 defaults — complexity limit on,
+      # mutations disabled.  Flip via env if a red-team scenario
+      # demands write-cypher (rare; tracked in ADR-0005 follow-up).
+      bhe_disable_cypher_complexity_limit: "false"
+      bhe_enable_cypher_mutations: "false"
+      bhe_graph_query_memory_limit: "2"
+      # External Postgres — our existing `postgres` container, with
+      # the `bloodhound` DB + `pg_trgm` ensured by the idempotent
+      # `bhce-postgres-init` sidecar above.
+      bhe_database_connection: >-
+        user=${BHCE_POSTGRES_USER:-bloodhound}
+        password=${BHCE_POSTGRES_PASSWORD:-bhce-decepticon-local}
+        dbname=${BHCE_POSTGRES_DB:-bloodhound}
+        host=postgres
+        sslmode=disable
+      # External Neo4j — dedicated `bhce-neo4j` container.
+      bhe_neo4j_connection: "neo4j://neo4j:${BHCE_NEO4J_PASSWORD:-decepticon-bhce-graph}@bhce-neo4j:7687/"
+      bhe_graph_driver: "neo4j"
+      bhe_recreate_default_admin: "${BHCE_RECREATE_DEFAULT_ADMIN:-false}"
+      bhe_default_admin_email: "${BHCE_DEFAULT_ADMIN_EMAIL:-admin@decepticon.local}"
+      bhe_default_admin_password: "${BHCE_DEFAULT_ADMIN_PASSWORD:-DecepticonBhceLocal2026!}"
+      bhe_default_admin_principal_name: "${BHCE_DEFAULT_ADMIN_USERNAME:-admin}"
+      # JWT signing key — pin this to a persisted secret in any
+      # non-dev deployment; default value is for local dogfood only.
+      bhe_crypto_jwt_signing_key: "${BHCE_JWT_SIGNING_KEY:-decepticon-bhce-jwt-signing-key-do-not-use-in-prod-do-not-use-in-prod}"
+    ports:
+      - "127.0.0.1:${BHCE_PORT:-8081}:8080"
+    networks:
+      - decepticon-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bhce-postgres-init:
+        condition: service_healthy
+      bhce-neo4j:
+        condition: service_healthy
+    # The upstream image is distroless: no `/bin/sh`, curl, wget, or Python.
+    # Docker Compose `up --wait` rejects services with no healthcheck, so use
+    # the only executable the image provides as a liveness check. API clients
+    # still perform the real readiness probe/retry against `/api/v2/spec`;
+    # this check exists to keep compose wait semantics from failing before the
+    # client-level readiness loop can run.
+    healthcheck:
+      test: ["CMD", "/bloodhound", "-version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    # ADR-0006 §3 — workload is opt-in. The orchestrator agent calls
+    # `ops_start("ad")` after recon identifies an AD environment;
+    # default `decepticon start` keeps the BHCE plane cold.
+    profiles:
+      - ad
+
 volumes:
   postgres_data:
   sliver_data:
   neo4j_data:
   neo4j_logs:
+  bhce_neo4j_data:
+  bhce_neo4j_logs:
 
 networks:
   decepticon-net:

@@ -44,10 +44,15 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		ui.Info("Refreshing configuration files and Docker images...")
 	}
 
-	// Load env for branch info
+	// Load env for branch info. A read failure must be visible: silently
+	// falling back to release mode would un-pin a branch-tracking install.
 	env := make(map[string]string)
 	if config.EnvExists() {
-		env, _ = config.LoadEnv(config.EnvPath())
+		if loaded, loadErr := config.LoadEnv(config.EnvPath()); loadErr != nil {
+			ui.Warning(fmt.Sprintf("Could not read %s (%v) — DECEPTICON_BRANCH pin ignored", config.EnvPath(), loadErr))
+		} else {
+			env = loaded
+		}
 	}
 	ref := release.TagName
 	if branch := strings.TrimSpace(env["DECEPTICON_BRANCH"]); branch != "" {

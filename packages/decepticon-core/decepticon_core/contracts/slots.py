@@ -40,6 +40,11 @@ class MiddlewareSlot(StrEnum):
     KG = "kg"
     EVENT_LOG = "event-log"
     SANDBOX_NOTIFICATION = "sandbox-notification"
+    # ADR-0006: the orchestrator-only middleware that turns opscontrol
+    # daemon state transitions into Claude-Code-style
+    # ``● Workload 'ad': starting → running`` system-reminders so the
+    # agent does not poll ``ops_status`` in a loop.
+    OPSCONTROL_NOTIFICATION = "opscontrol-notification"
     BUDGET = "budget"
     MODEL_OVERRIDE = "model-override"
     MODEL_FALLBACK = "model-fallback"
@@ -83,6 +88,14 @@ SAFETY_CRITICAL_SLOTS: frozenset[MiddlewareSlot] = frozenset(
         # the CLI's ``? Background command`` event. Disabling it leaves
         # operator visibility broken on every background tool call.
         MiddlewareSlot.SANDBOX_NOTIFICATION,
+        # OpscontrolNotification is the orchestrator-only equivalent
+        # for the ADR-0006 ops_* tools: it surfaces workload state
+        # transitions (BHCE cold-start finished, c2-sliver healthy, …)
+        # as system-reminders. Disabling it forces the agent into a
+        # polling loop on ops_status, which both wastes tokens and
+        # creates the same bash-stale-poll failure mode the
+        # SandboxNotification middleware exists to prevent.
+        MiddlewareSlot.OPSCONTROL_NOTIFICATION,
         # HITLApprovalMiddleware is the operator-approval gate for
         # high-impact actions (credential dumping, destructive ops).
         # Disabling it lets an agent execute gated tools without any
@@ -155,9 +168,16 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
         MiddlewareSlot.OPPLAN,
         MiddlewareSlot.MODEL_OVERRIDE,
         MiddlewareSlot.HITL_APPROVAL,
+        # Only the orchestrator carries ops_* tools (ADR-0006 §2), so
+        # only the orchestrator gets the workload-completion delivery
+        # middleware. Specialists never see workload notifications
+        # because they cannot start workloads.
+        MiddlewareSlot.OPSCONTROL_NOTIFICATION,
     },
     # ── Standard non-bash agent (planning + interview) ──
     "soundwave": _BASE_SLOTS | {MiddlewareSlot.ENGAGEMENT_CONTEXT},
+    # ── Standard read-only agent (Blue Cell — detection coverage, no bash) ──
+    "blue_cell": _BASE_SLOTS,
     # ── Standard bash-executing specialists ──
     "recon": _BASH_AGENT_SLOTS,
     "exploit": _BASH_AGENT_SLOTS,
@@ -180,6 +200,11 @@ SLOTS_PER_ROLE: dict[str, frozenset[MiddlewareSlot]] = {
     "phisher": _BASH_AGENT_SLOTS,
     "mobile_operator": _BASH_AGENT_SLOTS,
     "wireless_operator": _BASH_AGENT_SLOTS,
+    "osint_operator": _BASH_AGENT_SLOTS,
+    "iot_operator": _BASH_AGENT_SLOTS,
+    "ics_operator": _BASH_AGENT_SLOTS,
+    "forensicator": _BASH_AGENT_SLOTS,
+    "supply_chain_operator": _BASH_AGENT_SLOTS,
     # ── Plugin orchestrator (no EngagementContext per the existing
     # vulnresearch factory — it consumes its parent's context) ──
     "vulnresearch": _BASE_SLOTS | {MiddlewareSlot.SUBAGENT, MiddlewareSlot.OPPLAN},

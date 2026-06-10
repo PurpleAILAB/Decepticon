@@ -50,7 +50,7 @@ metadata:
 | # | Phase | MITRE | Emulated action | Executing agent → skill |
 |---|-------|-------|-----------------|-------------------------|
 | 1 | Recon | T1591 / T1589 | Profile devs, the DeFi protocol, and the bridge/contract surface | recon → `/skills/standard/recon/osint/SKILL.md`, `/skills/standard/osint/SKILL.md` |
-| 2 | Initial Access | T1566.003 | Fake-job / DeFi-collab social engineering with a lure doc | phisher → `/skills/standard/phish/SKILL.md` |
+| 2 | Initial Access | T1566.003 | Fake-job / DeFi-collab social engineering with a lure doc | phisher → `/skills/standard/phisher/SKILL.md` |
 | 3 | Initial Access (alt) | T1195.002 / T1199 | Trojanized dependency or build-step (3CX pattern) | exploit → `/skills/standard/exploit/supplychain/dep-confusion/SKILL.md`; `/skills/standard/supply-chain/SKILL.md` |
 | 4 | Execution | T1204.002 / T1574.002 | Trojanized app + DLL side-load into a trusted process | post-exploit → `/skills/standard/post-exploit/c2-sliver/SKILL.md` |
 | 5 | Credential / Key theft | T1555 / T1552.001 | Steal wallet keys, seed phrases, cloud creds, signing keys | post-exploit → `/skills/standard/post-exploit/credential-access/SKILL.md` |

@@ -10,15 +10,28 @@ The web dashboard is an open-source (Apache 2.0) browser-based control plane for
 
 **End users:**
 ```bash
-decepticon
+decepticon                    # starts the core stack + drops into the terminal CLI
 ```
-The dashboard is part of the default service stack. Open <http://localhost:3000>.
+
+The dashboard is **dynamic-spawn** (v1.1.8+): it does NOT come up on `decepticon start`. Bring it up from inside the CLI with the `/web` slash command, then open <http://localhost:3000>:
+
+| CLI command | Effect |
+|---|---|
+| `/web` (or `/web up`) | `docker compose --profile web up -d web` against the host daemon |
+| `/web down` (or `/web stop`) | stops the container; preserves it so the next `/web up` is fast |
+| `/web url` | prints `http://localhost:${WEB_PORT}` without touching docker |
+| `/dashboard` | alias for `/web` |
+
+Headless operators (no CLI, e.g. CI) can drive the same lifecycle from the host shell:
+```bash
+docker compose -p decepticon --profile web up -d --no-build web
+```
 
 **Contributors (full stack with hot-reload):**
 ```bash
 make dev
 ```
-Builds and starts every service with source-sync hot-reload. Open <http://localhost:3000>.
+Builds and starts every service with source-sync hot-reload. The web service still requires the `web` profile to be active — e.g. `COMPOSE_PROFILES=web make dev` — or bring it up after the fact with `/web up`. Open <http://localhost:3000>.
 
 **Contributors (local Next.js dev server):**
 ```bash

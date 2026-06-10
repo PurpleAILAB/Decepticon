@@ -292,6 +292,13 @@ _FRAMEWORK_TOOL_NAMES: frozenset[str] = frozenset(
         "write_file",
         "list_directory",
         "task",
+        # ``ask_user_question`` is the operator-interview tool: the model
+        # asks the operator a multiple-choice question via LangGraph
+        # interrupt and the operator's pick is sent back as the tool
+        # result. That payload originates with the operator running the
+        # CLI / Web — not with an attacker — so the quarantine envelope
+        # is noise and visually breaks the interview UX. Trust it.
+        "ask_user_question",
     }
 )
 

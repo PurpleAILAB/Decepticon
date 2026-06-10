@@ -58,7 +58,7 @@ jobs:
       matrix:
         language: [python, javascript-typescript]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
@@ -76,7 +76,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Blocks the run on ERROR-severity findings from the repo's own rules
       # (e.g. no hardcoded default LiteLLM key). Public rule packs are covered
       # by CodeQL's security-and-quality suite and are not re-run here.
@@ -105,7 +105,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Trivy filesystem scan (dependency CVEs)
         uses: aquasecurity/trivy-action@0.35.0
         with:
@@ -144,7 +144,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: TruffleHog OSS (verified secrets)
@@ -163,7 +163,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Advisory until the repo's dependency graph is confirmed enabled; flip
       # off continue-on-error to hard-gate vulnerable / bad-license new deps.
       - name: Dependency review

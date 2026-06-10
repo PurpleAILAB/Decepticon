@@ -10,7 +10,6 @@ description: >
 metadata:
   subdomain: mobile
   when_to_use: "mobile android ios apk aab ipa jadx apktool frida objection ssl pinning bypass root jailbreak detection deep link url scheme exported component ipc webview biometric face id touch id"
-  subdomain: mobile
   tags: mobile, android, ios, frida, objection, ssl-pinning, jadx, apktool
   mitre_attack: T1635, T1623, T1517, T1521, T1517.001
 ---
@@ -21,37 +20,19 @@ Mobile is 40% of modern bug-bounty programs and is conspicuously absent
 from Strix and XBOW commercial. This catalog covers both platforms with
 shared Frida tooling for runtime work.
 
-## Playbooks — Android
+## Playbooks
 
 | Skill | Use for |
 |---|---|
-| `/skills/standard/mobile/android/apk-triage/SKILL.md` | apktool decode + jadx -d for source recovery |
-| `/skills/standard/mobile/android/manifest-analysis/SKILL.md` | exported components, permissions, deeplinks |
-| `/skills/standard/mobile/android/insecure-storage/SKILL.md` | SharedPreferences / SQLite / external storage scans |
-| `/skills/standard/mobile/android/intent-redirection/SKILL.md` | Intent forwarding / pendingIntent abuse |
-| `/skills/standard/mobile/android/webview-flaws/SKILL.md` | JavaScriptInterface, file:// access, mixed content |
-| `/skills/standard/mobile/android/frida-ssl-pin-bypass/SKILL.md` | OkHttp / TrustKit / Cordova pin-bypass scripts |
-| `/skills/standard/mobile/android/root-detect-bypass/SKILL.md` | Common root-detection libraries and their bypasses |
+| `/skills/standard/mobile/android/SKILL.md` | Android APK workflow: apktool/jadx static, Frida dynamic, SSL-pin + root-detection bypass, intent fuzzing, keystore extraction |
+| `/skills/standard/mobile/android/il2cpp/SKILL.md` | Unity IL2CPP reversing: Il2CppDumper metadata recovery, Frida method hooks, IAP/license bypass |
+| `/skills/standard/mobile/flutter/SKILL.md` | Flutter reversing: reFlutter Dart-AOT patching, BoringSSL pin bypass, libapp.so analysis |
+| `/skills/standard/mobile/ios/dynamic/SKILL.md` | iOS dynamic work on a jailbroken device: Frida/Objection, SSL Kill Switch, keychain dump, biometric bypass |
 
-## Playbooks — iOS
-
-| Skill | Use for |
-|---|---|
-| `/skills/standard/mobile/ios/ipa-triage/SKILL.md` | class-dump-z + Hopper; Mach-O headers; entitlements |
-| `/skills/standard/mobile/ios/keychain-acl/SKILL.md` | Keychain ACL misconfigurations; `kSecAccessControl` flags |
-| `/skills/standard/mobile/ios/url-scheme-abuse/SKILL.md` | Universal links + URL scheme handler attacks |
-| `/skills/standard/mobile/ios/xpc-services/SKILL.md` | XPC interface enumeration; unauthenticated XPC services |
-| `/skills/standard/mobile/ios/frida-trust-killer/SKILL.md` | SSL Kill Switch + Frida pin-bypass for iOS apps |
-| `/skills/standard/mobile/ios/jailbreak-detect-bypass/SKILL.md` | DTAppJailbreakDetectorSwift, Liberty Lite, common patterns |
-
-## Cross-platform
-
-| Skill | Use for |
-|---|---|
-| `/skills/standard/mobile/frida-bridge/SKILL.md` | frida-server install on emulator / jailbroken device; basic scripts |
-| `/skills/standard/mobile/objection-walkthrough/SKILL.md` | Objection cheatsheet (env, memory, sqlite, classes) |
-| `/skills/standard/mobile/firebase-misconfig/SKILL.md` | Firebase /Firestore RLS / Storage / Auth bypasses |
-| `/skills/standard/mobile/mobile-api-testing/SKILL.md` | Burp / Caido proxy → mobile API endpoint enumeration |
+Per-technique splits (manifest-analysis, webview-flaws, keychain-acl,
+url-scheme-abuse, firebase-misconfig, …) are planned but NOT yet
+authored — `load_skill` only the paths in the table above; for
+everything else follow the workflow below directly.
 
 ## Workflow
 

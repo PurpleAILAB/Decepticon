@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/cmd/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/compose"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/engagement"
@@ -62,6 +63,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		fmt.Println()
+	}
+
+	// 1.5. One-shot migration for v1.1.7→v1.1.8 upgraders.
+	// Old .env files ship with an active "COMPOSE_PROFILES=c2-sliver"
+	// line that forces every default start to bring up the Sliver C2
+	// container. ADR-0006 routes specialist workloads through ops_start
+	// instead; the stale line is silently rewritten to a comment (with
+	// a one-line notice and a .env.bak backup) before LoadEnv reads it,
+	// so the rest of the boot path sees the post-migration state.
+	if rewrote, mErr := config.MigrateActiveComposeProfiles(config.EnvPath()); mErr != nil {
+		ui.Warning("Could not migrate stale COMPOSE_PROFILES in .env: " + mErr.Error())
+	} else if rewrote {
+		ui.Info("Migrated stale COMPOSE_PROFILES in .env (specialist workloads now spawn via ops_start). Backup at " + config.EnvPath() + ".bak")
 	}
 
 	// 2. Load and validate .env
@@ -193,7 +207,22 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("set engagement workspace env: %w", err)
 	}
 
-	// 4. Start services
+	// 4. Spawn the opscontrol daemon BEFORE `compose up` so the
+	// langgraph socket bind-mount has a real socket to attach to.
+	// ADR-0006 §1' — daemon owns docker socket; agent reaches it
+	// only via the langgraph-only UDS mount.
+	sock, err := opscontrol.EnsureRunning()
+	if err != nil {
+		// Non-fatal for backwards compatibility with stacks that
+		// have not yet adopted the docker-compose.opscontrol.yml
+		// override: agent ops_* tools will return a "daemon
+		// unreachable" diagnostic rather than crashing the boot.
+		ui.Warning("opscontrol daemon not started: " + err.Error())
+	} else if err := os.Setenv("DECEPTICON_OPSCONTROL_SOCK_HOST", sock); err != nil {
+		ui.Warning("set DECEPTICON_OPSCONTROL_SOCK_HOST: " + err.Error())
+	}
+
+	// 5. Start services
 	c := compose.New()
 
 	ui.Info("Starting Decepticon services...")

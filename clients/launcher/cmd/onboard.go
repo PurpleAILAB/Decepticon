@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"charm.land/huh/v2"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/cmd/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
@@ -975,6 +976,19 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  │"))
 	fmt.Println(ui.Dim.Render("  │  ") + ui.Dim.Render(config.EnvPath()))
 	fmt.Println(ui.Dim.Render("  └──────────────────────────────────┘"))
+	fmt.Println()
+
+	// Install opscontrol as a managed service (ADR-0006). Idempotent
+	// — re-running onboard re-templates the unit so a launcher
+	// upgrade picks up the new ExecStart path. On hosts without
+	// systemd-user / launchd this is a no-op announcement, and the
+	// launcher's spawn fallback takes over at `decepticon start`.
+	fmt.Println()
+	if err := opscontrol.EnsureInstalled(); err != nil {
+		// Non-fatal: onboarding can complete without managed-service
+		// mode, the user will just stay on launcher-spawn fallback.
+		ui.Warning("opscontrol install skipped: " + err.Error())
+	}
 	fmt.Println()
 
 	// One-time GitHub star ask — the natural post-onboarding moment.

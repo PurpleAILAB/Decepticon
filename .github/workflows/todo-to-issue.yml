@@ -1,0 +1,78 @@
+name: TODO → Issue
+
+# Scans commits landing on main for newly-added to-do / fix-me / hack
+# comments and opens issues so they're tracked instead of buried in
+# source. Closes the corresponding issue when the marker is removed.
+#
+# NOTE: keep the literal scan markers (the uppercase tokens in IDENTIFIERS
+# below) OUT of these comments. The action scans this file too, so a bare
+# marker word in prose opens a bogus issue — see the spurious #606/#607/#608.
+#
+# Scope choices:
+#   * Runs on push to main only — PR review is the right place to
+#     discuss whether a marker should exist at all, and double-opening
+#     on branch-then-merge would create noise.
+#   * `INSERT_ISSUE_URLS: false` — the action will NOT push back to
+#     main to annotate source with issue links. Issues are tracked
+#     by file:line in the issue body; that's enough.
+#   * Path-ignore: docs / license / asset-only commits don't trigger a
+#     scan. ci.yml deliberately has no paths-ignore (see #561 — skipped
+#     required checks stay Pending and block PRs), but that constraint
+#     does not apply here because this workflow runs on `push`, not
+#     `pull_request`, so a skipped run never gates a merge.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - LICENSE
+      - docs/**
+      - assets/**
+      - .gitignore
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: todo-to-issue-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Open / close issues for TODOs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Full history so the action can diff the pushed range
+          # accurately on force-pushes / merge commits.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scan for TODO / FIXME / HACK
+        # Pinned to a full commit SHA (not the floating @v5 tag): this third-party
+        # action runs on trusted ``main`` with ``issues: write`` + GITHUB_TOKEN, so
+        # it must be immutable like the repo's other 3rd-party actions (trivy,
+        # trufflehog, scorecard) — satisfies OpenSSF Scorecard Pinned-Dependencies.
+        uses: alstr/todo-to-issue-action@64aca8fda7023259aada83ba44ad988c4c443657 # v5.1.14
+        with:
+          IDENTIFIERS: >-
+            [
+              {"name": "TODO",  "labels": ["todo"]},
+              {"name": "FIXME", "labels": ["todo", "bug"]},
+              {"name": "HACK",  "labels": ["todo", "tech-debt"]}
+            ]
+          AUTO_P: false
+          # INSERT_ISSUE_URLS stays false so the action never pushes annotation
+          # commits back to ``main`` (keeps contents: read + persist-credentials:
+          # false). Trade-off: with CLOSE_ISSUES on, the action re-derives a
+          # removed marker's identity from file/line/title rather than an embedded
+          # URL, so a marker that is moved far or heavily re-indented may miss its
+          # auto-close. Acceptable here — issues are cheap to close by hand and
+          # this avoids granting the workflow write access to the trunk.
+          INSERT_ISSUE_URLS: false
+          CLOSE_ISSUES: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
