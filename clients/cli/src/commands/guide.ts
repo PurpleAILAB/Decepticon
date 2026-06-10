@@ -13,6 +13,10 @@ const guide: Command = {
       ctx.addSystemEvent("Error: Please specify the guidance message. Usage: /guide <message>");
       return;
     }
+    if (text.length > 1000) {
+      ctx.addSystemEvent("Error: Guidance message exceeds maximum length of 1000 characters.");
+      return;
+    }
 
     const workspace = process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
     const guidanceDir = path.join(workspace, "guidance");

@@ -25,8 +25,8 @@ export async function POST(
 
     const body = await req.json();
     const text = body.text?.trim();
-    if (!text || typeof text !== "string") {
-      return NextResponse.json({ error: "Invalid text parameter" }, { status: 400 });
+    if (!text || typeof text !== "string" || text.length > 1000) {
+      return NextResponse.json({ error: "Invalid text parameter (max 1000 characters)" }, { status: 400 });
     }
 
     const engagementDir = resolveEngagementDir(engagement.name, WORKSPACE);

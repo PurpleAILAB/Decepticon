@@ -58,7 +58,10 @@ class GuidanceMiddleware(AgentMiddleware):
                     try:
                         obj = json.loads(line)
                         if "text" in obj:
-                            new_guidance.append(str(obj["text"]))
+                            text_val = str(obj["text"])
+                            if len(text_val) > 1000:
+                                text_val = text_val[:1000]
+                            new_guidance.append(text_val)
                     except json.JSONDecodeError:
                         log.warning("malformed guidance line skipped")
                         continue
@@ -66,11 +69,13 @@ class GuidanceMiddleware(AgentMiddleware):
             log.warning("failed to read guidance inbox: %s", e)
             return
 
-        if new_guidance:
-            self._guidance_lines.extend(new_guidance)
+        if new_offset > offset:
             try:
                 cursor_path.parent.mkdir(parents=True, exist_ok=True)
                 cursor_path.write_text(str(new_offset), encoding="utf-8")
+                if new_guidance:
+                    self._guidance_lines.extend(new_guidance)
+                    self._guidance_lines = self._guidance_lines[-5:]
             except OSError as e:
                 log.warning("failed to write guidance cursor: %s", e)
 

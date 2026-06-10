@@ -405,9 +405,9 @@ class Harness:
                     "bash",
                     "-c",
                     "pkill -9 -f python3 2>/dev/null || true; "
-                    "pkill -9 -f curl 2>/dev/null || true; "
-                    "tmux kill-server 2>/dev/null || true; "
-                    "tmux new-session -d -s main 2>/dev/null || true",
+                    + "pkill -9 -f curl 2>/dev/null || true; "
+                    + "tmux kill-server 2>/dev/null || true; "
+                    + "tmux new-session -d -s main 2>/dev/null || true",
                 ],
                 timeout=30,
             )

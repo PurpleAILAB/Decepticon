@@ -67,3 +67,51 @@ def test_guidance_inbox_drained_and_cursor_updated(tmp_path: Path) -> None:
     # Cursor offset should have increased
     new_offset = int(cursor.read_text(encoding="utf-8").strip())
     assert new_offset > offset
+
+
+def test_guidance_cursor_advances_on_malformed_only_lines(tmp_path: Path) -> None:
+    mw = GuidanceMiddleware()
+    state = {"workspace_path": str(tmp_path)}
+    guidance_dir = tmp_path / "guidance"
+    guidance_dir.mkdir(parents=True, exist_ok=True)
+    inbox = guidance_dir / "inbox.jsonl"
+    cursor = guidance_dir / "inbox.cursor"
+    inbox.write_text("not json at all\n" + json.dumps({"nope": 1}) + "\n", encoding="utf-8")
+
+    req = MockRequest(state, SystemMessage(content="Base"))
+    mw._inject(req)
+
+    # No guidance text, but cursor must advance past the scanned region so
+    # the malformed lines are not re-read (and re-warned) on every call.
+    assert cursor.exists()
+    assert int(cursor.read_text(encoding="utf-8").strip()) > 0
+    assert mw._guidance_lines == []
+
+
+def test_guidance_text_length_capped(tmp_path: Path) -> None:
+    mw = GuidanceMiddleware()
+    state = {"workspace_path": str(tmp_path)}
+    guidance_dir = tmp_path / "guidance"
+    guidance_dir.mkdir(parents=True, exist_ok=True)
+    inbox = guidance_dir / "inbox.jsonl"
+    inbox.write_text(json.dumps({"text": "x" * 5000}) + "\n", encoding="utf-8")
+
+    req = MockRequest(state, SystemMessage(content="Base"))
+    mw._inject(req)
+    assert len(mw._guidance_lines) == 1
+    assert len(mw._guidance_lines[0]) == 1000
+
+
+def test_guidance_evicts_to_most_recent_five(tmp_path: Path) -> None:
+    mw = GuidanceMiddleware()
+    state = {"workspace_path": str(tmp_path)}
+    guidance_dir = tmp_path / "guidance"
+    guidance_dir.mkdir(parents=True, exist_ok=True)
+    inbox = guidance_dir / "inbox.jsonl"
+    lines = "".join(json.dumps({"text": f"msg {i}"}) + "\n" for i in range(8))
+    inbox.write_text(lines, encoding="utf-8")
+
+    req = MockRequest(state, SystemMessage(content="Base"))
+    mw._inject(req)
+    # Only the most recent 5 are retained.
+    assert mw._guidance_lines == [f"msg {i}" for i in range(3, 8)]
