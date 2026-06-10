@@ -44,6 +44,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import shlex
+import socket
 from collections.abc import Callable
 from urllib.parse import urlsplit
 
@@ -62,6 +63,16 @@ _URL_AUTHORITY_RE = re.compile(
 # (e.g. ``http://2852039166/`` == 169.254.169.254) rather than a port/number.
 # 2**24 keeps small integers (ports, counts) from being mangled into IPs.
 _PACKED_IPV4_MIN = 1 << 24
+# Non-canonical but resolver-valid dotted IPv4 forms that Python's ``ipaddress``
+# rejects yet libc ``inet_aton`` (and thus curl/wget/nc on the engagement host)
+# still routes to the same address: octal-padded (``0251.0376.0251.0376``),
+# dotted-hex (``0xa9.0xfe.0xa9.0xfe``), and short-octet (``127.1``) encodings.
+# Matched so ``_canon_host`` can normalize them to a dotted quad and a
+# numeric-encoding trick can't dodge an IP deny rule. Requires >= 2 dot-separated
+# numeric parts; the dotless single-integer form is handled separately above.
+_LOOSE_DOTTED_IPV4_RE = re.compile(
+    r"(?:0x[0-9a-f]+|\d+)(?:\.(?:0x[0-9a-f]+|\d+)){1,3}", re.IGNORECASE
+)
 _HOSTNAME_AFTER_VERB_RE = re.compile(
     r"\b(?:curl|wget|httpx|nmap|masscan|rustscan|ssh|scp|sftp|rsync|"
     r"smbclient|smbmap|crackmapexec|nxc|netexec|nikto|sqlmap|hydra|ffuf|"
@@ -165,7 +176,10 @@ def _canon_host(token: str) -> str:
     dotted-quad, and compresses valid IP literals to their canonical string.
     Hostnames pass through lower-cased. This closes the IMDS/forbidden-dest
     bypass where ``http://2852039166/`` or ``http://0xa9fea9fe/`` reach
-    169.254.169.254 without matching a dotted-quad deny rule.
+    169.254.169.254 without matching a dotted-quad deny rule. The same applies
+    to the *dotted* non-canonical forms that ``ipaddress`` rejects but the
+    platform resolver still accepts — octal-padded (``0251.0376.0251.0376``),
+    dotted-hex (``0xa9.0xfe.0xa9.0xfe``), and short-octet (``127.1``).
     """
     raw = token.strip()
     bare = raw[1:-1] if raw.startswith("[") and raw.endswith("]") else raw
@@ -185,6 +199,16 @@ def _canon_host(token: str) -> str:
     try:
         return str(ipaddress.ip_address(bare))
     except ValueError:
+        # ``ipaddress`` only accepts canonical dotted-decimal. Non-canonical
+        # dotted encodings that the platform resolver still routes to the same
+        # address (octal-padded, dotted-hex, short-octet) would otherwise pass
+        # through verbatim and dodge an IP deny rule. Canonicalize them via the
+        # same ``inet_aton`` the offensive tools use on the engagement host.
+        if _LOOSE_DOTTED_IPV4_RE.fullmatch(bare):
+            try:
+                return socket.inet_ntoa(socket.inet_aton(bare))
+            except OSError:
+                pass
         return bare.lower()
 
 
