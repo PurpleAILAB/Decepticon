@@ -299,7 +299,10 @@ func (s *Server) handleCleanupEngagement(w http.ResponseWriter, r *http.Request)
 	for _, workload := range targets {
 		lock := s.Registry.lockFor(workload)
 		lock.Lock()
-		err := s.Backend.Stop(r.Context(), workload)
+		// Daemon-scoped context, same reasoning as handleStart/handleStop:
+		// a client disconnect mid-cleanup must not cancel compose stop
+		// halfway and strand the registry in a stale state.
+		err := s.Backend.Stop(context.Background(), workload)
 		if err != nil {
 			s.Logger.Error("opscontrol cleanup stop failed",
 				"engagement", engagement, "workload", workload, "err", err)
