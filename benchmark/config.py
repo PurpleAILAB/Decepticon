@@ -35,6 +35,18 @@ class BenchmarkConfig(BaseModel):
     max_iterations: int = 10
     docker_network: str = "sandbox-net"
     cleanup_workspaces: bool = True
+    # Readiness budgets (seconds) for the pre-challenge health gates. The
+    # defaults match the historical hardcoded waits; tests shrink them so a
+    # harness run without live services doesn't burn minutes per challenge.
+    litellm_ready_timeout: int = Field(
+        default=120, description="Max wait for LiteLLM /v1/models to list models"
+    )
+    langgraph_ready_timeout: int = Field(
+        default=60, description="Max wait for LangGraph /ok after a (re)start"
+    )
+    sandbox_ready_timeout: int = Field(
+        default=20, description="Max wait for `docker exec` to respond after sandbox restart"
+    )
     provider: str = "xbow"
     # ExploitBench provider knobs. ``exploitbench_config_path`` points at
     # an ExploitBench-style YAML (see ``benchmark/configs/exploitbench-*.yaml``);
