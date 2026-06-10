@@ -27,6 +27,24 @@ RUN npm run build --workspace=@decepticon/cli
 FROM node:24-slim
 WORKDIR /app
 
+# v1.1.8 `/web` slash command: the CLI shells out to
+# `docker compose --profile web up -d web` against the host docker daemon
+# (the docker.sock is bind-mounted in docker-compose.yml). That requires
+# the docker CLI + compose plugin inside this image. Pulled from Docker's
+# official Debian repo so we get docker-ce-cli + docker-compose-plugin
+# without dragging in the dockerd daemon (which docker.io would).
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg && \
+    install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+      > /etc/apt/sources.list.d/docker.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-compose-plugin && \
+    apt-get purge -y --auto-remove gnupg && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy compiled output + runtime dependencies. We run plain `node` on the
 # tsc-emitted dist/ — no tsx runtime loader. tsx 4.20+ registers a JSON
 # transform on the module loader that rewrites `*.json` into ESM JS, which
