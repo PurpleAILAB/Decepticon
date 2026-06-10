@@ -578,6 +578,7 @@ def test_middleware_slot_enum_order_is_assembly_order():
     """Declaration order == assembly order — pin the exact Wave 2 order."""
     assert [s.value for s in MiddlewareSlot] == [
         "engagement-context",
+        "guidance",
         "roe-enforcement",
         "hitl-approval",
         "untrusted-output",
