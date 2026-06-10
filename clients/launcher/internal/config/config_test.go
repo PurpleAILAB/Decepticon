@@ -415,3 +415,149 @@ func TestGet(t *testing.T) {
 		t.Error("expected default")
 	}
 }
+
+func TestMigrateActiveComposeProfiles_RewritesActiveLine(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	content := `# Header
+ANTHROPIC_API_KEY=sk-ant-key
+
+# Default C2 server profile.
+COMPOSE_PROFILES=c2-sliver
+
+# Trailing comment
+`
+	if err := os.WriteFile(envFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rewrote, err := MigrateActiveComposeProfiles(envFile)
+	if err != nil {
+		t.Fatalf("MigrateActiveComposeProfiles error: %v", err)
+	}
+	if !rewrote {
+		t.Fatalf("expected rewrote=true")
+	}
+
+	out, err := os.ReadFile(envFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "\nCOMPOSE_PROFILES=c2-sliver\n") {
+		t.Errorf("active COMPOSE_PROFILES line survived migration:\n%s", out)
+	}
+	if !strings.Contains(string(out), "[v1.1.8 ADR-0006 migration]") {
+		t.Errorf("expected migration comment, got:\n%s", out)
+	}
+	// Original value preserved inline for restorability.
+	if !strings.Contains(string(out), "was: COMPOSE_PROFILES=c2-sliver") {
+		t.Errorf("expected 'was: COMPOSE_PROFILES=c2-sliver' marker in:\n%s", out)
+	}
+	// Unrelated lines untouched.
+	if !strings.Contains(string(out), "ANTHROPIC_API_KEY=sk-ant-key") {
+		t.Errorf("unrelated lines lost; got:\n%s", out)
+	}
+
+	// Backup written with the original (pre-migration) content.
+	bak, err := os.ReadFile(envFile + ".bak")
+	if err != nil {
+		t.Fatalf("backup not written: %v", err)
+	}
+	if string(bak) != content {
+		t.Errorf("backup mismatch:\n got:%s\nwant:%s", bak, content)
+	}
+}
+
+func TestMigrateActiveComposeProfiles_LeavesCommentedLineAlone(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	content := `# COMPOSE_PROFILES=c2-sliver
+ANTHROPIC_API_KEY=sk-ant-key
+`
+	if err := os.WriteFile(envFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rewrote, err := MigrateActiveComposeProfiles(envFile)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if rewrote {
+		t.Errorf("expected rewrote=false on already-commented file")
+	}
+	// File unchanged.
+	out, _ := os.ReadFile(envFile)
+	if string(out) != content {
+		t.Errorf("file modified despite no active line:\n got:%s\nwant:%s", out, content)
+	}
+	// No backup written.
+	if _, err := os.Stat(envFile + ".bak"); !os.IsNotExist(err) {
+		t.Errorf("backup created on no-op migration")
+	}
+}
+
+func TestMigrateActiveComposeProfiles_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	content := `COMPOSE_PROFILES=c2-sliver,ad
+ANTHROPIC_API_KEY=sk-ant-key
+`
+	if err := os.WriteFile(envFile, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if rewrote, err := MigrateActiveComposeProfiles(envFile); err != nil || !rewrote {
+		t.Fatalf("first migration: rewrote=%v err=%v; want (true, nil)", rewrote, err)
+	}
+	first, _ := os.ReadFile(envFile)
+
+	if rewrote, err := MigrateActiveComposeProfiles(envFile); err != nil || rewrote {
+		t.Fatalf("second migration: rewrote=%v err=%v; want (false, nil)", rewrote, err)
+	}
+	second, _ := os.ReadFile(envFile)
+	if string(first) != string(second) {
+		t.Errorf("file changed across idempotent migrations:\n first:%s\nsecond:%s", first, second)
+	}
+}
+
+func TestMigrateActiveComposeProfiles_NoEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+
+	rewrote, err := MigrateActiveComposeProfiles(envFile)
+	if err != nil {
+		t.Fatalf("missing .env should not error: %v", err)
+	}
+	if rewrote {
+		t.Errorf("rewrote=true on missing file")
+	}
+}
+
+func TestMigrateActiveComposeProfiles_BackupNotOverwritten(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, ".env")
+	backupPath := envFile + ".bak"
+
+	original := "COMPOSE_PROFILES=c2-sliver\n"
+	if err := os.WriteFile(envFile, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// First migration creates the backup.
+	if _, err := MigrateActiveComposeProfiles(envFile); err != nil {
+		t.Fatal(err)
+	}
+	firstBackup, _ := os.ReadFile(backupPath)
+
+	// Operator re-enables the active line and runs migration again.
+	if err := os.WriteFile(envFile, []byte("COMPOSE_PROFILES=ad\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MigrateActiveComposeProfiles(envFile); err != nil {
+		t.Fatal(err)
+	}
+	secondBackup, _ := os.ReadFile(backupPath)
+	// Backup must still match the very first pre-migration snapshot.
+	if string(firstBackup) != string(secondBackup) {
+		t.Errorf("backup was overwritten on second migration:\n first:%s\nsecond:%s", firstBackup, secondBackup)
+	}
+}

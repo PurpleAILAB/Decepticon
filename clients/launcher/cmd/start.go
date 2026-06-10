@@ -65,6 +65,19 @@ func runStart(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 	}
 
+	// 1.5. One-shot migration for v1.1.7→v1.1.8 upgraders.
+	// Old .env files ship with an active "COMPOSE_PROFILES=c2-sliver"
+	// line that forces every default start to bring up the Sliver C2
+	// container. ADR-0006 routes specialist workloads through ops_start
+	// instead; the stale line is silently rewritten to a comment (with
+	// a one-line notice and a .env.bak backup) before LoadEnv reads it,
+	// so the rest of the boot path sees the post-migration state.
+	if rewrote, mErr := config.MigrateActiveComposeProfiles(config.EnvPath()); mErr != nil {
+		ui.Warning("Could not migrate stale COMPOSE_PROFILES in .env: " + mErr.Error())
+	} else if rewrote {
+		ui.Info("Migrated stale COMPOSE_PROFILES in .env (specialist workloads now spawn via ops_start). Backup at " + config.EnvPath() + ".bak")
+	}
+
 	// 2. Load and validate .env
 	env, err := config.LoadEnv(config.EnvPath())
 	if err != nil {
