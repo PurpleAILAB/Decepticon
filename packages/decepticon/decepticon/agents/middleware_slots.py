@@ -40,6 +40,7 @@ from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.middleware import (
     EngagementContextMiddleware,
     FilesystemMiddleware,
+    GuidanceMiddleware,
     KGMiddleware,
     OPPLANMiddleware,
     RoEEnforcementMiddleware,
@@ -117,6 +118,10 @@ def skills_sources_for(role: str) -> list[str]:
 
 def _make_engagement_context(**_: Any):
     return EngagementContextMiddleware()
+
+
+def _make_guidance(**_: Any):
+    return GuidanceMiddleware()
 
 
 def _make_roe_enforcement(*, role: str, **_: Any):
@@ -335,6 +340,7 @@ SlotFactory = Callable[..., Any]
 
 DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.ENGAGEMENT_CONTEXT: _make_engagement_context,
+    MiddlewareSlot.GUIDANCE: _make_guidance,
     MiddlewareSlot.ROE_ENFORCEMENT: _make_roe_enforcement,
     MiddlewareSlot.HITL_APPROVAL: _make_hitl,
     MiddlewareSlot.UNTRUSTED_OUTPUT: _make_untrusted_output,

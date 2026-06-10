@@ -31,6 +31,12 @@ from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
+from decepticon.tools.research.classification import (
+    classify_endpoint,
+    classify_endpoints,
+    classify_parameter,
+    infer_parameter_type,
+)
 from decepticon.tools.research.dedupe import kg_dedupe_findings
 from decepticon.tools.research.health import backend_health
 from decepticon.tools.research.patch import PATCH_TOOLS
@@ -1956,6 +1962,27 @@ def kg_ingest_katana(path: str) -> str:
             if not endpoint:
                 continue
             parsed_url = urlparse(endpoint)
+            query_params = []
+            if parsed_url.query:
+                for part in parsed_url.query.split("&"):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                    else:
+                        k, v = part, ""
+                    if k:
+                        query_params.append({"name": k, "value": v})
+            params_dict = {"query": query_params, "body": []}
+            category = classify_endpoint(
+                parsed_url.path or "/", [row.get("method") or "GET"], params_dict
+            )
+
+            pclasses = [classify_parameter(p["name"]) for p in query_params]
+            ptypes = [
+                infer_parameter_type(p["name"], [p["value"]] if p["value"] else [])
+                for p in query_params
+            ]
+            pnames = [p["name"] for p in query_params]
+
             host_value = (parsed_url.hostname or "").lower()
             if not host_value:
                 continue
@@ -1972,6 +1999,10 @@ def kg_ingest_katana(path: str) -> str:
                     key=f"url::{endpoint}",
                     source="katana",
                     method=row.get("method") or row.get("request", {}).get("method") or "GET",
+                    endpoint_category=category,
+                    param_classes=pclasses,
+                    param_types=ptypes,
+                    params=pnames,
                 )
             )
             ep = graph.upsert_node(
@@ -1981,6 +2012,10 @@ def kg_ingest_katana(path: str) -> str:
                     key=f"entrypoint::{endpoint}",
                     source="katana",
                     host=host_value,
+                    endpoint_category=category,
+                    param_classes=pclasses,
+                    param_types=ptypes,
+                    params=pnames,
                 )
             )
             graph.upsert_edge(Edge.make(host.id, url_node.id, EdgeKind.EXPOSES, weight=0.5))
@@ -2097,6 +2132,25 @@ def kg_ingest_ffuf(path: str) -> str:
             except (ValueError, TypeError):
                 length = 0
             parsed_url = urlparse(url)
+            query_params = []
+            if parsed_url.query:
+                for part in parsed_url.query.split("&"):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                    else:
+                        k, v = part, ""
+                    if k:
+                        query_params.append({"name": k, "value": v})
+            params_dict = {"query": query_params, "body": []}
+            category = classify_endpoint(parsed_url.path or "/", ["GET"], params_dict)
+
+            pclasses = [classify_parameter(p["name"]) for p in query_params]
+            ptypes = [
+                infer_parameter_type(p["name"], [p["value"]] if p["value"] else [])
+                for p in query_params
+            ]
+            pnames = [p["name"] for p in query_params]
+
             host_value = (parsed_url.hostname or "").lower()
             host = None
             if host_value:
@@ -2111,6 +2165,10 @@ def kg_ingest_ffuf(path: str) -> str:
                     source="ffuf",
                     status=status,
                     length=length,
+                    endpoint_category=category,
+                    param_classes=pclasses,
+                    param_types=ptypes,
+                    params=pnames,
                 )
             )
             ep = graph.upsert_node(
@@ -2121,6 +2179,10 @@ def kg_ingest_ffuf(path: str) -> str:
                     source="ffuf",
                     host=host_value,
                     status=status,
+                    endpoint_category=category,
+                    param_classes=pclasses,
+                    param_types=ptypes,
+                    params=pnames,
                 )
             )
             if host is not None:
@@ -2395,4 +2457,5 @@ RESEARCH_TOOLS = [
     validate_finding,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
+    classify_endpoints,
 ]

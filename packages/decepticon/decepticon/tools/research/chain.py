@@ -344,8 +344,31 @@ def critical_path_score(chain: Chain) -> float:
             # APOC unavailable — fall back to shortestPath
             log.debug("Worst-severity lookup failed (swallowed): %s", exc)
 
+    boost = 0.0
+    ep_ids = [
+        s.node_id
+        for s in chain.steps
+        if s.node_kind in {NodeKind.ENTRYPOINT.value, NodeKind.URL.value}
+    ]
+    if ep_ids:
+        query = """
+        UNWIND $ids AS nid
+        MATCH (n) WHERE n.id = nid AND (n:Entrypoint OR n:Url)
+        RETURN coalesce(n.param_classes, []) AS param_classes
+        """
+        try:
+            rows = store.query_custom(query, {"ids": ep_ids})
+            for row in rows:
+                pclasses = row.get("param_classes") or []
+                if "command_params" in pclasses:
+                    boost = max(boost, 5.0)
+                elif "file_params" in pclasses or "redirect_params" in pclasses:
+                    boost = max(boost, 3.0)
+        except Exception as exc:
+            log.debug("Param-class check failed: %s", exc)
+
     inv_cost = 1.0 / max(chain.total_cost, 0.1)
-    return round(0.6 * inv_cost * 10 + 0.4 * worst_sev, 2)
+    return round(0.6 * inv_cost * 10 + 0.4 * worst_sev + boost, 2)
 
 
 def impact_analysis(node_id: str, max_depth: int = 4) -> list[dict[str, Any]]:

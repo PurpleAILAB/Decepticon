@@ -4,6 +4,7 @@ from decepticon.middleware.budget import BudgetEnforcementMiddleware
 from decepticon.middleware.engagement import EngagementContextMiddleware
 from decepticon.middleware.event_logging import EventLogMiddleware
 from decepticon.middleware.filesystem import FilesystemMiddleware
+from decepticon.middleware.guidance import GuidanceMiddleware
 from decepticon.middleware.hitl import (
     DEFAULT_HIGH_IMPACT_POLICY,
     ApprovalDecision,
@@ -48,5 +49,6 @@ __all__ = [
     "SkillogyMiddleware",
     "SkillsMiddleware",
     "UntrustedOutputMiddleware",
+    "GuidanceMiddleware",
     "maybe_install_skillogy",
 ]
