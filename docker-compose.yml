@@ -498,7 +498,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DECEPTICON_HOME:-~/.decepticon}:/decepticon-home
-    working_dir: /decepticon-home
+    # Do NOT override WORKDIR — the cli image's entrypoint is
+    # `node dist/index.js` resolved relative to /app (set by
+    # containers/cli.Dockerfile). The slash command resolves the
+    # compose project via the DECEPTICON_COMPOSE_FILE / _ENV_FILE
+    # env vars above, so working_dir on this container is irrelevant.
     depends_on:
       langgraph:
         condition: service_healthy
