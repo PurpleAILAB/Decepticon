@@ -86,6 +86,7 @@ GATED_TOOL_NAMES: frozenset[str] = frozenset(
         # throttle but target-exempt via a no-op extractor below.
         "web_fetch",
         "web_search",
+        "detect_tech_stack",
     }
 )
 
@@ -131,6 +132,7 @@ NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "proxy_send_request": _hosts_from_url_arg,
     "web_fetch": _hosts_from_url_arg,
     "web_search": _hosts_from_web_search,
+    "detect_tech_stack": _hosts_from_url_arg,
     "browser_action": _hosts_from_browser_action,
 }
 

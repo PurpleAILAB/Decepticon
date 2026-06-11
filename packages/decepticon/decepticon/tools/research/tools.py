@@ -38,6 +38,7 @@ from decepticon.tools.research.patch import PATCH_TOOLS
 from decepticon.tools.research.sarif import ingest_sarif_file
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
 from decepticon.tools.research.secret_scanner import scan_secrets
+from decepticon.tools.research.tech_detection import detect_tech_stack
 from decepticon.tools.reversing.binary import identify_binary
 from decepticon.tools.reversing.packer import detect_packer
 from decepticon.tools.reversing.strings import extract_strings, group_by_category
@@ -2398,6 +2399,7 @@ RESEARCH_TOOLS = [
     fuzz_record_crash,
     validate_finding,
     scan_secrets,
+    detect_tech_stack,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
     *OSINT_TOOLS,
