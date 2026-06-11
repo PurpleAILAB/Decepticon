@@ -224,11 +224,14 @@ class EngagementFilesystemBackend(BackendProtocol):
         result = self.grep(pattern, path=path, glob=glob)
         return result.error if result.error else result.matches or []
 
-    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+    def glob(self, pattern: str, path: str | None = None) -> GlobResult:
+        # ``path`` is ``str | None`` to match the deepagents BackendProtocol
+        # signature (it became optional in deepagents 0.6.x); None means the
+        # engagement root, preserving the previous ``path="/"`` default.
         self._ensure_root()
         try:
             real_pattern = self._glob(pattern)
-            real_path = self._real(path)
+            real_path = self._real(path if path is not None else "/")
         except ValueError as e:
             return GlobResult(error=str(e))
         result = self._backend.glob(real_pattern, path=real_path)
