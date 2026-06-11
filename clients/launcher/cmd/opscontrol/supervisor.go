@@ -5,12 +5,49 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	internal "github.com/PurpleAILAB/Decepticon/clients/launcher/internal/opscontrol"
 )
+
+// composeOverlayBody is the docker-compose overlay that bind-mounts
+// the opscontrol UDS into the langgraph container. It is
+// LAUNCHER-OWNED: written by EnsureRunning on every `decepticon start`,
+// never shipped via the release manifest, never hand-edited. Keeping
+// it embedded in the launcher binary collapses the previous
+// "release.yml manifest must list every config file" failure mode
+// (which caused the v1.1.10 upgrade warning) into a single binary —
+// the overlay is now versioned in lockstep with the launcher.
+const composeOverlayBody = `# docker-compose.opscontrol.yml — LAUNCHER-MANAGED runtime overlay (ADR-0006).
+# Do NOT hand-edit. The launcher rewrites this file on every ` + "`decepticon start`" + `
+# (cmd/opscontrol/supervisor.go:writeComposeOverlay) so any manual edits are
+# erased on the next boot.
+#
+# DECEPTICON_OPSCONTROL_SOCK_HOST is REQUIRED at compose interpolation
+# time. There is no '/dev/null' fallback: a missing socket path means
+# the daemon wiring is broken, and we'd rather fail at boot than mount
+# a character device into the container and surface ECONNREFUSED
+# mid-engagement.
+
+services:
+  langgraph:
+    volumes:
+      - "${DECEPTICON_OPSCONTROL_SOCK_HOST}:/var/run/decepticon-ops.sock:rw"
+`
+
+// writeComposeOverlay materializes the launcher-managed compose overlay
+// at $DECEPTICON_HOME/docker-compose.opscontrol.yml. Idempotent — same
+// content every call. Removed the previous design where this file was
+// downloaded via the release manifest; that made every compose-overlay
+// change a forced point release with sync warnings.
+func writeComposeOverlay() error {
+	target := filepath.Join(config.DecepticonHome(), "docker-compose.opscontrol.yml")
+	return os.WriteFile(target, []byte(composeOverlayBody), 0o644)
+}
 
 // EnsureRunning is the launcher-side entry point: `decepticon start`
 // calls it before `compose up`. It returns the host socket path so
@@ -41,6 +78,14 @@ import (
 func EnsureRunning() (socketPath string, err error) {
 	if err := internal.EnsureRunDir(); err != nil {
 		return "", err
+	}
+	// Write the docker-compose overlay BEFORE the daemon starts; the
+	// compose layer in `decepticon start` calls baseArgs immediately
+	// after, and baseArgs only attaches `-f docker-compose.opscontrol.yml`
+	// when the file exists on disk. Embedded body + idempotent write
+	// = the overlay is always current with the launcher binary.
+	if err := writeComposeOverlay(); err != nil {
+		return "", fmt.Errorf("opscontrol: write compose overlay: %w", err)
 	}
 	socketPath = internal.HostSocketPath()
 

@@ -1,7 +1,11 @@
-FROM ghcr.io/berriai/litellm:main-v1.82.3-stable.patch.2
+FROM ghcr.io/berriai/litellm:v1.88.1
 
-# xxhash is required for CCH (Claude Code Hash) request signing
-RUN pip install --no-cache-dir xxhash
+# xxhash is required for CCH (Claude Code Hash) request signing.
+# The v1.88.x base ships a uv-managed venv at /app/.venv (first on PATH)
+# with no pip and no uv on PATH, so a bare `pip install` fails (exit 127).
+# Bootstrap pip into that venv via ensurepip, then install with the venv's
+# python so xxhash lands where the litellm process imports from.
+RUN python -m ensurepip --upgrade && python -m pip install --no-cache-dir xxhash
 
 COPY config/http_client.py /app/http_client.py
 COPY config/oauth_token_store.py /app/oauth_token_store.py

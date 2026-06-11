@@ -122,6 +122,8 @@ def _retry_on_connection_error(fn, max_retries=3, base_delay=0.5):
                     exc,
                 )
                 time.sleep(delay)
+    if last_exc is None:  # max_retries <= 0 — never attempted
+        raise SandboxError("retry loop made no attempts (max_retries <= 0)")
     raise last_exc
 
 

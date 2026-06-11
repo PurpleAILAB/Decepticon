@@ -152,6 +152,26 @@ def test_record_llm_cost_falls_back_to_engagement_span(
     assert _attrs(eng)["decepticon.llm.cost_usd"] == pytest.approx(2.5)
 
 
+def test_record_llm_cost_falls_back_when_llm_span_write_raises(
+    memory_exporter: InMemorySpanExporter,
+) -> None:
+    """A failed write on the llm_span must not propagate, and the cost must
+    still land on the engagement span."""
+
+    class _RaisingSpan:
+        def set_attribute(self, key: str, value: Any) -> None:
+            raise RuntimeError("exporter down")
+
+    with start_engagement_span("eng-fail"):
+        token = otel_module._active_llm_span.set(_RaisingSpan())
+        try:
+            record_llm_cost(3.5)
+        finally:
+            otel_module._active_llm_span.reset(token)
+    eng = next(s for s in memory_exporter.get_finished_spans() if s.name == "decepticon.engagement")
+    assert _attrs(eng)["decepticon.llm.cost_usd"] == pytest.approx(3.5)
+
+
 def test_record_llm_cost_ignores_none(memory_exporter: InMemorySpanExporter) -> None:
     with start_engagement_span("eng-3"):
         with start_llm_span("model-x"):

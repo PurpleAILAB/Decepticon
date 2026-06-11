@@ -218,7 +218,7 @@ class TestLLMFactory:
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-7",
+            "openrouter/anthropic/claude-opus-4-8",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 

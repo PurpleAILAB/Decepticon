@@ -54,13 +54,13 @@ class TestModelProfile:
 class TestMethodModels:
     def test_anthropic_api_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_API]
-        assert m[Tier.HIGH] == "anthropic/claude-opus-4-7"
+        assert m[Tier.HIGH] == "anthropic/claude-opus-4-8"
         assert m[Tier.MID] == "anthropic/claude-sonnet-4-6"
         assert m[Tier.LOW] == "anthropic/claude-haiku-4-5"
 
     def test_anthropic_oauth_routes_to_auth_prefix(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_OAUTH]
-        assert m[Tier.HIGH] == "auth/claude-opus-4-7"
+        assert m[Tier.HIGH] == "auth/claude-opus-4-8"
         assert m[Tier.MID] == "auth/claude-sonnet-4-6"
         assert m[Tier.LOW] == "auth/claude-haiku-4-5"
 
@@ -164,18 +164,18 @@ class TestResolveChain:
     def test_anthropic_api_only_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["anthropic/claude-opus-4-7"]
+        assert chain == ["anthropic/claude-opus-4-8"]
 
     def test_oauth_only_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["auth/claude-opus-4-7"]
+        assert chain == ["auth/claude-opus-4-8"]
 
     def test_oauth_then_api_high(self):
         # Subscription primary, paid API fallback when quota hits.
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         chain = resolve_chain(Tier.HIGH, creds)
-        assert chain == ["auth/claude-opus-4-7", "anthropic/claude-opus-4-7"]
+        assert chain == ["auth/claude-opus-4-8", "anthropic/claude-opus-4-8"]
 
     def test_oauth_then_openai_low(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.OPENAI_API])
@@ -213,7 +213,7 @@ class TestResolveChain:
         chain = resolve_chain(Tier.HIGH, creds)
         assert chain == [
             "openai/gpt-5.5",
-            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
             "gemini/gemini-2.5-pro",
         ]
 
@@ -460,15 +460,15 @@ class TestLLMModelMapping:
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "anthropic/claude-opus-4-7"
+        assert a.primary == "anthropic/claude-opus-4-8"
         assert a.fallbacks == []
 
     def test_from_credentials_oauth_plus_api(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_OAUTH, AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "auth/claude-opus-4-7"
-        assert a.fallbacks == ["anthropic/claude-opus-4-7"]
+        assert a.primary == "auth/claude-opus-4-8"
+        assert a.fallbacks == ["anthropic/claude-opus-4-8"]
 
     def test_from_credentials_full_chain_high_tier(self):
         # Every method configured → every method appears in the HIGH-tier chain
@@ -484,9 +484,9 @@ class TestLLMModelMapping:
         )
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "auth/claude-opus-4-7"
+        assert a.primary == "auth/claude-opus-4-8"
         assert a.fallbacks == [
-            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M3",
@@ -529,7 +529,7 @@ class TestLLMModelMapping:
     def test_max_profile_promotes_recon_to_high(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
         m = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.MAX)
-        assert m.get_assignment("recon").primary == "anthropic/claude-opus-4-7"
+        assert m.get_assignment("recon").primary == "anthropic/claude-opus-4-8"
 
     def test_test_profile_demotes_decepticon_to_low(self):
         creds = Credentials(methods=[AuthMethod.ANTHROPIC_API])
@@ -539,7 +539,7 @@ class TestLLMModelMapping:
     def test_from_profile_uses_all_api_methods(self):
         m = LLMModelMapping.from_profile(ModelProfile.ECO)
         a = m.get_assignment("decepticon")
-        assert a.primary == "anthropic/claude-opus-4-7"
+        assert a.primary == "anthropic/claude-opus-4-8"
         assert a.fallbacks == [
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
@@ -547,7 +547,7 @@ class TestLLMModelMapping:
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-7",
+            "openrouter/anthropic/claude-opus-4-8",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 

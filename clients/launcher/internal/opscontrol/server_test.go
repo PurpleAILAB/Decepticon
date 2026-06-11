@@ -161,6 +161,27 @@ func TestServer_StopAfterStart(t *testing.T) {
 		if w.Code != http.StatusAccepted {
 			t.Fatalf("stop status = %d", w.Code)
 		}
+		// handleStop now returns immediately with state=stopping;
+		// the compose call runs in a goroutine.
+		var got Handle
+		if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+			t.Fatalf("decode stop body: %v", err)
+		}
+		if got.State != StateStopping {
+			t.Errorf("stop response state = %q, want %q", got.State, StateStopping)
+		}
+	}
+
+	// Poll until the goroutine has invoked backend.Stop. The
+	// fakeBackend's stop is a no-op so this resolves in one tick
+	// in the happy path; the deadline guards against goroutine
+	// scheduling jitter under -race.
+	deadline := time.Now().Add(1 * time.Second)
+	for time.Now().Before(deadline) {
+		if be.stopCount.Load() == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if be.startCount.Load() != 1 || be.stopCount.Load() != 1 {
 		t.Errorf("calls: start=%d stop=%d; want 1/1", be.startCount.Load(), be.stopCount.Load())

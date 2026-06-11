@@ -108,6 +108,19 @@ func (s *SystemdManager) Install(spec InstallSpec) error {
 		return fmt.Errorf("opscontrol: create systemd user dir: %w", err)
 	}
 
+	// Drop-in `*.conf` files override the unit we're about to write,
+	// and they survive `Uninstall()` because that only removes the
+	// .service file. v1.1.10 dogfood hit exactly this trap: a stale
+	// `override.conf` pinned ExecStart= to /tmp/decepticon-stop-v3
+	// (deleted between test runs), so `enable --now` succeeded but the
+	// daemon failed with no error surfaced to the operator — they saw
+	// `EnsureRunning` 5s socket timeout with no obvious cause.
+	//
+	// We only remove drop-ins whose ExecStart references a binary that
+	// no longer exists on disk. Legitimate operator overrides (extra
+	// env vars, restart policy tweaks) keep working.
+	dropInRemoved := s.removeStaleDropIns(filepath.Join(unitDir, s.UnitName+".service.d"))
+
 	unit := s.renderUnit(spec)
 	unitFile := filepath.Join(unitDir, s.UnitName+".service")
 	if err := os.WriteFile(unitFile, []byte(unit), 0o644); err != nil {
@@ -117,10 +130,71 @@ func (s *SystemdManager) Install(spec InstallSpec) error {
 	if out, err := exec.Command(systemctlBinary, "--user", "daemon-reload").CombinedOutput(); err != nil {
 		return fmt.Errorf("opscontrol: daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
 	}
+	if dropInRemoved {
+		// daemon-reload is required after drop-in removal too; the call
+		// above covers both rewrites of the .service file and dropped
+		// overrides in one pass.
+		_ = exec.Command(systemctlBinary, "--user", "reset-failed", s.UnitName+".service").Run()
+	}
 	if out, err := exec.Command(systemctlBinary, "--user", "enable", "--now", s.UnitName+".service").CombinedOutput(); err != nil {
 		return fmt.Errorf("opscontrol: enable --now: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// removeStaleDropIns deletes drop-in override files in `dir` whose
+// ExecStart= points to a binary that no longer exists on disk. Returns
+// true if any file was removed (the caller uses this to decide whether
+// to also reset the unit's failed state).
+//
+// Scope is deliberately narrow: we only touch *.conf files we can
+// prove are dead. Operator-authored overrides for live binaries
+// (e.g. an extra Environment= line) survive untouched.
+func (s *SystemdManager) removeStaleDropIns(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	removed := false
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".conf") {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		for _, raw := range strings.Split(string(body), "\n") {
+			line := strings.TrimSpace(raw)
+			if !strings.HasPrefix(line, "ExecStart=") {
+				continue
+			}
+			// Strip the `ExecStart=` prefix and any leading modifier
+			// characters systemd accepts (`-`, `@`, `:`, `+`, `!`, `!!`).
+			value := strings.TrimLeft(strings.TrimPrefix(line, "ExecStart="), "-@:+!")
+			fields := strings.Fields(value)
+			if len(fields) == 0 {
+				continue
+			}
+			binaryPath := fields[0]
+			if _, err := os.Stat(binaryPath); errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintf(os.Stderr,
+					"opscontrol: removing stale drop-in %s — ExecStart=%s no longer exists\n",
+					path, binaryPath)
+				if err := os.Remove(path); err == nil {
+					removed = true
+				}
+				break
+			}
+		}
+	}
+	// If the drop-in dir is now empty, remove it so a future
+	// `systemctl edit` starts from a clean slate.
+	if remaining, err := os.ReadDir(dir); err == nil && len(remaining) == 0 {
+		_ = os.Remove(dir)
+	}
+	return removed
 }
 
 func (s *SystemdManager) Uninstall() error {

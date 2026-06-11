@@ -24,6 +24,21 @@ from benchmark.state import BenchmarkRunState, BenchmarkStepResult
 log = logging.getLogger(__name__)
 
 
+def _run_docker(
+    args: list[str], timeout: float | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a docker CLI command, degrading gracefully when docker is absent.
+
+    Container hygiene is best-effort: hosts without docker (unit tests,
+    bare-metal benchmark runs) must not crash the harness mid-challenge.
+    Returns a synthetic returncode-127 result when docker is not on PATH.
+    """
+    if shutil.which("docker") is None:
+        log.warning("harness.docker: docker not on PATH — skipping: %s", " ".join(args))
+        return subprocess.CompletedProcess(args, returncode=127, stdout=b"", stderr=b"")
+    return subprocess.run(args, capture_output=True, timeout=timeout, check=False)
+
+
 @dataclass
 class AgentResponse:
     """Structured response from a LangGraph agent invocation.
@@ -303,20 +318,11 @@ class Harness:
         caller can't accidentally re-cancel a run that no longer exists.
         """
         log.warning("harness.escalation: restarting langgraph container")
-        subprocess.run(
-            ["docker", "compose", "restart", "langgraph"],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
+        _run_docker(["docker", "compose", "restart", "langgraph"], timeout=60)
         # Reconnect networks (compose restart usually preserves them but be
         # defensive — same pattern as _ensure_services_healthy).
         for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            subprocess.run(
-                ["docker", "network", "connect", net, "decepticon-langgraph"],
-                capture_output=True,
-                check=False,
-            )
+            _run_docker(["docker", "network", "connect", net, "decepticon-langgraph"])
         # Wait up to 60s for /ok
         for _ in range(30):
             time.sleep(2)
@@ -334,7 +340,7 @@ class Harness:
         # next pre-cycle sandbox restart (commit 3f1bc67) will fully reset
         # state, but this gets us through the rest of the current cycle.
         log.warning("harness.escalation: defensive sandbox cleanup")
-        subprocess.run(
+        _run_docker(
             [
                 "docker",
                 "exec",
@@ -346,9 +352,7 @@ class Harness:
                 "tmux kill-server 2>/dev/null || true; "
                 "tmux new-session -d -s main 2>/dev/null || true",
             ],
-            capture_output=True,
             timeout=30,
-            check=False,
         )
 
         # Stale IDs are pinned to a langgraph instance that no longer
@@ -404,6 +408,11 @@ class Harness:
 
     def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
+        if shutil.which("docker") is None:
+            log.warning(
+                "harness.services: docker not found on PATH — skipping service health check and restart logic"
+            )
+            return
         # Check LiteLLM: verify models are loaded via /v1/models endpoint
         litellm_url = self.config.litellm_url
         litellm_ready = False
@@ -437,16 +446,10 @@ class Harness:
             pass
 
         log.warning("LangGraph unreachable — restarting container")
-        subprocess.run(
-            ["docker", "compose", "up", "-d", "--no-deps", "langgraph"],
-            capture_output=True,
-        )
+        _run_docker(["docker", "compose", "up", "-d", "--no-deps", "langgraph"])
         # Reconnect networks (lost after container recreation)
         for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            subprocess.run(
-                ["docker", "network", "connect", net, "decepticon-langgraph"],
-                capture_output=True,
-            )
+            _run_docker(["docker", "network", "connect", net, "decepticon-langgraph"])
         # Wait for LangGraph to become healthy
         for _ in range(30):
             time.sleep(2)
@@ -467,28 +470,18 @@ class Harness:
         sub-agents. Per user policy, always do a full container restart —
         simpler than trying to enumerate stale sessions.
         """
+        if shutil.which("docker") is None:
+            log.warning("harness.sandbox: docker not found on PATH — skipping sandbox reset")
+            return
         log.info("harness.sandbox: restarting sandbox container for fresh state")
-        subprocess.run(
-            ["docker", "compose", "restart", "sandbox"],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
+        _run_docker(["docker", "compose", "restart", "sandbox"], timeout=60)
         # Reconnect to required networks (compose restart usually preserves them
         # but be defensive for benchmark / make dev variants)
         for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            subprocess.run(
-                ["docker", "network", "connect", net, "decepticon-sandbox"],
-                capture_output=True,
-                check=False,
-            )
+            _run_docker(["docker", "network", "connect", net, "decepticon-sandbox"])
         # Wait for `docker exec true` to succeed before returning
         for attempt in range(40):
-            r = subprocess.run(
-                ["docker", "exec", "decepticon-sandbox", "true"],
-                capture_output=True,
-                check=False,
-            )
+            r = _run_docker(["docker", "exec", "decepticon-sandbox", "true"])
             if r.returncode == 0:
                 log.info("harness.sandbox: ready after %.1fs", attempt * 0.5)
                 return
@@ -508,10 +501,7 @@ class Harness:
 
         # Clean residual sandbox workspace from previous runs (sandbox is persistent)
         sandbox_ws = f"/workspace/benchmark-{challenge.id}"
-        subprocess.run(
-            ["docker", "exec", "decepticon-sandbox", "rm", "-rf", sandbox_ws],
-            capture_output=True,
-        )
+        _run_docker(["docker", "exec", "decepticon-sandbox", "rm", "-rf", sandbox_ws])
         # Clean orphan files at workspace root (top-level, not in a benchmark-* subdir).
         # Sandbox mounts the entire workspace root as /workspace/ — orphan flag.txt files
         # at the root contaminate ALL challenge runs by being readable via cat /workspace/flag.txt.

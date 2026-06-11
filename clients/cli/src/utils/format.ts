@@ -22,12 +22,26 @@ export function formatNumber(n: number): string {
 }
 
 /** Extract skill name from a /skills/... path. Returns null if not a skill path.
- *  Recognizes both `read_file({file_path})` and `load_skill({skill_path})`. */
+ *  Recognizes:
+ *    - read_file({file_path})       — legacy filesystem skills
+ *    - load_skill({skill_path})     — legacy SkillsMiddleware
+ *    - load_skill({name_or_path})   — Skillogy v0.2.2 tool
+ *
+ *  The Skillogy ``name_or_path`` value can be either a /skills/.../SKILL.md
+ *  path OR a bare frontmatter name (e.g. ``kerberoasting``); in the
+ *  bare-name case we return it as-is so the activity stream still shows
+ *  ``● Skill (kerberoasting)`` instead of the raw JSON body. */
 export function extractSkillName(args: Record<string, unknown>): string | null {
   const filePath =
     (args.skill_path as string | undefined) ??
-    (args.file_path as string | undefined);
-  if (!filePath || !filePath.includes("/skills/")) return null;
+    (args.file_path as string | undefined) ??
+    (args.name_or_path as string | undefined);
+  if (!filePath) return null;
+  if (!filePath.includes("/skills/")) {
+    // Bare frontmatter name — no slashes, no Markdown to parse. Use it
+    // verbatim so the header still labels the skill.
+    return filePath.includes("/") ? null : filePath;
+  }
   const parts = filePath.split("/");
   const skillsIdx = parts.indexOf("skills");
   const skillDir = parts[parts.length - 2];

@@ -94,14 +94,14 @@ Domain-specific specialists need sidecar services to function — `ad_operator` 
 
 **Workflow** (mandatory order):
 
-1. Before any `task("<specialist>", ...)` whose workload row above applies, call `ops_start("<workload>", engagement_id=$DECEPTICON_ENGAGEMENT)`. **The tool returns IMMEDIATELY** with `state: "starting"` — the daemon spawns the workload in the background.
+1. Before any `task("<specialist>", ...)` whose workload row above applies, call `ops_start("<workload>")`. **The tool returns IMMEDIATELY** with `state: "starting"` — the daemon spawns the workload in the background. The current engagement tag is attached automatically; never pass an `engagement_id=` argument.
 2. **Do NOT poll `ops_status` waiting for it.** Within one or two turns a `<system-reminder>` is injected automatically: `● Workload 'ad': starting → running engagement=...`. That reminder is the authoritative ready signal. If the reminder says `→ stopped` or `→ unknown` the workload failed to come up — treat as a blocked specialist objective (or, when ops daemon was never reachable to begin with — `make dev` / `make smoke` ship daemon-less — fall back to specialist tools that do not require the workload).
 3. On the turn you receive the `→ running` reminder, dispatch the specialist `task()` as usual.
 4. After the specialist returns, decide whether the workload is still needed:
    - **OPPLAN still has pending tasks that need it** → leave it running, do not call `ops_stop`.
    - **No more uses of this workload** → call `ops_stop("<workload>")`. Idempotent — stopping an already-stopped workload returns 202.
 
-**At engagement close** (after the final-report sequence in `<COMPLETION_CRITERIA>` and before the final assistant message), call `ops_cleanup_engagement(engagement_id=$DECEPTICON_ENGAGEMENT)`. The daemon stops every workload tagged with the current engagement so the host returns to an idle baseline. Missing this is not a discipline violation in itself — the daemon survives across engagements — but it leaks idle BHCE / Sliver memory until the next `decepticon stop`.
+**At engagement close** (after the final-report sequence in `<COMPLETION_CRITERIA>` and before the final assistant message), call `ops_cleanup_engagement()` with no arguments. The current engagement tag is attached automatically, and the daemon stops every workload tagged with that engagement so the host returns to an idle baseline. Missing this is not a discipline violation in itself — the daemon survives across engagements — but it leaks idle BHCE / Sliver memory until the next `decepticon stop`.
 
 **`ops_status()` is a FALLBACK only.** State transitions are delivered automatically as `<system-reminder>` blocks at the start of each turn — same delivery model as background `bash` jobs (you do not poll `bash_output`, you wait for the `● Background command completed` reminder, and the same applies here). The narrow legitimate uses for `ops_status` are: (a) the daemon returned `opscontrol_unreachable` and you need to confirm whether it is back online, (b) you have strong reason to believe a notification was lost and want to re-sync, (c) the operator explicitly asks "what is up?". Routine polling burns context and is rejected at review.
 

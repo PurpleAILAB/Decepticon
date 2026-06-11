@@ -155,6 +155,7 @@ def create_blue_cell_agent(
 # Module-level graph for LangGraph Platform (langgraph serve)
 if is_bundle_enabled("standard"):
     graph = create_blue_cell_agent()
+    _ = graph
 
 
 SUBAGENT_SPEC = SubAgentSpec(

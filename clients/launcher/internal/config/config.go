@@ -607,3 +607,62 @@ func Get(env map[string]string, key, fallback string) string {
 	}
 	return fallback
 }
+
+// MigrateActiveComposeProfiles comments out any active "COMPOSE_PROFILES="
+// line in the .env file.
+//
+// Before ADR-0006 (v1.1.7 and earlier) the OSS .env.example shipped with
+// an active "COMPOSE_PROFILES=c2-sliver" line so `decepticon start`
+// always brought the Sliver C2 container up. ADR-0006 routes every
+// specialist workload (c2-sliver, ad, reversing, …) through the
+// opscontrol daemon; the orchestrator decides when each plane comes up
+// via `ops_start(...)`. A stale active COMPOSE_PROFILES from a v1.1.7-era
+// .env forces those workloads to spawn on every `decepticon start`,
+// defeating the dynamic-spawn design and re-introducing the idle-cost +
+// attack-surface that ADR-0006 was meant to remove.
+//
+// Behaviour:
+//   - rewrites every active "COMPOSE_PROFILES=…" line to a "# Migrated …"
+//     comment, preserving the original value inline so the operator can
+//     restore it by hand if they really want global activation
+//   - commented-out lines are left untouched (idempotent on repeat starts)
+//   - a single ".env.bak" backup is written next to the .env on the first
+//     migration; subsequent migrations skip the backup if one already
+//     exists, so a later edit-and-restart can't silently overwrite the
+//     pre-migration snapshot
+//   - returns (rewrote, error); rewrote=true is the signal for the caller
+//     to surface a one-line notice to the user
+func MigrateActiveComposeProfiles(envPath string) (bool, error) {
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	lines := strings.Split(string(data), "\n")
+	rewritten := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, _, ok := parseEnvLine(trimmed); ok && k == "COMPOSE_PROFILES" {
+			lines[i] = "# [v1.1.8 ADR-0006 migration] specialist workloads now spawn via ops_start; was: " + line
+			rewritten = true
+		}
+	}
+	if !rewritten {
+		return false, nil
+	}
+	backupPath := envPath + ".bak"
+	if _, statErr := os.Stat(backupPath); os.IsNotExist(statErr) {
+		if err := os.WriteFile(backupPath, data, 0o600); err != nil {
+			return false, fmt.Errorf("write backup %s: %w", backupPath, err)
+		}
+	}
+	if err := os.WriteFile(envPath, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}

@@ -26,6 +26,11 @@ from decepticon.tools.ops.client import (
     OpsControlUnreachableError,
 )
 
+try:
+    from langgraph.config import get_config as _lg_get_config
+except ImportError:  # langgraph not installed (standalone library use)
+    _lg_get_config = None  # type: ignore[assignment]
+
 log = logging.getLogger(__name__)
 
 
@@ -59,8 +64,39 @@ def _diagnose_http(exc: OpsControlError) -> str:
     )
 
 
+def _current_engagement() -> str | None:
+    """Resolve the engagement slug for the current LangGraph run.
+
+    Pulls from the per-run RunnableConfig via ``langgraph.config.get_config()``
+    (the CLI / Web / launcher pass the operator-chosen engagement as
+    ``config.configurable.engagement_name`` on every LangGraph run — same
+    channel ``EngagementContextMiddleware`` hydrates from). Reading it
+    here keeps workloads tagged thread-scoped instead of process-scoped,
+    which is the only way one langgraph process can serve multiple
+    engagements concurrently.
+
+    Falls back to the ``DECEPTICON_ENGAGEMENT`` env for daemon-less
+    library use and the standalone pytest harness; production wiring
+    never depends on the env.
+    """
+    if _lg_get_config is not None:
+        try:
+            cfg = _lg_get_config() or {}
+            configurable = cfg.get("configurable") or {}
+            if isinstance(configurable, dict):
+                slug = configurable.get("engagement_name")
+                if isinstance(slug, str) and slug.strip():
+                    return slug.strip()
+        except RuntimeError:
+            # Called outside a LangGraph runnable context — fall through
+            # to the env-based last resort.
+            pass
+    fallback = os.environ.get("DECEPTICON_ENGAGEMENT") or None
+    return fallback
+
+
 @tool
-def ops_start(workload: str, engagement_id: str | None = None) -> str:
+def ops_start(workload: str) -> str:
     """Spawn a domain-specific workload (BHCE, Sliver C2, …).
 
     Call this BEFORE delegating to the specialist that needs the
@@ -68,17 +104,17 @@ def ops_start(workload: str, engagement_id: str | None = None) -> str:
     (``ad``, ``c2-sliver``, ``c2-havoc``, ``reversing``, …). The daemon
     enforces an allowlist server-side — unknown names return a 400.
 
-    ``engagement_id`` tags the workload so the daemon registry can
-    associate it with the current engagement. If omitted, the tool
-    reads ``DECEPTICON_ENGAGEMENT`` from the langgraph env (set by the
-    launcher's engagement picker).
+    The current engagement slug is attached AUTOMATICALLY from the
+    LangGraph run's ``config.configurable.engagement_name`` (set by the
+    CLI / Web / launcher when opening the thread). The agent must NEVER
+    thread an engagement argument through — the tool reads the per-run
+    config so workloads are tagged thread-scoped.
 
     Returns a JSON envelope:
         ``{"workload": "ad", "state": "running", "engagement_id": "..."}``
     or an error envelope on failure.
     """
-    if engagement_id is None:
-        engagement_id = os.environ.get("DECEPTICON_ENGAGEMENT") or None
+    engagement_id = _current_engagement()
     try:
         return _envelope(OpsControlClient().start(workload, engagement_id))
     except OpsControlUnreachableError as exc:
@@ -105,34 +141,34 @@ def ops_stop(workload: str) -> str:
 
 
 @tool
-def ops_cleanup_engagement(engagement_id: str | None = None) -> str:
-    """Stop every workload tagged with the given engagement_id.
+def ops_cleanup_engagement() -> str:
+    """Stop every workload tagged with the current engagement.
 
     Call this once at engagement close — typically after the final
     report has been written but before the orchestrator returns its
     completion summary. The daemon walks its registry and issues
-    ``stop`` for every workload whose ``engagement_id`` field matches.
-    Idempotent: an already-stopped workload is reported in
-    ``stopped`` exactly once.
+    ``stop`` for every workload whose ``engagement_id`` field matches
+    the active engagement. Idempotent: an already-stopped workload is
+    reported in ``stopped`` exactly once.
 
-    ``engagement_id`` defaults to ``DECEPTICON_ENGAGEMENT`` from the
-    container env (set by the launcher's engagement picker) so the
-    orchestrator does not have to thread the id through every
-    response.
+    The engagement slug is sourced automatically from the LangGraph
+    run's ``config.configurable.engagement_name`` (set by the CLI / Web
+    / launcher when opening the thread); the orchestrator must NEVER
+    pass an engagement argument through.
 
     Returns a JSON envelope:
         ``{"engagement": "eng-...", "stopped": ["ad", "c2-sliver"], "errors": {...}}``
     or an error envelope on failure.
     """
-    if engagement_id is None:
-        engagement_id = os.environ.get("DECEPTICON_ENGAGEMENT") or None
+    engagement_id = _current_engagement()
     if not engagement_id:
         return _envelope(
             {
                 "error": "missing_engagement_id",
                 "hint": (
-                    "ops_cleanup_engagement requires an engagement_id "
-                    "(argument or DECEPTICON_ENGAGEMENT env)."
+                    "ops_cleanup_engagement could not resolve the current "
+                    "engagement. The CLI / Web / launcher must set "
+                    "`configurable.engagement_name` on the LangGraph run."
                 ),
             }
         )
