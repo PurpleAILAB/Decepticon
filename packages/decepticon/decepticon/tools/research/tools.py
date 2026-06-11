@@ -30,6 +30,15 @@ from decepticon.tools.contracts.patterns import scan_solidity_source
 from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
+from decepticon.tools.research.ai_signatures import (
+    TechMatch,
+    classify_ai_endpoint,
+    dedup_matches,
+    lookup_ai_port,
+    match_ai_banner,
+    match_ai_headers,
+    match_ai_title,
+)
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.classification import (
     classify_endpoint,
@@ -60,6 +69,7 @@ from decepticon_core.types.kg import (
     Node,
     NodeKind,
     Severity,
+    technology_key,
 )
 from decepticon_core.utils.logging import get_logger
 
@@ -204,6 +214,40 @@ def _ensure_entrypoint_node(
             scheme=scheme,
         )
     )
+
+
+def _merge_technology(
+    graph: KnowledgeGraph,
+    *,
+    service: Node,
+    match: TechMatch,
+    source: str,
+) -> Node:
+    """MERGE a Technology node for ``match`` and link ``(Service)-[:RUNS]->(Technology)``.
+
+    Identity is ``technology_key(category, name)`` so two classifiers (header +
+    banner) corroborating the same product converge on one node per engagement
+    (ADR-0007). ``confidence`` ("high" routable / "low" corroborating) and the
+    detection provenance ride along as props.
+    """
+    props: dict[str, Any] = {
+        "category": match.category.value,
+        "confidence": match.confidence,
+        "detected_by": match.detected_by,
+        "source": source,
+    }
+    if match.version:
+        props["version"] = match.version
+    tech = graph.upsert_node(
+        Node.make(
+            NodeKind.TECHNOLOGY,
+            match.name,
+            key=technology_key(match.category, match.name),
+            **props,
+        )
+    )
+    graph.upsert_edge(Edge.make(service.id, tech.id, EdgeKind.RUNS, weight=0.6))
+    return tech
 
 
 def _iter_requirements(path: Path) -> list[tuple[str, str, str]]:
@@ -736,6 +780,7 @@ def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
         hosts_added = 0
         services_added = 0
         entrypoints_added = 0
+        technologies_added = 0
 
         for host_el in root.findall("host"):
             status = host_el.find("status")
@@ -791,6 +836,22 @@ def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
                 )
                 services_added += 1
 
+                # AI-surface discovery (ADR-0007): a high-confidence vendor port
+                # auto-promotes a Technology node; the -sV banner is a second,
+                # corroborating channel. dedup_matches keeps the high-confidence
+                # one when both name the same product.
+                extrainfo = service_el.get("extrainfo") if service_el is not None else ""
+                port_match = lookup_ai_port(port)
+                ai_matches: list[TechMatch] = []
+                if port_match is not None and port_match.confidence == "high":
+                    ai_matches.append(port_match)
+                banner_match = match_ai_banner(product, version, extrainfo)
+                if banner_match is not None:
+                    ai_matches.append(banner_match)
+                for tech_match in dedup_matches(ai_matches):
+                    _merge_technology(graph, service=service, match=tech_match, source=scanner_hint)
+                    technologies_added += 1
+
                 if _is_web_port(port):
                     ep = _ensure_entrypoint_node(
                         graph,
@@ -808,6 +869,7 @@ def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
                     "hosts": hosts_added,
                     "services": services_added,
                     "entrypoints": entrypoints_added,
+                    "technologies": technologies_added,
                 },
                 "stats": graph.stats(),
             }
@@ -985,6 +1047,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
         skipped = 0
         entrypoints = 0
         service_links = 0
+        technologies_added = 0
 
         for raw_line in p.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
@@ -1003,6 +1066,8 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
             parsed += 1
 
             parsed_url = urlparse(url)
+            ai_interface = classify_ai_endpoint(parsed_url.path)
+            ai_kw = {"ai_interface_type": ai_interface} if ai_interface != "non-llm" else {}
             host_value = (
                 str(row.get("host") or parsed_url.hostname or row.get("input") or "")
                 .strip()
@@ -1047,6 +1112,19 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
                 technologies=technologies,
             )
 
+            # AI-surface discovery (ADR-0007): distinctive response headers
+            # promote a Technology node; a page title corroborates (low conf).
+            ai_headers = row.get("header") if isinstance(row.get("header"), dict) else {}
+            if webserver and not any(str(k).lower() == "server" for k in ai_headers):
+                ai_headers = {**ai_headers, "server": webserver}
+            ai_matches = [*match_ai_headers(ai_headers)]
+            title_match = match_ai_title(title)
+            if title_match is not None:
+                ai_matches.append(title_match)
+            for tech_match in dedup_matches(ai_matches):
+                _merge_technology(graph, service=service, match=tech_match, source=scanner_hint)
+                technologies_added += 1
+
             ep = graph.upsert_node(
                 Node.make(
                     NodeKind.ENTRYPOINT,
@@ -1060,6 +1138,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
                     title=title,
                     webserver=webserver,
                     technologies=technologies,
+                    **ai_kw,
                 )
             )
             url_node = graph.upsert_node(
@@ -1072,6 +1151,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
                     title=title,
                     webserver=webserver,
                     technologies=technologies,
+                    **ai_kw,
                 )
             )
             graph.upsert_edge(Edge.make(host.id, ep.id, EdgeKind.EXPOSES, weight=0.5))
@@ -1103,6 +1183,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
                 "skipped": skipped,
                 "entrypoints": entrypoints,
                 "service_links": service_links,
+                "technologies": technologies_added,
                 "stats": graph.stats(),
             }
         )
@@ -1980,6 +2061,8 @@ def kg_ingest_katana(path: str) -> str:
             category = classify_endpoint(
                 parsed_url.path or "/", [row.get("method") or "GET"], params_dict
             )
+            ai_interface = classify_ai_endpoint(parsed_url.path or "/")
+            ai_kw = {"ai_interface_type": ai_interface} if ai_interface != "non-llm" else {}
 
             pclasses = [classify_parameter(p["name"]) for p in query_params]
             ptypes = [
@@ -2008,6 +2091,7 @@ def kg_ingest_katana(path: str) -> str:
                     param_classes=pclasses,
                     param_types=ptypes,
                     params=pnames,
+                    **ai_kw,
                 )
             )
             ep = graph.upsert_node(
@@ -2021,6 +2105,7 @@ def kg_ingest_katana(path: str) -> str:
                     param_classes=pclasses,
                     param_types=ptypes,
                     params=pnames,
+                    **ai_kw,
                 )
             )
             graph.upsert_edge(Edge.make(host.id, url_node.id, EdgeKind.EXPOSES, weight=0.5))
@@ -2063,6 +2148,7 @@ def kg_ingest_masscan(path: str) -> str:
     with graph_transaction() as graph:
         hosts_added = 0
         services_added = 0
+        technologies_added = 0
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -2081,7 +2167,7 @@ def kg_ingest_masscan(path: str) -> str:
                 proto = port_row.get("proto", "tcp")
                 if port_row.get("status") and port_row.get("status") != "open":
                     continue
-                _ensure_service_node(
+                service = _ensure_service_node(
                     graph,
                     host=host,
                     host_label=ip,
@@ -2094,10 +2180,20 @@ def kg_ingest_masscan(path: str) -> str:
                 )
                 services_added += 1
 
+                # AI-surface discovery (ADR-0007): masscan has only ports, so it
+                # promotes Technology nodes for high-confidence vendor ports
+                # (11434 Ollama, 6333 Qdrant, …) only; generic ports wait for
+                # HTTP-header/title corroboration via the httpx ingest.
+                port_match = lookup_ai_port(port)
+                if port_match is not None and port_match.confidence == "high":
+                    _merge_technology(graph, service=service, match=port_match, source="masscan")
+                    technologies_added += 1
+
         return _json(
             {
                 "hosts_added": hosts_added,
                 "services_added": services_added,
+                "technologies_added": technologies_added,
                 "stats": graph.stats(),
             }
         )
