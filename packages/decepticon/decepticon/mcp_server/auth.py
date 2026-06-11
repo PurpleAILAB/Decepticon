@@ -202,7 +202,12 @@ def _load_pem(value: str | None) -> str | None:
     """Resolve a public key given as a filesystem path or inline PEM text."""
     if not value:
         return None
-    candidate = Path(value)
-    if candidate.is_file():
-        return candidate.read_text(encoding="utf-8")
+    if "-----BEGIN" in value:
+        return value
+    try:
+        candidate = Path(value)
+        if len(value) < 1024 and candidate.is_file():
+            return candidate.read_text(encoding="utf-8")
+    except OSError:
+        pass
     return value
