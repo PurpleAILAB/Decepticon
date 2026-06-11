@@ -1,4 +1,4 @@
-FROM ghcr.io/berriai/litellm:main-v1.82.3-stable.patch.2
+FROM ghcr.io/berriai/litellm:v1.88.1
 
 # xxhash is required for CCH (Claude Code Hash) request signing
 RUN pip install --no-cache-dir xxhash
