@@ -123,7 +123,10 @@ class TestParsers:
                 }
             ]
         }
-        dns = {"domain": "example.com", "data": [{"subdomain": "www", "type": "A", "value": "203.0.113.5"}]}
+        dns = {
+            "domain": "example.com",
+            "data": [{"subdomain": "www", "type": "A", "value": "203.0.113.5"}],
+        }
         out = _parse_shodan(host, dns)
         assert {"port": 443, "transport": "tcp"} in out["open_ports"]
         assert out["certificates"][0]["subject_cn"] == "example.com"
@@ -180,9 +183,7 @@ class TestMockCatalog:
         assert {"port": 443, "transport": "tcp"} in a["open_ports"]
         assert a["certificates"][0]["subject_cn"] == "example.com"
 
-    def test_catalog_file_override(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_catalog_file_override(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         catalog = {
             "target.test": {
                 "open_ports": [{"port": 8080, "transport": "tcp"}],
@@ -250,9 +251,7 @@ class TestToolScope:
         assert "out of scope" in data["error"]
         assert data["scope_patterns"] == ["*.example.com"]
 
-    async def test_in_scope_wildcard_allowed(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_in_scope_wildcard_allowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("DECEPTICON_OSINT_SCOPE", "*.example.com")
         raw = await osint_enrich.ainvoke({"domain": "api.example.com"})
         data = json.loads(raw)
@@ -278,7 +277,10 @@ def _shodan_handler(request: httpx.Request) -> httpx.Response:
     if "/dns/domain/" in request.url.path:
         return httpx.Response(
             200,
-            json={"domain": "example.com", "data": [{"subdomain": "www", "type": "A", "value": "203.0.113.5"}]},
+            json={
+                "domain": "example.com",
+                "data": [{"subdomain": "www", "type": "A", "value": "203.0.113.5"}],
+            },
         )
     return httpx.Response(
         200,
@@ -289,7 +291,9 @@ def _shodan_handler(request: httpx.Request) -> httpx.Response:
                     "port": 443,
                     "transport": "tcp",
                     "data": "HTTP/1.1 200 OK",
-                    "ssl": {"cert": {"subject": {"CN": "example.com"}, "fingerprint": {"sha256": "abc"}}},
+                    "ssl": {
+                        "cert": {"subject": {"CN": "example.com"}, "fingerprint": {"sha256": "abc"}}
+                    },
                 }
             ]
         },

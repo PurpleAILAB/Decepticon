@@ -252,9 +252,7 @@ async def _fetch_shodan(
         SHODAN_SEARCH_URL, params={"key": api_key, "query": f"hostname:{domain}"}
     )
     host_resp.raise_for_status()
-    dns_resp = await client.get(
-        SHODAN_DNS_URL.format(domain=domain), params={"key": api_key}
-    )
+    dns_resp = await client.get(SHODAN_DNS_URL.format(domain=domain), params={"key": api_key})
     dns_resp.raise_for_status()
     return _parse_shodan(host_resp.json(), dns_resp.json())
 
@@ -373,9 +371,7 @@ async def osint_enrich(domain: str) -> str:
 
     scope = _load_scope_patterns()
     in_scope = _is_in_scope(target, scope)
-    log.info(
-        "osint_enrich target=%r scope_patterns=%d in_scope=%s", target, len(scope), in_scope
-    )
+    log.info("osint_enrich target=%r scope_patterns=%d in_scope=%s", target, len(scope), in_scope)
     if not in_scope:
         log.warning("osint_enrich refused: %r is out of target scope %s", target, scope)
         return _json(
@@ -397,9 +393,7 @@ async def osint_enrich(domain: str) -> str:
             for name in sources:
                 try:
                     if name == "shodan":
-                        part = await _fetch_shodan(
-                            client, target, os.environ["SHODAN_API_KEY"]
-                        )
+                        part = await _fetch_shodan(client, target, os.environ["SHODAN_API_KEY"])
                     elif name == "censys":
                         part = await _fetch_censys(
                             client,
@@ -408,9 +402,7 @@ async def osint_enrich(domain: str) -> str:
                             os.environ["CENSYS_API_SECRET"],
                         )
                     else:  # zoomeye
-                        part = await _fetch_zoomeye(
-                            client, target, os.environ["ZOOMEYE_API_KEY"]
-                        )
+                        part = await _fetch_zoomeye(client, target, os.environ["ZOOMEYE_API_KEY"])
                     _merge_findings(findings, part)
                     used.append(name)
                     log.info("osint_enrich %s ok for %r", name, target)
