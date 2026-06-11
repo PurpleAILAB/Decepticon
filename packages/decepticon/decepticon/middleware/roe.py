@@ -69,6 +69,7 @@ GATED_TOOL_NAMES: frozenset[str] = frozenset(
         "http_request",
         "proxy_send_request",
         "browser_action",
+        "detect_tech_stack",
     }
 )
 
@@ -103,6 +104,7 @@ def _hosts_from_browser_action(args: dict[str, Any]) -> list[str]:
 NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "http_request": _hosts_from_url_arg,
     "proxy_send_request": _hosts_from_url_arg,
+    "detect_tech_stack": _hosts_from_url_arg,
     "browser_action": _hosts_from_browser_action,
 }
 
