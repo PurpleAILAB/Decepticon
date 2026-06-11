@@ -22,21 +22,32 @@
 model_list:
   # ── Anthropic ────────────────────────────────────────────────────────
   # ``additional_drop_params: ["temperature"]`` on opus is required: Anthropic
-  # deprecated the temperature param for Claude Opus 4.7 (extended-thinking
+  # deprecated the temperature param for Claude Opus 4.7/4.8 (extended-thinking
   # defaults). Sending it raises a 400 invalid_request_error from the upstream
   # API, which then prevents the proxy-level fallback from firing because
   # it's a *request validation* error, not a model-failure signal. Dropping
   # the param at the proxy keeps the request well-formed regardless of which
   # client hit us.
-  # Per-1M USD as of 2026-05-14 (Anthropic API):
+  # Per-1M USD as of 2026-06-11 (Anthropic API):
+  #   opus-4-8   $5.00 / $25.00   (current top Opus; 4.7 now previous-gen)
   #   opus-4-7   $5.00 / $25.00
   #   sonnet-4-6 $3.00 / $15.00
   #   haiku-4-5  $1.00 /  $5.00
   # LiteLLM's built-in cost map ships sonnet-4-6 and haiku-4-5 correctly,
-  # but opus-4-7 is missing — explicit ``model_info`` here forces
+  # but the opus IDs are missing — explicit ``model_info`` here forces
   # /spend/logs to populate cost instead of ``None / 0``. Sonnet/Haiku
   # are pinned too so we own the price source of truth instead of
   # silently drifting if Anthropic's map updates.
+  - model_name: anthropic/claude-opus-4-8
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
   - model_name: anthropic/claude-opus-4-7
     litellm_params:
       model: anthropic/claude-opus-4-7
@@ -143,6 +154,32 @@ model_list:
       input_cost_per_token: 0.0000001
       output_cost_per_token: 0.0000004
 
+  # ── Google Gemini 3.x (GA) ───────────────────────────────────────────
+  # The 2.5 family above is on the deprecation path (discontinue no earlier
+  # than 2026-10-16); the 3.x GA models below are the migration target.
+  # No GA Gemini 3 Pro exists yet (Pro is preview-only: gemini-3.1-pro-preview),
+  # so the HIGH tier stays on 2.5-pro until a GA 3.x Pro ships. These are
+  # added as routable options for DECEPTICON_MODEL_<ROLE> overrides plus the
+  # within-family fallback below.
+  # Per-1M USD as of 2026-06-11 (Gemini Developer API):
+  #   3.5-flash      $1.50 / $9.00
+  #   3.1-flash-lite $0.25 / $1.50
+  - model_name: gemini/gemini-3.5-flash
+    litellm_params:
+      model: gemini/gemini-3.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      input_cost_per_token: 0.0000015
+      output_cost_per_token: 0.000009
+
+  - model_name: gemini/gemini-3.1-flash-lite
+    litellm_params:
+      model: gemini/gemini-3.1-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      input_cost_per_token: 0.00000025
+      output_cost_per_token: 0.0000015
+
   # ── MiniMax ──────────────────────────────────────────────────────────
   # Native LiteLLM minimax/ provider — registry-registered model IDs.
   # Per-1M USD as of 2026-06-07 (api.minimax.io):
@@ -179,6 +216,15 @@ model_list:
   # "API-equivalent cost" — useful for comparing benchmark cost across
   # paid-API and subscription routes apples-to-apples. The OSS user's
   # actual bill is the subscription fee; this number is opportunity cost.
+  - model_name: auth/claude-opus-4-8
+    litellm_params:
+      model: auth/claude-opus-4-8
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
   - model_name: auth/claude-opus-4-7
     litellm_params:
       model: auth/claude-opus-4-7
@@ -297,6 +343,16 @@ model_list:
   # 5.5 % fee only applies on credit-purchase deposits). The Claude
   # pricing block above is the source of truth — we mirror those values
   # here so /spend/logs captures cost for the OpenRouter routes too.
+  - model_name: openrouter/anthropic/claude-opus-4-8
+    litellm_params:
+      model: openrouter/anthropic/claude-opus-4-8
+      api_key: os.environ/OPENROUTER_API_KEY
+      additional_drop_params: ["temperature"]
+      max_tokens: 128000
+    model_info:
+      input_cost_per_token: 0.000005
+      output_cost_per_token: 0.000025
+
   - model_name: openrouter/anthropic/claude-opus-4-7
     litellm_params:
       model: openrouter/anthropic/claude-opus-4-7
@@ -521,14 +577,14 @@ model_list:
     model_info:
       input_cost_per_token: 0.000003
       output_cost_per_token: 0.000015
-  - model_name: nanogpt/anthropic/claude-3-5-haiku-20241022
+  - model_name: nanogpt/anthropic/claude-haiku-4.5
     litellm_params:
-      model: openai/anthropic/claude-3-5-haiku-20241022
+      model: openai/anthropic/claude-haiku-4.5
       api_base: https://nano-gpt.com/api/v1
       api_key: os.environ/NANOGPT_API_KEY
     model_info:
-      input_cost_per_token: 0.0000008
-      output_cost_per_token: 0.000004
+      input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000005
 
   # Synthetic — https://api.synthetic.new/openai/v1 (flat plan → $0)
   - model_name: synthetic/hf:deepseek-ai/DeepSeek-V3.2
@@ -693,10 +749,13 @@ litellm_settings:
   # 'No fallback model group found for original model_group=
   # anthropic/claude-opus-4-7' error.
   fallbacks:
-    # Anthropic API path
+    # Anthropic API path (opus-4-8 is the current flagship; 4.7 is the
+    # first within-provider step down before sonnet/haiku)
+    - {"anthropic/claude-opus-4-8": ["anthropic/claude-opus-4-7"]}
     - {"anthropic/claude-opus-4-7": ["anthropic/claude-sonnet-4-6"]}
     - {"anthropic/claude-sonnet-4-6": ["anthropic/claude-haiku-4-5"]}
     # Anthropic OAuth (Claude Code subscription) path
+    - {"auth/claude-opus-4-8": ["auth/claude-opus-4-7"]}
     - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
     - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
     # OAuth → paid API key cross-method backstop. When the entire OAuth
@@ -708,6 +767,7 @@ litellm_settings:
     # ANTHROPIC_API_KEY.
     - {"auth/claude-haiku-4-5": ["anthropic/claude-haiku-4-5"]}
     # OpenRouter mirrors of the Anthropic models
+    - {"openrouter/anthropic/claude-opus-4-8": ["openrouter/anthropic/claude-opus-4-7"]}
     - {"openrouter/anthropic/claude-opus-4-7": ["openrouter/anthropic/claude-sonnet-4-6"]}
     - {"openrouter/anthropic/claude-sonnet-4-6": ["openrouter/anthropic/claude-haiku-4-5"]}
     # OpenAI direct API
@@ -717,6 +777,8 @@ litellm_settings:
     # Google Gemini API path
     - {"gemini/gemini-2.5-pro": ["gemini/gemini-2.5-flash"]}
     - {"gemini/gemini-2.5-flash": ["gemini/gemini-2.5-flash-lite"]}
+    # Gemini 3.x (GA) within-family degradation — 3.5-flash → 3.1-flash-lite
+    - {"gemini/gemini-3.5-flash": ["gemini/gemini-3.1-flash-lite"]}
     # Gemini Advanced subscription fallbacks (registered dynamically)
     # MiniMax (no LOW tier)
     - {"minimax/MiniMax-M3": ["minimax/MiniMax-M2.7-highspeed"]}
@@ -748,7 +810,7 @@ litellm_settings:
     - {"venice/claude-opus-4-6": ["venice/claude-sonnet-4-6"]}
     - {"venice/claude-sonnet-4-6": ["venice/deepseek-v4-flash"]}
     - {"nanogpt/anthropic/claude-opus-4.6": ["nanogpt/anthropic/claude-sonnet-4.6"]}
-    - {"nanogpt/anthropic/claude-sonnet-4.6": ["nanogpt/anthropic/claude-3-5-haiku-20241022"]}
+    - {"nanogpt/anthropic/claude-sonnet-4.6": ["nanogpt/anthropic/claude-haiku-4.5"]}
     - {"synthetic/hf:deepseek-ai/DeepSeek-V3.2": ["synthetic/hf:meta-llama/Llama-3.3-70B-Instruct"]}
     - {"synthetic/hf:meta-llama/Llama-3.3-70B-Instruct": ["synthetic/hf:openai/gpt-oss-120b"]}
     - {"zenmux/anthropic/claude-opus-4.6": ["zenmux/anthropic/claude-sonnet-4.6"]}
