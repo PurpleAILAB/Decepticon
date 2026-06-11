@@ -453,7 +453,10 @@ jobs:
       - uses: actions/setup-go@v5
         if: needs.changes.outputs.launcher == 'true'
         with:
-          go-version: "1.24"
+          # Read the toolchain from go.mod so CI never drifts from the
+          # launcher's declared version (go.mod is the single source of
+          # truth; a hardcoded version here masked a 1.24/1.25 mismatch).
+          go-version-file: clients/launcher/go.mod
           cache-dependency-path: clients/launcher/go.sum
       - name: go vet
         if: needs.changes.outputs.launcher == 'true'

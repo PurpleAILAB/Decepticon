@@ -87,7 +87,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          # Read the toolchain from go.mod (single source of truth) so the
+          # release build never drifts from the launcher's declared version.
+          go-version-file: clients/launcher/go.mod
           cache-dependency-path: clients/launcher/go.sum
 
       - name: Run tests

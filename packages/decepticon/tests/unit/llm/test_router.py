@@ -23,7 +23,7 @@ class TestModelRouter:
         assert self.router.resolve("recon") == "anthropic/claude-haiku-4-5"
 
     def test_resolve_decepticon_is_high_tier(self):
-        assert self.router.resolve("decepticon") == "anthropic/claude-opus-4-7"
+        assert self.router.resolve("decepticon") == "anthropic/claude-opus-4-8"
 
     def test_resolve_with_fallback_returns_chain(self):
         chain = self.router.resolve_with_fallback("recon")
@@ -39,14 +39,14 @@ class TestModelRouter:
     def test_resolve_with_fallback_high_tier_full_chain(self):
         chain = self.router.resolve_with_fallback("decepticon")
         assert chain == [
-            "anthropic/claude-opus-4-7",
+            "anthropic/claude-opus-4-8",
             "openai/gpt-5.5",
             "gemini/gemini-2.5-pro",
             "minimax/MiniMax-M3",
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-7",
+            "openrouter/anthropic/claude-opus-4-8",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 
