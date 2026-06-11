@@ -290,6 +290,91 @@ class Neo4jBackend:
                 )
             ]
 
+    # ---- playbook composition plane (used by playbook RPCs) ----
+
+    def get_playbook(
+        self,
+        name: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Return one ``:Playbook`` with its ordered steps, or ``None``.
+
+        Steps are the ``(:Playbook)-[:STEP {order}]->(:Skill)`` chain in
+        ``order``. When ``allowed_path_prefixes`` is set (ADR-0008), steps
+        whose skill path falls outside the role allowlist are dropped — the
+        same content-visibility rule ``traverse``/``load_skill`` enforce.
+        """
+        cypher = (
+            "MATCH (p:Playbook {name: $name}) "
+            "OPTIONAL MATCH (p)-[r:STEP]->(s:Skill) "
+            "WITH p, r, s ORDER BY r.order "
+            "RETURN p.name AS name, p.description AS description, "
+            "       coalesce(p.phase, '') AS phase, "
+            "       collect({order: r.order, name: s.name, path: s.path, "
+            "                subdomain: s.subdomain, description: s.description}) AS steps"
+        )
+        with self._driver.session(database=self._database, default_access_mode="READ") as session:
+            record = session.run(cypher, name=name).single()
+        if record is None or record["name"] is None:
+            return None
+        steps = [dict(st) for st in record["steps"] if st.get("name") is not None]
+        if allowed_path_prefixes:
+            steps = [
+                st for st in steps if _path_under_any_prefix(st.get("path"), allowed_path_prefixes)
+            ]
+        return {
+            "name": record["name"],
+            "description": record["description"],
+            "phase": record["phase"],
+            "steps": steps,
+        }
+
+    def suggest_next(
+        self,
+        skill: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Skills that immediately follow ``skill`` in any playbook.
+
+        Derived from ``STEP.order`` (``order = current.order + 1`` on the
+        shared playbook) rather than a dedicated ``NEXT`` edge, so a
+        transition shared by two playbooks yields one row per playbook and
+        nothing is lost to edge dedup. ADR-0008 path-prefix filtering
+        applies to the candidate skills.
+        """
+        cypher = (
+            "MATCH (p:Playbook)-[a:STEP]->(:Skill {name: $skill}) "
+            "MATCH (p)-[b:STEP]->(n:Skill) WHERE b.order = a.order + 1 "
+            "RETURN n.name AS name, n.path AS path, n.subdomain AS subdomain, "
+            "       n.description AS description, p.name AS playbook, b.order AS order "
+            "ORDER BY playbook, order"
+        )
+        with self._driver.session(database=self._database, default_access_mode="READ") as session:
+            rows = [dict(record) for record in session.run(cypher, skill=skill)]
+        if allowed_path_prefixes:
+            rows = [r for r in rows if _path_under_any_prefix(r.get("path"), allowed_path_prefixes)]
+        return rows
+
+    def list_playbooks(self, *, phase: str | None = None) -> list[dict[str, Any]]:
+        """All playbooks, ordered by name; optionally scoped to a phase.
+
+        Used by ``SkillogyMiddleware`` to advertise the playbooks
+        available for the agent's current phase in its system prompt.
+        """
+        anchor = "(p:Playbook)-[:IN_PHASE]->(:Phase {name: $phase})" if phase else "(p:Playbook)"
+        cypher = (
+            f"MATCH {anchor} "
+            "RETURN p.name AS name, p.description AS description, "
+            "       coalesce(p.phase, '') AS phase, "
+            "       coalesce(p.step_count, 0) AS step_count "
+            "ORDER BY name"
+        )
+        params: dict[str, Any] = {"phase": phase} if phase else {}
+        with self._driver.session(database=self._database, default_access_mode="READ") as session:
+            return [dict(record) for record in session.run(cypher, parameters=params)]
+
     # ---- explicit graph traversal (used by traverse RPC) ----
 
     def traverse(

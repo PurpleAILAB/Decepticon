@@ -43,6 +43,41 @@ LangGraph, sandbox) keeps the always-on contract.
   value inline) and writes a single `.env.bak` backup. Idempotent on
   repeat starts; the backup is not overwritten when an operator
   reintroduces the active line. (#624)
+- **AI attack-surface discovery (ADR-0007).** Recon now recognises the
+  AI stacks the `llm-redteam` plugin can attack but was previously blind
+  to. A dependency-free signal catalog
+  (`tools/research/ai_signatures.py`) classifies AI runtimes / proxies /
+  frameworks from data recon already captures — response headers
+  (`anthropic-version`, `x-litellm-*`, `Server: vLLM`, …), open ports
+  (11434 Ollama, 6333 Qdrant, 19530 Milvus, 8188 ComfyUI, …),
+  `nmap -sV` banners, and page titles (Open WebUI, MLflow, ComfyUI) —
+  and an endpoint classifier stamps each crawled URL with its AI
+  interface type (chat / completion / embedding / models / sse / mcp /
+  graphql). The `kg_ingest_httpx_jsonl` (header + title), `kg_ingest_nmap_xml`
+  (port + banner), `kg_ingest_masscan` (port), and `kg_ingest_katana`
+  (interface) ingesters MERGE typed `Technology` nodes linked
+  `(Service)-[:RUNS]->(Technology)`. Two-tier confidence: distinctive
+  headers and high-confidence vendor ports promote a routable node;
+  generic ports are gated until corroborated, and title/banner matches
+  are recorded as corroborating-only so a guess cannot drive an exploit
+  chain on its own. (#593)
+- **Skillogy playbooks — the composition plane.** Authored, ordered
+  multi-skill chains for recurring scenarios are now first-class graph
+  data. A `PLAYBOOK.md` artifact under `/skills/playbooks/<name>/` is
+  compiled by a new builder pass (`skillogy/builder/playbooks.py`) into a
+  `:Playbook` node with ordered `(:Playbook)-[:STEP {order}]->(:Skill)`
+  edges and a `(:Playbook)-[:IN_PHASE]->(:Phase)` link; step references
+  are validated against the real skill/phase names at build time, so the
+  graph compile fails on a dangling reference. Three new agent tools —
+  `get_playbook(name)`, `suggest_next(last_skill)` (derived from
+  `STEP.order`, no `NEXT` edge needed), and `list_playbooks(phase?)` —
+  are served over new REST endpoints (`/v1/playbooks:get|list`,
+  `/v1/skills:next`) and registered by `SkillogyMiddleware`, which now
+  also advertises a phase's playbooks in its system-prompt phase block.
+  Ships three playbooks (`exposed-ai-service-takeover`,
+  `external-web-foothold`, `ad-domain-dominance`) and two new skills that
+  back the AI chain: `ai-surface-mapping` (recon) and `llm-api-abuse`
+  (exploit/api). All ADR-0008 path-prefix ACLs are honoured. (#593)
 
 ### Changed
 

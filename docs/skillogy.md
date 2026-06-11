@@ -62,6 +62,7 @@ The agent's system prompt no longer carries a 4 KB catalog. It sees a tiny navig
 | `:Tool` | External tool | `nmap`, `sqlmap`, `bloodhound` |
 | `:Phase` | Kill-chain phase | `reconnaissance`, `initial-access`, `lateral-movement` |
 | `:MoC` | Map-of-Concepts navigation category | `web-exploitation`, `ad-attacks`, `cloud-pivot` |
+| `:Playbook` | Authored ordered multi-skill engagement chain (`PLAYBOOK.md`) | `exposed-ai-service-takeover`, `ad-domain-dominance` |
 | `:Agent` | Decepticon specialist agent | `soundwave`, `recon`, `exploit`, `decepticon` |
 | `:RoEConstraint` | Explicit Rules-of-Engagement constraint | `no-data-exfil`, `scope-internal-only` |
 
@@ -81,6 +82,8 @@ The agent's system prompt no longer carries a 4 KB catalog. It sees a tiny navig
 | `(:Tactic)-[:HAS_TECHNIQUE]->(:Technique)` | MITRE hierarchy |
 | `(:Technique)-[:HAS_SUBTECHNIQUE]->(:SubTechnique)` | MITRE hierarchy |
 | `(:AssetType)-[:HAS_SUBTYPE]->(:AssetType)` | Asset taxonomy hierarchy |
+| `(:Playbook)-[:STEP {order}]->(:Skill)` | Ordered step in a playbook (`order` 1-based) |
+| `(:Playbook)-[:IN_PHASE]->(:Phase)` | Playbook is advertised for a phase |
 
 ### LLM-inferred (v0.1)
 
@@ -93,7 +96,14 @@ Every LLM-inferred edge carries `confidence`, `provenance`, `justification`, `in
 
 ### Reserved for v0.2
 
-`PRODUCES` / `CONSUMES` (capability plane), `COMPOSES_WITH`, `SUBSTITUTES`, `FORBIDDEN_BY` (RoE filtering), `IMPLEMENTS_ATLAS` (MITRE ATLAS dual-tag for AI-target skills).
+**Landed:** the ordered composition plane — `:Playbook` nodes authored as
+`PLAYBOOK.md` files, `(:Playbook)-[:STEP {order}]->(:Skill)` edges, and the
+`get_playbook` / `suggest_next` / `list_playbooks` tools (`suggest_next` is
+derived from `STEP.order`, so no separate `NEXT` edge is needed).
+
+Still reserved: `PRODUCES` / `CONSUMES` (capability plane), `SUBSTITUTES`,
+`FORBIDDEN_BY` (RoE filtering), `IMPLEMENTS_ATLAS` (MITRE ATLAS dual-tag for
+AI-target skills).
 
 ### Runtime bridge to the attack graph
 
@@ -116,7 +126,9 @@ All five tools are registered by `SkillogyMiddleware.get_tools()`. The graph ret
 | `find_skill(query, phase?, asset_hint?)` | Top-K skills for the current task, with reasoning path | ✅ |
 | `load_skill(name_or_path)` | Read the full `SKILL.md` body from disk | ✅ |
 | `get_prereqs(skill_name)` | Prerequisite skills (via `REQUIRES`) | ✅ |
-| `suggest_next(last_skill)` | Likely next skill (via `COMPOSES_WITH` + capability chain) | v0.2 |
+| `suggest_next(last_skill)` | Skills that follow `last_skill` in any playbook (derived from `STEP.order`) | ✅ |
+| `get_playbook(name)` | One playbook with its ordered steps (skill name + path + description) | ✅ |
+| `list_playbooks(phase?)` | Playbooks available, optionally scoped to a phase | ✅ |
 | `get_skill_chain(target_capability)` | Backward-chained skill sequence to reach a capability | v0.2 |
 
 `find_skill` example response:
