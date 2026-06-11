@@ -76,6 +76,17 @@ if BaseModel is not None:
         phase: str
         limit: int = 25
 
+    class PlaybookGetReq(BaseModel):
+        name: str
+        allowed_path_prefixes: list[str] | None = None  # ADR-0008
+
+    class SuggestNextReq(BaseModel):
+        skill: str
+        allowed_path_prefixes: list[str] | None = None  # ADR-0008
+
+    class PlaybookListReq(BaseModel):
+        phase: str | None = None
+
 
 def build_app(
     backend: Neo4jBackend,
@@ -196,6 +207,23 @@ def build_app(
     async def moc_summary(req: MocReq) -> dict[str, Any]:
         rows = backend.query_moc_summary(req.phase, limit=req.limit)
         return {"count": len(rows), "mocs": rows}
+
+    @app.post("/v1/playbooks:get", dependencies=_protected)
+    async def get_playbook(req: PlaybookGetReq) -> dict[str, Any]:
+        playbook = backend.get_playbook(req.name, allowed_path_prefixes=req.allowed_path_prefixes)
+        if playbook is None:
+            raise HTTPException(status_code=404, detail=f"no Playbook named {req.name!r}")
+        return {"playbook": playbook}
+
+    @app.post("/v1/playbooks:list", dependencies=_protected)
+    async def list_playbooks(req: PlaybookListReq) -> dict[str, Any]:
+        rows = backend.list_playbooks(phase=req.phase)
+        return {"count": len(rows), "playbooks": rows}
+
+    @app.post("/v1/skills:next", dependencies=_protected)
+    async def suggest_next(req: SuggestNextReq) -> dict[str, Any]:
+        rows = backend.suggest_next(req.skill, allowed_path_prefixes=req.allowed_path_prefixes)
+        return {"count": len(rows), "next": rows}
 
     # The amendment removes ``run_cypher_read`` from the agent surface,
     # but the backend method is kept for internal diagnostics. We expose

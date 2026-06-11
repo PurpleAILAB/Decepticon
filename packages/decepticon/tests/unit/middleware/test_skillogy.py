@@ -325,13 +325,16 @@ class TestTraverseTool:
 
 
 class TestMiddlewareConstruction:
-    def test_three_tools_registered(self) -> None:
+    def test_five_tools_registered(self) -> None:
         mw = SkillogyMiddleware(backend=_StubBackend())
         names = [t.name for t in mw.tools]
-        assert names == ["find_skill", "load_skill", "traverse"], (
-            "Tool order or set drifted — Amendment v0.2.2 fixes the surface "
-            "at exactly these three tools."
-        )
+        assert names == [
+            "find_skill",
+            "load_skill",
+            "traverse",
+            "get_playbook",
+            "suggest_next",
+        ], "Tool order or set drifted — discovery trio plus the composition plane."
 
     def test_no_run_cypher_read_tool(self) -> None:
         mw = SkillogyMiddleware(backend=_StubBackend())
@@ -374,7 +377,7 @@ class TestPhaseBlockRender:
         mw = SkillogyMiddleware(agent_phase="wireless", backend=backend)
         block = mw._phase_block
         assert "phase: wireless" in block
-        assert "no MoCs registered" in block
+        assert "no MoCs or playbooks registered" in block
         # The fallback still surfaces the phase name as a find_skill hint.
         assert 'find_skill(subdomain="wireless"' in block
 
