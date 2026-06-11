@@ -40,6 +40,7 @@ from typing import Any
 
 from decepticon.middleware.kg_internal.store import KGStore
 from decepticon.tools.reporting.kg_adapter import load_engagement_graph
+from decepticon.tools.research._engagement_scope import _LEGACY_ENGAGEMENT_LABEL
 from decepticon_core.types.kg import Edge, KnowledgeGraph, Node
 from decepticon_core.utils.engagement_scope import get_active_engagement
 from decepticon_core.utils.logging import get_logger
@@ -49,14 +50,9 @@ log = get_logger("research.state")
 _GRAPH_LOCK = threading.Lock()
 _store: _LegacyStoreShim | None = None
 
-# Default engagement label for legacy callers that fire before
-# ``EngagementContextMiddleware`` has set the contextvar (unit tests,
-# CLI one-shots). KGStore demands a non-empty engagement on every call.
-_DEFAULT_LEGACY_ENGAGEMENT = "_legacy"
-
 
 def _resolve_engagement() -> str:
-    return get_active_engagement() or _DEFAULT_LEGACY_ENGAGEMENT
+    return get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
 
 
 def _node_to_observation(node: Node) -> dict[str, Any]:

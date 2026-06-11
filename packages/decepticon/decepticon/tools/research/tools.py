@@ -1408,12 +1408,14 @@ def kg_ingest_slither(path: str) -> str:
     Writes flow directly through ``KGStore.record_observations`` —
     a single atomic batch per file. The engagement label is resolved
     from the ``EngagementContextMiddleware`` contextvar; falls back
-    to the reserved ``_legacy`` label outside the standard middleware
-    stack (matches the convention used by the rest of RESEARCH_TOOLS).
+    to the shared ``_LEGACY_ENGAGEMENT_LABEL`` outside the standard
+    middleware stack (matches the convention used by the rest of
+    RESEARCH_TOOLS).
     """
+    from decepticon.tools.research._engagement_scope import _LEGACY_ENGAGEMENT_LABEL
     from decepticon_core.utils.engagement_scope import get_active_engagement
 
-    engagement = get_active_engagement() or "_legacy"
+    engagement = get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
     try:
         ingested = ingest_slither_file(path, engagement=engagement)
     except ValueError as exc:

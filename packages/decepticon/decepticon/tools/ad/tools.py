@@ -36,6 +36,7 @@ from decepticon.tools.ad.delegation import analyze_delegation
 from decepticon.tools.ad.gpo import analyze_gpo_abuse
 from decepticon.tools.ad.kerberos import classify_hashcat_hash, parse_ticket
 from decepticon.tools.ad.shadow_creds import analyze_shadow_credentials
+from decepticon.tools.research._engagement_scope import _LEGACY_ENGAGEMENT_LABEL
 from decepticon.tools.research._state import _load, _save
 from decepticon_core.utils.engagement_scope import get_active_engagement
 
@@ -61,13 +62,13 @@ def _json(data: Any) -> str:
 def _resolve_engagement() -> str:
     """Engagement label for BloodHound ingest writes.
 
-    Falls back to the reserved ``_legacy`` label when the
+    Falls back to the shared ``_LEGACY_ENGAGEMENT_LABEL`` when the
     ``EngagementContextMiddleware`` contextvar is unset — matches the
     behaviour of the legacy ``_state`` shim used by the read-mostly AD
     analysis tools below (``dcsync_check`` / ``delegation_audit`` /
     ``gpo_audit`` / ``shadow_creds_audit``).
     """
-    return get_active_engagement() or "_legacy"
+    return get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
 
 
 @tool

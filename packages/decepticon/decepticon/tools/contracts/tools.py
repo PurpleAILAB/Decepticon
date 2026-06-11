@@ -17,6 +17,7 @@ from decepticon.tools.contracts.patterns import scan_solidity_source
 from decepticon.tools.contracts.slither import (
     ingest_slither_json as _ingest_slither_json_impl,
 )
+from decepticon.tools.research._engagement_scope import _LEGACY_ENGAGEMENT_LABEL
 from decepticon_core.utils.engagement_scope import get_active_engagement
 
 
@@ -27,11 +28,11 @@ def _json(data: Any) -> str:
 def _resolve_engagement() -> str:
     """Engagement label for Slither ingest writes.
 
-    Falls back to the reserved ``_legacy`` label when the
+    Falls back to the shared ``_LEGACY_ENGAGEMENT_LABEL`` when the
     ``EngagementContextMiddleware`` contextvar is unset — matches the
     convention used by the AD ingest path.
     """
-    return get_active_engagement() or "_legacy"
+    return get_active_engagement() or _LEGACY_ENGAGEMENT_LABEL
 
 
 @tool
