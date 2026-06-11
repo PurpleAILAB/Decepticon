@@ -299,17 +299,21 @@ to honor the original semantics.
 | Import | Purpose |
 |--------|---------|
 | `decepticon.agents.standard.*`, `decepticon.agents.plugins.*` | Pre-built per-role agent factories |
-| `decepticon.agents.middleware_slots` | `MiddlewareSlot` enum, `SLOTS_PER_ROLE`, `DEFAULT_SLOT_FACTORIES` |
+| `decepticon_core.contracts.slots` | `MiddlewareSlot` enum, `SLOTS_PER_ROLE`, `DEFAULT_SLOT_FACTORIES` |
 | `decepticon.agents.build` | `build_middleware`, `build_tools`, `resolve_prompt_overrides`, `SafetyOverrideViolation` |
 | `decepticon.agents.prompts` | `load_prompt`, `PromptBuilder` |
-| `decepticon.middleware` | `SkillsMiddleware`, `FilesystemMiddleware`, `EngagementContextMiddleware`, `OPPLANMiddleware`, `SandboxNotificationMiddleware`, … |
+| `decepticon.middleware` | `SkillsMiddleware`, `FilesystemMiddleware`, `EngagementContextMiddleware`, `OPPLANMiddleware`, `SandboxNotificationMiddleware`, `OpsControlNotificationMiddleware`, `KGMiddleware`, `SkillogyMiddleware`, … |
 | `decepticon.tools.bash` | `BASH_TOOLS` (the four bash tools), `set_sandbox` |
 | `decepticon.tools.research`, `decepticon.tools.references` | KG / CVE / payload tools |
 | `decepticon.tools.interaction` | `ask_user_question`, `complete_engagement_planning` |
+| `decepticon.tools.ops` | `ops_start`, `ops_stop`, `ops_status` (orchestrator-only, ADR-0006) |
 | `decepticon.backends` | `HTTPSandbox`, `build_sandbox_backend`, `make_agent_backend` |
 | `decepticon.llm` | `LLMFactory` |
-| `decepticon.core.schemas` | `RoE`, `CONOPS`, `DeconflictionPlan`, `OPPLAN`, `ThreatProfile`, `CleanupPlan`, `AbortPlan`, `ContactPlan`, `DataHandlingPlan` |
-| `decepticon.plugin_loader` | `PluginBundle`, `SubAgentSpec`, `is_bundle_enabled`, `load_plugin_*` |
+| `decepticon_core.types.engagement` | `RoE`, `CONOPS`, `DeconflictionPlan`, `OPPLAN`, `ThreatProfile`, `CleanupPlan`, `AbortPlan`, `ContactPlan`, `DataHandlingPlan` |
+| `decepticon_core.types.kg` | `KnowledgeGraph`, `Node`, `Edge`, `EdgeKind` |
+| `decepticon_core.plugin_loader` | `PluginBundle`, `SubAgentSpec`, `is_bundle_enabled`, `load_plugin_*` |
+
+The schema / contract types live in **`decepticon-core`** (the contracts package); the framework re-exports them via the compat shim in `decepticon/__init__.py` for one minor cycle (`decepticon.core.schemas`, `decepticon.plugin_loader`, `decepticon.agents.middleware_slots`). New code should import from `decepticon_core.*` directly.
 
 ---
 
