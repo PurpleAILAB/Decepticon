@@ -72,8 +72,9 @@ yet understand the change.
 > Metric / Δ: improved performance.
 
 **Enforcement.** CI greps the PR body for a line matching
-`^\s*Metric( ?/ ?| - )Δ\s*[:：]\s*\S+` (case-insensitive). Missing
-or empty value → fail. Override: none — find a number.
+`^\s*\**\s*Metric\s*(/|-)?\s*Δ\s*\**\s*[:：]\s*\**\s*\S` (case-insensitive,
+markdown bolding `**…**` allowed). Missing or empty value → fail.
+Override: none — find a number.
 
 ---
 
@@ -369,9 +370,9 @@ The workflow is plain shell + `gh`. To dry-run a gate locally
 against PR `<N>` in your fork:
 
 ```bash
-# K1
+# K1 (markdown bolding around the prefix is tolerated)
 gh pr view <N> --json body --jq .body \
-  | grep -E -i '^\s*Metric ?(/| - ) ?Δ\s*[:：]\s*\S+' \
+  | grep -E -i '^[[:space:]]*\**[[:space:]]*Metric[[:space:]]*(/|-)?[[:space:]]*(Δ|delta)[[:space:]]*\**[[:space:]]*[:：][[:space:]]*\**[[:space:]]*\S' \
   && echo K1 OK || echo K1 FAIL
 
 # K2

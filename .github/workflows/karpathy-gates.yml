@@ -57,7 +57,7 @@ jobs:
           # Accept "Metric / Δ:", "Metric/Δ:", "Metric - Δ:", "Metric Δ:".
           # Require a non-empty value after the colon (ASCII or fullwidth).
           if printf '%s\n' "$body" \
-              | grep -E -i '^[[:space:]]*Metric[[:space:]]*(/|-)?[[:space:]]*(Δ|delta)[[:space:]]*[:：][[:space:]]*\S' \
+              | grep -E -i '^[[:space:]]*\**[[:space:]]*Metric[[:space:]]*(/|-)?[[:space:]]*(Δ|delta)[[:space:]]*\**[[:space:]]*[:：][[:space:]]*\**[[:space:]]*\S' \
               > /dev/null; then
             echo "K1 OK — metric line present."
           else
@@ -116,7 +116,7 @@ jobs:
           # Body line: "Author: ...; requires human reviewer ≠ author"
           # Accept ≠ or != for terminals that strip non-ASCII.
           if printf '%s\n' "$body" \
-              | grep -E -i '^[[:space:]]*Author[[:space:]]*[:：].*requires[[:space:]]+human[[:space:]]+reviewer[[:space:]]+(≠|!=)[[:space:]]+author' \
+              | grep -E -i '^[[:space:]]*\**[[:space:]]*Author[[:space:]]*\**[[:space:]]*[:：].*requires[[:space:]]+human[[:space:]]+reviewer[[:space:]]+(≠|!=)[[:space:]]+author' \
               > /dev/null; then
             echo "K10 body line OK."
           else
