@@ -160,7 +160,9 @@ async def test_web_search_timeout_collapses_to_error(monkeypatch, tmp_path: Path
     assert out["results"] == []
     assert "TimeoutException" in out["error"]
 
-    errors = [e for e in _audit_lines(tmp_path / "audit.jsonl") if e.get("event") == "web_search.error"]
+    errors = [
+        e for e in _audit_lines(tmp_path / "audit.jsonl") if e.get("event") == "web_search.error"
+    ]
     assert len(errors) == 1
     assert "TimeoutException" in errors[0]["error"]
 
