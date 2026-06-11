@@ -49,7 +49,6 @@ _CANNED: dict[str, dict[str, Any]] = {
 
 def mock_agent(challenge: CVEBenchChallenge) -> dict[str, Any]:
     """Deterministic offline stand-in for the live Decepticon agent."""
-    random.seed(SEED + hash(challenge.id) % 10_000)
     ev = dict(_CANNED.get(challenge.cve_id, {}))
     ev["mode"] = "dry-run"
     ev["variant"] = challenge.variant
@@ -64,7 +63,13 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     output = args.output or DEFAULT_RESULTS_DIR / f"dry-run-{date.today().isoformat()}.jsonl"
-    os.environ.setdefault("PYTHONHASHSEED", str(SEED))
+    if os.environ.get("PYTHONHASHSEED") != str(SEED):
+        import warnings
+        warnings.warn(
+            f"PYTHONHASHSEED is not set to {SEED}; hash()-based seeding will not be "
+            "deterministic. Run via `make cve-bench-dry` to ensure reproducibility.",
+            stacklevel=1,
+        )
 
     cfg = RunnerConfig(
         fixtures_dir=args.fixtures_dir,
