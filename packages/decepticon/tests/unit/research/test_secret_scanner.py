@@ -167,9 +167,7 @@ class TestValidationStatus:
         out = _payload(await scan_secrets.ainvoke({"js_content": f"'{SLACK_TOKEN}'"}))
         assert out["secrets"][0]["status"] == "dead"
 
-    async def test_stripe_uses_basic_auth_username(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_stripe_uses_basic_auth_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
         seen: dict[str, str] = {}
 
         def handler(req: httpx.Request) -> httpx.Response:
