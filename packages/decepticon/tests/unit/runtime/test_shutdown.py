@@ -40,7 +40,16 @@ def _write_driver(
     script.write_text(
         textwrap.dedent(
             f"""
+            # Set BEFORE any decepticon import — decepticon/__init__.py runs
+            # _boot.run() + compat.register_legacy_imports() on import, which
+            # pulls in the LLM factory, skillogy network probes, and the full
+            # plugin registry. On a slow Python startup (WSL2) this takes
+            # 6+ minutes and blows the subprocess timeout below before the
+            # shutdown handler even gets installed. The handler under test
+            # doesn't need any of that boot state, so opt out.
             import os
+            os.environ["DECEPTICON_SKIP_BOOT"] = "1"
+
             import signal
             import sys
             import time
@@ -72,12 +81,16 @@ def _write_driver(
 
 
 def _run_driver(script: Path, *, timeout: float = 30.0) -> subprocess.CompletedProcess:
+    # Belt-and-suspenders: also pass DECEPTICON_SKIP_BOOT via env so the
+    # import-time guard fires even if the script template ever drifts.
+    env = {**os.environ, "DECEPTICON_SKIP_BOOT": "1"}
     return subprocess.run(
         [sys.executable, str(script)],
         capture_output=True,
         text=True,
         timeout=timeout,
         check=False,
+        env=env,
     )
 
 

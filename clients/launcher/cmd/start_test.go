@@ -156,10 +156,29 @@ func TestApplyAutoUpdate_RoutingMatrix(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.description, func(t *testing.T) {
 			auto, prompt := withUpdateStubs(t)
-			applyAutoUpdate(map[string]string{"AUTO_UPDATE": tc.envValue}, "v0.0.0-test")
+			applyAutoUpdate(map[string]string{"AUTO_UPDATE": tc.envValue}, "v0.0.0-test", false)
 			if *auto != tc.wantAuto || *prompt != tc.wantPrompt {
 				t.Errorf("AUTO_UPDATE=%q: got auto=%d prompt=%d, want auto=%d prompt=%d",
 					tc.envValue, *auto, *prompt, tc.wantAuto, tc.wantPrompt)
+			}
+		})
+	}
+}
+
+// --no-update is a one-shot override that must beat the persistent
+// .env setting in every direction — including the default-on path and
+// the explicit AUTO_UPDATE=true path. Without this short-circuit a CI
+// runner that pinned `decepticon --no-update` would still re-exec into
+// a newer binary, defeating the pin.
+func TestApplyAutoUpdate_NoUpdateFlagAlwaysWins(t *testing.T) {
+	envValues := []string{"", "true", "1", "yes", "on", "prompt", "ask", "interactive"}
+	for _, ev := range envValues {
+		t.Run("AUTO_UPDATE="+ev, func(t *testing.T) {
+			auto, prompt := withUpdateStubs(t)
+			applyAutoUpdate(map[string]string{"AUTO_UPDATE": ev}, "v0.0.0-test", true)
+			if *auto != 0 || *prompt != 0 {
+				t.Errorf("--no-update should short-circuit: AUTO_UPDATE=%q got auto=%d prompt=%d, want 0/0",
+					ev, *auto, *prompt)
 			}
 		})
 	}

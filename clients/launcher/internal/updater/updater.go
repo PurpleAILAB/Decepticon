@@ -575,8 +575,12 @@ func AutoUpdateIfAvailable(currentVersion string) (bool, error) {
 	if !CompareVersions(currentVersion, release.TagName) {
 		return false, nil
 	}
+	// Default-on as of v1.1.12: silent self-update is the default. The
+	// suffix tells users they CAN opt out — important for the first
+	// release after the flip, when an unexpected re-exec might confuse
+	// operators who never set AUTO_UPDATE themselves.
 	ui.Info(fmt.Sprintf(
-		"Auto-updating: %s → %s (AUTO_UPDATE enabled)",
+		"Auto-updating: %s → %s (set AUTO_UPDATE=false to disable)",
 		displayVersion(currentVersion),
 		release.TagName,
 	))

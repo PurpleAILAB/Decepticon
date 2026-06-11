@@ -91,6 +91,26 @@ Postgres is reused from the existing `postgres` container — `containers/postgr
 
 Agents call BHCE through `decepticon.tools.ad.bh_tools.bhce_status` / `bhce_cypher` / `bhce_ingest_zip` and the shared `decepticon.tools.ad.bhce_client.BHCEClient` HMAC-3-chain signer. The in-house `bh_ingest_zip` / `adcs_post_process` / `dcsync_check` / `delegation_audit` / `gpo_audit` / `shadow_creds_audit` / `adcs_audit` tools emit `DeprecationWarning` on every call and will move to `decepticon.compat` next minor.
 
+### Skillogy (`decepticon-net`, REST API on host port 9100)
+
+Standalone skill catalog service introduced by [ADR-0008](adr/0008-skillogy-hard-acl-phase1a.md). Three pieces:
+
+- A `python:3.13-slim`–based container (`containers/skillogy.Dockerfile`) running FastAPI over Uvicorn.
+- A dedicated Neo4j graph (separate from the engagement KG above) holding `:Skill` nodes with edges derived from skill frontmatter (`BUILDS_ON`, `CHAINS_TO`, `MITRE_RELATED`, …).
+- Three REST endpoints (`POST /v1/skills:find`, `POST /v1/skills:load`, `POST /v1/skills:traverse`) plus health (`GET /v1/health`) and a manager-of-coverage helper (`POST /v1/skills:moc`).
+
+The graph is rebuilt from disk at container start. Skill source remains the `packages/decepticon/decepticon/skills/` directory tree (`standard/`, `shared/`, plus `plugins/` from third-party bundles). Adding a skill is a new `SKILL.md` file plus a graph rebuild — no schema migration.
+
+Agents reach Skillogy through `SkillogyMiddleware`, which is a thin REST client. The middleware projects three agent-facing tools onto each role:
+
+- `find_skill(query?, subdomain?, mitre_id?, tag?, tactic_id?, limit=20)` — AND-combined relationship-aware discovery, returns frontmatter only.
+- `load_skill(name_or_path)` — fetches the body + frontmatter of one skill.
+- `traverse(from_path, edge_types?, depth=2)` — explicit BFS from a seed skill.
+
+Every middleware call carries an `allowed_path_prefixes` parameter set by the agent factory (e.g. `["skills/standard/ad/", "skills/shared/"]`); Skillogy enforces this hard ACL server-side, so prompt-injected widening attempts cannot escape the role's slice. Cross-role reads only succeed when the target lives under `skills/shared/`.
+
+The Neo4j instance Skillogy uses is **not** the same as the engagement KGStore — they have different schemas, different write semantics, and run as separate containers so a long catalog rebuild can't lock engagement reads.
+
 ### Sandbox (`sandbox-net`)
 
 Hardened Kali Linux container. Runs:
@@ -145,6 +165,8 @@ Agents execute commands through a thin `bash` tool backed by `DockerSandbox.exec
 | > 5M chars | Watchdog kills the command |
 
 ANSI escape codes are stripped and repetitive output lines are compressed before being sent to the LLM.
+
+**Background commands + auto-notification** — long-running commands (`nmap -p- -A`, full Burp scans, fuzzers) launch with `run_in_background=True` and return immediately with a session handle. The LLM doesn't block on the prompt while the command runs. When the command finishes, `SandboxNotificationMiddleware` (in `packages/decepticon/decepticon/middleware/notifications.py`) polls the sandbox's `/read_session_log_diff` once per turn, captures the new output, and injects a `<system-reminder>` `HumanMessage` carrying the exit code and stdout/stderr diff onto the agent's very next inference. The agent doesn't have to call `bash_output()` — completion comes to it. Same shape as the `OpsControlNotificationMiddleware` workload-state pattern (ADR-0006), and same shape as Claude Code's native background-bash auto-notification.
 
 ---
 
