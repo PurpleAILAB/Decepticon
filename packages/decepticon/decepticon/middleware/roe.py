@@ -134,6 +134,7 @@ NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "web_search": _hosts_from_web_search,
     "detect_tech_stack": _hosts_from_url_arg,
     "browser_action": _hosts_from_browser_action,
+    "web_search": _hosts_from_web_search,
 }
 
 
