@@ -181,8 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     workspace = _resolve_workspace(args.workspace)
     if workspace is None:
         print(
-            "error: workspace not set; pass --workspace or "
-            "$DECEPTICON_ENGAGEMENT_WORKSPACE",
+            "error: workspace not set; pass --workspace or $DECEPTICON_ENGAGEMENT_WORKSPACE",
             file=sys.stderr,
         )
         return EXIT_CONFIG
