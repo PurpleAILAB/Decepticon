@@ -748,6 +748,11 @@ litellm_settings:
   # ``anthropic/claude-opus-4-7`` (paid API path) hit the
   # 'No fallback model group found for original model_group=
   # anthropic/claude-opus-4-7' error.
+  num_retries: 3
+  retry_after: 30
+
+# --- Router Settings ---
+router_settings:
   fallbacks:
     # Anthropic API path (opus-4-8 is the current flagship; 4.7 is the
     # first within-provider step down before sonnet/haiku)
@@ -820,11 +825,6 @@ litellm_settings:
     - {"cfgateway/anthropic/claude-opus-4-6": ["cfgateway/anthropic/claude-sonnet-4-6"]}
     - {"cfgateway/anthropic/claude-sonnet-4-6": ["cfgateway/anthropic/claude-haiku-4-5"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)
-  num_retries: 3
-  retry_after: 30
-
-# --- Router Settings ---
-router_settings:
   routing_strategy: simple-shuffle
   num_retries: 5
   timeout: 300
