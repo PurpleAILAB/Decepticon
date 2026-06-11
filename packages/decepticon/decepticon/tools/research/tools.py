@@ -33,6 +33,7 @@ from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.dedupe import kg_dedupe_findings
 from decepticon.tools.research.health import backend_health
+from decepticon.tools.research.osint import OSINT_TOOLS
 from decepticon.tools.research.patch import PATCH_TOOLS
 from decepticon.tools.research.sarif import ingest_sarif_file
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
@@ -2397,4 +2398,5 @@ RESEARCH_TOOLS = [
     validate_finding,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
+    *OSINT_TOOLS,
 ]
