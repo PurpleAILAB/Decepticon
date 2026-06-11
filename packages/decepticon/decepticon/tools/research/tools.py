@@ -32,6 +32,7 @@ from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
 from decepticon.tools.research.dedupe import integrate_node, kg_dedupe_findings
+from decepticon.tools.research.dns_takeover import DNS_TOOLS
 from decepticon.tools.research.health import backend_health
 from decepticon.tools.research.js_route_extractor import js_route_extractor
 from decepticon.tools.research.patch import PATCH_TOOLS
@@ -2408,4 +2409,5 @@ RESEARCH_TOOLS = [
     js_route_extractor,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
+    *DNS_TOOLS,
 ]
