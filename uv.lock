@@ -511,7 +511,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=1.0.0" },
     { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.2.0" },
     { name = "langgraph-sdk", specifier = ">=0.1.0" },
-    { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.24" },
+    { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=6,<7" },
     { name = "opentelemetry-api", marker = "extra == 'telemetry'", specifier = ">=1.27" },
     { name = "opentelemetry-exporter-otlp", marker = "extra == 'telemetry'", specifier = ">=1.27" },
     { name = "opentelemetry-sdk", marker = "extra == 'telemetry'", specifier = ">=1.27" },

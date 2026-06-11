@@ -98,7 +98,7 @@ services:
   # Neo4j — Attack Chain Graph (the agent's persistent working memory)
   # On sandbox-net so cypher-shell from inside sandbox reaches bolt://neo4j:7687
   neo4j:
-    image: neo4j:5.24-community
+    image: neo4j:5.26-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-neo4j
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-decepticon-graph}
@@ -644,7 +644,7 @@ services:
     profiles:
       - ad
   bhce-neo4j:
-    image: neo4j:4.4.42-community
+    image: neo4j:4.4.48-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-bhce-neo4j
     environment:
       NEO4J_AUTH: neo4j/${BHCE_NEO4J_PASSWORD:-decepticon-bhce-graph}

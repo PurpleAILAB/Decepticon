@@ -74,7 +74,7 @@ dependencies = [
 # driver is imported lazily inside ``KGStore.__init__``
 # (decepticon/middleware/kg_internal/store.py), so the base install
 # imports and runs everything except the KG graph tools.
-neo4j = ["neo4j>=5.24"]
+neo4j = ["neo4j>=6,<7"]
 telemetry = [
     "opentelemetry-api>=1.27",
     "opentelemetry-sdk>=1.27",
