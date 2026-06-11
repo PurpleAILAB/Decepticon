@@ -46,9 +46,22 @@ var (
 // applyAutoUpdate dispatches the self-update check based on AUTO_UPDATE.
 // See the inline comment in start() (section 2.5) for the value table
 // and rationale for default-on behaviour.
-func applyAutoUpdate(env map[string]string, version string) {
-	val := strings.ToLower(strings.TrimSpace(config.Get(env, "AUTO_UPDATE", "")))
-	switch val {
+//
+// The `skip` argument is the --no-update CLI flag. When true it
+// short-circuits *before* the env lookup so the operator's one-shot
+// override always wins over the persistent .env setting — including
+// AUTO_UPDATE=true and AUTO_UPDATE=prompt. This is the escape hatch
+// for "I know there's a newer version, I want this exact binary".
+//
+// Unrecognized values (e.g. AUTO_UPDATE=disabled, where the operator
+// probably MEANT "false") fall through to the prompt path rather than
+// silent auto-update. Fail-loud beats fail-silent — an unexpected
+// re-exec is harder to debug than a one-line prompt.
+func applyAutoUpdate(env map[string]string, version string, skip bool) {
+	if skip {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(config.Get(env, "AUTO_UPDATE", ""))) {
 	case "", "true", "1", "yes", "on":
 		if _, err := autoUpdateFn(version); err != nil {
 			ui.Warning("Auto-update: " + err.Error())
@@ -56,11 +69,19 @@ func applyAutoUpdate(env map[string]string, version string) {
 	case "false", "0", "no", "off":
 		// self-update disabled
 	default:
+		// Includes the explicit `prompt` / `ask` / `interactive`
+		// opt-ins AND any unrecognized value (safer fallback).
 		if _, err := promptUpdateFn(version); err != nil {
 			ui.Warning("Update check: " + err.Error())
 		}
 	}
 }
+
+// skipUpdate is bound to --no-update. One-shot override for the
+// AUTO_UPDATE=true (now default) self-update path: useful in CI, when
+// debugging a specific launcher version, or when intentionally
+// running an older release against a known-good stack.
+var skipUpdate bool
 
 var startCmd = &cobra.Command{
 	Use:   "start",
@@ -71,9 +92,13 @@ var startCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(startCmd)
 
-	// Make start the default command when no subcommand given
+	// PersistentFlag on root → inherited by `start`, so both
+	// `decepticon --no-update` (no subcommand → runStart) and
+	// `decepticon start --no-update` accept the flag.
+	rootCmd.PersistentFlags().BoolVar(&skipUpdate, "no-update", false,
+		"Skip the self-update check for this launch (does not change AUTO_UPDATE in .env)")
+
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		// If no subcommand, run start
 		return runStart(cmd, args)
 	}
 }
@@ -206,7 +231,7 @@ func runStart(cmd *cobra.Command, args []string) error {
 	// Synchronous on purpose: the prompt + unattended paths apply and re-exec
 	// before the rest of `start` proceeds. The GitHub fetch fails fast so a
 	// slow network never blocks startup.
-	applyAutoUpdate(env, version)
+	applyAutoUpdate(env, version, skipUpdate)
 
 	// 2.6. One-time GitHub star ask. Idempotent across launches — the
 	// ack file at $DECEPTICON_HOME/.starred suppresses the prompt
