@@ -173,6 +173,16 @@ LangGraph, sandbox) keeps the always-on contract.
   misconfig); CLI `auth` degrades cleanly on corrupt `.env` files and
   inventory-probe failures.
 
+- **Redamon `/guide` CLI path + `GuidanceMiddleware` TOCTOU** (supersedes
+  #636). `/guide` wrote to `${WORKSPACE}/guidance/inbox.jsonl` (root) while
+  the middleware drains the per-engagement subdir, so every CLI guidance
+  message was silently dropped — routed through a new
+  `clients/cli/src/lib/workspace.ts` helper that mirrors web + launcher
+  policy. Separately `_update_guidance` used `if exists(): open()`
+  check-then-use on inbox + cursor; switched to EAFP
+  (`try / except FileNotFoundError`) to close the race window. Regression
+  tests pin both fixes.
+
 - **`SandboxNotificationMiddleware` background-completion delivery.**
   `build_sandbox_backend()` was returning a fresh `HTTPSandbox` from
   every graph factory; with 11 graphs in `langgraph dev`, the bash
