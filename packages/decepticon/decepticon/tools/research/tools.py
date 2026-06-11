@@ -31,11 +31,12 @@ from decepticon.tools.contracts.slither import ingest_slither_file
 from decepticon.tools.research import cve as cve_mod
 from decepticon.tools.research import fuzz as fuzz_mod
 from decepticon.tools.research.chain import critical_path_score, plan_chains, promote_chain
-from decepticon.tools.research.dedupe import kg_dedupe_findings
+from decepticon.tools.research.dedupe import integrate_node, kg_dedupe_findings
 from decepticon.tools.research.health import backend_health
 from decepticon.tools.research.patch import PATCH_TOOLS
 from decepticon.tools.research.sarif import ingest_sarif_file
 from decepticon.tools.research.scanner_tools import SCANNER_TOOLS
+from decepticon.tools.research.validate import validate_finding as kg_validate_finding
 from decepticon.tools.reversing.binary import identify_binary
 from decepticon.tools.reversing.packer import detect_packer
 from decepticon.tools.reversing.strings import extract_strings, group_by_category
@@ -340,10 +341,17 @@ def kg_add_node(kind: str, label: str, props: str = "{}") -> str:
         return _json({"error": f"unknown kind: {kind}", "valid": [k.value for k in NodeKind]})
     parsed = _parse_props(props)
     with graph_transaction() as graph:
-        node = graph.upsert_node(Node.make(node_kind, label, **parsed))
-        return _json(
-            {"id": node.id, "kind": node.kind.value, "label": node.label, "stats": graph.stats()}
-        )
+        node, merged = integrate_node(graph, Node.make(node_kind, label, **parsed))
+        payload = {
+            "id": node.id,
+            "kind": node.kind.value,
+            "label": node.label,
+            "stats": graph.stats(),
+        }
+        if merged:
+            payload["deduplicated"] = True
+            payload["canonical_id"] = node.id
+        return _json(payload)
 
 
 @tool
@@ -2395,6 +2403,7 @@ RESEARCH_TOOLS = [
     fuzz_harness,
     fuzz_record_crash,
     validate_finding,
+    kg_validate_finding,
     *SCANNER_TOOLS,
     *PATCH_TOOLS,
 ]
