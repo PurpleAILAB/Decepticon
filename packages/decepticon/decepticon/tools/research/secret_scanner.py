@@ -173,7 +173,9 @@ async def _classify(pattern_name: str, secret: str) -> str:
     try:
         return "live" if await validate_credential(pattern_name, secret) else "dead"
     except (httpx.HTTPError, ValueError, KeyError) as exc:
-        log.debug("validation probe failed for %s: %s", pattern_name, exc)
+        # Never log ``exc`` itself: transport errors can embed the request
+        # (and its Authorization header / secret). Log only the type.
+        log.debug("validation probe failed for %s: %s", pattern_name, type(exc).__name__)
         return "unvalidated"
 
 
