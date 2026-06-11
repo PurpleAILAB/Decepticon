@@ -113,6 +113,7 @@ async def _fetch_ddg(query: str, *, timeout_s: float) -> str:
             body = b"".join(chunks)[:_MAX_RESPONSE_BYTES]
             return body.decode(response.encoding or "utf-8", errors="replace")
 
+
 def _audit_event(sink: RoEAuditSink | None, payload: dict[str, Any]) -> None:
     if sink is None:
         return
@@ -232,8 +233,6 @@ def _resolve_engagement_state() -> tuple[str | None, str, str]:
     engagement = os.environ.get("DECEPTICON_ENGAGEMENT") or "unknown-engagement"
     objective = os.environ.get("DECEPTICON_OBJECTIVE_ID") or ""
     return workspace, engagement, objective
-
-
 
 
 @tool

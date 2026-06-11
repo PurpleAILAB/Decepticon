@@ -819,7 +819,9 @@ class TestNetworkToolGating:
         result = mw.wrap_tool_call(req, handler)
         assert handler.called
         assert result.content == "{}"
-        recs = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines() if line]
+        recs = [
+            json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines() if line
+        ]
         assert any(r.get("tool") == "web_search" and r.get("decision") == "allow" for r in recs)
 
     def test_browser_action_in_scope_url_allowed(self, tmp_path: Path) -> None:
