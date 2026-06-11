@@ -126,7 +126,7 @@ def classify_parameter(param_name: str) -> str:
     param_lower = param_name.lower()
     for category, patterns in PARAM_PATTERNS.items():
         for pattern in patterns:
-            if re.match(pattern, param_lower, re.IGNORECASE):
+            if re.search(pattern, param_lower, re.IGNORECASE):
                 return category
     return "other"
 

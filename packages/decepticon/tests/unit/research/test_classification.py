@@ -22,6 +22,8 @@ from decepticon_core.types.kg import Edge, Node, NodeKind
 def test_classify_parameter() -> None:
     assert classify_parameter("id") == "id_params"
     assert classify_parameter("user_id") == "id_params"
+    assert classify_parameter("some_other_id") == "id_params"
+    assert classify_parameter("some_other_Id") == "id_params"
     assert classify_parameter("file") == "file_params"
     assert classify_parameter("filepath") == "file_params"
     assert classify_parameter("q") == "search_params"
