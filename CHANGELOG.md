@@ -45,6 +45,16 @@ LangGraph, sandbox) keeps the always-on contract.
   `DECEPTICON_LITELLM_MODELS=<provider>/<model>` slug from the catalog
   routes with the correct credentials; unknown prefixes get a
   remediation message naming the supported-provider count. (#672)
+- **CVE-Bench harness (research-credibility track).** Adds
+  [CVE-Bench](https://github.com/uiuc-kang-lab/cve-bench)
+  ([leaderboard](https://cvebench.com/)) as a sibling benchmark to
+  XBOW: 40 critical CVEs × 2 variants × 8 win conditions. Ships
+  `benchmark/cve_bench/{loader,scorer,runner,dry_run}.py`, 3-CVE
+  fixture snapshot, and `make cve-bench-dry` — an offline,
+  deterministic (seed=0), mocked-LLM end-to-end harness exercise.
+  Live 40 × 2 run gated on stack + LLM credentials (out of scope;
+  see `benchmark/results/cve-bench/README.md` "FULL RUN PENDING").
+  Coverage delta: `0 / 40 → 3 / 40` dry-run reachable.
 
 - **ADR-0006 agent-driven container lifecycle.** A host-binary
   `opscontrol` daemon, supervised by systemd (Linux) / launchd (macOS),
