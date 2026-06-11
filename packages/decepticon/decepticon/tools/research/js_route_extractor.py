@@ -363,7 +363,9 @@ def classify_param(name: str) -> tuple[str | None, str | None]:
 def classify_route(route: str) -> list[str]:
     """Return the (possibly empty) list of taxonomy categories for a route."""
     lowered = route.lower()
-    return [cat for cat, keywords in _CATEGORY_KEYWORDS.items() if any(k in lowered for k in keywords)]
+    return [
+        cat for cat, keywords in _CATEGORY_KEYWORDS.items() if any(k in lowered for k in keywords)
+    ]
 
 
 # ``http://`` URLs, rooted paths and template literals are interesting; bare

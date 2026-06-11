@@ -253,12 +253,7 @@ def test_duplicate_playbook_name_is_rejected(tmp_path: Path) -> None:
 
 
 def test_cloud_metadata_playbook_present_on_disk() -> None:
-    path = (
-        _CORPUS_ROOT
-        / "playbooks"
-        / "cloud-metadata-exfiltration"
-        / "PLAYBOOK.md"
-    )
+    path = _CORPUS_ROOT / "playbooks" / "cloud-metadata-exfiltration" / "PLAYBOOK.md"
     assert path.is_file()
 
 
@@ -274,11 +269,7 @@ def test_full_build_graph_compiles_cloud_playbook_without_errors() -> None:
     )
 
     playbook = next(
-        (
-            n
-            for n in nodes
-            if n.label == "Playbook" and n.key == "cloud-metadata-exfiltration"
-        ),
+        (n for n in nodes if n.label == "Playbook" and n.key == "cloud-metadata-exfiltration"),
         None,
     )
     assert playbook is not None, "cloud-metadata-exfiltration not compiled"
@@ -298,8 +289,7 @@ def test_full_build_graph_compiles_cloud_playbook_without_errors() -> None:
     target_edges = {
         e.to_key
         for e in edges
-        if e.edge_type == "TARGETS_PHASE"
-        and e.from_key == "cloud-metadata-exfiltration"
+        if e.edge_type == "TARGETS_PHASE" and e.from_key == "cloud-metadata-exfiltration"
     }
     assert target_edges == {"credential-access"}
     # Target phase must be a seeded :Phase.

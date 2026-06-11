@@ -306,9 +306,7 @@ async def _analyze_domain(client: httpx.AsyncClient, domain: str) -> dict[str, A
         body = await _fetch_http_body(client, domain)
         claimable = await _resource_claimable(client, cname)
         verdict = _classify_cname(fp, body, claimable)
-        signature_matched = bool(
-            body and any(sig.lower() in body.lower() for sig in fp.signatures)
-        )
+        signature_matched = bool(body and any(sig.lower() in body.lower() for sig in fp.signatures))
         findings.append(
             {
                 "type": "CNAME",

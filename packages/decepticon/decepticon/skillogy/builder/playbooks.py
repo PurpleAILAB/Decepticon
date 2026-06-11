@@ -120,9 +120,7 @@ def emit_playbook_records(
         if not description:
             raise PlaybookValidationError(f"{playbook_md}: missing 'description'")
         if name in seen_names:
-            raise PlaybookValidationError(
-                f"{playbook_md}: duplicate playbook name '{name}'"
-            )
+            raise PlaybookValidationError(f"{playbook_md}: duplicate playbook name '{name}'")
         seen_names.add(name)
 
         metadata_raw = meta.get("metadata")
@@ -130,13 +128,9 @@ def emit_playbook_records(
 
         target_phase = str(metadata.get("phase") or "").strip()
         if not target_phase:
-            raise PlaybookValidationError(
-                f"{playbook_md}: missing 'metadata.phase' (target phase)"
-            )
+            raise PlaybookValidationError(f"{playbook_md}: missing 'metadata.phase' (target phase)")
         if target_phase not in known_phases:
-            raise PlaybookValidationError(
-                f"{playbook_md}: unknown target phase '{target_phase}'"
-            )
+            raise PlaybookValidationError(f"{playbook_md}: unknown target phase '{target_phase}'")
 
         steps_raw = metadata.get("steps")
         if not isinstance(steps_raw, list) or not steps_raw:
@@ -154,24 +148,17 @@ def emit_playbook_records(
         step_edges: list[Edge] = []
         for index, step in enumerate(steps_raw, start=1):
             if not isinstance(step, dict):
-                raise PlaybookValidationError(
-                    f"{playbook_md}: step {index} must be a mapping"
-                )
+                raise PlaybookValidationError(f"{playbook_md}: step {index} must be a mapping")
             step_skill = str(step.get("skill") or "").strip()
             step_goal = str(step.get("goal") or "").strip()
             step_phase = str(step.get("phase") or "").strip()
             if not step_skill:
-                raise PlaybookValidationError(
-                    f"{playbook_md}: step {index} missing 'skill'"
-                )
+                raise PlaybookValidationError(f"{playbook_md}: step {index} missing 'skill'")
             if not step_goal:
-                raise PlaybookValidationError(
-                    f"{playbook_md}: step {index} missing 'goal'"
-                )
+                raise PlaybookValidationError(f"{playbook_md}: step {index} missing 'goal'")
             if known_skills is not None and step_skill not in known_skills:
                 raise PlaybookValidationError(
-                    f"{playbook_md}: step {index} references unknown skill "
-                    f"'{step_skill}'"
+                    f"{playbook_md}: step {index} references unknown skill '{step_skill}'"
                 )
             if step_phase and step_phase not in known_phases:
                 raise PlaybookValidationError(

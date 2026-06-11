@@ -77,7 +77,9 @@ def _vuln(label: str, **props: Any) -> Node:
     return Node.make(NodeKind.VULNERABILITY, label, **props)
 
 
-def _sqli(label: str, *, host: str = "api.example.com", severity: str = "high", **extra: Any) -> Node:
+def _sqli(
+    label: str, *, host: str = "api.example.com", severity: str = "high", **extra: Any
+) -> Node:
     return _vuln(label, host=host, cwe=["CWE-89"], severity=severity, **extra)
 
 
@@ -215,8 +217,11 @@ class TestKgAddNodeAutoDedup:
                     "kind": "Vulnerability",
                     "label": "Database injection via auth endpoint",
                     "props": json.dumps(
-                        {"host": "https://API.example.com:443/login", "cwe": ["CWE-89"],
-                         "severity": "critical"}
+                        {
+                            "host": "https://API.example.com:443/login",
+                            "cwe": ["CWE-89"],
+                            "severity": "critical",
+                        }
                     ),
                 }
             )
@@ -314,8 +319,12 @@ class TestRunActiveValidation:
     async def test_key_accepted_validates(self) -> None:
         graph = KnowledgeGraph()
         node = graph.upsert_node(
-            _vuln("API key accepted without scope", url="https://t.io/api", cwe=["CWE-287"],
-                  key_value="leaked-key")
+            _vuln(
+                "API key accepted without scope",
+                url="https://t.io/api",
+                cwe=["CWE-287"],
+                key_value="leaked-key",
+            )
         )
         runner = _runner(
             {"Authorization": ("200", "", 0)},
@@ -429,9 +438,6 @@ class TestValidateFindingTool:
             default="HTTP/1.1 200 OK\r\n\r\nclean\n[Exit code: 0]",
         )
         _install_get_sandbox(monkeypatch, sandbox)
-        out = json.loads(
-            await research_tools.kg_validate_finding.ainvoke({"finding_id": node.id})
-        )
+        out = json.loads(await research_tools.kg_validate_finding.ainvoke({"finding_id": node.id}))
         assert out["validated"] is True
         assert fake.graph.nodes[node.id].props["validated"] is True
-

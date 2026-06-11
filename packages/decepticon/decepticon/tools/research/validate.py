@@ -262,9 +262,7 @@ async def run_active_validation(
         if _match_signals(n_combined, spec.success_patterns):
             success_signals = []
 
-    validated = (
-        bool(success_signals) and (not neg_ran or bool(negative_signals)) and not refused
-    )
+    validated = bool(success_signals) and (not neg_ran or bool(negative_signals)) and not refused
     _apply_status(node, validated=validated)
 
     if refused:

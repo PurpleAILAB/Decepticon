@@ -179,7 +179,7 @@ class TestParameterExtraction:
         assert params["file"] == "file_params"
 
     def test_template_literal_params(self) -> None:
-        result = extract_routes('fetch(`/redirect?url=${dest}&id=${u}`)')
+        result = extract_routes("fetch(`/redirect?url=${dest}&id=${u}`)")
         params = {p["name"]: p["classification"] for p in result["parameters"]}
         assert params["url"] == "redirect_params"
         assert params["id"] == "id_params"

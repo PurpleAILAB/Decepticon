@@ -23,7 +23,6 @@ from decepticon.tools.research.dns_takeover import (
     dns_takeover_verifier,
 )
 
-
 # ── DoH payload builders ─────────────────────────────────────────────────
 
 
