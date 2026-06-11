@@ -32,15 +32,20 @@ class GuidanceMiddleware(AgentMiddleware):
         inbox_path = Path(workspace) / "guidance" / "inbox.jsonl"
         cursor_path = Path(workspace) / "guidance" / "inbox.cursor"
 
-        if not inbox_path.exists():
-            return
-
+        # Bug fix (supersedes PR #636): use EAFP rather than LBYL.
+        # Two `Path.exists()` pre-checks (inbox + cursor) opened a TOCTOU
+        # window where another process could unlink the file between the
+        # stat() and the open(); the operator-guidance inbox is also
+        # written to from the CLI/web on a separate process so the race is
+        # real, not theoretical. Open directly and let `FileNotFoundError`
+        # (a subclass of `OSError`) be caught below.
         offset = 0
-        if cursor_path.exists():
-            try:
-                offset = int(cursor_path.read_text(encoding="utf-8").strip())
-            except (ValueError, OSError):
-                offset = 0
+        try:
+            offset = int(cursor_path.read_text(encoding="utf-8").strip())
+        except FileNotFoundError:
+            offset = 0
+        except (ValueError, OSError):
+            offset = 0
 
         new_offset = offset
         new_guidance = []
