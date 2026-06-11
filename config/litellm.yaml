@@ -734,6 +734,11 @@ litellm_settings:
   #   - copilot      → copilot_handler.copilot_handler_instance
   #   - grok-sub     → grok_handler.grok_sub_handler_instance
   #   - pplx-sub     → perplexity_handler.perplexity_sub_handler_instance
+  num_retries: 3
+  retry_after: 30
+
+# --- Router Settings ---
+router_settings:
   # ── Within-provider tier degradation ───────────────────────────────
   # Each chain mirrors HIGH → MID → LOW for the same auth path. When a
   # primary model fails (rate limit, transient 5xx, request-validation
@@ -748,11 +753,6 @@ litellm_settings:
   # ``anthropic/claude-opus-4-7`` (paid API path) hit the
   # 'No fallback model group found for original model_group=
   # anthropic/claude-opus-4-7' error.
-  num_retries: 3
-  retry_after: 30
-
-# --- Router Settings ---
-router_settings:
   fallbacks:
     # Anthropic API path (opus-4-8 is the current flagship; 4.7 is the
     # first within-provider step down before sonnet/haiku)
