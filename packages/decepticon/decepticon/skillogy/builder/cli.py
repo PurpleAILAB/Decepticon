@@ -20,6 +20,7 @@ from pathlib import Path
 from decepticon.skillogy.builder.emit import emit_cypher
 from decepticon.skillogy.builder.mitre_stix import emit_mitre_records
 from decepticon.skillogy.builder.model import Edge, Node
+from decepticon.skillogy.builder.playbooks import emit_playbook_records
 from decepticon.skillogy.builder.seeds_to_graph import emit_all_seed_records
 from decepticon.skillogy.builder.skills import emit_skill_records
 
@@ -72,6 +73,19 @@ def build_graph(
     )
     nodes.extend(skill_nodes)
     edges.extend(skill_edges)
+
+    # Playbooks compose existing skills, so they must be emitted after
+    # the skill pass — HAS_STEP edges are validated against the set of
+    # compiled :Skill names.
+    known_skills = {n.key for n in skill_nodes if n.label == "Skill"}
+    playbook_nodes, playbook_edges = emit_playbook_records(
+        skills_root,
+        known_skills=known_skills,
+        commit_sha=commit_sha,
+        built_at=built_at,
+    )
+    nodes.extend(playbook_nodes)
+    edges.extend(playbook_edges)
 
     return nodes, edges
 
