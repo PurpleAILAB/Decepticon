@@ -143,7 +143,12 @@ _HEADER_SIGNATURES: tuple[_Signature, ...] = (
     _sig("cloudflare", TechnologyCategory.WEB_SERVER, _tok("cloudflare")),
     # ── Web frameworks / language runtimes (X-Powered-By, X-AspNet-Version) ──
     _sig("express", TechnologyCategory.WEB_FRAMEWORK, _tok("express")),
-    _sig("asp.net", TechnologyCategory.WEB_FRAMEWORK, r"asp\.net", r"x-aspnet-version:\s*([\d][\w.]*)"),
+    _sig(
+        "asp.net",
+        TechnologyCategory.WEB_FRAMEWORK,
+        r"asp\.net",
+        r"x-aspnet-version:\s*([\d][\w.]*)",
+    ),
     _sig("php", TechnologyCategory.LANGUAGE_RUNTIME, _tok("php"), r"php/([\d][\w.]*)"),
 )
 
@@ -158,21 +163,58 @@ _BODY_SIGNATURES: tuple[_Signature, ...] = (
         r'"buildId":"[^"]+","[^}]*?"version":"([\d][\w.\-]*)"',
     ),
     _sig("nuxt.js", TechnologyCategory.WEB_FRAMEWORK, r"__NUXT__|/_nuxt/"),
-    _sig("react", TechnologyCategory.WEB_FRAMEWORK, r"data-reactroot|react-dom|\breact@", r"react@([\d][\w.\-]*)"),
-    _sig("vue.js", TechnologyCategory.WEB_FRAMEWORK, r"data-v-app|__vue__|\bvue@", r"vue(?:@|\.js v)([\d][\w.\-]*)"),
-    _sig("angular", TechnologyCategory.WEB_FRAMEWORK, r"ng-version|\bng-app\b", r'ng-version="([\d][\w.\-]*)"'),
+    _sig(
+        "react",
+        TechnologyCategory.WEB_FRAMEWORK,
+        r"data-reactroot|react-dom|\breact@",
+        r"react@([\d][\w.\-]*)",
+    ),
+    _sig(
+        "vue.js",
+        TechnologyCategory.WEB_FRAMEWORK,
+        r"data-v-app|__vue__|\bvue@",
+        r"vue(?:@|\.js v)([\d][\w.\-]*)",
+    ),
+    _sig(
+        "angular",
+        TechnologyCategory.WEB_FRAMEWORK,
+        r"ng-version|\bng-app\b",
+        r'ng-version="([\d][\w.\-]*)"',
+    ),
     _sig("svelte", TechnologyCategory.WEB_FRAMEWORK, r"svelte-[0-9a-z]{6}|__sveltekit"),
-    _sig("jquery", TechnologyCategory.WEB_FRAMEWORK, r"jquery", r"jquery[.-]?v?([\d]+\.[\d]+\.[\d]+)"),
-    _sig("bootstrap", TechnologyCategory.WEB_FRAMEWORK, r"bootstrap", r"bootstrap[.-/]v?([\d]+\.[\d]+\.[\d]+)"),
+    _sig(
+        "jquery", TechnologyCategory.WEB_FRAMEWORK, r"jquery", r"jquery[.-]?v?([\d]+\.[\d]+\.[\d]+)"
+    ),
+    _sig(
+        "bootstrap",
+        TechnologyCategory.WEB_FRAMEWORK,
+        r"bootstrap",
+        r"bootstrap[.-/]v?([\d]+\.[\d]+\.[\d]+)",
+    ),
     # ── AI front-end libraries ──
     _sig("gradio", TechnologyCategory.AI_FRAMEWORK, r"gradio", r"gradio[/-]v?([\d][\w.\-]*)"),
-    _sig("streamlit", TechnologyCategory.AI_FRAMEWORK, r"streamlit", r'"streamlitVersion":"([\d][\w.\-]*)"'),
+    _sig(
+        "streamlit",
+        TechnologyCategory.AI_FRAMEWORK,
+        r"streamlit",
+        r'"streamlitVersion":"([\d][\w.\-]*)"',
+    ),
     _sig("open-webui", TechnologyCategory.AI_FRAMEWORK, r"open webui|open-webui"),
     _sig("comfyui", TechnologyCategory.AI_FRAMEWORK, r"comfyui"),
     _sig("chainlit", TechnologyCategory.AI_FRAMEWORK, r"chainlit"),
-    _sig("transformers.js", TechnologyCategory.AI_SDK_CLIENT, r"@xenova/transformers|transformers\.js"),
-    _sig("openai-sdk", TechnologyCategory.AI_SDK_CLIENT, r"api\.openai\.com|cdn\.jsdelivr\.net/npm/openai"),
-    _sig("anthropic-sdk", TechnologyCategory.AI_SDK_CLIENT, r"api\.anthropic\.com|@anthropic-ai/sdk"),
+    _sig(
+        "transformers.js",
+        TechnologyCategory.AI_SDK_CLIENT,
+        r"@xenova/transformers|transformers\.js",
+    ),
+    _sig(
+        "openai-sdk",
+        TechnologyCategory.AI_SDK_CLIENT,
+        r"api\.openai\.com|cdn\.jsdelivr\.net/npm/openai",
+    ),
+    _sig(
+        "anthropic-sdk", TechnologyCategory.AI_SDK_CLIENT, r"api\.anthropic\.com|@anthropic-ai/sdk"
+    ),
 )
 
 
@@ -197,13 +239,17 @@ def _load_roe_rules() -> MachineEnforcement:
     try:
         data = json.loads(roe_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        log.warning("tech_detection: failed to read %s: %s; defaulting to audit-only", roe_path, exc)
+        log.warning(
+            "tech_detection: failed to read %s: %s; defaulting to audit-only", roe_path, exc
+        )
         return MachineEnforcement()
     block = data.get("machine_enforcement") if isinstance(data, dict) else None
     return MachineEnforcement.from_dict(block)
 
 
-def _detect(text: str, signatures: tuple[_Signature, ...], detected_by: str) -> list[dict[str, Any]]:
+def _detect(
+    text: str, signatures: tuple[_Signature, ...], detected_by: str
+) -> list[dict[str, Any]]:
     """Run one engine's signatures over ``text`` and return detection dicts."""
     hits: list[dict[str, Any]] = []
     for sig in signatures:
