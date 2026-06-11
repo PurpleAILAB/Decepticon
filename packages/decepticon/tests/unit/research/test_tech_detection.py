@@ -133,7 +133,7 @@ async def test_body_detects_jquery_version_and_nextjs() -> None:
 
 @pytest.mark.asyncio
 async def test_body_detects_ai_frontend_gradio() -> None:
-    body = '<html><body><script>window.gradio_config={};</script>gradio app</body></html>'
+    body = "<html><body><script>window.gradio_config={};</script>gradio app</body></html>"
 
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text=body)
@@ -205,7 +205,10 @@ async def test_enforce_mode_refuses_out_of_scope_host_without_egress() -> None:
         called["n"] += 1
         return httpx.Response(200, text="<html></html>")
 
-    with patch.object(tech_detection, "_load_roe_rules", lambda: rules), _install_transport(handler):
+    with (
+        patch.object(tech_detection, "_load_roe_rules", lambda: rules),
+        _install_transport(handler),
+    ):
         out = await _run("https://evil.test/")
 
     assert out["scope"] == "refused"
@@ -224,7 +227,10 @@ async def test_enforce_mode_allows_in_scope_host() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, headers={"server": "caddy/2.7.6"}, text="<html></html>")
 
-    with patch.object(tech_detection, "_load_roe_rules", lambda: rules), _install_transport(handler):
+    with (
+        patch.object(tech_detection, "_load_roe_rules", lambda: rules),
+        _install_transport(handler),
+    ):
         out = await _run("https://target.test/")
 
     assert out["scope"] == "allowed"
@@ -242,7 +248,10 @@ async def test_audit_mode_does_not_block_out_of_scope() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
         return httpx.Response(200, headers={"server": "nginx/1.0"}, text="<html></html>")
 
-    with patch.object(tech_detection, "_load_roe_rules", lambda: rules), _install_transport(handler):
+    with (
+        patch.object(tech_detection, "_load_roe_rules", lambda: rules),
+        _install_transport(handler),
+    ):
         out = await _run("https://evil.test/")
 
     assert out["scope"] == "allowed"
