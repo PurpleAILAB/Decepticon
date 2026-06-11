@@ -90,19 +90,117 @@ func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ str
 	return Handle{Workload: workload, State: StateRunning}, nil
 }
 
-// Stop runs `docker compose --profile <workload> stop`. We deliberately
-// don't `down` because that removes containers belonging to other
-// profiles that share the project (e.g., a `down` triggered by
-// ops_stop("ad") would also nuke the postgres container).
+// Stop terminates and removes only the services exclusive to the
+// workload's compose profile, leaving the always-on management plane
+// (litellm, postgres, neo4j, sandbox, skillogy, langgraph) untouched.
+//
+// The dynamic-spawn contract (ADR-0006) implies a full lifecycle:
+// `ops_start("ad")` materializes the BHCE sidecars, `ops_stop("ad")`
+// should leave the operator's `docker ps` exactly as it was before
+// the spawn — otherwise `Exited (0)` BHCE / Neo4j / postgres-init
+// containers accumulate across an engagement and the operator has to
+// clean them by hand. Named volumes survive `rm` (compose only
+// removes volumes when `down -v` is passed), so BHCE's Neo4j and
+// Postgres data is preserved across stop/start cycles.
+//
+// Subtle: `docker compose --profile X stop` and `--profile X rm` do
+// NOT operate on profile X exclusively. Per compose docs, "service
+// without profile is always selected" — so the profile flag is
+// additive (default + X) and naive `--profile X stop` would halt the
+// always-on management plane too. We resolve the profile's
+// exclusive service list once via set-difference and then issue
+// `stop` / `rm -fs` with explicit service names so default services
+// are never targeted.
+//
+// We also deliberately don't use `compose down`: it always targets
+// the whole project regardless of `--profile`, so a single
+// `ops_stop("ad")` would nuke the entire stack.
 func (b *DockerComposeBackend) Stop(ctx context.Context, workload string) error {
-	args := append(b.baseArgs(), "--profile", workload, "stop")
-	cmd := exec.CommandContext(ctx, "docker", args...)
-	cmd.Env = ComposeCommandEnv()
-	out, err := cmd.CombinedOutput()
+	services, err := b.profileExclusiveServices(ctx, workload)
 	if err != nil {
-		return fmt.Errorf("compose stop --profile %s: %w: %s", workload, err, strings.TrimSpace(string(out)))
+		return err
+	}
+	if len(services) == 0 {
+		// Nothing profile-exclusive to stop — the workload was never
+		// materialized via compose (e.g. registry had a stale entry
+		// from a daemon-side bug). Treat as a no-op.
+		return nil
+	}
+
+	stopArgs := append(b.baseArgs(), append([]string{"stop"}, services...)...)
+	stopCmd := exec.CommandContext(ctx, "docker", stopArgs...)
+	stopCmd.Env = ComposeCommandEnv()
+	if out, err := stopCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("compose stop %v: %w: %s", services, err, strings.TrimSpace(string(out)))
+	}
+
+	// `rm -f` skips the confirmation prompt; `-s` is "also remove
+	// stopped containers" (without it the command would no-op right
+	// after `stop`). `-v` is intentionally omitted so named volumes
+	// — and the BHCE engagement state inside them — survive the
+	// stop/start cycle.
+	rmArgs := append(b.baseArgs(), append([]string{"rm", "-fs"}, services...)...)
+	rmCmd := exec.CommandContext(ctx, "docker", rmArgs...)
+	rmCmd.Env = ComposeCommandEnv()
+	if out, err := rmCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("compose rm %v: %w: %s", services, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// profileExclusiveServices returns the list of compose service names
+// that belong to `workload`'s profile and to NO default (profile-less)
+// service. It is the set-difference of:
+//
+//	(`compose config --services --profile workload`)  // default + workload
+//	  minus
+//	(`compose config --services`)                     // default only
+//
+// Used by Stop so cleanup never targets the always-on management
+// plane.
+func (b *DockerComposeBackend) profileExclusiveServices(ctx context.Context, workload string) ([]string, error) {
+	withProfile, err := b.listServices(ctx, workload)
+	if err != nil {
+		return nil, fmt.Errorf("list services for profile %s: %w", workload, err)
+	}
+	defaults, err := b.listServices(ctx, "")
+	if err != nil {
+		return nil, fmt.Errorf("list default services: %w", err)
+	}
+	defaultSet := make(map[string]struct{}, len(defaults))
+	for _, s := range defaults {
+		defaultSet[s] = struct{}{}
+	}
+	var exclusive []string
+	for _, s := range withProfile {
+		if _, isDefault := defaultSet[s]; !isDefault {
+			exclusive = append(exclusive, s)
+		}
+	}
+	return exclusive, nil
+}
+
+// listServices runs `docker compose config --services [--profile X]`
+// and returns the parsed service-name list.
+func (b *DockerComposeBackend) listServices(ctx context.Context, profile string) ([]string, error) {
+	args := b.baseArgs()
+	if profile != "" {
+		args = append(args, "--profile", profile)
+	}
+	args = append(args, "config", "--services")
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Env = ComposeCommandEnv()
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("compose config --services profile=%q: %w", profile, err)
+	}
+	var names []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			names = append(names, s)
+		}
+	}
+	return names, nil
 }
 
 // List delegates to the in-memory registry. ADR-0006 §5' allows the

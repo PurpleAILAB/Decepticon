@@ -23,13 +23,30 @@ boundary + the ``sandbox-net`` network.
 
 from __future__ import annotations
 
+import functools
 import os
 
 from decepticon.backends.http_sandbox import HTTPSandbox
 
 
+@functools.lru_cache(maxsize=8)
+def _shared_sandbox(base_url: str, token: str | None) -> HTTPSandbox:
+    return HTTPSandbox(base_url=base_url, token=token)
+
+
 def build_sandbox_backend() -> HTTPSandbox:
     """Build the HTTP-transport sandbox backend.
+
+    Returns the same ``HTTPSandbox`` instance for every call with the
+    same ``(base_url, token)``. langgraph dev server invokes one factory
+    per registered graph at startup; without a shared client each
+    factory builds its own client + its own ``BackgroundJobTracker``,
+    and the ``SandboxNotificationMiddleware`` instance held by each
+    graph sees a different ``_jobs`` view than the bash tool actually
+    registers against — completion notifications never reach the agent.
+    Keying by ``(base_url, token)`` keeps tests that monkeypatch the env
+    isolated and supports multi-tenant SaaS deployments where pools
+    target distinct daemons.
 
     Returns:
         An ``HTTPSandbox`` instance pointed at the daemon URL.
@@ -45,4 +62,4 @@ def build_sandbox_backend() -> HTTPSandbox:
     """
     base_url = os.environ.get("SAAS_SANDBOX_URL", "http://localhost:9999")
     token = os.environ.get("SAAS_SANDBOX_TOKEN") or None
-    return HTTPSandbox(base_url=base_url, token=token)
+    return _shared_sandbox(base_url, token)

@@ -18,6 +18,7 @@ from decepticon_core.utils.engagement_scope import (
 )
 
 __all__ = [
+    "_LEGACY_ENGAGEMENT_LABEL",
     "_active_engagement",
     "get_active_engagement",
     "is_valid_engagement_label",
@@ -27,7 +28,16 @@ __all__ = [
 ]
 
 
-_LEGACY_ENGAGEMENT_LABEL = "_legacy"
+# Fallback engagement label used by tool surfaces that fire BEFORE
+# EngagementContextMiddleware has set the contextvar (CLI one-shots,
+# unit tests, kg_health smoke probes).
+#
+# v1.1.12 fix: was "_legacy" — but the leading underscore violates the
+# is_valid_engagement_label validator
+# (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$), so every KGStore.record_*
+# call routed through this fallback raised ValueError. Renamed to
+# "legacy" — same intent, passes the validator.
+_LEGACY_ENGAGEMENT_LABEL = "legacy"
 
 
 def with_engagement_property(props: dict | None, *, override: str | None = None) -> dict:
@@ -35,10 +45,10 @@ def with_engagement_property(props: dict | None, *, override: str | None = None)
 
     Precedence (first non-empty wins): ``override`` (caller pins it) → an
     ``engagement`` already on ``props`` → the active engagement → the legacy
-    label. Preserving an existing ``engagement`` is the multi-tenant safety
+    fallback. Preserving an existing ``engagement`` is the multi-tenant safety
     invariant: it stops a ``graph_transaction`` save-back from relabelling a
-    loaded node onto the current (or ``_legacy``) engagement on a shared
-    Neo4j. See docs/security/neo4j-hardening.md.
+    loaded node onto the current (or fallback) engagement on a shared Neo4j.
+    See docs/security/neo4j-hardening.md.
     """
     out = dict(props or {})
     engagement = (

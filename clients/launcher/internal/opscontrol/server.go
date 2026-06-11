@@ -204,17 +204,72 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Async control plane — same shape as handleStart. The HTTP
+	// handler returns IMMEDIATELY with state: "stopping"; the
+	// long-running `compose stop` + `compose rm -fs` (which can
+	// take a minute+ on a BHCE Neo4j shutdown) runs in a goroutine
+	// bound to a daemon-scoped context. The previous synchronous
+	// implementation tied the compose call to `r.Context()`, so if
+	// the agent's ops_stop tool-result chunked-response was cut
+	// short the compose call was cancelled mid-shutdown and the
+	// registry was never flipped to "stopped" — even though docker
+	// itself had brought the containers down. The middleware then
+	// missed the running->stopped transition and the agent waited
+	// forever for an auto-notification that never came.
+
 	lock := s.Registry.lockFor(workload)
 	lock.Lock()
-	defer lock.Unlock()
 
-	if err := s.Backend.Stop(r.Context(), workload); err != nil {
-		s.Logger.Error("opscontrol stop failed", "workload", workload, "err", err)
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	// Preserve the engagement tag across stop so the cleanup audit
+	// trail (workloadsForEngagement) and the middleware-injected
+	// reminder still carry the originating engagement id.
+	priorEngagement := ""
+	if existing, ok := s.Registry.get(workload); ok {
+		priorEngagement = existing.EngagementID
+		switch existing.State {
+		case StateStopped, StateStopping:
+			lock.Unlock()
+			writeJSON(w, http.StatusAccepted, Handle{
+				Workload:     workload,
+				State:        existing.State,
+				EngagementID: existing.EngagementID,
+			})
+			return
+		}
 	}
-	s.Registry.set(workload, StateStopped, "")
-	writeJSON(w, http.StatusAccepted, Handle{Workload: workload, State: StateStopped})
+
+	s.Registry.set(workload, StateStopping, priorEngagement)
+
+	go func() {
+		defer lock.Unlock()
+		ctx := context.Background()
+		if err := s.Backend.Stop(ctx, workload); err != nil {
+			// Mark Unknown so the middleware emits a transition
+			// reminder and the agent stops waiting for a clean
+			// "stopped". The actual container state on the docker
+			// daemon may be partially-down at this point; the
+			// agent + operator can reconcile via `ops_status` or
+			// `docker ps`.
+			s.Registry.set(workload, StateUnknown, priorEngagement)
+			s.Logger.Error("opscontrol stop failed",
+				"workload", workload,
+				"engagement", priorEngagement,
+				"err", err,
+			)
+			return
+		}
+		s.Registry.set(workload, StateStopped, priorEngagement)
+		s.Logger.Info("opscontrol stop ok",
+			"workload", workload,
+			"engagement", priorEngagement,
+		)
+	}()
+
+	writeJSON(w, http.StatusAccepted, Handle{
+		Workload:     workload,
+		State:        StateStopping,
+		EngagementID: priorEngagement,
+	})
 }
 
 // cleanupResponse summarizes a bulk engagement teardown so the agent

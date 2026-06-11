@@ -17,15 +17,15 @@ and can be ordered independently in the priority list.
 Examples
 --------
 User has [anthropic_api, openai_api]. Profile=eco.
-  decepticon (HIGH) → primary=anthropic/claude-opus-4-7, fallback=openai/gpt-5.5
+  decepticon (HIGH) → primary=anthropic/claude-opus-4-8, fallback=openai/gpt-5.5
   recon (LOW)       → primary=anthropic/claude-haiku-4-5, fallback=openai/gpt-5-nano
 
 User has [anthropic_oauth, anthropic_api]. Profile=eco.
-  decepticon (HIGH) → primary=auth/claude-opus-4-7, fallback=anthropic/claude-opus-4-7
+  decepticon (HIGH) → primary=auth/claude-opus-4-8, fallback=anthropic/claude-opus-4-8
   (OAuth subscription primary, paid API as fallback when subscription quota hits.)
 
 User has [anthropic_oauth] only. Profile=eco.
-  decepticon (HIGH) → primary=auth/claude-opus-4-7, fallback=None
+  decepticon (HIGH) → primary=auth/claude-opus-4-8, fallback=None
 
 User has [openai_api]. Profile=eco.
   decepticon (HIGH) → primary=openai/gpt-5.5, fallback=None
@@ -34,13 +34,13 @@ User has [openai_api]. Profile=eco.
 Tier × AuthMethod matrix
 ------------------------
                     HIGH                          MID                            LOW
-  anthropic_api    claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
-  anthropic_oauth  auth/claude-opus-4-7          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
+  anthropic_api    claude-opus-4-8               claude-sonnet-4-6              claude-haiku-4-5
+  anthropic_oauth  auth/claude-opus-4-8          auth/claude-sonnet-4-6         auth/claude-haiku-4-5
   openai_api       gpt-5.5                       gpt-5.4                        gpt-5-nano
   openai_oauth     auth/gpt-5.5                  auth/gpt-5.4                   auth/gpt-5.4-mini
   google_api       gemini-2.5-pro                gemini-2.5-flash               gemini-2.5-flash-lite
   minimax_api      MiniMax-M3                    MiniMax-M2.7-highspeed         — (falls through)
-  openrouter_api   claude-opus-4-7               claude-sonnet-4-6              claude-haiku-4-5
+  openrouter_api   claude-opus-4-8               claude-sonnet-4-6              claude-haiku-4-5
   nvidia_api       llama-3.3-70b-instruct        nemotron-70b-instruct          llama-3.2-3b-instruct
   xai_api          grok-4.3                      grok-4-1-fast-reasoning        — (falls through)
   copilot_oauth    copilot/gpt-5.5               copilot/claude-sonnet-4-6      copilot/gpt-5.4-mini
@@ -173,12 +173,12 @@ class AuthMethod(StrEnum):
 
 METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ANTHROPIC_API: {
-        Tier.HIGH: "anthropic/claude-opus-4-7",
+        Tier.HIGH: "anthropic/claude-opus-4-8",
         Tier.MID: "anthropic/claude-sonnet-4-6",
         Tier.LOW: "anthropic/claude-haiku-4-5",
     },
     AuthMethod.ANTHROPIC_OAUTH: {
-        Tier.HIGH: "auth/claude-opus-4-7",
+        Tier.HIGH: "auth/claude-opus-4-8",
         Tier.MID: "auth/claude-sonnet-4-6",
         Tier.LOW: "auth/claude-haiku-4-5",
     },
@@ -226,7 +226,7 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.MID: "mistral/codestral-latest",
     },
     AuthMethod.OPENROUTER_API: {
-        Tier.HIGH: "openrouter/anthropic/claude-opus-4-7",
+        Tier.HIGH: "openrouter/anthropic/claude-opus-4-8",
         Tier.MID: "openrouter/anthropic/claude-sonnet-4-6",
         Tier.LOW: "openrouter/anthropic/claude-haiku-4-5",
     },

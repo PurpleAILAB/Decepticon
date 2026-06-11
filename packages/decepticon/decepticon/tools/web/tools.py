@@ -236,7 +236,7 @@ def http_history(query: str = "", last_n: int = 10) -> str:
     entries = []
     for pair in matches:
         req, resp = pair if isinstance(pair, tuple) else (pair, None)
-        entry = {"id": req.id, "method": req.method, "url": req.url, "tag": req.tag}
+        entry: dict[str, Any] = {"id": req.id, "method": req.method, "url": req.url, "tag": req.tag}
         if resp:
             entry.update({"status": resp.status, "elapsed_ms": resp.elapsed_ms})
         entries.append(entry)

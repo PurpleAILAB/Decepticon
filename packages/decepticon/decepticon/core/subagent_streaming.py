@@ -33,6 +33,7 @@ import asyncio
 import contextvars
 import logging
 import time
+import uuid
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage
@@ -181,12 +182,30 @@ class StreamingRunnable(RunnableBinding):
         return ""
 
     def _emit_start(
-        self, renderer: Any, has_renderer: bool, writer: Callable | None, prompt: str
+        self,
+        renderer: Any,
+        has_renderer: bool,
+        writer: Callable | None,
+        prompt: str,
+        session_id: str,
     ) -> None:
         if has_renderer:
             renderer.on_subagent_start(self._name, prompt)
         if writer:
-            writer({"type": "subagent_start", "agent": self._name, "prompt": prompt})
+            writer(
+                {
+                    "type": "subagent_start",
+                    "agent": self._name,
+                    "prompt": prompt,
+                    # Invocation-unique id so consumers (CLI / Web) can
+                    # group events by SESSION instead of by agent name.
+                    # Two parallel ``task("recon", ...)`` dispatches yield
+                    # the same ``agent`` but different ``session_id``s;
+                    # without this field the CLI collapsed both into a
+                    # single session and lost the first one's tool calls.
+                    "session_id": session_id,
+                }
+            )
 
     def _emit_end(
         self,
@@ -194,6 +213,7 @@ class StreamingRunnable(RunnableBinding):
         has_renderer: bool,
         writer: Callable | None,
         elapsed: float,
+        session_id: str,
         *,
         cancelled: bool = False,
         error: bool = False,
@@ -208,6 +228,7 @@ class StreamingRunnable(RunnableBinding):
                     "elapsed": elapsed,
                     "cancelled": cancelled,
                     "error": error,
+                    "session_id": session_id,
                 }
             )
 
@@ -218,6 +239,7 @@ class StreamingRunnable(RunnableBinding):
         renderer: Any,
         has_renderer: bool,
         writer: Callable | None,
+        session_id: str,
     ) -> None:
         """Process new messages and emit events to channels."""
         from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -239,7 +261,14 @@ class StreamingRunnable(RunnableBinding):
                         if has_renderer:
                             renderer.on_subagent_message(self._name, text)
                         if writer:
-                            writer({"type": "subagent_message", "agent": self._name, "text": text})
+                            writer(
+                                {
+                                    "type": "subagent_message",
+                                    "agent": self._name,
+                                    "text": text,
+                                    "session_id": session_id,
+                                }
+                            )
 
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
@@ -279,6 +308,7 @@ class StreamingRunnable(RunnableBinding):
                                     # tool name. None when the model omitted
                                     # the id (rare; logged as a warning above).
                                     "id": tc_id,
+                                    "session_id": session_id,
                                 }
                             )
 
@@ -308,6 +338,7 @@ class StreamingRunnable(RunnableBinding):
                             # originating call exactly, no per-tool-name
                             # FIFO heuristic required.
                             "id": msg.tool_call_id,
+                            "session_id": session_id,
                         }
                     )
 
@@ -327,7 +358,11 @@ class StreamingRunnable(RunnableBinding):
             return self._runnable.invoke(input, config, **kwargs)
 
         prompt = self._extract_prompt(input)
-        self._emit_start(renderer, has_renderer, writer, prompt)
+        # Per-invocation id so consumers can distinguish two concurrent
+        # ``task("recon", ...)`` dispatches by SESSION even though the
+        # ``agent`` field is identical.
+        session_id = uuid.uuid4().hex[:12]
+        self._emit_start(renderer, has_renderer, writer, prompt, session_id)
 
         start = time.monotonic()
         last_state = None
@@ -343,16 +378,20 @@ class StreamingRunnable(RunnableBinding):
                 new_messages = messages[last_count:]
                 last_count = len(messages)
                 self._process_messages(
-                    new_messages, active_tool_calls, renderer, has_renderer, writer
+                    new_messages, active_tool_calls, renderer, has_renderer, writer, session_id
                 )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] invoke() cancelled", self._name)
-            self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, cancelled=True)
+            self._emit_end(
+                renderer, has_renderer, writer, time.monotonic() - start, session_id, cancelled=True
+            )
             raise
         except Exception as exc:
             log.error("[%s] invoke() failed: %s: %s", self._name, type(exc).__name__, exc)
-            self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, error=True)
+            self._emit_end(
+                renderer, has_renderer, writer, time.monotonic() - start, session_id, error=True
+            )
             # Return error state instead of re-raising. Re-raising crashes the
             # ToolNode step, which prevents ToolMessages from being saved to the
             # thread state. On the next run, PatchToolCallsMiddleware finds the
@@ -364,7 +403,7 @@ class StreamingRunnable(RunnableBinding):
                 return last_state
             return {"messages": [AIMessage(content=error_msg)]}
 
-        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start)
+        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, session_id)
         self._reset_failures()
 
         if last_state is None:
@@ -410,7 +449,10 @@ class StreamingRunnable(RunnableBinding):
             return await self._runnable.ainvoke(input, config, **kwargs)
 
         prompt = self._extract_prompt(input)
-        self._emit_start(renderer, has_renderer, writer, prompt)
+        # Per-invocation id so consumers can distinguish two concurrent
+        # ``task("recon", ...)`` dispatches by SESSION (see invoke() above).
+        session_id = uuid.uuid4().hex[:12]
+        self._emit_start(renderer, has_renderer, writer, prompt, session_id)
 
         start = time.monotonic()
         last_state = None
@@ -433,16 +475,20 @@ class StreamingRunnable(RunnableBinding):
                         len(messages),
                     )
                 self._process_messages(
-                    new_messages, active_tool_calls, renderer, has_renderer, writer
+                    new_messages, active_tool_calls, renderer, has_renderer, writer, session_id
                 )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] ainvoke() cancelled", self._name)
-            self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, cancelled=True)
+            self._emit_end(
+                renderer, has_renderer, writer, time.monotonic() - start, session_id, cancelled=True
+            )
             raise
         except Exception as exc:
             log.error("[%s] ainvoke() failed: %s: %s", self._name, type(exc).__name__, exc)
-            self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, error=True)
+            self._emit_end(
+                renderer, has_renderer, writer, time.monotonic() - start, session_id, error=True
+            )
             # Return error state instead of re-raising. Re-raising crashes the
             # ToolNode step, which prevents ToolMessages from being saved to the
             # thread state. On the next run, PatchToolCallsMiddleware finds the
@@ -454,7 +500,7 @@ class StreamingRunnable(RunnableBinding):
                 return last_state
             return {"messages": [AIMessage(content=error_msg)]}
 
-        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start)
+        self._emit_end(renderer, has_renderer, writer, time.monotonic() - start, session_id)
         self._reset_failures()
 
         if last_state is None:

@@ -75,16 +75,39 @@ def patch_client(monkeypatch):
 
 
 def test_ops_start_returns_envelope(patch_client) -> None:
-    out = ops_start.invoke({"workload": "ad", "engagement_id": "eng-1"})
+    # Engagement now travels via config.configurable.engagement_name —
+    # the same channel EngagementContextMiddleware reads — so the tool
+    # is thread-scoped and one langgraph process can serve multiple
+    # engagements concurrently.
+    out = ops_start.invoke(
+        {"workload": "ad"},
+        config={"configurable": {"engagement_name": "eng-1"}},
+    )
     data = json.loads(out)
     assert data == {"state": "running", "workload": "ad"}
     assert patch_client.calls[0] == ("start", {"workload": "ad", "engagement_id": "eng-1"})
 
 
 def test_ops_start_pulls_engagement_from_env(monkeypatch, patch_client) -> None:
+    # Env is a last-resort fallback for the daemon-less library path
+    # and pytest fixtures; production wiring goes through the per-run
+    # config.
     monkeypatch.setenv("DECEPTICON_ENGAGEMENT", "eng-from-env")
     ops_start.invoke({"workload": "ad"})
     assert patch_client.calls[0][1]["engagement_id"] == "eng-from-env"
+
+
+def test_ops_start_config_wins_over_env(monkeypatch, patch_client) -> None:
+    # When the operator runs two concurrent threads against the same
+    # langgraph process, each thread must see its own
+    # config.configurable.engagement_name — the process-wide env
+    # cannot be the source of truth.
+    monkeypatch.setenv("DECEPTICON_ENGAGEMENT", "eng-from-env")
+    ops_start.invoke(
+        {"workload": "ad"},
+        config={"configurable": {"engagement_name": "eng-from-config"}},
+    )
+    assert patch_client.calls[0][1]["engagement_id"] == "eng-from-config"
 
 
 def test_ops_start_unreachable_diagnostic(monkeypatch) -> None:
@@ -140,7 +163,10 @@ def test_ops_status_merges_health_and_profiles(patch_client) -> None:
 
 
 def test_ops_cleanup_engagement_returns_envelope(patch_client) -> None:
-    out = ops_cleanup_engagement.invoke({"engagement_id": "eng-99"})
+    out = ops_cleanup_engagement.invoke(
+        {},
+        config={"configurable": {"engagement_name": "eng-99"}},
+    )
     data = json.loads(out)
     assert data == {"engagement": "eng-99", "stopped": ["ad", "c2-sliver"]}
     assert patch_client.calls[0] == ("cleanup_engagement", {"engagement_id": "eng-99"})

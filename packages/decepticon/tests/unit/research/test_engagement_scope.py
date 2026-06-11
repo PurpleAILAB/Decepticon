@@ -6,6 +6,7 @@ import pytest
 
 from decepticon.tools.research import _engagement_scope as _scope
 from decepticon.tools.research._engagement_scope import (
+    _LEGACY_ENGAGEMENT_LABEL,
     get_active_engagement,
     is_valid_engagement_label,
     reset_active_engagement,
@@ -125,12 +126,12 @@ class TestWithEngagementProperty:
 
     def test_legacy_when_no_engagement_set(self) -> None:
         out = with_engagement_property({"x": 1})
-        assert out["engagement"] == "_legacy"
+        assert out["engagement"] == "legacy"
 
     def test_none_props_safe(self) -> None:
         out = with_engagement_property(None)
-        assert out["engagement"] == "_legacy"
-        assert out == {"engagement": "_legacy"}
+        assert out["engagement"] == "legacy"
+        assert out == {"engagement": "legacy"}
 
     def test_input_dict_not_mutated(self) -> None:
         original = {"ip": "10.0.0.5"}
@@ -162,3 +163,20 @@ class TestWithEngagementProperty:
 # scoping via its V001 ``(key, engagement)`` composite uniqueness and
 # the mandatory ``engagement`` kwarg on every public method — covered
 # by the KG middleware's own integration tests.
+
+
+def test_legacy_fallback_passes_validator():
+    """Regression guard for the v1.1.12 bug.
+
+    Before v1.1.12 the fallback label was ``"_legacy"`` — but the
+    is_valid_engagement_label validator rejects leading underscores,
+    so every KGStore call that hit the fallback raised ValueError
+    (surfaced as a ``kg_health`` smoke failure during v1.1.8 release
+    prep). The constant has to keep passing the validator or the bug
+    silently comes back.
+    """
+    assert is_valid_engagement_label(_LEGACY_ENGAGEMENT_LABEL), (
+        f"_LEGACY_ENGAGEMENT_LABEL={_LEGACY_ENGAGEMENT_LABEL!r} fails the "
+        f"engagement-label validator — KGStore will reject it on every "
+        f"fallback write"
+    )

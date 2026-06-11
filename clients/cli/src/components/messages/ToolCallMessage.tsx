@@ -31,7 +31,13 @@ const TOOL_DISPLAY: Record<string, string> = {
   write_todos: "Todos",
   ask_user_question: "Ask",
   complete_engagement_planning: "Plan complete",
+  // Skillogy 3-tool surface (ADR-0008 / v0.2.2). load_skill is the
+  // expensive full-text fetch; find_skill / traverse are the cheap
+  // discovery primitives. Label all three so the activity stream stays
+  // legible during the skill-retrieval phase.
   load_skill: "Skill",
+  find_skill: "Find skill",
+  traverse: "Traverse skills",
 };
 
 // ── Tool call header ──────────────────────────────────────────────
@@ -169,6 +175,39 @@ export const ToolCallMessage = React.memo(function ToolCallMessage({
           <Text color="green">{`${GLYPH_DOT} `}</Text>
           <Text color="white" bold>{"Skill"}</Text>
           <Text color="gray" italic>{` (${skillName})`}</Text>
+        </Text>
+      </Box>
+    );
+  }
+
+  // Skillogy discovery tools (find_skill, traverse) — JSON payload is
+  // useful to the model but illegible in the activity stream. Show a
+  // compact header so the operator can SEE the call without being
+  // drowned in raw JSON. Same treatment as load_skill above.
+  if (event.toolName === "find_skill" || event.toolName === "traverse") {
+    const args = event.toolArgs ?? {};
+    const hint = (() => {
+      if (event.toolName === "find_skill") {
+        const q = args.query as string | undefined;
+        const sub = args.subdomain as string | undefined;
+        const mitre = args.mitre_id as string | undefined;
+        const tag = args.tag as string | undefined;
+        const tactic = args.tactic_id as string | undefined;
+        return q ?? sub ?? mitre ?? tag ?? tactic ?? "";
+      }
+      const from = (args.from_path as string | undefined) ?? "";
+      return from.includes("/")
+        ? from.split("/").slice(-2, -1)[0] ?? from
+        : from;
+    })();
+    const label = event.toolName === "find_skill" ? "Find skill" : "Traverse skills";
+    const dotColor = event.status === "error" ? "red" : "green";
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text>
+          <Text color={dotColor}>{`${GLYPH_DOT} `}</Text>
+          <Text color="white" bold>{label}</Text>
+          {hint ? <Text color="gray" italic>{` (${hint})`}</Text> : null}
         </Text>
       </Box>
     );

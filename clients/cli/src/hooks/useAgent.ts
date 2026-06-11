@@ -548,8 +548,17 @@ export function useAgent({
         }
       }
 
-      // Detect unexpected disconnection: stream ended but no completion event
-      if (!completionReceived && !abortController.signal.aborted) {
+      // Detect unexpected disconnection: stream ended but no completion event.
+      //
+      // ``ask_user_question`` ends the stream by raising LangGraph's
+      // ``interrupt()`` \u2014 the run is PAUSED, not lost. ``activeQuestionRef``
+      // is the same signal ``handleStreamComplete`` already uses to keep
+      // runState=paused and render the picker. Without this guard every
+      // interview turn surfaced a bogus "Connection to server lost" notice
+      // even though the run was sitting in a clean interrupt waiting for the
+      // operator's pick.
+      const interrupted = activeQuestionRef.current !== null;
+      if (!completionReceived && !abortController.signal.aborted && !interrupted) {
         addSystemEvent(
           "\u26a0\ufe0f Connection to server lost. The run continues server-side. "
           + "Use /resume to reconnect.",
