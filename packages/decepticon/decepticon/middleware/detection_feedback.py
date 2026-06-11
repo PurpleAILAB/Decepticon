@@ -103,7 +103,7 @@ class DetectionFeedbackMiddleware(AgentMiddleware):
                 self._surfaced.popitem(last=False)
         return [props for _nid, props in fresh]
 
-    def _reminder(self, detections: list[dict[str, Any]]) -> str:
+    def _reminder(self, detections: list[dict[str, Any]], *, escalated: bool) -> str:
         lines = []
         for props in sorted(detections, key=lambda p: float(p.get("mttd_seconds", 0.0) or 0.0)):
             mttd = float(props.get("mttd_seconds", 0.0) or 0.0)
@@ -112,6 +112,19 @@ class DetectionFeedbackMiddleware(AgentMiddleware):
             lines.append(
                 f"  • {title} fired in {mttd:.1f}s on {techniques} (rule {props.get('rule_id', '?')})"
             )
+        # Only claim an OPSEC escalation when one actually happened; otherwise the
+        # orchestrator would reason about a state change that never landed.
+        if escalated:
+            opsec_clause = (
+                " The active objective's OPSEC posture has already been escalated "
+                f"toward `{self._target_opsec.value}` for you — comply with it and "
+                "delegate the next step with quieter tradecraft."
+            )
+        else:
+            opsec_clause = (
+                f" Treat the active tradecraft as if OPSEC `{self._target_opsec.value}` "
+                "applied and delegate the next step with quieter tradecraft."
+            )
         return (
             "<system-reminder>\n"
             "Blue Cell caught your activity quickly. These detections fired on the "
@@ -119,10 +132,9 @@ class DetectionFeedbackMiddleware(AgentMiddleware):
             + "\n".join(lines)
             + "\n\nThose technique signatures are being watched. Switch to a stealthier "
             "approach: slow your timing, evade the matched signatures, pick alternative "
-            "tooling, and do not re-run the burned techniques. The active objective's "
-            "OPSEC posture has already been escalated toward `careful` for you — comply "
-            "with it and delegate the next step with quieter tradecraft.\n"
-            "</system-reminder>"
+            "tooling, and do not re-run the burned techniques."
+            + opsec_clause
+            + "\n</system-reminder>"
         )
 
     def _escalate_opsec(self, objectives: object) -> list[dict[str, Any]] | None:
@@ -148,9 +160,10 @@ class DetectionFeedbackMiddleware(AgentMiddleware):
         detections = self._fast_unsurfaced()
         if not detections:
             return None
-        update: dict = {"messages": [HumanMessage(content=self._reminder(detections))]}
         objectives = state.get("objectives") if isinstance(state, dict) else None
         escalated = self._escalate_opsec(objectives)
+        reminder = self._reminder(detections, escalated=escalated is not None)
+        update: dict = {"messages": [HumanMessage(content=reminder)]}
         if escalated is not None:
             update["objectives"] = escalated
         return update

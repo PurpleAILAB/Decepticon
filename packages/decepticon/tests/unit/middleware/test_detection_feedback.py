@@ -60,8 +60,42 @@ def test_fast_detection_injects_stealth_reminder(monkeypatch: pytest.MonkeyPatch
     content = update["messages"][0].content
     assert "DCEP-T1558.003-rule" in content
     assert "T1558.003" in content
-    assert "OPSEC" in content
+    assert "OPSEC" in content or "opsec" in content
     assert "objectives" not in update  # no OPPLAN state present
+
+
+def test_reminder_does_not_claim_escalation_when_no_objectives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _store_with(monkeypatch, _detection("d::1", 1.2))
+    update = _run(DetectionFeedbackMiddleware(), {})
+    assert update is not None
+    content = update["messages"][0].content
+    assert "has already been escalated" not in content
+
+
+def test_reminder_claims_escalation_only_when_objective_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _store_with(monkeypatch, _detection("d::1", 1.2))
+    update = _run(
+        DetectionFeedbackMiddleware(),
+        {"objectives": [_objective("OBJ-1", "in-progress", "loud")]},
+    )
+    assert update is not None
+    assert "has already been escalated" in update["messages"][0].content
+
+
+def test_reminder_does_not_claim_escalation_when_already_stricter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _store_with(monkeypatch, _detection("d::1", 1.2))
+    update = _run(
+        DetectionFeedbackMiddleware(),
+        {"objectives": [_objective("OBJ-1", "in-progress", "silent")]},
+    )
+    assert update is not None
+    assert "has already been escalated" not in update["messages"][0].content
 
 
 def test_slow_detection_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:

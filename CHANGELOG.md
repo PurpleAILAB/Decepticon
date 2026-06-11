@@ -6,6 +6,25 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [Unreleased]
+
+### Added
+
+- **Adaptive detection-feedback OPSEC hook** — `DetectionFeedbackMiddleware`
+  orchestrator `before_model` hook that reads Blue Cell `DetectionFired` KG
+  nodes, injects a `<system-reminder>` when a technique was caught fast
+  (MTTD ≤ threshold), and escalate-only-bumps the in-progress OPPLAN
+  objective's OPSEC posture toward `careful`. Best-effort, FIFO-bounded
+  dedupe, orchestrator-only. (#461)
+
+### Fixed
+
+- `DetectionFeedbackMiddleware` no longer claims OPSEC was escalated in the
+  injected `<system-reminder>` when the escalation did not actually land
+  (no objectives in state, or every in-progress objective already at a
+  stricter posture than the target). Prevents the orchestrator from
+  reasoning about a state change that never happened. (#461)
+
 ## [1.1.6] — 2026-06-01
 
 Re-cut of `v1.1.5` to restore version coherence — no functional change.
