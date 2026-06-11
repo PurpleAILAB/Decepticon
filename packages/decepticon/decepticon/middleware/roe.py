@@ -69,6 +69,7 @@ GATED_TOOL_NAMES: frozenset[str] = frozenset(
         "http_request",
         "proxy_send_request",
         "browser_action",
+        "web_search",
     }
 )
 
@@ -100,10 +101,21 @@ def _hosts_from_browser_action(args: dict[str, Any]) -> list[str]:
     return _host_from_url(params.get("url"))
 
 
+def _hosts_from_web_search(args: dict[str, Any]) -> list[str]:
+    # ADR-0008: web_search is OSINT — the search provider itself
+    # is exempt from in-scope *target* gating. Per-result URL hosts
+    # are evaluated inside the tool against the same RoE rules,
+    # so we return no targets here (the call is still audit-logged
+    # + throttled by the middleware).
+    _ = args
+    return []
+
+
 NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "http_request": _hosts_from_url_arg,
     "proxy_send_request": _hosts_from_url_arg,
     "browser_action": _hosts_from_browser_action,
+    "web_search": _hosts_from_web_search,
 }
 
 

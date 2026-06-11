@@ -17,6 +17,7 @@ from decepticon.tools.web.jwt import (
     parse_token,
 )
 from decepticon.tools.web.oauth import analyze_oauth_callback
+from decepticon.tools.web.search import web_search
 from decepticon.tools.web.session import analyze_cookie
 
 
@@ -252,4 +253,5 @@ WEB_TOOLS = [
     cookie_audit,
     http_request,
     http_history,
+    web_search,
 ]
