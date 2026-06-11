@@ -180,17 +180,35 @@ def _build_engagement_injection(slug: str, workspace: str) -> str:
     )
 
 
+# Cache of parsed deconfliction.json keyed by path → (mtime, value). The
+# injector runs on every model call, so without this the file was stat'd,
+# read, and JSON-parsed once per turn. Keyed on mtime so an updated
+# deconfliction file is still picked up the moment it changes.
+_DECONFLICTION_CACHE: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
 def _load_deconfliction(workspace: str) -> dict[str, Any] | None:
     root = workspace.rstrip("/") or workspace
     path = Path(root) / "plan" / "deconfliction.json"
-    if not path.exists():
+    key = str(path)
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        # Absent (or unstattable) — drop any stale entry and skip the block.
+        _DECONFLICTION_CACHE.pop(key, None)
         return None
+    cached = _DECONFLICTION_CACHE.get(key)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         log.warning("engagement: failed to read %s: %s; skipping block", path, exc)
+        _DECONFLICTION_CACHE[key] = (mtime, None)
         return None
-    return data if isinstance(data, dict) else None
+    result = data if isinstance(data, dict) else None
+    _DECONFLICTION_CACHE[key] = (mtime, result)
+    return result
 
 
 def _build_deconfliction_injection(data: dict[str, Any]) -> str:
