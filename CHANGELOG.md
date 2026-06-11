@@ -6,6 +6,21 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [Unreleased]
+
+### Added
+
+- **`mcp_server` test coverage + CI gate** — added 28 unit tests
+  (`test_server.py` exercising the full ten-tool engagement-control surface
+  via `FastMCP.call_tool`; `test_main.py` covering the `decepticon-mcp` CLI
+  entrypoint, the refuse-open-bind guard, the JWT misconfiguration exit, and
+  the install-hint path when the `[mcp]` extra is absent). The CI Python lane
+  now installs the `[mcp]` extra (`uv sync --dev --extra mcp --locked`) so the
+  bearer-auth code path is actually executed in CI. Coverage on
+  `decepticon.mcp_server` rises from **78% → 95%**; `tools_lifecycle.py`,
+  `tools_interactive.py`, and `__main__.py` move to 100%. Closes the CI
+  coverage gap flagged on PR #554.
+
 ## [1.1.6] — 2026-06-01
 
 Re-cut of `v1.1.5` to restore version coherence — no functional change.

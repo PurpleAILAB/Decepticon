@@ -184,7 +184,12 @@ jobs:
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
-      - run: uv sync --dev --locked
+      # `--extra mcp` pulls in the optional MCP SDK + pyjwt[crypto] so the
+      # mcp_server tests (auth gate, server wiring, CLI entrypoint) actually
+      # execute in CI. Without the extra these files import-skip and the
+      # security-critical bearer auth code ships with no CI coverage — see
+      # the discussion on PR #554.
+      - run: uv sync --dev --extra mcp --locked
       # Lint + typecheck are dispatched through the Makefile so the
       # Makefile remains the single source of truth for what CI runs.
       # See `make ci-lint` and scripts/check_basedpyright_errors.py.
@@ -297,7 +302,7 @@ jobs:
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
-      - run: uv sync --dev --locked
+      - run: uv sync --dev --extra mcp --locked
       - name: Pytest with coverage (no threshold — `make ci-test-coverage-report`)
         run: make ci-test-coverage-report
       - name: Write coverage summary to step summary
