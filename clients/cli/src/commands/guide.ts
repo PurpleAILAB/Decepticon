@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { resolveCliEngagementDir } from "../lib/workspace.js";
 import type { Command } from "./types.js";
 
 const guide: Command = {
@@ -18,14 +19,21 @@ const guide: Command = {
       return;
     }
 
-    const workspace = process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
-    const guidanceDir = path.join(workspace, "guidance");
+    // Bug fix (supersedes #636): write to the per-engagement subdir that
+    // `GuidanceMiddleware._resolve_workspace_path` actually drains.
+    const engagementDir = resolveCliEngagementDir();
+    if (!engagementDir) {
+      ctx.addSystemEvent(
+        "Error: No active engagement (DECEPTICON_ENGAGEMENT is unset or invalid). " +
+          "Re-launch via `decepticon start` to pick an engagement.",
+      );
+      return;
+    }
+    const guidanceDir = path.join(engagementDir, "guidance");
     const inboxPath = path.join(guidanceDir, "inbox.jsonl");
 
     try {
-      if (!fs.existsSync(guidanceDir)) {
-        fs.mkdirSync(guidanceDir, { recursive: true });
-      }
+      fs.mkdirSync(guidanceDir, { recursive: true });
       const line = JSON.stringify({ text, timestamp: Date.now() / 1000 }) + "\n";
       fs.appendFileSync(inboxPath, line, "utf-8");
       ctx.addSystemEvent(`Guidance registered: "${text}"`);
