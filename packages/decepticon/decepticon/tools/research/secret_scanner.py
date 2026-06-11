@@ -30,9 +30,6 @@ import httpx
 from langchain_core.tools import tool
 
 from decepticon.tools.research._state import _json
-from decepticon_core.utils.logging import get_logger
-
-log = get_logger("research.secret_scanner")
 
 DEFAULT_TIMEOUT = 8.0
 
@@ -173,10 +170,10 @@ async def _classify(pattern_name: str, secret: str) -> str:
     try:
         return "live" if await validate_credential(pattern_name, secret) else "dead"
     except (httpx.HTTPError, ValueError, KeyError):
-        # Never reference the exception in the log: transport errors can embed
-        # the request (and its Authorization header / secret). ``pattern_name``
-        # is a static pattern-type key, never the secret itself.
-        log.debug("validation probe failed for pattern %s", pattern_name)
+        # Swallow probe failures and report the credential as unvalidated. We do
+        # NOT log here: the exception can embed the request (and its secret), and
+        # CodeQL conservatively treats any logging sink in this secret-handling
+        # frame as clear-text exposure. Liveness is best-effort by contract.
         return "unvalidated"
 
 
