@@ -6,6 +6,7 @@ import sys
 
 from decepticon.cli.audit import main as audit_main
 from decepticon.cli.auth import main as auth_main
+from decepticon.cli.export_transcript import main as export_transcript_main
 from decepticon.cli.scan import main as scan_main
 from decepticon.cli.zip import main as zip_main
 
@@ -14,10 +15,11 @@ def _print_help() -> int:
     print(
         "decepticon-cli — headless / CI entry\n\n"
         "Subcommands:\n"
-        "  scan    Run a one-shot security scan and emit SARIF\n"
-        "  auth    Show provider/auth configuration (API keys + subscriptions)\n\n"
-        "  audit   Verify engagement audit ledgers\n"
-        "  zip     Export/import engagement workspaces as ZIP archives\n\n"
+        "  scan               Run a one-shot security scan and emit SARIF\n"
+        "  auth               Show provider/auth configuration (API keys + subscriptions)\n\n"
+        "  audit              Verify engagement audit ledgers\n"
+        "  zip                Export/import engagement workspaces as ZIP archives\n\n"
+        "  export-transcript  Render an engagement event log as Markdown\n\n"
         "Run a subcommand with --help for its flags.",
         file=sys.stderr,
     )
@@ -38,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
         return audit_main(rest)
     if sub == "zip":
         return zip_main(rest)
+    if sub == "export-transcript":
+        return export_transcript_main(rest)
     print(f"unknown subcommand: {sub}\n", file=sys.stderr)
     _print_help()
     return 2
