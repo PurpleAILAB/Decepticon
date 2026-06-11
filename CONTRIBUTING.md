@@ -1,5 +1,10 @@
 # Contributing to Decepticon
 
+> **Canonical contributor discipline:** [`CONTRIBUTING_KARPATHY.md`](./CONTRIBUTING_KARPATHY.md)
+> — 10 rules (K1–K10) that apply to every PR. Four are hard-blocked in CI
+> (K1 metric Δ, K2 LOC cap, K9 CHANGELOG, K10 reviewer ≠ author);
+> the rest are reviewer-judgment. Read it before opening a PR.
+
 Thank you for your interest in contributing to Decepticon! Whether you're a security researcher, AI engineer, or documentation enthusiast, we welcome your contributions.
 
 ## Getting Started

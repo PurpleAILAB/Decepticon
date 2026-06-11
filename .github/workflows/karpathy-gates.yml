@@ -1,0 +1,163 @@
+name: karpathy-gates
+
+# Enforces the four CI-hard-blocking Karpathy Rules:
+#   K1  — PR body must declare a moved metric ("Metric / Δ: ...").
+#   K2  — Net +LOC ≤ 300 unless karpathy/refactor or karpathy/override label.
+#   K9  — CHANGELOG.md must be touched on user-visible PRs.
+#   K10 — PR body declares author + reviewer-≠-author; bot-authored
+#         PRs need a human approving review before this job passes.
+#
+# Reviewer-judgment rules (K3, K5, K7, K8) are documented in
+# CONTRIBUTING_KARPATHY.md and are not enforced here by design.
+#
+# Manual repro: see CONTRIBUTING_KARPATHY.md "Manual repro for the CI workflow".
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled, review_requested]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  gates:
+    name: Karpathy gates (K1, K2, K9, K10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for CHANGELOG path resolution)
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+
+      - name: Fetch PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr view "$PR_NUMBER" --repo "$REPO" \
+            --json body,additions,deletions,labels,files,author,reviews \
+            > pr.json
+          jq '{additions, deletions,
+               labels: [.labels[].name],
+               files:  [.files[].path],
+               author: .author.login,
+               approvals: [.reviews[] | select(.state=="APPROVED") | .author.login]
+              }' pr.json
+
+      - name: K1 — A number must move
+        run: |
+          set -euo pipefail
+          body=$(jq -r '.body // ""' pr.json)
+          # Accept "Metric / Δ:", "Metric/Δ:", "Metric - Δ:", "Metric Δ:".
+          # Require a non-empty value after the colon (ASCII or fullwidth).
+          if printf '%s\n' "$body" \
+              | grep -E -i '^[[:space:]]*Metric[[:space:]]*(/|-)?[[:space:]]*(Δ|delta)[[:space:]]*[:：][[:space:]]*\S' \
+              > /dev/null; then
+            echo "K1 OK — metric line present."
+          else
+            echo "::error title=K1 failed::PR body must contain a 'Metric / Δ: <value>' line. See CONTRIBUTING_KARPATHY.md#k1."
+            exit 1
+          fi
+
+      - name: K2 — Delete > add (net +LOC ≤ 300)
+        run: |
+          set -euo pipefail
+          add=$(jq -r '.additions' pr.json)
+          del=$(jq -r '.deletions' pr.json)
+          net=$(( add - del ))
+          labels=$(jq -r '[.labels[].name] | join(",")' pr.json)
+          echo "additions=$add deletions=$del net=$net labels=$labels"
+          if [ "$net" -le 300 ]; then
+            echo "K2 OK — net $net ≤ 300."
+            exit 0
+          fi
+          case ",$labels," in
+            *,karpathy/refactor,*)
+              echo "K2 OK — net $net > 300 but karpathy/refactor label present."
+              ;;
+            *,karpathy/override,*)
+              echo "K2 OK — net $net > 300 but karpathy/override label present."
+              ;;
+            *)
+              echo "::error title=K2 failed::Net +LOC is $net (> 300) and neither karpathy/refactor nor karpathy/override label is set. See CONTRIBUTING_KARPATHY.md#k2."
+              exit 1
+              ;;
+          esac
+
+      - name: K9 — CHANGELOG written as you go
+        run: |
+          set -euo pipefail
+          labels=$(jq -r '[.labels[].name] | join(",")' pr.json)
+          case ",$labels," in
+            *,internal-only,*)
+              echo "K9 SKIP — internal-only label set."
+              exit 0
+              ;;
+          esac
+          changed=$(jq -r '[.files[].path] | any(. == "CHANGELOG.md")' pr.json)
+          if [ "$changed" = "true" ]; then
+            echo "K9 OK — CHANGELOG.md touched."
+          else
+            echo "::error title=K9 failed::User-visible PRs must touch CHANGELOG.md. Add an entry under [Unreleased] or set the 'internal-only' label. See CONTRIBUTING_KARPATHY.md#k9."
+            exit 1
+          fi
+
+      - name: K10 — Author declared, human reviewer ≠ author
+        run: |
+          set -euo pipefail
+          body=$(jq -r '.body // ""' pr.json)
+          author=$(jq -r '.author' pr.json)
+          # Body line: "Author: ...; requires human reviewer ≠ author"
+          # Accept ≠ or != for terminals that strip non-ASCII.
+          if printf '%s\n' "$body" \
+              | grep -E -i '^[[:space:]]*Author[[:space:]]*[:：].*requires[[:space:]]+human[[:space:]]+reviewer[[:space:]]+(≠|!=)[[:space:]]+author' \
+              > /dev/null; then
+            echo "K10 body line OK."
+          else
+            echo "::error title=K10 failed (body)::PR body must contain 'Author: ...; requires human reviewer ≠ author'. See CONTRIBUTING_KARPATHY.md#k10."
+            exit 1
+          fi
+          # Bot detection: known bot logins + anything ending in [bot] or -bot.
+          # VoidChecksum is the project agent-traffic account.
+          is_bot=false
+          case "$author" in
+            github-actions\[bot\]|dependabot\[bot\]|renovate\[bot\]|VoidChecksum)
+              is_bot=true ;;
+            *\[bot\]|*-bot)
+              is_bot=true ;;
+          esac
+          if [ "$is_bot" = "false" ]; then
+            echo "K10 OK — human author ($author); reviewer policy enforced at review time."
+            exit 0
+          fi
+          # Bot/agent author: need at least one APPROVED review from a different,
+          # non-bot login.
+          approvals=$(jq -r '.approvals[]' pr.json || true)
+          if [ -z "$approvals" ]; then
+            echo "::error title=K10 failed (review)::Author '$author' is a bot/agent; at least one human approving review (≠ author, not itself a bot) is required."
+            exit 1
+          fi
+          ok=false
+          while IFS= read -r r; do
+            [ -z "$r" ] && continue
+            [ "$r" = "$author" ] && continue
+            case "$r" in
+              github-actions\[bot\]|dependabot\[bot\]|renovate\[bot\]|VoidChecksum) continue ;;
+              *\[bot\]|*-bot) continue ;;
+            esac
+            ok=true
+            echo "K10 OK — approving human reviewer: $r."
+            break
+          done <<EOF
+          $approvals
+          EOF
+          if [ "$ok" != "true" ]; then
+            echo "::error title=K10 failed (review)::Author '$author' is a bot/agent; need an APPROVED review from a human ≠ author. Current approvals: $approvals"
+            exit 1
+          fi

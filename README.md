@@ -197,7 +197,7 @@ make dogfood  # Full OSS UX (launcher → onboard → CLI) on local code
 make dev      # Backend hot-reload (compose watch) — daily dev loop
 ```
 
-→ **[Contributing guide](docs/contributing.md)**
+→ **[Contributing guide](docs/contributing.md)** · **[Karpathy Rules (canonical PR discipline)](CONTRIBUTING_KARPATHY.md)**
 
 ---
 

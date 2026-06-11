@@ -16,6 +16,22 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **Karpathy Rules ratified as canonical contributor discipline.**
+  New `CONTRIBUTING_KARPATHY.md` documents the 10-rule charter (K1–K10)
+  with rationale, compliant/violation examples, and enforcement notes.
+  Four rules are now hard-blocked in CI by a new
+  `.github/workflows/karpathy-gates.yml` workflow: K1 (PR body declares
+  a moved metric), K2 (net +LOC ≤ 300 unless `karpathy/refactor` or
+  `karpathy/override` label is set), K9 (`CHANGELOG.md` touched on
+  user-visible PRs), and K10 (PR body declares author and "requires
+  human reviewer ≠ author"; bot/agent-authored PRs require an
+  approving review from a human ≠ author). K3, K5, K7, K8 stay
+  reviewer-judgment. The PR template gained explicit `Metric / Δ`,
+  `Files read`, `CHANGELOG entry`, and `Author` fields plus a Karpathy
+  pre-flight checklist; `CONTRIBUTING.md` and `README.md` link the new
+  doc. Pinned actions: `actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5`
+  (v4). Metric Δ: Karpathy gates enforced in CI: 0 → 4 (K1, K2, K9, K10).
+
 - **ADR-0006 agent-driven container lifecycle.** A host-binary
   `opscontrol` daemon, supervised by systemd (Linux) / launchd (macOS),
   owns the docker socket and exposes a Unix-domain socket bind-mounted
