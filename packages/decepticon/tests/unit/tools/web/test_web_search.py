@@ -70,6 +70,15 @@ def test_unwrap_ddg_href_handles_uddg_wrapper() -> None:
         _unwrap_ddg_href("//duckduckgo.com/l/?uddg=https%3A%2F%2Ftarget.com%2Fy")
         == "https://target.com/y"
     )
+    assert (
+        _unwrap_ddg_href("//html.duckduckgo.com/l/?uddg=https%3A%2F%2Ftarget.com%2Fy")
+        == "https://target.com/y"
+    )
+    # Attacker lookalike domain bypass attempt should NOT unwrap:
+    assert (
+        _unwrap_ddg_href("//duckduckgo.com.attacker.com/l/?uddg=https%3A%2F%2Ftarget.com%2Fy")
+        == "https://duckduckgo.com.attacker.com/l/?uddg=https%3A%2F%2Ftarget.com%2Fy"
+    )
 
 
 @_asyncio

@@ -22,6 +22,7 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 import httpx
+from langchain_core.tools import tool
 
 from decepticon.middleware._audit_sink import RoEAuditSink
 from decepticon_core.types.roe import evaluate_target
@@ -64,7 +65,7 @@ def _unwrap_ddg_href(href: str) -> str:
         parsed = urlsplit(href)
     except ValueError:
         return href
-    if "duckduckgo.com" not in parsed.netloc:
+    if parsed.netloc not in {"duckduckgo.com", "www.duckduckgo.com", "html.duckduckgo.com"}:
         return href
     qs = parse_qs(parsed.query)
     inner = qs.get("uddg") or qs.get("u")
@@ -73,7 +74,7 @@ def _unwrap_ddg_href(href: str) -> str:
     return href
 
 
-def _parse_ddg_html(body: str, limit: int) -> list[WebSearchResult]:
+def _parse_ddg_html(body: str, limit: int = 50) -> list[WebSearchResult]:
     out: list[WebSearchResult] = []
     for match in _RESULT_RE.finditer(body):
         href = _unwrap_ddg_href(match.group("href"))
@@ -91,16 +92,26 @@ def _parse_ddg_html(body: str, limit: int) -> list[WebSearchResult]:
     return out
 
 
+_MAX_RESPONSE_BYTES = 512 * 1024  # 512 KiB
+
+
 async def _fetch_ddg(query: str, *, timeout_s: float) -> str:
     async with httpx.AsyncClient(
         timeout=timeout_s,
         follow_redirects=True,
         headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
     ) as client:
-        resp = await client.post(DDG_HTML_ENDPOINT, data={"q": query})
-        resp.raise_for_status()
-        return resp.text
-
+        async with client.stream("POST", DDG_HTML_ENDPOINT, data={"q": query}) as response:
+            response.raise_for_status()
+            chunks = []
+            bytes_read = 0
+            async for chunk in response.aiter_bytes():
+                chunks.append(chunk)
+                bytes_read += len(chunk)
+                if bytes_read >= _MAX_RESPONSE_BYTES:
+                    break
+            body = b"".join(chunks)[:_MAX_RESPONSE_BYTES]
+            return body.decode(response.encoding or "utf-8", errors="replace")
 
 def _audit_event(sink: RoEAuditSink | None, payload: dict[str, Any]) -> None:
     if sink is None:
@@ -187,8 +198,8 @@ async def run_web_search(
             },
         )
         return {"query": query, "results": [], "error": f"{type(exc).__name__}: {exc}"}
-    raw = _parse_ddg_html(body, limit=limit)
-    kept = _filter_by_roe(
+    raw = _parse_ddg_html(body, limit=50)
+    kept_all = _filter_by_roe(
         raw,
         workspace_path=workspace_path,
         sink=sink,
@@ -196,6 +207,7 @@ async def run_web_search(
         objective=objective,
         query=query,
     )
+    kept = kept_all[:limit]
     _audit_event(
         sink,
         {
@@ -205,13 +217,13 @@ async def run_web_search(
             "tool": "web_search",
             "query": query[:256],
             "result_count": len(kept),
-            "filtered_count": len(raw) - len(kept),
+            "filtered_count": len(raw) - len(kept_all),
         },
     )
     return {
         "query": query,
         "results": [asdict(r) for r in kept],
-        "filtered_count": len(raw) - len(kept),
+        "filtered_count": len(raw) - len(kept_all),
     }
 
 
@@ -222,7 +234,6 @@ def _resolve_engagement_state() -> tuple[str | None, str, str]:
     return workspace, engagement, objective
 
 
-from langchain_core.tools import tool  # noqa: E402
 
 
 @tool
