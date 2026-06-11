@@ -112,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           body=$(jq -r '.body // ""' pr.json)
-          author=$(jq -r '.author' pr.json)
+          author=$(jq -r '.author.login' pr.json)
           # Body line: "Author: ...; requires human reviewer ≠ author"
           # Accept ≠ or != for terminals that strip non-ASCII.
           if printf '%s\n' "$body" \
@@ -138,7 +138,7 @@ jobs:
           fi
           # Bot/agent author: need at least one APPROVED review from a different,
           # non-bot login.
-          approvals=$(jq -r '.approvals[]' pr.json || true)
+          approvals=$(jq -r '[.reviews[] | select(.state=="APPROVED") | .author.login] | .[]' pr.json 2>/dev/null || true)
           if [ -z "$approvals" ]; then
             echo "::error title=K10 failed (review)::Author '$author' is a bot/agent; at least one human approving review (≠ author, not itself a bot) is required."
             exit 1

@@ -86,9 +86,10 @@ unchanged) or (b) the `karpathy/override` label with a maintainer's
 written justification in the PR body.
 
 `docs/**`, `tests/**`, lockfiles, generated files and `.github/**`
-are excluded from the count where the existing
-[Diff budget §QUALITY_BAR](./docs/QUALITY_BAR.md#hard-limits)
-already excludes them.
+are conceptually excluded from the feature diff budget. However, because the CI workflow
+reads the raw additions/deletions totals from the PR metadata (where all files count),
+any PR exceeding the limit due to docs, tests, or generated files must carry the
+`karpathy/refactor` label (since no production behavior changes) or `karpathy/override`.
 
 **Rationale.** Code is liability. The path of least resistance for a
 typing model — human or LLM — is to add. K2 puts a thumb on the
