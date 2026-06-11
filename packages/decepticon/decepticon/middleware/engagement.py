@@ -203,9 +203,15 @@ def _load_deconfliction(workspace: str) -> dict[str, Any] | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
+        # Do NOT cache read/parse failures: a transient error (mid-write
+        # file, brief I/O hiccup) must not be pinned as "no deconfliction"
+        # for the lifetime of this mtime. Drop any stale entry and retry on
+        # the next call — matching the pre-cache per-call behaviour.
         log.warning("engagement: failed to read %s: %s; skipping block", path, exc)
-        _DECONFLICTION_CACHE[key] = (mtime, None)
+        _DECONFLICTION_CACHE.pop(key, None)
         return None
+    # Cache the successful read (including a valid-but-not-a-dict file, which
+    # is a deterministic "no deconfliction" — safe to memoize until mtime moves).
     result = data if isinstance(data, dict) else None
     _DECONFLICTION_CACHE[key] = (mtime, result)
     return result
