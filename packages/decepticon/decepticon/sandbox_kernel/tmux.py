@@ -40,6 +40,49 @@ log = logging.getLogger("decepticon.sandbox_kernel.tmux")
 # joining without relying on backtracking or on '.' implicitly excluding '\n'.
 PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):([^\]\n]+)\]")
 
+# ─── Terminal-noise sanitizer (for the pipe-pane session log) ───────────
+#
+# ``capture-pane`` (foreground bash) renders to a clean screen, so its
+# output is already escape-free. ``pipe-pane`` (the streaming session log
+# behind ``bash_output``) instead streams the RAW pane bytes, which carry
+# every control sequence the shell emits: OSC shell-integration markers
+# (incl. the ``OSC 3008`` ``type=shell;cwd=…`` ones), CSI sequences
+# (colors, cursor moves, bracketed-paste ``?2004h/l`` toggles), the
+# ``[DCPTN:…]`` PS1 markers, and stray C0 control chars. Returned verbatim
+# they reach the agent / LangSmith as unreadable noise — so the log diff
+# is run through ``strip_terminal_noise`` before it is handed back.
+#
+# OSC: ESC ] … terminated by BEL or ST (ESC \).
+_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# CSI: ESC [ params intermediates final. Covers SGR, cursor, and the
+# private ``?2004h/l`` bracketed-paste toggles.
+_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# Other two-char ESC sequences (RIS ``ESC c``, save/restore cursor, etc.).
+# The final-byte class deliberately excludes ``[`` (0x5b) so it never eats
+# a CSI introducer; OSC is handled above.
+_ESC_RE = re.compile(r"\x1b[@-Z\\-_]")
+# Remaining C0 control chars EXCEPT tab (0x09) and newline (0x0a); carriage
+# returns are normalized away separately.
+_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def strip_terminal_noise(text: str) -> str:
+    """Strip raw-terminal control noise from a pipe-pane log diff.
+
+    Removes OSC / CSI / two-char ESC sequences, the ``[DCPTN:…]`` PS1
+    markers, and stray C0 control chars; normalizes ``\\r\\n`` → ``\\n``.
+    Plain text, newlines, and tabs are preserved.
+    """
+    if not text:
+        return text
+    text = _OSC_RE.sub("", text)
+    text = _CSI_RE.sub("", text)
+    text = _ESC_RE.sub("", text)
+    text = PS1_PATTERN.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    return _C0_RE.sub("", text)
+
+
 POLL_INTERVAL: float = 0.5
 # Adaptive backoff: while the command has produced no output yet and the
 # screen is unchanged between polls, the interval grows geometrically

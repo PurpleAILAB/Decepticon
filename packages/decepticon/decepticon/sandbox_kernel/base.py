@@ -34,7 +34,12 @@ from deepagents.backends.protocol import ExecuteResponse
 from deepagents.backends.sandbox import BaseSandbox
 
 from decepticon.sandbox_kernel.jobs import BackgroundJob, BackgroundJobTracker
-from decepticon.sandbox_kernel.tmux import PS1_PATTERN, TmuxSessionManager, _safe_log
+from decepticon.sandbox_kernel.tmux import (
+    PS1_PATTERN,
+    TmuxSessionManager,
+    _safe_log,
+    strip_terminal_noise,
+)
 
 log = logging.getLogger("decepticon.sandbox_kernel.base")
 
@@ -284,7 +289,10 @@ class SandboxBase(BaseSandbox):
                 prev_offset = 0
             new_bytes = full[prev_offset:]
             self._log_offsets[key] = len(full)
-        return new_bytes.decode("utf-8", errors="replace")
+        # pipe-pane streams RAW pane bytes (escape sequences, OSC shell-
+        # integration markers, bracketed-paste toggles, PS1 markers) — strip
+        # them so bash_output returns readable text, not terminal noise.
+        return strip_terminal_noise(new_bytes.decode("utf-8", errors="replace"))
 
     def reset_session_log_offset(self, session: str, workspace_path: str | None = None) -> None:
         """Forget the read offset (used after kill / GC)."""
