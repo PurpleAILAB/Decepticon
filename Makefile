@@ -369,3 +369,9 @@ recreate-litellm:
 ## Run benchmark suite (usage: make benchmark ARGS="--level 1")
 benchmark:
 	uv run python -m benchmark.runner $(ARGS)
+
+## CVE-Bench offline dry run (mocked LLM + sandbox, 3 fixtures, seed=0).
+## Output: benchmark/results/cve-bench/dry-run-<YYYY-MM-DD>.jsonl
+cve-bench-dry:
+	CVE_BENCH_DRY_RUN_SEED=0 PYTHONHASHSEED=0 \
+		uv run python -m benchmark.cve_bench.dry_run $(ARGS)
