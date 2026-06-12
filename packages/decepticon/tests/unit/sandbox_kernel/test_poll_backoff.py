@@ -1,12 +1,13 @@
 """Adaptive poll-interval backoff in the tmux execute loops.
 
-Every poll is a full ``tmux capture-pane -S -`` subprocess. The loops
-back off geometrically while the screen is unchanged (×``POLL_BACKOFF_FACTOR``
-up to ``POLL_INTERVAL × POLL_BACKOFF_MAX_MULTIPLIER``) and snap back to
-``POLL_INTERVAL`` the moment new output appears, so quiet long-running
-commands stop paying 2 captures/s while active output keeps the original
-cadence. The cap is a multiplier so tests that patch ``POLL_INTERVAL``
-down to milliseconds keep a proportionally fast cadence.
+Every poll is a full ``tmux capture-pane -S -`` subprocess. The loops back
+off geometrically (×``POLL_BACKOFF_FACTOR`` up to
+``POLL_INTERVAL × POLL_BACKOFF_MAX_MULTIPLIER``) **only while the command
+has produced no output yet** (screen == baseline), and hold
+``POLL_INTERVAL`` once any output appears so stall/interactive-prompt
+detection keeps its original timing. The cap is a multiplier so tests that
+patch ``POLL_INTERVAL`` down to milliseconds keep a proportionally fast
+cadence.
 """
 
 from __future__ import annotations
@@ -85,16 +86,16 @@ def _scripted_manager(
     return mgr, sleeps
 
 
-def test_sync_loop_backs_off_while_quiet_then_resets_on_output(
+def test_sync_loop_backs_off_while_quiet_then_holds_after_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     screens = [
         "base",  # baseline
-        "base",  # quiet poll 1 → next interval grows
-        "base",  # quiet poll 2
-        "base",  # quiet poll 3
-        "base\nprogress",  # output → interval snaps back to base
-        "base\nprogress",  # quiet again → grows from base
+        "base",  # quiet, no output yet → backoff
+        "base",  # quiet, no output yet → backoff
+        "base",  # quiet, no output yet → backoff
+        "base\nprogress",  # first output → reset to base cadence
+        "base\nprogress",  # quiet but output exists → HOLD base (no backoff)
         _MARKER_SCREEN,  # PS1 marker → completion
     ]
     mgr, sleeps = _scripted_manager(monkeypatch, screens)
@@ -107,13 +108,33 @@ def test_sync_loop_backs_off_while_quiet_then_resets_on_output(
     assert sleeps == pytest.approx(
         [
             _BASE,  # first poll always at base cadence
-            _BASE * f,  # after quiet poll 1
-            _BASE * f * f,  # after quiet poll 2
-            _BASE * f * f * f,  # after quiet poll 3
+            _BASE * f,  # after quiet (no-output) poll 1
+            _BASE * f * f,  # after quiet (no-output) poll 2
+            _BASE * f * f * f,  # after quiet (no-output) poll 3
             _BASE,  # output appeared → reset
-            _BASE * f,  # quiet again → grows from base
+            _BASE,  # still quiet but output exists → held at base, NOT grown
         ]
     )
+
+
+def test_sync_loop_holds_base_cadence_for_stall_detection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once output exists, every quiet poll stays at base cadence.
+
+    This is what preserves stall/interactive-prompt detection timing: a tool
+    that prints a prompt and then waits must be polled at the original
+    cadence, not a backed-off one.
+    """
+    screens = ["base", "base\n$ "] + ["base\n$ "] * 8 + [_MARKER_SCREEN]
+    mgr, sleeps = _scripted_manager(monkeypatch, screens)
+
+    result = mgr.execute("./interactive-tool", is_input=False, timeout=30)
+
+    assert "[ERROR]" not in result
+    # first sleep is the pre-output base poll; every sleep after output
+    # appeared (index >= 1) must remain exactly POLL_INTERVAL — no growth.
+    assert all(s == pytest.approx(_BASE) for s in sleeps[1:])
 
 
 def test_sync_loop_backoff_never_exceeds_cap(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,25 +151,29 @@ def test_sync_loop_backoff_never_exceeds_cap(monkeypatch: pytest.MonkeyPatch) ->
     assert sleeps[-1] == pytest.approx(cap)
 
 
-def test_async_loop_backs_off_while_quiet_then_resets_on_output(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    screens = [
-        "base",
-        "base",
-        "base",
-        "base\nprogress",
-        "base\nprogress",
-        _MARKER_SCREEN,
-    ]
-    mgr, _ = _scripted_manager(monkeypatch, screens)
-
+def _async_sleep_recorder(monkeypatch: pytest.MonkeyPatch) -> list[float]:
     sleeps: list[float] = []
 
     async def fake_sleep(seconds: float) -> None:
         sleeps.append(seconds)
 
     monkeypatch.setattr(tmux_mod.asyncio, "sleep", fake_sleep)
+    return sleeps
+
+
+def test_async_loop_backs_off_while_quiet_then_holds_after_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    screens = [
+        "base",
+        "base",  # quiet, no output → backoff
+        "base",  # quiet, no output → backoff
+        "base\nprogress",  # first output → reset
+        "base\nprogress",  # quiet but output exists → HOLD base
+        _MARKER_SCREEN,
+    ]
+    mgr, _ = _scripted_manager(monkeypatch, screens)
+    sleeps = _async_sleep_recorder(monkeypatch)
 
     result = asyncio.run(mgr.execute_async("./long-task.sh", is_input=False, timeout=30))
 
@@ -161,6 +186,22 @@ def test_async_loop_backs_off_while_quiet_then_resets_on_output(
             _BASE * f,
             _BASE * f * f,
             _BASE,  # output appeared → reset
-            _BASE * f,
+            _BASE,  # held at base, not grown
         ]
     )
+
+
+def test_async_loop_backoff_never_exceeds_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mirror of test_sync_loop_backoff_never_exceeds_cap for the async loop,
+    # which has an extra AUTO_BACKGROUND code path; exercise the cap end-to-end.
+    quiet_polls = 24
+    screens = ["base"] * (1 + quiet_polls) + [_MARKER_SCREEN]
+    mgr, _ = _scripted_manager(monkeypatch, screens)
+    sleeps = _async_sleep_recorder(monkeypatch)
+
+    result = asyncio.run(mgr.execute_async("sleep 600", is_input=False, timeout=30))
+
+    assert "[ERROR]" not in result
+    cap = _BASE * tmux_mod.POLL_BACKOFF_MAX_MULTIPLIER
+    assert max(sleeps) <= cap + 1e-9
+    assert sleeps[-1] == pytest.approx(cap)

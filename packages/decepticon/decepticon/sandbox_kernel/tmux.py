@@ -11,10 +11,11 @@ caller (`exec_prefix` defaults to `[]`).
 
 The semantics — PS1 marker parsing, stall detection, size watchdog,
 output truncation, auto-background after 60 s — are unchanged from the
-docker_sandbox.py original. The polling cadence is adaptive: it starts
-at ``POLL_INTERVAL`` and backs off geometrically while the screen is
-unchanged (see ``_next_poll_interval``), resetting the moment new
-output appears.
+docker_sandbox.py original. The polling cadence is adaptive: while the
+command has produced no output yet it backs off geometrically (see
+``_next_poll_interval``); the moment any output appears it returns to
+``POLL_INTERVAL`` and stays there, so stall/interactive-prompt detection
+keeps its original timing.
 """
 
 from __future__ import annotations
@@ -40,15 +41,18 @@ log = logging.getLogger("decepticon.sandbox_kernel.tmux")
 PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):([^\]\n]+)\]")
 
 POLL_INTERVAL: float = 0.5
-# Adaptive backoff: while the screen is unchanged between polls, the
-# interval grows geometrically (×POLL_BACKOFF_FACTOR) up to
-# POLL_INTERVAL × POLL_BACKOFF_MAX_MULTIPLIER, and snaps back to
-# POLL_INTERVAL as soon as new output appears. Every poll is a full
-# `tmux capture-pane -S -` subprocess (scrollback dump), so a quiet
-# long-running command at the fixed cadence costs 2 captures/s for its
-# whole life; backoff cuts that ~4× without touching completion
-# semantics. The cap is a multiplier (not an absolute) so tests that
-# patch POLL_INTERVAL down to milliseconds keep their fast cadence.
+# Adaptive backoff: while the command has produced no output yet and the
+# screen is unchanged between polls, the interval grows geometrically
+# (×POLL_BACKOFF_FACTOR) up to POLL_INTERVAL × POLL_BACKOFF_MAX_MULTIPLIER,
+# and snaps back to POLL_INTERVAL as soon as any output appears. Every poll
+# is a full `tmux capture-pane -S -` subprocess (scrollback dump), so a
+# silent long-running command (sleep, blocking connect, slow scan that
+# hasn't printed yet) at the fixed cadence costs 2 captures/s for its whole
+# life; backoff cuts that ~4×. Backoff is deliberately NOT applied once
+# output exists, so stall/interactive-prompt detection (which only triggers
+# after output) keeps the original 0.5s cadence. The cap is a multiplier
+# (not an absolute) so tests that patch POLL_INTERVAL down to milliseconds
+# keep their fast cadence.
 POLL_BACKOFF_FACTOR: float = 1.5
 POLL_BACKOFF_MAX_MULTIPLIER: float = 4.0
 STALL_SECONDS: float = 3.0
@@ -645,42 +649,48 @@ class TmuxSessionManager:
             # only if the tail actually looks like a prompt. Otherwise keep
             # polling until HUNG_PROCESS_SECONDS, then surface a distinct
             # "may be hung" message instead of falsely claiming interactive.
-            # While the screen is quiet (whether or not output appeared yet),
-            # back off the poll cadence; new output snaps it back.
+            #
+            # Backoff is applied ONLY while no output has appeared yet
+            # (screen == baseline): in that window the command cannot be sitting
+            # at an interactive prompt, so a lazier cadence is pure win. Once
+            # output exists (screen != baseline) the next quiet stretch might be
+            # a prompt, so we hold the base cadence to keep stall detection at
+            # its original timing.
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
                 poll_interval = POLL_INTERVAL
-            else:
+            elif screen == baseline:
                 poll_interval = _next_poll_interval(poll_interval)
-                if screen != baseline:
-                    stalled_for = time.monotonic() - last_change_time
-                    if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
-                        log.info(
-                            "Stall detected after %.1fs — interactive program [%s]",
-                            time.monotonic() - start,
-                            _safe_log(command[:50]),
-                        )
-                        output = _extract_interactive_output(screen, baseline)
-                        return (
-                            f"{_truncate(output).strip()}\n"
-                            f"[session: {self.session} — interactive, "
-                            f"send next command with is_input=True]"
-                        )
-                    if stalled_for >= HUNG_PROCESS_SECONDS:
-                        log.info(
-                            "Prompt-less stall after %.1fs — may be hung [%s]",
-                            stalled_for,
-                            _safe_log(command[:50]),
-                        )
-                        output = _extract_interactive_output(screen, baseline)
-                        return (
-                            f"{_truncate(output).strip()}\n"
-                            f"[session: {self.session} — no interactive prompt detected "
-                            f"after {int(stalled_for)}s of silence; the program may be hung. "
-                            f"Send input with is_input=True as an escape hatch, "
-                            f'or terminate with bash_kill(session="{self.session}").]'
-                        )
+            else:
+                poll_interval = POLL_INTERVAL
+                stalled_for = time.monotonic() - last_change_time
+                if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
+                    log.info(
+                        "Stall detected after %.1fs — interactive program [%s]",
+                        time.monotonic() - start,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — interactive, "
+                        f"send next command with is_input=True]"
+                    )
+                if stalled_for >= HUNG_PROCESS_SECONDS:
+                    log.info(
+                        "Prompt-less stall after %.1fs — may be hung [%s]",
+                        stalled_for,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — no interactive prompt detected "
+                        f"after {int(stalled_for)}s of silence; the program may be hung. "
+                        f"Send input with is_input=True as an escape hatch, "
+                        f'or terminate with bash_kill(session="{self.session}").]'
+                    )
 
         # Full timeout — include screen capture
         try:
@@ -858,41 +868,45 @@ class TmuxSessionManager:
                     f'bash_output(session="{self.session}").'
                 )
 
-            # Stall detection + adaptive backoff (see sync execute() for rationale)
+            # Stall detection + adaptive backoff (see sync execute() for rationale).
+            # Backoff only while no output has appeared yet (screen == baseline);
+            # once output exists, hold base cadence so stall detection keeps its
+            # original timing.
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
                 poll_interval = POLL_INTERVAL
-            else:
+            elif screen == baseline:
                 poll_interval = _next_poll_interval(poll_interval)
-                if screen != baseline:
-                    stalled_for = time.monotonic() - last_change_time
-                    if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
-                        log.info(
-                            "Stall detected after %.1fs — interactive program [%s]",
-                            time.monotonic() - start,
-                            _safe_log(command[:50]),
-                        )
-                        output = _extract_interactive_output(screen, baseline)
-                        return (
-                            f"{_truncate(output).strip()}\n"
-                            f"[session: {self.session} — interactive, "
-                            f"send next command with is_input=True]"
-                        )
-                    if stalled_for >= HUNG_PROCESS_SECONDS:
-                        log.info(
-                            "Prompt-less stall after %.1fs — may be hung [%s]",
-                            stalled_for,
-                            _safe_log(command[:50]),
-                        )
-                        output = _extract_interactive_output(screen, baseline)
-                        return (
-                            f"{_truncate(output).strip()}\n"
-                            f"[session: {self.session} — no interactive prompt detected "
-                            f"after {int(stalled_for)}s of silence; the program may be hung. "
-                            f"Send input with is_input=True as an escape hatch, "
-                            f'or terminate with bash_kill(session="{self.session}").]'
-                        )
+            else:
+                poll_interval = POLL_INTERVAL
+                stalled_for = time.monotonic() - last_change_time
+                if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
+                    log.info(
+                        "Stall detected after %.1fs — interactive program [%s]",
+                        time.monotonic() - start,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — interactive, "
+                        f"send next command with is_input=True]"
+                    )
+                if stalled_for >= HUNG_PROCESS_SECONDS:
+                    log.info(
+                        "Prompt-less stall after %.1fs — may be hung [%s]",
+                        stalled_for,
+                        _safe_log(command[:50]),
+                    )
+                    output = _extract_interactive_output(screen, baseline)
+                    return (
+                        f"{_truncate(output).strip()}\n"
+                        f"[session: {self.session} — no interactive prompt detected "
+                        f"after {int(stalled_for)}s of silence; the program may be hung. "
+                        f"Send input with is_input=True as an escape hatch, "
+                        f'or terminate with bash_kill(session="{self.session}").]'
+                    )
 
         # Full timeout — include screen capture
         try:
