@@ -42,7 +42,7 @@ from decepticon.middleware import (
     FilesystemMiddleware,
     KGMiddleware,
     OPPLANMiddleware,
-    RoEEnforcementMiddleware,
+    RoEGuardrailMiddleware,
     SkillsMiddleware,
     UntrustedOutputMiddleware,
 )
@@ -122,8 +122,8 @@ def _make_engagement_context(**_: Any):
     return EngagementContextMiddleware()
 
 
-def _make_roe_enforcement(*, role: str, **_: Any):
-    """Build the RoE enforcement middleware with a per-engagement sink.
+def _make_roe_guardrail(*, role: str, **_: Any):
+    """Build the RoE guardrail middleware with a per-engagement sink.
 
     The sink path defaults to ``<workspace>/audit/roe-decisions.jsonl``
     and is resolved lazily on first tool call (workspace_path is not
@@ -133,7 +133,7 @@ def _make_roe_enforcement(*, role: str, **_: Any):
     import os
 
     sink = build_default_sink(os.environ.get("DECEPTICON_WORKSPACE_PATH"))
-    return RoEEnforcementMiddleware(sink=sink)
+    return RoEGuardrailMiddleware(sink=sink)
 
 
 def _make_untrusted_output(*, role: str, **_: Any):
@@ -350,7 +350,7 @@ SlotFactory = Callable[..., Any]
 
 DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.ENGAGEMENT_CONTEXT: _make_engagement_context,
-    MiddlewareSlot.ROE_ENFORCEMENT: _make_roe_enforcement,
+    MiddlewareSlot.ROE_GUARDRAIL: _make_roe_guardrail,
     MiddlewareSlot.HITL_APPROVAL: _make_hitl,
     MiddlewareSlot.UNTRUSTED_OUTPUT: _make_untrusted_output,
     MiddlewareSlot.PROMPT_INJECTION_SHIELD: _make_prompt_injection_shield,

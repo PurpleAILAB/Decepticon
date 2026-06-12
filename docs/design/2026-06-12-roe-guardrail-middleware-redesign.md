@@ -1,7 +1,32 @@
 # RoE Guardrail Middleware — root cause + redesign
 
-> Status: **design / root-cause** (no code changed yet)
+> Status: **implemented** (Layer 1 + Layer 2 + rename landed)
 > Date: 2026-06-12
+>
+> Implementation notes (2026-06-12):
+> - **Layer 1** (parser fail-closed) shipped: `_extract_token_hosts` in
+>   [`_command_targets.py`](../../packages/decepticon/decepticon/middleware/_command_targets.py)
+>   runs as the `not matched_tool` fallback; the bare-hostname matrix
+>   below is covered by `test_command_targets_scope_bypass.py`.
+> - **Rename** shipped: `RoEEnforcementMiddleware` →
+>   `RoEGuardrailMiddleware`, slot `ROE_ENFORCEMENT` → `ROE_GUARDRAIL`
+>   (`roe-guardrail`), factory `_make_roe_guardrail`. Old names kept as
+>   compat aliases (class + enum alias) until 2.0.0.
+> - **Layer 2** (egress) shipped as the authoritative boundary:
+>   `middleware/egress.py` (`compile_egress_policy`) +
+>   `sandbox_kernel/egress.py` (renderer + applier) + `/provision_egress`
+>   endpoint + `HTTPSandbox.provision_egress` + a once-per-workspace hook
+>   in the guardrail middleware. **On by default** for `enforce` mode
+>   (opt out with `DECEPTICON_EGRESS_DISABLE`); in-sandbox nftables
+>   (NET_ADMIN already granted), management subnet discovered sandbox-side
+>   from `/proc/net/route` (the OSS sandbox image ships no `ip` binary) so
+>   a scope rule can't sever the agent↔management link.
+> - **Live-verified** in a Kali sandbox container on `sandbox-net`:
+>   out-of-scope `ping 8.8.8.8` dropped by nftables, in-scope `1.1.1.1`
+>   and the management gateway both still reachable; the parser layer
+>   refuses out-of-scope `ping`/`nc`/`traceroute` with `[ROE_REFUSED]`
+>   before the handler runs. The live run also caught + fixed the
+>   missing-`ip`-binary management-discovery gap.
 > Author note: discovered while live-verifying the bugclaw `bugclaw_recon`
 > subagent (SaaS PR #107), which reuses the OSS `recon` role whole —
 > including the `ROE_ENFORCEMENT` slot — as its scope backstop.
