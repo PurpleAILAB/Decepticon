@@ -804,6 +804,26 @@ class TestNetworkToolGating:
         assert not handler.called
         assert "[ROE_REFUSED]" in result.content
 
+    def test_web_search_is_gated_but_target_extractor_is_noop(self, tmp_path: Path) -> None:
+        # web_search is OSINT (DDG is exempt from in-scope target gating)
+        # but must still be audited + throttled by the middleware.
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
+        sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+        mw = RoEGuardrailMiddleware(sink=sink)
+        req = _make_network_request(
+            "web_search",
+            {"query": "site:evilcorp.com login"},
+            state={"workspace_path": str(tmp_path)},
+        )
+        handler = MagicMock(return_value=ToolMessage(content="{}", tool_call_id="tc-test"))
+        result = mw.wrap_tool_call(req, handler)
+        assert handler.called
+        assert result.content == "{}"
+        recs = [
+            json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines() if line
+        ]
+        assert any(r.get("tool") == "web_search" and r.get("decision") == "allow" for r in recs)
+
     def test_browser_action_in_scope_url_allowed(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
         mw = RoEGuardrailMiddleware()
