@@ -546,7 +546,19 @@ class TmuxSessionManager:
                 self._pane_id = None
 
         if cached_alive:
-            self._sync_passthrough_env()
+            # Do NOT re-sync passthrough env here. initialize() runs on EVERY
+            # non-input execute(), and _sync_passthrough_env() sends an
+            # ``export DECEPTICON_… HTTP_PROXY=…`` line as its own command —
+            # which produces its OWN PS1 completion marker. execute() captures
+            # ``baseline`` immediately after initialize(), before that marker
+            # lands, so it is excluded from ``initial_count``; the poll loop
+            # then fires on the EXPORT's marker, not the user command's, and
+            # _extract_output() returns the stray ``export DECEPTICON_SKIP_BOOT
+            # =1`` + command echo BEFORE the real output appears (observed:
+            # ``whois``/network commands returning only their echoed input).
+            # A cached-alive session was always synced at creation (below) and
+            # the env persists for the life of the persistent shell, so this
+            # per-command re-sync is redundant AND a correctness bug.
             return
 
         session_exists = self._ensure_session()
