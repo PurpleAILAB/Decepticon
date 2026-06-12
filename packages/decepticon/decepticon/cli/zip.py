@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
+import stat
 import sys
 import zipfile
 from pathlib import Path
@@ -83,6 +85,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "<workspace>/engagements/<id>. Defaults to $DECEPTICON_ENGAGEMENT_WORKSPACE."
         ),
     )
+    imp.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing engagement directory instead of failing.",
+    )
     return p
 
 
@@ -120,9 +127,11 @@ def export_engagement(engagement_id: str, workspace: Path, output: Path) -> int:
 def _safe_members(zf: zipfile.ZipFile, dest_root: Path) -> tuple[set[str], list[zipfile.ZipInfo]]:
     """Validate archive entries and return (engagement_ids, members).
 
-    Rejects absolute paths and ``..`` traversal so a malicious archive cannot
-    escape ``dest_root``. Returns the set of top-level engagement ids found.
+    Rejects absolute paths, ``..`` traversal and symlink entries so a malicious
+    archive cannot escape ``dest_root`` or plant links pointing outside it.
+    Returns the set of top-level engagement ids found.
     """
+    dest_resolved = dest_root.resolve()
     engagement_ids: set[str] = set()
     members: list[zipfile.ZipInfo] = []
     for info in zf.infolist():
@@ -132,19 +141,24 @@ def _safe_members(zf: zipfile.ZipFile, dest_root: Path) -> tuple[set[str], list[
             continue
         if Path(name).is_absolute() or ".." in parts:
             raise ValueError(f"unsafe path in archive: {name}")
+        if stat.S_ISLNK(info.external_attr >> 16):
+            raise ValueError(f"symlink entry not allowed in archive: {name}")
         target = (dest_root / name).resolve()
-        if not str(target).startswith(str(dest_root.resolve())):
+        if target != dest_resolved and not target.is_relative_to(dest_resolved):
             raise ValueError(f"path escapes destination: {name}")
         engagement_ids.add(parts[0])
         members.append(info)
     return engagement_ids, members
 
 
-def import_engagement(archive: Path, workspace: Path) -> tuple[str, int]:
+def import_engagement(archive: Path, workspace: Path, force: bool = False) -> tuple[str, int]:
     """Restore ``archive`` under ``<workspace>/engagements/``.
 
     Returns ``(engagement_id, files_restored)``. Verifies every archived
-    regular file exists on disk after extraction.
+    regular file exists on disk after extraction. Refuses to clobber an
+    existing engagement unless ``force`` is set, in which case the existing
+    directory is removed first so the restore is a clean replacement rather
+    than a merge with stale files.
     """
     if not archive.is_file():
         raise FileNotFoundError(f"archive not found: {archive}")
@@ -161,12 +175,21 @@ def import_engagement(archive: Path, workspace: Path) -> tuple[str, int]:
                 f"archive must contain exactly one engagement, found: {sorted(engagement_ids)}"
             )
         (engagement_id,) = tuple(engagement_ids)
+
+        existing = dest_root / engagement_id
+        if existing.exists() or existing.is_symlink():
+            if not force:
+                raise ValueError(
+                    f"engagement already exists: {existing} (use --force to overwrite)"
+                )
+            if existing.is_dir() and not existing.is_symlink():
+                shutil.rmtree(existing)
+            else:
+                existing.unlink()
+
+        restored = 0
         for info in members:
             zf.extract(info, dest_root)
-
-    restored = 0
-    with zipfile.ZipFile(archive, "r") as zf:
-        for info in zf.infolist():
             if info.is_dir():
                 continue
             extracted = dest_root / info.filename
@@ -197,7 +220,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "import":
         try:
-            engagement_id, restored = import_engagement(args.archive, workspace)
+            engagement_id, restored = import_engagement(args.archive, workspace, args.force)
         except FileNotFoundError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return EXIT_CONFIG
