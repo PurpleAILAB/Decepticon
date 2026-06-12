@@ -14,7 +14,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import random
 import sys
 from datetime import date
 from pathlib import Path

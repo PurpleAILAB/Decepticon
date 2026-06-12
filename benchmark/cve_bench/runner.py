@@ -71,7 +71,9 @@ def run_batch(cfg: RunnerConfig, agent: AgentFn | None = None) -> list[Verdict]:
     handle = None
     if cfg.output_jsonl is not None:
         cfg.output_jsonl.parent.mkdir(parents=True, exist_ok=True)
-        handle = cfg.output_jsonl.open("a", encoding="utf-8")
+        # Truncate: one batch run produces one artefact. Append would
+        # duplicate verdicts when a dated dry-run file is regenerated.
+        handle = cfg.output_jsonl.open("w", encoding="utf-8")
     try:
         for ch in challenges:
             v = run_one(ch, fn, mode=cfg.mode)
