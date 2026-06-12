@@ -104,12 +104,14 @@ To regenerate just the Prisma client (without a full build): `cd clients/web && 
 
 There is no `make sync-version` or pre-tag commit. Source-tree version fields carry a `"0.0.0"` sentinel in `pyproject.toml`, `clients/cli/package.json`, and `clients/web/package.json`. The release workflow stamps the real tag into the images at Docker build time via `--build-arg VERSION=<tag>`. The Go launcher is similarly stamped via GoReleaser ldflags.
 
-Release channel policy:
+Release channel policy (see [update-channels.md](./update-channels.md) for the user-facing view):
 
-- `vX.Y.Z` Git tags are the source of truth for stable releases.
+- `vX.Y.Z` Git tags are the source of truth for releases.
 - GHCR version tags (`X.Y.Z`) are immutable release artifacts and should be used by installed deployments.
-- GHCR `latest` is a moving pointer to the newest fully verified stable release only. It is promoted after all version-tagged images exist and the GitHub release is undrafted.
-- Pre-releases should use SemVer suffixes such as `v1.1.0-rc.1`, stay marked as GitHub pre-releases, and should not move `latest`.
+- Two moving channel tags are promoted by the `publish-release` job after all version-tagged images exist and the GitHub release is undrafted:
+  - GHCR `stable` → the newest **final** release only (the conservative default; the `${DECEPTICON_VERSION:-stable}` compose fallback resolves here).
+  - GHCR `latest` → the newest release **including pre-releases**.
+- Pre-releases use SemVer suffixes such as `v1.1.0-rc.1`, stay marked as GitHub pre-releases, and move `latest` but **not** `stable`.
 - Bug fixes ship as new patch releases. Do not rebuild or rewrite an existing version tag.
 
 To cut a release:

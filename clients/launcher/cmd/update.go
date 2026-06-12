@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var forceUpdate bool
+var (
+	forceUpdate   bool
+	updateChannel string
+)
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -21,13 +24,27 @@ var updateCmd = &cobra.Command{
 
 func init() {
 	updateCmd.Flags().BoolVarP(&forceUpdate, "force", "f", false, "Refresh config files and Docker images even if version unchanged")
+	updateCmd.Flags().StringVar(&updateChannel, "channel", "", "Update channel for this run: stable (final releases) or latest (incl. pre-releases). Default: DECEPTICON_CHANNEL in .env, else stable")
 	rootCmd.AddCommand(updateCmd)
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	ui.Info("Checking for updates...")
+	// Load env first so the channel (and branch override) are known
+	// before the release fetch.
+	env := make(map[string]string)
+	if config.EnvExists() {
+		env, _ = config.LoadEnv(config.EnvPath())
+	}
+	// --channel overrides .env for this invocation only.
+	rawChannel := updateChannel
+	if rawChannel == "" {
+		rawChannel = config.Get(env, "DECEPTICON_CHANNEL", "")
+	}
+	ch := updater.ResolveChannel(rawChannel)
 
-	release, err := updater.FetchLatestRelease()
+	ui.Info(fmt.Sprintf("Checking for updates (%s channel)...", ch))
+
+	release, err := updater.FetchRelease(ch)
 	if err != nil {
 		return fmt.Errorf("check updates: %w", err)
 	}
@@ -44,11 +61,6 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		ui.Info("Refreshing configuration files and Docker images...")
 	}
 
-	// Load env for branch info
-	env := make(map[string]string)
-	if config.EnvExists() {
-		env, _ = config.LoadEnv(config.EnvPath())
-	}
 	ref := release.TagName
 	if branch := strings.TrimSpace(env["DECEPTICON_BRANCH"]); branch != "" {
 		ref = branch

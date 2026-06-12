@@ -3,6 +3,8 @@ package cmd
 import (
 	"reflect"
 	"testing"
+
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
 )
 
 // withProbeStubs swaps the WSL detection function variables for the
@@ -112,8 +114,8 @@ func withUpdateStubs(t *testing.T) (auto, prompt *int) {
 	autoCount, promptCount := 0, 0
 	prevAuto := autoUpdateFn
 	prevPrompt := promptUpdateFn
-	autoUpdateFn = func(string) (bool, error) { autoCount++; return false, nil }
-	promptUpdateFn = func(string) (bool, error) { promptCount++; return false, nil }
+	autoUpdateFn = func(string, updater.Channel) (bool, error) { autoCount++; return false, nil }
+	promptUpdateFn = func(string, updater.Channel) (bool, error) { promptCount++; return false, nil }
 	t.Cleanup(func() {
 		autoUpdateFn = prevAuto
 		promptUpdateFn = prevPrompt
@@ -123,10 +125,10 @@ func withUpdateStubs(t *testing.T) (auto, prompt *int) {
 
 func TestApplyAutoUpdate_RoutingMatrix(t *testing.T) {
 	cases := []struct {
-		envValue     string
-		wantAuto     int
-		wantPrompt   int
-		description  string
+		envValue    string
+		wantAuto    int
+		wantPrompt  int
+		description string
 	}{
 		// Default-on: unset triggers silent auto-update. This is the
 		// key behaviour change from v1.1.12 — fix-shipped → fix-applied

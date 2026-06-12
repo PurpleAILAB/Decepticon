@@ -28,11 +28,43 @@ func TestCompareVersions(t *testing.T) {
 		{"1.10.0", "1.9.0", false},
 		{"2.0.0", "1.99.99", false},
 		{"0.9.9", "1.0.0", true},
+		// SemVer §11 prerelease precedence: a prerelease is LOWER than
+		// its associated normal version. Matters for the `latest`
+		// channel, which surfaces -rc builds.
+		{"1.2.0-rc.1", "1.2.0", true},      // rc → final is an update
+		{"1.2.0", "1.2.0-rc.1", false},     // final → rc is NOT an update (downgrade)
+		{"1.2.0-rc.1", "1.2.0-rc.2", true}, // rc.1 → rc.2 is an update
+		{"1.2.0-rc.2", "1.2.0-rc.1", false},
+		{"1.2.0-rc.2", "1.2.0-rc.10", true}, // numeric identifiers compare numerically (10 > 2)
+		{"1.2.0-rc.1", "1.2.0-rc.1", false},
+		{"1.1.0", "1.2.0-rc.1", true}, // a prerelease of a higher version still beats a lower final
+		{"1.2.0-rc.1", "1.1.0", false},
+		{"v1.2.0-rc.1", "v1.2.0", true},      // tolerates the leading v
+		{"1.2.0-alpha", "1.2.0-beta", true},  // alphanumeric identifiers compare lexically
+		{"1.2.0-rc.1", "1.2.0-rc.1.1", true}, // more fields > fewer when the prefix is equal
 	}
 	for _, tt := range tests {
 		got := CompareVersions(tt.current, tt.latest)
 		if got != tt.want {
 			t.Errorf("CompareVersions(%q, %q) = %v, want %v", tt.current, tt.latest, got, tt.want)
+		}
+	}
+}
+
+func TestResolveChannel(t *testing.T) {
+	tests := map[string]Channel{
+		"":          ChannelStable, // default
+		"stable":    ChannelStable,
+		"STABLE":    ChannelStable,
+		"  stable ": ChannelStable,
+		"latest":    ChannelLatest,
+		"LATEST":    ChannelLatest,
+		" latest":   ChannelLatest,
+		"garbage":   ChannelStable, // unrecognized → safe default
+	}
+	for in, want := range tests {
+		if got := ResolveChannel(in); got != want {
+			t.Errorf("ResolveChannel(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -85,11 +117,79 @@ func TestFetchLatestRelease_Mock(t *testing.T) {
 	}
 }
 
+func TestFetchRelease_StableHitsLatestEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/releases/latest" {
+			t.Errorf("stable channel must call /releases/latest, got %q", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(Release{TagName: "v1.2.0"})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+
+	rel, err := FetchRelease(ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.2.0" {
+		t.Errorf("TagName = %q, want v1.2.0", rel.TagName)
+	}
+}
+
+func TestFetchRelease_LatestPicksNewestInclPrereleaseSkipsDrafts(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/releases/latest" {
+			t.Errorf("latest channel must list /releases, not /releases/latest")
+		}
+		// Unordered; a draft newer than everything (must be skipped); a
+		// prerelease that is the newest non-draft (must win).
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.2.0"},
+			{TagName: "v1.3.0-rc.2", Prerelease: true},
+			{TagName: "v2.0.0", Draft: true},
+			{TagName: "v1.1.0"},
+		})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+
+	rel, err := FetchRelease(ChannelLatest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.3.0-rc.2" {
+		t.Errorf("TagName = %q, want v1.3.0-rc.2", rel.TagName)
+	}
+}
+
+func TestPickNewestRelease(t *testing.T) {
+	got := pickNewestRelease([]Release{
+		{TagName: "v1.2.0"},
+		{TagName: "v1.3.0-rc.1", Prerelease: true},
+		{TagName: "v2.0.0", Draft: true}, // draft → skipped despite highest semver
+		{TagName: ""},                    // malformed → skipped
+	})
+	if got == nil || got.TagName != "v1.3.0-rc.1" {
+		t.Fatalf("pickNewestRelease = %+v, want v1.3.0-rc.1", got)
+	}
+	if pickNewestRelease(nil) != nil {
+		t.Errorf("pickNewestRelease(nil) should be nil")
+	}
+}
+
+// withAPIBaseURL points the updater at a test server and returns a
+// restore func.
+func withAPIBaseURL(url string) func() {
+	old := APIBaseURL
+	APIBaseURL = url
+	return func() { APIBaseURL = old }
+}
+
 func TestPromptIfUpdateAvailable_SkipsDevBuilds(t *testing.T) {
 	// "dev" / empty version means a local build that does not track
 	// published releases — no prompt, no GitHub round-trip.
 	for _, v := range []string{"dev", ""} {
-		applied, err := PromptIfUpdateAvailable(v)
+		applied, err := PromptIfUpdateAvailable(v, ChannelStable)
 		if err != nil {
 			t.Errorf("PromptIfUpdateAvailable(%q) err = %v", v, err)
 		}
@@ -105,7 +205,7 @@ func TestPromptIfUpdateAvailable_SkipsNonInteractive(t *testing.T) {
 	// without ever calling huh.Run. A non-zero version that would
 	// otherwise fail the "is dev?" gate is safe — the function returns
 	// silently on the TTY check before fetching anything.
-	applied, err := PromptIfUpdateAvailable("0.0.0")
+	applied, err := PromptIfUpdateAvailable("0.0.0", ChannelStable)
 	if err != nil {
 		t.Errorf("PromptIfUpdateAvailable err = %v", err)
 	}
@@ -325,7 +425,7 @@ func TestAutoUpdateIfAvailable_SkipsDevBuilds(t *testing.T) {
 	// releases — the unattended AUTO_UPDATE path must no-op without any
 	// GitHub round-trip (mirrors PromptIfUpdateAvailable's dev gate).
 	for _, v := range []string{"dev", ""} {
-		applied, err := AutoUpdateIfAvailable(v)
+		applied, err := AutoUpdateIfAvailable(v, ChannelStable)
 		if err != nil {
 			t.Errorf("AutoUpdateIfAvailable(%q) err = %v", v, err)
 		}

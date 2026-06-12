@@ -6,7 +6,9 @@
 #   curl -fsSL https://decepticon.red/install | bash
 #
 # Environment variables:
-#   VERSION              — Install a specific version (default: latest)
+#   CHANNEL              — Update channel: stable (final releases, default)
+#                          or latest (includes pre-releases / -rc builds)
+#   VERSION              — Install a specific version (overrides CHANNEL)
 #   DECEPTICON_HOME      — Install directory (default: ~/.decepticon)
 #   SKIP_PULL            — Skip Docker image pull (default: false)
 # ─────────────────────────────────────────────────────────────────────
@@ -16,6 +18,15 @@ set -euo pipefail
 # ── Constants ─────────────────────────────────────────────────────
 REPO="PurpleAILAB/Decepticon"
 BRANCH="${BRANCH:-main}"
+
+# Update channel — stable (final releases only) or latest (incl.
+# pre-releases). Default + any unrecognized value resolves to stable so a
+# typo can't silently pull pre-release images.
+CHANNEL="$(printf '%s' "${CHANNEL:-stable}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$CHANNEL" in
+    latest) ;;
+    *) CHANNEL="stable" ;;
+esac
 RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
 # release asset base — same host every install, used for binary +
 # checksum manifests. raw.githubusercontent.com hosts the source-tree
@@ -136,17 +147,27 @@ resolve_version() {
         return
     fi
 
-    info "Fetching latest version..."
-    local latest
-    latest=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
-        | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
-
-    if [[ -z "$latest" ]]; then
-        # No releases yet — use branch
-        DECEPTICON_VERSION="latest"
-        info "No releases found, using latest from $BRANCH branch."
+    local resolved
+    if [[ "$CHANNEL" == "latest" ]]; then
+        # latest channel: newest published release INCLUDING pre-releases.
+        # GitHub's /releases list is newest-first and (for anonymous
+        # callers) excludes drafts, so the first tag_name is the target.
+        info "Fetching newest version (latest channel, includes pre-releases)..."
+        resolved=$(curl -s "https://api.github.com/repos/$REPO/releases?per_page=10" \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -n 1)
     else
-        DECEPTICON_VERSION="$latest"
+        # stable channel: GitHub "latest" excludes pre-releases by design.
+        info "Fetching latest stable version..."
+        resolved=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    fi
+
+    if [[ -z "$resolved" ]]; then
+        # No releases yet — fall back to the moving channel image tag.
+        DECEPTICON_VERSION="$CHANNEL"
+        info "No releases found, using the :$CHANNEL image tag."
+    else
+        DECEPTICON_VERSION="$resolved"
         # Pin config downloads to the release tag (not the moving main branch)
         RAW_BASE="https://raw.githubusercontent.com/$REPO/v$DECEPTICON_VERSION"
     fi
@@ -172,9 +193,18 @@ download_files() {
         if ! grep -q "^DECEPTICON_HOME=" "$install_dir/.env" 2>/dev/null; then
             echo "DECEPTICON_HOME=$install_dir" >> "$install_dir/.env"
         fi
+        # Record the update channel so future `decepticon update` runs and
+        # the launch-time self-update track the same stream. An existing
+        # value is preserved (the user's prior choice wins).
+        if ! grep -q "^DECEPTICON_CHANNEL=" "$install_dir/.env" 2>/dev/null; then
+            echo "DECEPTICON_CHANNEL=$CHANNEL" >> "$install_dir/.env"
+        fi
         info ".env already exists, preserving your configuration."
     else
         info "No .env yet — run 'decepticon onboard' to create one."
+        if [[ "$CHANNEL" == "latest" ]]; then
+            info "After onboarding, set DECEPTICON_CHANNEL=latest in .env to keep tracking the latest channel."
+        fi
     fi
 
     # LiteLLM config
@@ -201,7 +231,7 @@ download_files() {
 # release job (.github/workflows/release.yml).
 verify_config_manifest() {
     local install_dir="$1"
-    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+    if [[ "$DECEPTICON_VERSION" == "latest" || "$DECEPTICON_VERSION" == "stable" ]]; then
         # resolve_version's fallback path. No release tag → no manifest.
         # We already abort the launcher download in that branch, so this
         # path is only hit when someone runs the installer with branch-
@@ -260,7 +290,7 @@ create_launcher() {
 
     local binary_name="decepticon-${os}-${arch}"
 
-    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+    if [[ "$DECEPTICON_VERSION" == "latest" || "$DECEPTICON_VERSION" == "stable" ]]; then
         error "Could not resolve a release version automatically."
         error "Set VERSION explicitly with a tag from:"
         error "  https://github.com/$REPO/releases"

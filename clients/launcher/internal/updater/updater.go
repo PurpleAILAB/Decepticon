@@ -33,19 +33,51 @@ const BinaryChecksumsAsset = "checksums.txt"
 
 const (
 	Repo       = "PurpleAILAB/Decepticon"
-	APIBaseURL = "https://api.github.com/repos/" + Repo
 	RawBaseURL = "https://raw.githubusercontent.com/" + Repo
 )
+
+// APIBaseURL is a var (not const) so tests can point release fetches at
+// an httptest server.
+var APIBaseURL = "https://api.github.com/repos/" + Repo
 
 // executableFn is a var so tests can redirect binary writes to a temp dir
 // instead of overwriting the test binary itself. Matches the isWSLFn /
 // wslHostIPFn pattern used in cmd/start.go.
 var executableFn = os.Executable
 
+// Channel selects which releases the updater tracks.
+//
+//   - ChannelStable: only final releases (GitHub "latest", which excludes
+//     pre-releases). Maps to the GHCR “:stable“ tag. The safe default.
+//   - ChannelLatest: the newest release INCLUDING pre-releases
+//     (“vX.Y.Z-rc.N“). Maps to GHCR “:latest“ for early adopters.
+//
+// Selected via the “DECEPTICON_CHANNEL“ key in “.env“.
+type Channel string
+
+const (
+	ChannelStable Channel = "stable"
+	ChannelLatest Channel = "latest"
+)
+
+// ResolveChannel normalizes a raw “DECEPTICON_CHANNEL“ value. Empty or
+// unrecognized values resolve to the safe default (stable) so a typo can
+// never silently opt a user into pre-release images.
+func ResolveChannel(raw string) Channel {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case string(ChannelLatest):
+		return ChannelLatest
+	default:
+		return ChannelStable
+	}
+}
+
 // Release represents a GitHub release.
 type Release struct {
-	TagName string  `json:"tag_name"`
-	Assets  []Asset `json:"assets"`
+	TagName    string  `json:"tag_name"`
+	Assets     []Asset `json:"assets"`
+	Prerelease bool    `json:"prerelease"`
+	Draft      bool    `json:"draft"`
 }
 
 // Asset represents a release asset (binary download).
@@ -54,8 +86,26 @@ type Asset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// FetchLatestRelease gets the latest release info from GitHub.
+// FetchRelease gets the release to track for the given channel.
+//
+//   - stable: GitHub's "latest" release, which already excludes
+//     pre-releases and drafts.
+//   - latest: the newest non-draft release from the releases list,
+//     INCLUDING pre-releases (so early adopters see -rc builds first).
+func FetchRelease(ch Channel) (*Release, error) {
+	if ch == ChannelLatest {
+		return fetchNewestIncludingPrerelease()
+	}
+	return fetchLatestStable()
+}
+
+// FetchLatestRelease is the stable-channel fetch, kept for callers that
+// don't (yet) thread a channel through.
 func FetchLatestRelease() (*Release, error) {
+	return fetchLatestStable()
+}
+
+func fetchLatestStable() (*Release, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(APIBaseURL + "/releases/latest")
 	if err != nil {
@@ -74,6 +124,52 @@ func FetchLatestRelease() (*Release, error) {
 	return &release, nil
 }
 
+// fetchNewestIncludingPrerelease lists releases and returns the newest
+// non-draft one by SemVer precedence (pre-releases included). Falls back
+// to the stable endpoint when the list is empty.
+func fetchNewestIncludingPrerelease() (*Release, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(APIBaseURL + "/releases?per_page=20")
+	if err != nil {
+		return nil, fmt.Errorf("fetch releases: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	var releases []Release
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
+	}
+	if newest := pickNewestRelease(releases); newest != nil {
+		return newest, nil
+	}
+	// Empty list (or all drafts) — fall back to the stable channel so the
+	// latest channel still resolves to *something* installable.
+	return fetchLatestStable()
+}
+
+// pickNewestRelease returns the highest-precedence non-draft release by
+// SemVer comparison, or nil when none qualify.
+func pickNewestRelease(releases []Release) *Release {
+	var best *Release
+	for i := range releases {
+		r := &releases[i]
+		if r.Draft || r.TagName == "" {
+			continue
+		}
+		if best == nil || compareSemver(
+			strings.TrimPrefix(best.TagName, "v"),
+			strings.TrimPrefix(r.TagName, "v"),
+		) < 0 {
+			best = r
+		}
+	}
+	return best
+}
+
 // CompareVersions returns true if latest > current using numeric semver comparison.
 func CompareVersions(current, latest string) bool {
 	current = strings.TrimPrefix(current, "v")
@@ -84,8 +180,44 @@ func CompareVersions(current, latest string) bool {
 	return compareSemver(current, latest) < 0
 }
 
-// compareSemver compares two semver strings numerically. Returns -1, 0, or 1.
+// compareSemver compares two semver strings. Returns -1, 0, or 1. Honors
+// SemVer §11 prerelease precedence: a prerelease (“1.2.0-rc.1“) ranks
+// LOWER than its associated normal version (“1.2.0“), and prerelease
+// identifiers are compared field-by-field. Build metadata (“+...“) is
+// ignored. This matters for the “latest“ channel, which surfaces -rc
+// builds the “stable“ channel never sees.
 func compareSemver(a, b string) int {
+	aBase, aPre := splitPrerelease(a)
+	bBase, bPre := splitPrerelease(b)
+	if c := compareNumericBase(aBase, bBase); c != 0 {
+		return c
+	}
+	// Bases equal — apply prerelease precedence.
+	switch {
+	case aPre == "" && bPre == "":
+		return 0
+	case aPre == "":
+		return 1 // a is a normal version, b is a prerelease → a > b
+	case bPre == "":
+		return -1 // a is a prerelease, b is a normal version → a < b
+	default:
+		return comparePrerelease(aPre, bPre)
+	}
+}
+
+// splitPrerelease strips build metadata and splits “base-prerelease“.
+func splitPrerelease(v string) (base, pre string) {
+	if i := strings.IndexByte(v, '+'); i >= 0 {
+		v = v[:i]
+	}
+	if i := strings.IndexByte(v, '-'); i >= 0 {
+		return v[:i], v[i+1:]
+	}
+	return v, ""
+}
+
+// compareNumericBase compares the major.minor.patch triple numerically.
+func compareNumericBase(a, b string) int {
 	aParts := strings.SplitN(a, ".", 3)
 	bParts := strings.SplitN(b, ".", 3)
 	for i := 0; i < 3; i++ {
@@ -104,6 +236,63 @@ func compareSemver(a, b string) int {
 		}
 	}
 	return 0
+}
+
+// comparePrerelease compares dot-separated prerelease identifiers per
+// SemVer §11: numeric identifiers compare numerically, alphanumerics
+// compare lexically, numeric ranks below alphanumeric, and when every
+// shared identifier is equal the longer set has higher precedence.
+func comparePrerelease(a, b string) int {
+	aIDs := strings.Split(a, ".")
+	bIDs := strings.Split(b, ".")
+	for i := 0; i < len(aIDs) && i < len(bIDs); i++ {
+		ai, bi := aIDs[i], bIDs[i]
+		aNum, aIsNum := parseUint(ai)
+		bNum, bIsNum := parseUint(bi)
+		switch {
+		case aIsNum && bIsNum:
+			if aNum != bNum {
+				if aNum < bNum {
+					return -1
+				}
+				return 1
+			}
+		case aIsNum && !bIsNum:
+			return -1 // numeric identifiers have lower precedence
+		case !aIsNum && bIsNum:
+			return 1
+		default:
+			if ai != bi {
+				if ai < bi {
+					return -1
+				}
+				return 1
+			}
+		}
+	}
+	switch {
+	case len(aIDs) < len(bIDs):
+		return -1
+	case len(aIDs) > len(bIDs):
+		return 1
+	default:
+		return 0
+	}
+}
+
+// parseUint reports whether s is all-digits and its value if so.
+func parseUint(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, true
 }
 
 // SyncConfigFiles downloads updated docker-compose.yml and litellm.yaml.
@@ -376,8 +565,8 @@ func WriteVersion(version string) error {
 //
 // Used as the fallback path when “PromptIfUpdateAvailable“ cannot present
 // an interactive prompt (e.g. stdin is not a TTY in CI / piped invocation).
-func NotifyIfUpdateAvailable(currentVersion string) bool {
-	release, err := FetchLatestRelease()
+func NotifyIfUpdateAvailable(currentVersion string, ch Channel) bool {
+	release, err := FetchRelease(ch)
 	if err != nil {
 		return false // Silent fail; startup should not depend on GitHub.
 	}
@@ -454,16 +643,16 @@ func ApplyUpdate(release *Release, ref string) error {
 //   - the latest release is not newer than “currentVersion“.
 //   - stdin is not a TTY — CI / piped invocations fall back to
 //     “NotifyIfUpdateAvailable“ so the user still sees the notice.
-func PromptIfUpdateAvailable(currentVersion string) (bool, error) {
+func PromptIfUpdateAvailable(currentVersion string, ch Channel) (bool, error) {
 	if currentVersion == "" || currentVersion == "dev" {
 		return false, nil
 	}
 	if !isInteractiveStdin() {
-		NotifyIfUpdateAvailable(currentVersion)
+		NotifyIfUpdateAvailable(currentVersion, ch)
 		return false, nil
 	}
 
-	release, err := FetchLatestRelease()
+	release, err := FetchRelease(ch)
 	if err != nil {
 		return false, nil // Silent skip — startup must not depend on GitHub.
 	}
@@ -564,11 +753,11 @@ func applyAndReexec(release *Release, currentVersion string) (bool, error) {
 // the AUTO_UPDATE=true launch path for fully-unattended self-update (servers,
 // CI runners, kiosk deployments). Skips silently on dev builds, when offline,
 // or when already current — a self-update must never block or break a launch.
-func AutoUpdateIfAvailable(currentVersion string) (bool, error) {
+func AutoUpdateIfAvailable(currentVersion string, ch Channel) (bool, error) {
 	if currentVersion == "" || currentVersion == "dev" {
 		return false, nil
 	}
-	release, err := FetchLatestRelease()
+	release, err := FetchRelease(ch)
 	if err != nil {
 		return false, nil // offline / GitHub down — never block launch
 	}
