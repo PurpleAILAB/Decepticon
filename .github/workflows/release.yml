@@ -663,37 +663,16 @@ jobs:
             docker buildx imagetools inspect "${ref}" >/dev/null
           done
 
-      # Channel tags (see docs/update-channels.md):
-      #   :stable — newest FINAL release only. The conservative default
-      #             the launcher's `stable` channel + the compose
-      #             ${DECEPTICON_VERSION:-stable} fallback resolve to.
-      #   :latest — newest release INCLUDING pre-releases, for the
-      #             `latest` channel (early adopters get -rc builds first).
-      # A pre-release moves :latest but NOT :stable; a final release moves
-      # both.
-      - name: Promote :<version> → :stable (final releases only)
+      # Channel tags (Claude-Code-style soak model; see
+      # docs/update-channels.md). Both channels are FINAL-only:
+      #   :latest — newest FINAL release, moved here immediately on every
+      #             final release (this step).
+      #   :stable — newest FINAL release that has baked >= the soak window;
+      #             moved separately by the scheduled `promote-stable.yml`
+      #             workflow, NOT here.
+      # Pre-releases move neither tag (the channels never auto-select them).
+      - name: Promote :<version> → :latest (final releases only)
         if: steps.version.outputs.prerelease != 'true'
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          images=(
-            decepticon-litellm
-            decepticon-langgraph
-            decepticon-sandbox
-            decepticon-cli
-            decepticon-skillogy
-            decepticon-c2-sliver
-            decepticon-web
-          )
-          for img in "${images[@]}"; do
-            src="ghcr.io/purpleailab/${img}:${VERSION}"
-            dst="ghcr.io/purpleailab/${img}:stable"
-            echo "Promoting ${src} → ${dst}"
-            docker buildx imagetools create --tag "${dst}" "${src}"
-          done
-
-      - name: Promote :<version> → :latest (all releases incl. pre-releases)
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |

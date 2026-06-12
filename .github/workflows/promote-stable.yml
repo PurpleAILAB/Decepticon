@@ -1,0 +1,88 @@
+# Moves the GHCR :stable channel tag to the newest FINAL release that has
+# "baked" on the latest channel for at least the soak window (Claude-Code-
+# style soak model — see docs/update-channels.md). The on-tag release
+# workflow only moves :latest (immediately); :stable lags by the soak.
+#
+# Runs daily and on demand. Idempotent: re-pointing :stable to the same
+# version is a no-op cost-wise.
+name: Promote stable channel
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # daily ~06:17 UTC
+  workflow_dispatch:
+    inputs:
+      soak_days:
+        description: "Soak window in days (release must be at least this old)"
+        default: "7"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: promote-stable
+  cancel-in-progress: false
+
+jobs:
+  promote-stable:
+    name: Promote :stable to the newest soaked final
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Resolve newest soaked final release
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOAK_DAYS: ${{ github.event.inputs.soak_days || '7' }}
+        run: |
+          set -euo pipefail
+          soak_seconds=$(( SOAK_DAYS * 86400 ))
+          # Newest FINAL (non-draft, non-prerelease) release whose
+          # published_at is at least the soak window in the past, by SemVer.
+          version=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=30" --jq "
+            [ .[]
+              | select(.draft == false and .prerelease == false)
+              | select((now - (.published_at | fromdateiso8601)) >= ${soak_seconds})
+              | .tag_name | ltrimstr(\"v\")
+            ]
+            | sort_by(split(\".\") | map(tonumber? // 0))
+            | last // \"\"
+          ")
+          if [[ -z "${version}" ]]; then
+            echo "No final release has soaked >= ${SOAK_DAYS}d yet — nothing to promote."
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Soaked stable target: ${version}"
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Promote :<version> → :stable
+        if: steps.resolve.outputs.promote == 'true'
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          images=(
+            decepticon-litellm
+            decepticon-langgraph
+            decepticon-sandbox
+            decepticon-cli
+            decepticon-skillogy
+            decepticon-c2-sliver
+            decepticon-web
+          )
+          for img in "${images[@]}"; do
+            src="ghcr.io/purpleailab/${img}:${VERSION}"
+            dst="ghcr.io/purpleailab/${img}:stable"
+            echo "Promoting ${src} → ${dst}"
+            docker buildx imagetools create --tag "${dst}" "${src}"
+          done

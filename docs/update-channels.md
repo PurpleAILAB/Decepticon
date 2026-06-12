@@ -1,71 +1,81 @@
 # Update channels
 
-Decepticon publishes two update channels so operators can choose between
-conservative stability and early access to fixes.
+Decepticon publishes two update channels, modeled on
+[Claude Code's release channels](https://code.claude.com/docs/en/setup#configure-release-channel).
+**Both channels deliver only _final_ releases** (never pre-releases /
+betas). The difference is a **bake/soak delay**, not pre-release inclusion.
 
-| Channel | Tracks | GHCR tag | Who it's for |
-|---------|--------|----------|--------------|
-| **stable** (default) | The newest **final** release (no pre-releases). | `:stable` | Production / most users. The safe default. |
-| **latest** | The newest release **including pre-releases** (`vX.Y.Z-rc.N`). | `:latest` | Early adopters who want fixes before they're finalized. |
+| Channel | Tracks | GHCR tag | Default |
+|---------|--------|----------|---------|
+| **stable** | The newest **final** release that has baked for at least the soak window (default 7 days). | `:stable` | ✅ default |
+| **latest** | The newest **final** release, immediately. | `:latest` | opt-in |
 
-A pre-release moves `:latest` but **not** `:stable`; a final release moves
-both. So `stable` only ever advances to vetted final releases, while
-`latest` surfaces release candidates first.
+So `latest` gets every release the moment it ships, and `stable` adopts it
+about a week later — long enough to surface regressions before
+conservative users see it.
+
+> **Claude Code parity, with one deliberate difference.** The *semantics*
+> match Claude Code (soak model, final-only). Claude Code defaults to
+> `latest`; Decepticon defaults to **`stable`** because it is an autonomous
+> offensive-security tool where a conservative default is the safer choice.
+
+`latest` is **not** "the main branch." It only moves when a release is
+cut — not on every commit. (To track a git branch's config instead of a
+release, use the separate `DECEPTICON_BRANCH` override.)
 
 ## Selecting a channel
 
-The channel lives in `DECEPTICON_CHANNEL` in your `~/.decepticon/.env`
-(default `stable` when unset or unrecognized — a typo can never silently
-opt you into pre-release images):
+The channel lives in `DECEPTICON_CHANNEL` in `~/.decepticon/.env` (default
+`stable`; unrecognized values resolve to `stable`):
 
 ```bash
 # ~/.decepticon/.env
 DECEPTICON_CHANNEL=latest
+# optional — override the stable soak window (days):
+DECEPTICON_STABLE_SOAK_DAYS=7
 ```
 
-It can be set three ways:
+Three ways to set it:
 
 - **At install** — `CHANNEL=latest curl -fsSL https://decepticon.red/install | bash`.
-  The installer resolves and pins the newest version on that channel.
-- **In `.env`** — set `DECEPTICON_CHANNEL=stable|latest`. The launch-time
+- **In `.env`** — `DECEPTICON_CHANNEL=stable|latest`. The launch-time
   self-update and `decepticon update` both honor it.
-- **Per command** — `decepticon update --channel latest` overrides `.env`
-  for that one run (does not persist).
+- **Per command** — `decepticon update --channel latest` (one run only).
 
-Pinning an exact version still wins over the channel:
-`VERSION=1.2.0 curl ... | bash` (install) or `DECEPTICON_VERSION=1.2.0`
-(compose) installs that exact tag regardless of channel.
+Pinning an exact version still wins over the channel: `VERSION=1.2.0
+curl … | bash` (install) or `DECEPTICON_VERSION=1.2.0` (compose).
 
 ## How it works
 
-- **Launcher self-update / `decepticon update`** resolve the channel via
-  `updater.ResolveChannel` and fetch accordingly:
-  - `stable` → GitHub `…/releases/latest` (which already excludes
-    pre-releases and drafts).
-  - `latest` → GitHub `…/releases` and picks the newest non-draft release
-    by SemVer precedence, pre-releases included.
-- **Version comparison** is full SemVer §11: a pre-release ranks *below*
-  its associated final version (`1.2.0-rc.1 < 1.2.0`), and prerelease
-  identifiers compare field-by-field (`rc.2 < rc.10`). This is what lets
-  the `latest` channel offer an `-rc` and then upgrade to the final, and
-  prevents the `stable` channel from ever "upgrading" to a pre-release.
-- **Docker image tags** are promoted by the release workflow's
-  `publish-release` job: `:stable` for final releases only, `:latest` for
-  every release.
+- **Launcher self-update / `decepticon update`** (`internal/updater`):
+  - `latest` → GitHub `…/releases/latest` (newest final; the endpoint
+    already excludes pre-releases and drafts).
+  - `stable` → lists `…/releases` and picks the newest **final** whose
+    `published_at` is at least `DECEPTICON_STABLE_SOAK_DAYS` (default 7) in
+    the past, by SemVer. If nothing has soaked yet, it falls back to the
+    newest final so stable always resolves.
+- **Install** (`scripts/install.sh`) resolves the same way (the stable
+  date filter needs `python3`; without it, it falls back to the newest
+  final).
+- **Docker image tags**:
+  - `:latest` is moved to every **final** release immediately by the
+    release workflow's `publish-release` job.
+  - `:stable` is moved to the newest soaked final by the **scheduled**
+    `promote-stable.yml` workflow (daily), *not* on release.
+  - Pre-releases move neither tag.
 - **Compose fallback.** When `DECEPTICON_VERSION` is unset, the images in
-  `docker-compose.yml` fall back to `:stable` (`${DECEPTICON_VERSION:-stable}`)
-  — the conservative default. In normal operation the launcher pins
-  `DECEPTICON_VERSION` to a concrete version, so the fallback is only a
-  safety net for direct `docker compose` use.
+  `docker-compose.yml` fall back to `:stable` (the conservative default).
+  In normal operation the launcher pins `DECEPTICON_VERSION` to a concrete
+  version, so the fallback is only a safety net for direct `docker compose`
+  use.
 
 ## Notes
 
-- `:stable` is seeded by the first **final** release published after this
-  feature landed; until then, pin `DECEPTICON_VERSION` if you run
-  `docker compose` directly without the launcher.
-- Drafts are never installed: GitHub omits them from anonymous
-  `…/releases` responses, and the launcher additionally skips any
-  `draft: true` entry.
-- The channel is independent of `AUTO_UPDATE` (which controls *whether*
-  updates apply automatically) and `DECEPTICON_BRANCH` (which tracks a git
-  branch's config instead of a release tag).
+- Pre-releases (`vX.Y.Z-rc.N`) are never auto-selected by either channel.
+  Install one explicitly with `VERSION=…` if needed.
+- The channel is independent of `AUTO_UPDATE` (whether updates apply
+  automatically) and `DECEPTICON_BRANCH` (track a git branch's config
+  instead of a release tag).
+- Switching from `latest` to `stable` will not downgrade an
+  already-installed newer version (updates are forward-only); stable simply
+  stops advancing until the soaked stable catches up.

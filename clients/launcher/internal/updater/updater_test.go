@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -52,6 +53,8 @@ func TestCompareVersions(t *testing.T) {
 }
 
 func TestResolveChannel(t *testing.T) {
+	// Default + unrecognized → stable (Decepticon's conservative default;
+	// soak semantics still match Claude Code, only the default differs).
 	tests := map[string]Channel{
 		"":          ChannelStable, // default
 		"stable":    ChannelStable,
@@ -60,7 +63,7 @@ func TestResolveChannel(t *testing.T) {
 		"latest":    ChannelLatest,
 		"LATEST":    ChannelLatest,
 		" latest":   ChannelLatest,
-		"garbage":   ChannelStable, // unrecognized → safe default
+		"garbage":   ChannelStable, // unrecognized → safe default (stable)
 	}
 	for in, want := range tests {
 		if got := ResolveChannel(in); got != want {
@@ -117,38 +120,14 @@ func TestFetchLatestRelease_Mock(t *testing.T) {
 	}
 }
 
-func TestFetchRelease_StableHitsLatestEndpoint(t *testing.T) {
+func TestFetchRelease_LatestUsesReleasesLatestEndpoint(t *testing.T) {
+	// latest = newest FINAL release immediately. GitHub's /releases/latest
+	// already excludes pre-releases and drafts.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/releases/latest" {
-			t.Errorf("stable channel must call /releases/latest, got %q", r.URL.Path)
+			t.Errorf("latest channel must call /releases/latest, got %q", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(Release{TagName: "v1.2.0"})
-	}))
-	defer srv.Close()
-	defer withAPIBaseURL(srv.URL)()
-
-	rel, err := FetchRelease(ChannelStable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rel.TagName != "v1.2.0" {
-		t.Errorf("TagName = %q, want v1.2.0", rel.TagName)
-	}
-}
-
-func TestFetchRelease_LatestPicksNewestInclPrereleaseSkipsDrafts(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/releases/latest" {
-			t.Errorf("latest channel must list /releases, not /releases/latest")
-		}
-		// Unordered; a draft newer than everything (must be skipped); a
-		// prerelease that is the newest non-draft (must win).
-		json.NewEncoder(w).Encode([]Release{
-			{TagName: "v1.2.0"},
-			{TagName: "v1.3.0-rc.2", Prerelease: true},
-			{TagName: "v2.0.0", Draft: true},
-			{TagName: "v1.1.0"},
-		})
+		json.NewEncoder(w).Encode(Release{TagName: "v1.3.0"})
 	}))
 	defer srv.Close()
 	defer withAPIBaseURL(srv.URL)()
@@ -157,23 +136,91 @@ func TestFetchRelease_LatestPicksNewestInclPrereleaseSkipsDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rel.TagName != "v1.3.0-rc.2" {
-		t.Errorf("TagName = %q, want v1.3.0-rc.2", rel.TagName)
+	if rel.TagName != "v1.3.0" {
+		t.Errorf("TagName = %q, want v1.3.0", rel.TagName)
 	}
 }
 
-func TestPickNewestRelease(t *testing.T) {
-	got := pickNewestRelease([]Release{
-		{TagName: "v1.2.0"},
-		{TagName: "v1.3.0-rc.1", Prerelease: true},
-		{TagName: "v2.0.0", Draft: true}, // draft → skipped despite highest semver
-		{TagName: ""},                    // malformed → skipped
-	})
-	if got == nil || got.TagName != "v1.3.0-rc.1" {
-		t.Fatalf("pickNewestRelease = %+v, want v1.3.0-rc.1", got)
+func TestFetchRelease_StableSoaksByPublishedAt(t *testing.T) {
+	// stable = newest FINAL release that has baked for the soak window.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/releases/latest" {
+			t.Errorf("stable channel must list /releases, not /releases/latest")
+		}
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.3.0", PublishedAt: "2026-06-10T00:00:00Z"},                        // 2d old — too fresh
+			{TagName: "v1.2.0", PublishedAt: "2026-06-01T00:00:00Z"},                        // 11d old — soaked, newest soaked
+			{TagName: "v1.1.0", PublishedAt: "2026-05-01T00:00:00Z"},                        // soaked but lower
+			{TagName: "v1.4.0-rc.1", Prerelease: true, PublishedAt: "2026-05-01T00:00:00Z"}, // prerelease — excluded
+			{TagName: "v2.0.0", Draft: true, PublishedAt: "2026-01-01T00:00:00Z"},           // draft — excluded
+		})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+	defer withSoakClock(time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), 7*24*time.Hour)()
+
+	rel, err := FetchRelease(ChannelStable)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if pickNewestRelease(nil) != nil {
-		t.Errorf("pickNewestRelease(nil) should be nil")
+	if rel.TagName != "v1.2.0" {
+		t.Errorf("stable TagName = %q, want v1.2.0 (newest final older than 7d)", rel.TagName)
+	}
+}
+
+func TestFetchRelease_StableFallsBackToLatestWhenNoneSoaked(t *testing.T) {
+	// Every release is younger than the soak window (brand-new project) —
+	// stable must still resolve, by falling back to the newest final.
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits[r.URL.Path]++
+		if r.URL.Path == "/releases/latest" {
+			json.NewEncoder(w).Encode(Release{TagName: "v1.3.0"})
+			return
+		}
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.3.0", PublishedAt: "2026-06-11T00:00:00Z"}, // 1d old
+		})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+	defer withSoakClock(time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), 7*24*time.Hour)()
+
+	rel, err := FetchRelease(ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.3.0" {
+		t.Errorf("fallback TagName = %q, want v1.3.0", rel.TagName)
+	}
+	if hits["/releases/latest"] == 0 {
+		t.Errorf("expected a fallback to /releases/latest")
+	}
+}
+
+func TestPickSoakedStable(t *testing.T) {
+	now := time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC)
+	soak := 7 * 24 * time.Hour
+	got := pickSoakedStable([]Release{
+		{TagName: "v1.3.0", PublishedAt: "2026-06-10T00:00:00Z"}, // 2d — too fresh
+		{TagName: "v1.2.0", PublishedAt: "2026-06-01T00:00:00Z"}, // 11d — soaked, highest
+		{TagName: "v1.1.0", PublishedAt: "2026-05-01T00:00:00Z"}, // soaked, lower
+		{TagName: "v1.4.0-rc.1", Prerelease: true, PublishedAt: "2026-04-01T00:00:00Z"},
+		{TagName: "v2.0.0", Draft: true, PublishedAt: "2026-04-01T00:00:00Z"},
+		{TagName: "", PublishedAt: "2026-04-01T00:00:00Z"},
+	}, now, soak)
+	if got == nil || got.TagName != "v1.2.0" {
+		t.Fatalf("pickSoakedStable = %+v, want v1.2.0", got)
+	}
+	// None soaked → nil (caller falls back).
+	none := pickSoakedStable([]Release{
+		{TagName: "v1.3.0", PublishedAt: "2026-06-11T00:00:00Z"},
+	}, now, soak)
+	if none != nil {
+		t.Errorf("pickSoakedStable(all fresh) = %+v, want nil", none)
+	}
+	if pickSoakedStable(nil, now, soak) != nil {
+		t.Errorf("pickSoakedStable(nil) should be nil")
 	}
 }
 
@@ -183,6 +230,15 @@ func withAPIBaseURL(url string) func() {
 	old := APIBaseURL
 	APIBaseURL = url
 	return func() { APIBaseURL = old }
+}
+
+// withSoakClock pins the updater's "now" and soak window for deterministic
+// stable-channel soak math; returns a restore func.
+func withSoakClock(now time.Time, soak time.Duration) func() {
+	oldNow, oldSoak := nowFn, stableSoak
+	nowFn = func() time.Time { return now }
+	stableSoak = soak
+	return func() { nowFn, stableSoak = oldNow, oldSoak }
 }
 
 func TestPromptIfUpdateAvailable_SkipsDevBuilds(t *testing.T) {

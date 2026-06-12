@@ -108,10 +108,10 @@ Release channel policy (see [update-channels.md](./update-channels.md) for the u
 
 - `vX.Y.Z` Git tags are the source of truth for releases.
 - GHCR version tags (`X.Y.Z`) are immutable release artifacts and should be used by installed deployments.
-- Two moving channel tags are promoted by the `publish-release` job after all version-tagged images exist and the GitHub release is undrafted:
-  - GHCR `stable` → the newest **final** release only (the conservative default; the `${DECEPTICON_VERSION:-stable}` compose fallback resolves here).
-  - GHCR `latest` → the newest release **including pre-releases**.
-- Pre-releases use SemVer suffixes such as `v1.1.0-rc.1`, stay marked as GitHub pre-releases, and move `latest` but **not** `stable`.
+- Two moving channel tags (Claude-Code-style soak model — both **final-only**):
+  - GHCR `latest` → moved to the newest **final** release **immediately**, by the `publish-release` job (after all version-tagged images exist and the GitHub release is undrafted).
+  - GHCR `stable` → moved to the newest final release **baked ≥ the soak window** (default 7 days), by the **scheduled** `promote-stable.yml` workflow — *not* on release. The conservative default; the `${DECEPTICON_VERSION:-stable}` compose fallback resolves here.
+- Pre-releases use SemVer suffixes such as `v1.1.0-rc.1`, stay marked as GitHub pre-releases, and move **neither** channel tag (the channels never auto-select them).
 - Bug fixes ship as new patch releases. Do not rebuild or rewrite an existing version tag.
 
 To cut a release:
