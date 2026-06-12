@@ -69,17 +69,40 @@ def _load_tokens() -> dict[str, Any] | None:
 
 
 def _exchange_session_for_access(session_token: str) -> dict[str, Any]:
-    resp = httpx.get(
-        "https://grok.x.ai/api/auth/session",
-        cookies={"auth_token": session_token},
-        headers={
-            "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-        },
-        timeout=30,
-        follow_redirects=True,
-    )
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = httpx.get(
+            "https://grok.x.ai/api/auth/session",
+            cookies={"auth_token": session_token},
+            headers={
+                "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            },
+            timeout=30,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPStatusError as exc:
+        raise litellm.AuthenticationError(
+            message=(
+                f"Grok session exchange was rejected (HTTP {exc.response.status_code}) — "
+                "the GROK_SESSION_TOKEN cookie is expired or invalid. Re-extract it from grok.com."
+            ),
+            model="grok-sub",
+            llm_provider="grok-sub",
+        ) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise litellm.AuthenticationError(
+            message=f"Grok session exchange failed: {exc}. Re-extract the cookie from grok.com.",
+            model="grok-sub",
+            llm_provider="grok-sub",
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise litellm.AuthenticationError(
+            message="Grok session exchange returned an unexpected response shape. Re-extract from browser.",
+            model="grok-sub",
+            llm_provider="grok-sub",
+        )
 
     access_token = data.get("accessToken") or data.get("token")
     if not access_token:
@@ -214,7 +237,22 @@ class GrokSubHandler(CustomLLM):
                 llm_provider="grok-sub",
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message=f"Grok returned a malformed (non-JSON) response: {resp.text[:300]}",
+                model=model,
+                llm_provider="grok-sub",
+            ) from exc
+        if not isinstance(data, dict):
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message="Grok response JSON was not an object.",
+                model=model,
+                llm_provider="grok-sub",
+            )
         return ModelResponse(
             id=data.get("id", f"grok-sub-{actual_model}"),
             model=actual_model,

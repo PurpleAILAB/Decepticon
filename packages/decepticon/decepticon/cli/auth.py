@@ -74,7 +74,9 @@ def _load_env_file(path: Path) -> int:
     """Set unset keys from a KEY=VALUE .env file. Never overrides the live env."""
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
+        # Missing, unreadable, or non-UTF-8 / corrupt .env: degrade to "nothing
+        # loaded" rather than letting a raw decode traceback escape the CLI.
         return 0
     loaded = 0
     for raw in text.splitlines():
@@ -167,9 +169,16 @@ def main(argv: list[str] | None = None) -> int:
             _load_env_file(path)
 
     # Imported lazily: pulls in the LLM stack, which is overkill for --help.
-    from decepticon.llm.factory import auth_inventory  # noqa: PLC0415
+    # Both the import and inventory probe touch the filesystem and parse
+    # credential files; a failure there is a misconfiguration, not a crash —
+    # report it actionably instead of dumping a traceback at the operator.
+    try:
+        from decepticon.llm.factory import auth_inventory  # noqa: PLC0415
 
-    inv = auth_inventory()
+        inv = auth_inventory()
+    except Exception as exc:  # noqa: BLE001 — top-level CLI guard; report, don't crash
+        print(f"error: could not inspect auth configuration: {exc}", file=sys.stderr)
+        return EXIT_CONFIG
     print(_render_json(inv) if args.json else _render_text(inv))
 
     if args.command == "doctor":
