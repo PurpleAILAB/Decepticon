@@ -113,15 +113,17 @@ def main(argv: list[str] | None = None) -> int:
         print(_INSTALL_HINT, file=sys.stderr)
         return 2
 
-    config = _apply_cli(load_config(), args)
-    err = open_bind_error(resolve_auth_mode(config), args.transport, args.host)
-    if err:
-        print(err, file=sys.stderr)
-        return 2
-
     try:
+        config = _apply_cli(load_config(), args)
+        err = open_bind_error(resolve_auth_mode(config), args.transport, args.host)
+        if err:
+            print(err, file=sys.stderr)
+            return 2
         server = build_server(config, host=args.host, port=args.port)
     except ValueError as exc:
+        # Covers a bad DECEPTICON_MCP_SERVER__AUTH value (load_config) and an
+        # incomplete auth selection (build_server): a config mistake exits 2
+        # with a one-line message, never a traceback.
         print(f"decepticon-mcp: {exc}", file=sys.stderr)
         return 2
     server.run(transport=args.transport)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from contextlib import aclosing
 from typing import Any
 
 from decepticon.mcp_server.models import StreamEvent
@@ -45,15 +46,22 @@ async def watch_run(
 
     async def _collect() -> None:
         nonlocal truncated
-        async for part in client.runs.join_stream(thread_id, run_id, stream_mode=_STREAM_MODES):
-            event = getattr(part, "event", None)
-            data = getattr(part, "data", None)
-            if not event or data is None:
-                continue
-            events.append(StreamEvent(event=str(event), data=_compact(data)))
-            if len(events) >= max_events:
-                truncated = True
-                return
+        # ``aclosing`` guarantees the underlying SSE/HTTP connection is torn
+        # down deterministically when we leave the loop early — both on the
+        # event-cap ``return`` and when ``wait_for`` cancels us on timeout.
+        # Without it the generator (and its open httpx stream) would linger
+        # until non-deterministic async-generator GC.
+        stream = client.runs.join_stream(thread_id, run_id, stream_mode=_STREAM_MODES)
+        async with aclosing(stream) as parts:
+            async for part in parts:
+                event = getattr(part, "event", None)
+                data = getattr(part, "data", None)
+                if not event or data is None:
+                    continue
+                events.append(StreamEvent(event=str(event), data=_compact(data)))
+                if len(events) >= max_events:
+                    truncated = True
+                    return
 
     try:
         await asyncio.wait_for(_collect(), timeout=max_seconds)

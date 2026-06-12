@@ -124,6 +124,16 @@ async def test_send_message_explicit_assistant_skips_lookup() -> None:
     assert handle.assistant == "soundwave"
 
 
+async def test_send_message_falls_back_to_default_when_run_lacks_assistant() -> None:
+    # A latest run with no assistant_id must resolve to the configured default,
+    # never the literal string "None".
+    fake = _FakeClient(runs=[{"run_id": "r-old", "status": "success"}])
+    client = EngagementClient(_config(), client=fake)
+    handle = await client.send_message(thread_id="t-1", message="continue")
+    assert handle.assistant == "decepticon"
+    assert fake.runs.create_calls[0]["assistant_id"] == "decepticon"
+
+
 async def test_send_message_model_command_sets_override_and_body() -> None:
     fake = _FakeClient(runs=[{"run_id": "r", "assistant_id": "decepticon", "status": "success"}])
     client = EngagementClient(_config(), client=fake)

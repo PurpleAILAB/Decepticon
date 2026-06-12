@@ -168,7 +168,8 @@ class EngagementClient:
         resolved = assistant
         if resolved is None:
             latest = await self.latest_run(thread_id)
-            resolved = str(latest.get("assistant_id")) if latest else self._config.default_assistant
+            assistant_id = latest.get("assistant_id") if latest else None
+            resolved = str(assistant_id) if assistant_id else self._config.default_assistant
 
         override, body = _split_model_command(message)
         create_kwargs: dict[str, Any] = {
