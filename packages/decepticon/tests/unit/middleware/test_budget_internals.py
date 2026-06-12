@@ -19,9 +19,6 @@ The spend source is injected, so there is no LiteLLM / Postgres dependency.
 
 from __future__ import annotations
 
-import sys
-import types
-
 import pytest
 
 from decepticon.middleware import budget as budget_mod
@@ -88,6 +85,14 @@ class _Req:
     def __init__(self, state: object = None, runtime: object = None) -> None:
         self.state = state
         self.runtime = runtime
+        self.model_settings: dict[str, object] = {}
+
+    def override(self, **kwargs: object) -> _Req:
+        # mirrors langchain's ModelRequest.override: shallow copy + updates
+        new = _Req(state=self.state, runtime=self.runtime)
+        new.__dict__.update(self.__dict__)
+        new.__dict__.update(kwargs)
+        return new
 
 
 def _mw() -> BudgetEnforcementMiddleware:
@@ -214,87 +219,105 @@ def test_emit_warning_event_swallows_writer_errors(monkeypatch: pytest.MonkeyPat
     _emit_warning_event("agent", 1.0, 2.0, 0.5)  # logged, not raised
 
 
-class _StubCursor:
-    def __init__(self, row: tuple[object, ...]) -> None:
-        self._row = row
-
-    def __enter__(self) -> _StubCursor:
-        return self
-
-    def __exit__(self, *_exc: object) -> bool:
-        return False
-
-    def execute(self, _sql: str, _params: object) -> None:
-        return None
-
-    def fetchone(self) -> tuple[object, ...]:
-        return self._row
+# ---------------------------------------------------------------- default provider
 
 
-class _StubConnection:
-    def __init__(self, row: tuple[object, ...], closed: list[int]) -> None:
-        self._row = row
-        self._closed = closed
+class _StubResponse:
+    def __init__(self, rows: list[dict[str, object]], status_error: bool = False) -> None:
+        self._rows = rows
+        self._status_error = status_error
 
-    def __enter__(self) -> _StubConnection:
-        return self
+    def raise_for_status(self) -> None:
+        if self._status_error:
+            raise RuntimeError("HTTP 500")
 
-    def __exit__(self, *_exc: object) -> bool:
-        return False
-
-    def cursor(self) -> _StubCursor:
-        return _StubCursor(self._row)
-
-    def close(self) -> None:
-        self._closed.append(1)
+    def json(self) -> list[dict[str, object]]:
+        return self._rows
 
 
-def _install_stub_psycopg2(
-    monkeypatch: pytest.MonkeyPatch,
-    row: tuple[object, ...],
-    closed: list[int],
-) -> None:
-    module = types.ModuleType("psycopg2")
-    module.connect = lambda _dsn: _StubConnection(row, closed)
-    monkeypatch.setitem(sys.modules, "psycopg2", module)
+class _StubLLMConfig:
+    proxy_url = "http://litellm:4000/"
+    proxy_api_key = "sk-test-master"
 
 
-def test_default_provider_closes_connection_once(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://stub/db")
-    closed: list[int] = []
-    _install_stub_psycopg2(monkeypatch, (12.5,), closed)
-
-    result = _default_litellm_spend_provider("engagement:test")
-
-    assert result == 12.5
-    assert closed == [1]
+class _StubConfig:
+    llm = _StubLLMConfig()
 
 
-def test_default_provider_closes_connection_on_query_error(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("DATABASE_URL", "postgresql://stub/db")
-    closed: list[int] = []
+def _install_stub_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    import decepticon_core.utils.config as core_config
 
-    class _BoomCursor(_StubCursor):
-        def execute(self, _sql: str, _params: object) -> None:
-            raise RuntimeError("boom")
+    monkeypatch.setattr(core_config, "load_config", lambda: _StubConfig())
 
-    module = types.ModuleType("psycopg2")
 
-    class _Conn(_StubConnection):
-        def cursor(self) -> _BoomCursor:
-            return _BoomCursor((0.0,))
+def test_default_provider_returns_matching_tag_spend(monkeypatch: pytest.MonkeyPatch):
+    import httpx
 
-    module.connect = lambda _dsn: _Conn((0.0,), closed)
-    monkeypatch.setitem(sys.modules, "psycopg2", module)
+    _install_stub_config(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def _get(url: str, *, headers: dict[str, str], timeout: float) -> _StubResponse:
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return _StubResponse(
+            [
+                {"individual_request_tag": "User-Agent: curl", "total_spend": 9.9},
+                {"individual_request_tag": "engagement:test", "total_spend": 12.5},
+            ]
+        )
+
+    monkeypatch.setattr(httpx, "get", _get)
+
+    assert _default_litellm_spend_provider("engagement:test") == 12.5
+    # trailing slash on proxy_url must not produce a double slash
+    assert captured["url"] == "http://litellm:4000/spend/tags"
+    assert captured["headers"] == {"Authorization": "Bearer sk-test-master"}
+
+
+def test_default_provider_unknown_tag_returns_zero(monkeypatch: pytest.MonkeyPatch):
+    import httpx
+
+    _install_stub_config(monkeypatch)
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *_a, **_k: _StubResponse([{"individual_request_tag": "other", "total_spend": 3.0}]),
+    )
 
     assert _default_litellm_spend_provider("engagement:test") == 0.0
-    assert closed == [1]
 
 
-def test_default_provider_no_database_url(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    closed: list[int] = []
-    _install_stub_psycopg2(monkeypatch, (5.0,), closed)
+def test_default_provider_swallows_http_errors(monkeypatch: pytest.MonkeyPatch):
+    import httpx
+
+    _install_stub_config(monkeypatch)
+    monkeypatch.setattr(httpx, "get", lambda *_a, **_k: _StubResponse([], status_error=True))
 
     assert _default_litellm_spend_provider("engagement:test") == 0.0
-    assert closed == []
+
+
+def test_default_provider_swallows_config_errors(monkeypatch: pytest.MonkeyPatch):
+    import decepticon_core.utils.config as core_config
+
+    def _boom() -> object:
+        raise RuntimeError("no env")
+
+    monkeypatch.setattr(core_config, "load_config", _boom)
+
+    assert _default_litellm_spend_provider("engagement:test") == 0.0
+
+
+def test_default_provider_null_total_spend_is_zero(monkeypatch: pytest.MonkeyPatch):
+    import httpx
+
+    _install_stub_config(monkeypatch)
+    monkeypatch.setattr(
+        httpx,
+        "get",
+        lambda *_a, **_k: _StubResponse(
+            [{"individual_request_tag": "engagement:test", "total_spend": None}]
+        ),
+    )
+
+    assert _default_litellm_spend_provider("engagement:test") == 0.0

@@ -3,7 +3,7 @@
 Decepticon engagements can spin for hours with multiple specialist sub-agents
 running in parallel, each driving an expensive frontier model. The
 LiteLLM-only timeout knob (``DECEPTICON_LLM__TIMEOUT``) is necessary but not
-sufficient — a long-running engagement on ``claude-opus-4-7 → fallback →
+sufficient — a long-running engagement on ``claude-opus-4-8 → fallback →
 fallback`` can quietly accrue hundreds of dollars in spend before a human
 operator notices.
 
@@ -14,10 +14,13 @@ This middleware exposes a single financial guardrail::
     DECEPTICON_BUDGET__SOFT_WARN_AT_PCT  emit a stream warning at this fraction
     DECEPTICON_BUDGET__POLL_SECONDS      how often to re-query LiteLLM
 
-Spend numbers come from LiteLLM's ``spend_logs`` table — already populated
-by the proxy on every completion. We query it lazily before each model call;
-the lookup is one row per agent (cheap, indexed) and is cached for the poll
-interval so we don't hammer Postgres on tight inference loops.
+Spend numbers come from the LiteLLM proxy's ``/spend/tags`` API. The
+middleware tags every outbound completion with its scope keys
+(``engagement:<slug>`` and ``agent:<slug>:<agent>`` via request
+``metadata.tags``), the proxy records them in its spend logs, and
+``/spend/tags`` returns the cumulative USD total per tag. We query it
+lazily before each model call and cache for the poll interval so we
+don't hammer the proxy on tight inference loops.
 
 Enforcement
 -----------
@@ -37,8 +40,11 @@ preserves the current behavior for users who haven't opted in.
 
 Architectural notes
 -------------------
-- LiteLLM virtual-key spend is the source of truth, NOT a local counter. A
+- LiteLLM proxy spend is the source of truth, NOT a local counter. A
   local counter would drift on crash/restart; LiteLLM persists every call.
+- Spend attribution rides the documented proxy API (``metadata.tags`` in,
+  ``/spend/tags`` out) rather than SQL against LiteLLM's internal Prisma
+  tables, so proxy upgrades can't break enforcement on a schema change.
 - The middleware does NOT block tool calls — only LLM calls. The agent can
   finish whatever tool round-trip is in flight and emit a final synthesis
   message before the next inference fails.
@@ -46,10 +52,10 @@ Architectural notes
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
-from contextlib import closing
 from typing import Any, ClassVar
 
 from langchain.agents.middleware import AgentMiddleware
@@ -87,7 +93,7 @@ class _SpendCache:
 
     Bounded at ``_MAX_ENTRIES`` so a runaway agent-id-explosion can't grow
     memory unbounded. Entries are evicted in insertion order (FIFO) on
-    overflow — cache misses cost one extra LiteLLM SQL round-trip, not
+    overflow — cache misses cost one extra LiteLLM proxy round-trip, not
     correctness, so FIFO is fine.
     """
 
@@ -145,9 +151,9 @@ class BudgetEnforcementMiddleware(AgentMiddleware):
     from request metadata each call). Spend numbers are pulled from the
     injected ``spend_provider`` callable, which is expected to return the
     cumulative USD spend for a given scope key. The default provider
-    queries LiteLLM Postgres via the connection string in
-    ``DATABASE_URL``; injecting a stub provider makes this trivially
-    unit-testable.
+    queries the LiteLLM proxy ``/spend/tags`` API using the same proxy
+    URL/key the LLM factory resolves; injecting a stub provider makes
+    this trivially unit-testable.
     """
 
     def __init__(
@@ -241,52 +247,83 @@ class BudgetEnforcementMiddleware(AgentMiddleware):
         self._check_one("engagement", f"engagement:{engagement}", self._engagement_cap)
         self._check_one("agent", f"agent:{engagement}:{agent}", self._per_agent_cap)
 
+    def _tag_request(self, request: Any) -> Any:
+        """Attach scope tags to the outbound completion via ``metadata.tags``.
+
+        The LiteLLM proxy records these tags on every spend-log row, which
+        is what makes the ``/spend/tags`` lookup in the default provider
+        work. Tags are merged non-destructively: existing ``model_settings``
+        keys (e.g. an ``extra_body.thinking`` block) and pre-existing tags
+        are preserved.
+        """
+        if not self._enabled():
+            return request
+        engagement, agent = self._scope_keys(request)
+        scope_tags = [f"engagement:{engagement}", f"agent:{engagement}:{agent}"]
+        settings = dict(getattr(request, "model_settings", None) or {})
+        extra_body = dict(settings.get("extra_body") or {})
+        metadata = dict(extra_body.get("metadata") or {})
+        tags = list(metadata.get("tags") or [])
+        tags.extend(t for t in scope_tags if t not in tags)
+        metadata["tags"] = tags
+        extra_body["metadata"] = metadata
+        settings["extra_body"] = extra_body
+        return request.override(model_settings=settings)
+
     @override
     def wrap_model_call(self, request, handler):
         self._enforce(request)
-        return handler(request)
+        return handler(self._tag_request(request))
 
     @override
     async def awrap_model_call(self, request, handler):
-        self._enforce(request)
-        return await handler(request)
+        # The default spend provider does a blocking HTTP round-trip to the
+        # LiteLLM proxy (at most once per poll interval, per scope); run it
+        # off the event loop so concurrent agents aren't stalled behind it.
+        await asyncio.to_thread(self._enforce, request)
+        return await handler(self._tag_request(request))
 
 
 def _default_litellm_spend_provider(scope_key: str) -> float:
-    """Default spend provider: query LiteLLM's Postgres ``spend_logs`` table.
+    """Default spend provider: query the LiteLLM proxy ``/spend/tags`` API.
 
-    ``scope_key`` looks like ``engagement:<slug>`` or ``agent:<slug>:<agent>``.
-    The convention is that LiteLLM virtual keys created by the launcher
-    carry these scope keys as metadata, so a single SQL ``SUM(spend)``
-    grouped by ``request_id->metadata`` yields the answer.
+    ``scope_key`` looks like ``engagement:<slug>`` or ``agent:<slug>:<agent>``
+    and matches the tags ``_tag_request`` attaches to every completion this
+    middleware wraps. ``/spend/tags`` aggregates ``SUM(spend)`` per distinct
+    tag proxy-side, so the response is one row per tag — bounded by tag
+    cardinality, not log volume.
+
+    Proxy URL and key come from the same ``DecepticonConfig`` source the LLM
+    factory uses (``DECEPTICON_LLM__PROXY_URL`` / ``__PROXY_API_KEY``), so
+    any environment that can run an agent can also enforce its budget.
 
     Returns 0.0 on any failure — the middleware treats provider exceptions
     as "no data this turn, don't enforce" rather than as a hard error,
-    so a transient Postgres blip can't terminate an active engagement.
-
-    Requires ``DATABASE_URL`` to be set; absent that, returns 0.0.
+    so a transient proxy blip can't terminate an active engagement. A
+    scope tag with no recorded spend also yields 0.0.
     """
-    db_url = os.environ.get("DATABASE_URL", "")
-    if not db_url:
+    try:
+        from decepticon_core.utils.config import load_config  # noqa: PLC0415
+
+        config = load_config()
+        base_url = config.llm.proxy_url.rstrip("/")
+        api_key = config.llm.proxy_api_key
+    except Exception as exc:  # noqa: BLE001
+        log.warning("cannot resolve LiteLLM proxy config for budget query: %s", exc)
         return 0.0
     try:
-        import psycopg2  # noqa: PLC0415
-    except ImportError:
-        log.warning("psycopg2 unavailable — install psycopg2-binary to enable budget enforcement")
+        import httpx  # noqa: PLC0415
+
+        resp = httpx.get(
+            f"{base_url}/spend/tags",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        for row in resp.json():
+            if row.get("individual_request_tag") == scope_key:
+                return float(row.get("total_spend") or 0.0)
         return 0.0
-    try:
-        with closing(psycopg2.connect(db_url)) as conn:
-            with conn, conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COALESCE(SUM(spend), 0)::float
-                    FROM "LiteLLM_SpendLogs"
-                    WHERE metadata->>'scope_key' = %s
-                    """,
-                    (scope_key,),
-                )
-                row = cur.fetchone()
-                return float(row[0]) if row else 0.0
     except Exception as exc:  # noqa: BLE001
         log.warning("LiteLLM spend query failed for scope=%s: %s", scope_key, exc)
         return 0.0
