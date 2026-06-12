@@ -30,10 +30,15 @@ func init() {
 
 func runUpdate(cmd *cobra.Command, args []string) error {
 	// Load env first so the channel (and branch override) are known
-	// before the release fetch.
+	// before the release fetch. A read failure must be visible: silently
+	// falling back to release mode would un-pin a branch-tracking install.
 	env := make(map[string]string)
 	if config.EnvExists() {
-		env, _ = config.LoadEnv(config.EnvPath())
+		if loaded, loadErr := config.LoadEnv(config.EnvPath()); loadErr != nil {
+			ui.Warning(fmt.Sprintf("Could not read %s (%v) — DECEPTICON_BRANCH pin ignored", config.EnvPath(), loadErr))
+		} else {
+			env = loaded
+		}
 	}
 	// --channel overrides .env for this invocation only.
 	rawChannel := updateChannel
@@ -60,6 +65,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	} else {
 		ui.Info("Refreshing configuration files and Docker images...")
 	}
+
 
 	ref := release.TagName
 	if branch := strings.TrimSpace(env["DECEPTICON_BRANCH"]); branch != "" {

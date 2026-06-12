@@ -36,6 +36,11 @@ every write-scope skill carries an explicit safety gate.
 
 ## Playbooks
 
+> NOTE: the sub-skills tabled below are planned but NOT yet authored —
+> `load_skill` on these paths will fail. Treat each row as a workflow
+> summary and apply the guidance in this catalog directly until the
+> split skills land.
+
 | Skill | Use for |
 |---|---|
 | `/skills/standard/ics/modbus-discovery/SKILL.md` | Read-only Modbus TCP/RTU enumeration, function code 3/4 polling |

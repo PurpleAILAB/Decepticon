@@ -30,6 +30,9 @@ class _FakeBackend:
     def __init__(self):
         self.load_calls: list[str] = []
         self.find_calls: list[dict] = []
+        self.playbook_calls: list[str] = []
+        self.next_calls: list[str] = []
+        self.list_calls: list[str | None] = []
 
     def load_skill(self, path, **kwargs):
         self.load_calls.append(path)
@@ -44,6 +47,23 @@ class _FakeBackend:
         self.find_calls.append(kwargs)
         return [{"name": "t1", "path": "/skills/t1", "subdomain": "test"}]
 
+    def get_playbook(self, name, **kwargs):
+        self.playbook_calls.append(name)
+        return {
+            "name": name,
+            "description": "d",
+            "phase": "ai-security",
+            "steps": [{"order": 1, "name": "t1", "path": "/skills/t1"}],
+        }
+
+    def suggest_next(self, skill, **kwargs):
+        self.next_calls.append(skill)
+        return [{"name": "t2", "path": "/skills/t2", "playbook": "pb", "order": 2}]
+
+    def list_playbooks(self, *, phase=None):
+        self.list_calls.append(phase)
+        return [{"name": "pb", "description": "d", "phase": phase or "", "step_count": 3}]
+
 
 def _tools_by_name(mw):
     return {t.name: t for t in mw.tools}
@@ -53,9 +73,15 @@ def test_middleware_constructs_with_injected_backend():
     backend = _FakeBackend()
     mw = SkillogyMiddleware(backend=backend)
     assert mw._backend is backend
-    # Amendment v0.2.2 trimmed the agent surface to three tools
-    # (run_cypher_read dropped).
-    assert {t.name for t in mw.tools} == {"load_skill", "find_skill", "traverse"}
+    # Three discovery tools (find/load/traverse) plus the v0.2 composition
+    # plane (get_playbook + suggest_next).
+    assert {t.name for t in mw.tools} == {
+        "load_skill",
+        "find_skill",
+        "traverse",
+        "get_playbook",
+        "suggest_next",
+    }
 
 
 def test_middleware_find_skill_tool_returns_json():
@@ -90,6 +116,48 @@ def test_middleware_load_skill_tool_returns_error_on_exception():
     payload = json.loads(result)
     assert "error" in payload
     assert "network down" in payload["error"]
+
+
+def test_middleware_get_playbook_tool_returns_steps():
+    backend = _FakeBackend()
+    mw = SkillogyMiddleware(backend=backend, append_policy_to_system=False)
+    result = _tools_by_name(mw)["get_playbook"].invoke({"name": "exposed-ai-service-takeover"})
+    payload = json.loads(result)
+    assert payload["name"] == "exposed-ai-service-takeover"
+    assert payload["steps"][0]["order"] == 1
+    assert backend.playbook_calls == ["exposed-ai-service-takeover"]
+
+
+def test_middleware_get_playbook_tool_missing_returns_error():
+    class _NoPlaybook:
+        def get_playbook(self, name, **kwargs):
+            return None
+
+    mw = SkillogyMiddleware(backend=_NoPlaybook(), append_policy_to_system=False)
+    payload = json.loads(_tools_by_name(mw)["get_playbook"].invoke({"name": "nope"}))
+    assert "error" in payload
+    assert "nope" in payload["error"]
+
+
+def test_middleware_suggest_next_tool_returns_candidates():
+    backend = _FakeBackend()
+    mw = SkillogyMiddleware(backend=backend, append_policy_to_system=False)
+    payload = json.loads(
+        _tools_by_name(mw)["suggest_next"].invoke({"last_skill": "ai-surface-mapping"})
+    )
+    assert payload["count"] == 1
+    assert payload["next"][0]["playbook"] == "pb"
+    assert backend.next_calls == ["ai-surface-mapping"]
+
+
+def test_middleware_phase_block_lists_playbooks():
+    backend = _FakeBackend()
+    mw = SkillogyMiddleware(backend=backend, agent_phase="ai-security")
+    # query_moc_summary isn't on the fake → MoC section degrades to empty,
+    # but the playbook section must still render from list_playbooks.
+    assert "Playbooks (ordered multi-skill chains)" in mw._phase_block
+    assert "pb (3 steps)" in mw._phase_block
+    assert backend.list_calls == ["ai-security"]
 
 
 def test_env_flag_recognizes_truthy_values(monkeypatch):

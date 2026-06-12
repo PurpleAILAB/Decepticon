@@ -272,3 +272,54 @@ slot set (`decepticon_core/contracts/slots.py`), so every role carries it.
 
 When `BENCHMARK_MODE=1`, `/skills/benchmark/` is appended to a role's sources
 (`agents/_benchmark_mode.py`).
+
+---
+
+## Playbooks
+
+Playbooks are authored, ordered multi-skill chains for recurring engagement
+scenarios — the composition plane over the skill corpus. Each lives as a
+`PLAYBOOK.md` file under `/skills/playbooks/<name>/` and is compiled into the
+Skillogy graph as a `:Playbook` node with ordered
+`(:Playbook)-[:STEP {order}]->(:Skill)` edges (see
+[docs/skillogy.md](skillogy.md)).
+
+Agents reach playbooks through two Skillogy tools: `get_playbook("<name>")`
+returns the ordered steps; `suggest_next("<last-skill>")` returns the skills
+that follow the one just used. `SkillogyMiddleware` also advertises the
+playbooks available for the agent's phase in its system-prompt phase block.
+
+### Format
+
+`PLAYBOOK.md` frontmatter (parsed by the builder, not the SKILL.md validator):
+
+```yaml
+---
+name: exposed-ai-service-takeover           # must match the directory name
+description: "Use when ...: ... . Triggers on: '...'."
+metadata:
+  phase: ai-security                        # optional; a canonical :Phase
+  steps:                                    # ordered list of existing skill names
+    - ai-surface-mapping
+    - llm-api-abuse
+    - prompt-injection
+---
+```
+
+Every `steps` entry MUST resolve to a real skill `name` and `phase` to a
+seeded `:Phase`; the builder fails the graph compile on a dangling reference,
+so a playbook can never route the agent to a nonexistent skill. The markdown
+body is the human-readable rationale (decision gates, OPSEC).
+
+### Shipped playbooks
+
+| Playbook | Phase | Chain |
+|---|---|---|
+| `exposed-ai-service-takeover` | ai-security | ai-surface-mapping → llm-api-abuse → prompt-injection → system-prompt-leakage → excessive-agency |
+| `external-web-foothold` | web-exploitation | passive-recon → web-recon → sqli |
+| `ad-domain-dominance` | active-directory | bloodhound-query → kerberoasting → dcsync |
+
+The AI playbook is backed by two new skills: `ai-surface-mapping`
+(`recon/` — discover + fingerprint exposed AI runtimes into typed
+`:Technology` graph nodes) and `llm-api-abuse` (`exploit/api/` — attack
+exposed OpenAI-compatible / Ollama / vLLM inference APIs).

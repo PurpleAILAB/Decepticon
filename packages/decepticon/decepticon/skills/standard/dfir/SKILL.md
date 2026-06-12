@@ -21,6 +21,11 @@ detection rules back through real forensic artifacts to confirm they fire
 
 ## Playbooks
 
+> NOTE: the sub-skills tabled below are planned but NOT yet authored —
+> `load_skill` on these paths will fail. Treat each row as a workflow
+> summary and apply the guidance in this catalog directly until the
+> split skills land.
+
 | Skill | Use for |
 |---|---|
 | `/skills/standard/dfir/volatility-windows/SKILL.md` | Volatility 3 Windows plugins: pslist, malfind, cmdline, netscan, dlllist, handles |

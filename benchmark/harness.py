@@ -15,6 +15,7 @@ from pathlib import Path
 
 import httpx
 from langgraph_sdk import get_client
+from langgraph_sdk.client import LangGraphClient
 
 from benchmark.config import BenchmarkConfig
 from benchmark.providers.base import BaseBenchmarkProvider
@@ -22,6 +23,19 @@ from benchmark.schemas import CancelOutcome, Challenge, ChallengeResult
 from benchmark.state import BenchmarkRunState, BenchmarkStepResult
 
 log = logging.getLogger(__name__)
+
+# Run-submission retry policy. Submission failures are almost always
+# transient (langgraph still booting after a restart, brief network blip);
+# retrying with a fresh thread id avoids scoring an infra hiccup as an
+# agent FAIL. Module-level so tests can zero the backoff.
+_SUBMIT_ATTEMPTS = 3
+_SUBMIT_BACKOFF_SECONDS = 2.0
+
+# Compose container names. Defaults match the OSS Decepticon stack;
+# override via env when running against a renamed/multi-stack deployment
+# (same knob the dreadgoad harness already honors for the sandbox).
+_SANDBOX_CONTAINER = os.environ.get("DECEPTICON_SANDBOX_CONTAINER", "decepticon-sandbox")
+_LANGGRAPH_CONTAINER = os.environ.get("DECEPTICON_LANGGRAPH_CONTAINER", "decepticon-langgraph")
 
 
 def _run_docker(
@@ -119,6 +133,15 @@ class Harness:
     def __init__(self, provider: BaseBenchmarkProvider, config: BenchmarkConfig) -> None:
         self.provider = provider
         self.config = config
+        # Serializes shared-container restarts (sandbox / langgraph) so two
+        # parallel challenges can't interleave restart sequences and leave a
+        # container thrashing mid-handshake.
+        self._restart_lock = asyncio.Lock()
+        # Number of run_challenge calls currently in flight. The sandbox is
+        # shared infrastructure: a per-challenge restart with siblings running
+        # kills their tmux sessions mid-exploit, so resets only happen when
+        # this challenge is the sole runner (always true in sequential mode).
+        self._in_flight = 0
 
     @property
     def _litellm_url(self) -> str:
@@ -129,6 +152,32 @@ class Harness:
     def _utc_iso() -> str:
         """RFC 3339 timestamp matching LiteLLM's spend_logs.startTime format."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+    @staticmethod
+    def _litellm_master_key() -> str:
+        """LiteLLM master key — single resolution point for every proxy call."""
+        return os.getenv("LITELLM_MASTER_KEY", "sk-decepticon-master")
+
+    @staticmethod
+    async def _run_docker(
+        args: list[str], *, timeout: float | None = None
+    ) -> subprocess.CompletedProcess[bytes] | None:
+        """Run a docker CLI command off the event loop.
+
+        ``subprocess.run`` blocks; in parallel mode that would stall every
+        sibling challenge's polling loop, so the call is pushed to a worker
+        thread. Returns ``None`` when the docker binary is missing or the
+        command exceeds ``timeout`` — callers treat ``None`` as "docker
+        unavailable" and keep going, because infra-maintenance commands must
+        never crash a challenge.
+        """
+        try:
+            return await asyncio.to_thread(
+                subprocess.run, args, capture_output=True, timeout=timeout, check=False
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            log.warning("harness.docker: %s failed: %s", " ".join(args[:4]), exc)
+            return None
 
     async def _query_cost(self, start_iso: str, end_iso: str) -> float | None:
         """Sum spend from LiteLLM's /spend/logs for a time window.
@@ -145,7 +194,7 @@ class Harness:
         Single attempt (no retry loop) so a slow proxy doesn't double
         the harness's per-challenge teardown latency.
         """
-        master_key = os.getenv("LITELLM_MASTER_KEY", "sk-decepticon-master")
+        master_key = self._litellm_master_key()
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 r = await client.get(
@@ -302,10 +351,10 @@ class Harness:
             run_id=active.run_id,
         )
         postmortem = await self._recover_postmortem_state(snapshot)
-        self._force_restart_langgraph(active)
+        await self._force_restart_langgraph(active)
         return ("container_restart", last_status, postmortem)
 
-    def _force_restart_langgraph(self, active: _ActiveRun) -> None:
+    async def _force_restart_langgraph(self, active: _ActiveRun) -> None:
         """Restart the langgraph container to dislodge a wedged run.
 
         When API-level cancel cannot reach the wedged graph node, only
@@ -316,44 +365,52 @@ class Harness:
 
         Clears ``active.thread_id`` / ``active.run_id`` after restart so the
         caller can't accidentally re-cancel a run that no longer exists.
+        Holds ``_restart_lock`` so a parallel sibling's restart can't
+        interleave with this one.
         """
-        log.warning("harness.escalation: restarting langgraph container")
-        _run_docker(["docker", "compose", "restart", "langgraph"], timeout=60)
-        # Reconnect networks (compose restart usually preserves them but be
-        # defensive — same pattern as _ensure_services_healthy).
-        for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            _run_docker(["docker", "network", "connect", net, "decepticon-langgraph"])
-        # Wait up to 60s for /ok
-        for _ in range(30):
-            time.sleep(2)
-            try:
-                r = httpx.get(f"{self.config.langgraph_url}/ok", timeout=5)
-                if r.status_code == 200:
-                    log.info("harness.escalation: langgraph healthy after restart")
-                    break
-            except Exception:
-                pass
-        else:
-            log.warning("harness.escalation: langgraph did NOT become healthy within 60s")
+        async with self._restart_lock:
+            log.warning("harness.escalation: restarting langgraph container")
+            await self._run_docker(["docker", "compose", "restart", "langgraph"], timeout=60)
+            # Reconnect networks (compose restart usually preserves them but be
+            # defensive — same pattern as _ensure_services_healthy).
+            for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
+                await self._run_docker(["docker", "network", "connect", net, _LANGGRAPH_CONTAINER])
+            # Wait for /ok within the configured budget
+            for _ in range(max(1, self.config.langgraph_ready_timeout // 2)):
+                await asyncio.sleep(2)
+                try:
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        r = await client.get(f"{self.config.langgraph_url}/ok")
+                    if r.status_code == 200:
+                        log.info("harness.escalation: langgraph healthy after restart")
+                        break
+                except Exception as exc:
+                    # Suppress connection/timeout errors while waiting for container boot
+                    log.debug("langgraph health check failed during boot: %s", exc)
+            else:
+                log.warning(
+                    "harness.escalation: langgraph did NOT become healthy within %ds",
+                    self.config.langgraph_ready_timeout,
+                )
 
-        # Defensive sandbox cleanup — kill orphan workers + tmux server. The
-        # next pre-cycle sandbox restart (commit 3f1bc67) will fully reset
-        # state, but this gets us through the rest of the current cycle.
-        log.warning("harness.escalation: defensive sandbox cleanup")
-        _run_docker(
-            [
-                "docker",
-                "exec",
-                "decepticon-sandbox",
-                "bash",
-                "-c",
-                "pkill -9 -f python3 2>/dev/null || true; "
-                "pkill -9 -f curl 2>/dev/null || true; "
-                "tmux kill-server 2>/dev/null || true; "
-                "tmux new-session -d -s main 2>/dev/null || true",
-            ],
-            timeout=30,
-        )
+            # Defensive sandbox cleanup — kill orphan workers + tmux server. The
+            # next pre-cycle sandbox restart (commit 3f1bc67) will fully reset
+            # state, but this gets us through the rest of the current cycle.
+            log.warning("harness.escalation: defensive sandbox cleanup")
+            await self._run_docker(
+                [
+                    "docker",
+                    "exec",
+                    _SANDBOX_CONTAINER,
+                    "bash",
+                    "-c",
+                    "pkill -9 -f python3 2>/dev/null || true; "
+                    + "pkill -9 -f curl 2>/dev/null || true; "
+                    + "tmux kill-server 2>/dev/null || true; "
+                    + "tmux new-session -d -s main 2>/dev/null || true",
+                ],
+                timeout=30,
+            )
 
         # Stale IDs are pinned to a langgraph instance that no longer
         # contains them — clear so the caller can't accidentally cancel
@@ -406,7 +463,7 @@ class Harness:
         agent_summary = text[:500] if text else None
         return (agent_summary, trace_id, token_count)
 
-    def _ensure_services_healthy(self) -> None:
+    async def _ensure_services_healthy(self) -> None:
         """Check LangGraph and LiteLLM are reachable with models loaded."""
         if shutil.which("docker") is None:
             log.warning(
@@ -416,53 +473,58 @@ class Harness:
         # Check LiteLLM: verify models are loaded via /v1/models endpoint
         litellm_url = self.config.litellm_url
         litellm_ready = False
-        for attempt in range(30):
-            try:
-                r = httpx.get(
-                    f"{litellm_url}/v1/models",
-                    headers={"Authorization": "Bearer sk-decepticon-master"},
-                    timeout=5,
-                )
-                if r.status_code == 200:
-                    models = r.json().get("data", [])
-                    if len(models) > 0:
-                        log.info("LiteLLM ready with %d models", len(models))
-                        litellm_ready = True
-                        break
-            except Exception:
-                pass
-            if attempt == 0:
-                log.warning("LiteLLM not ready (waiting for models to initialize)...")
-            time.sleep(4)
+        async with httpx.AsyncClient(timeout=5) as client:
+            for attempt in range(max(1, self.config.litellm_ready_timeout // 4)):
+                try:
+                    r = await client.get(
+                        f"{litellm_url}/v1/models",
+                        headers={"Authorization": f"Bearer {self._litellm_master_key()}"},
+                    )
+                    if r.status_code == 200:
+                        models = r.json().get("data", [])
+                        if len(models) > 0:
+                            log.info("LiteLLM ready with %d models", len(models))
+                            litellm_ready = True
+                            break
+                except Exception as exc:
+                    # Suppress connection/timeout errors during model initialization
+                    log.debug("litellm health check failed: %s", exc)
+                if attempt == 0:
+                    log.warning("LiteLLM not ready (waiting for models to initialize)...")
+                await asyncio.sleep(4)
         if not litellm_ready:
-            log.error("LiteLLM not fully initialized after 120s")
+            log.error("LiteLLM not fully initialized after %ds", self.config.litellm_ready_timeout)
 
         # Check LangGraph
         try:
-            r = httpx.get(f"{self.config.langgraph_url}/ok", timeout=5)
+            async with httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(f"{self.config.langgraph_url}/ok")
             if r.status_code == 200:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("pre-restart langgraph check failed: %s", exc)
 
-        log.warning("LangGraph unreachable — restarting container")
-        _run_docker(["docker", "compose", "up", "-d", "--no-deps", "langgraph"])
-        # Reconnect networks (lost after container recreation)
-        for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            _run_docker(["docker", "network", "connect", net, "decepticon-langgraph"])
-        # Wait for LangGraph to become healthy
-        for _ in range(30):
-            time.sleep(2)
-            try:
-                r = httpx.get(f"{self.config.langgraph_url}/ok", timeout=5)
-                if r.status_code == 200:
-                    log.info("LangGraph restarted successfully")
-                    return
-            except Exception:
-                pass
-        log.error("LangGraph failed to restart after 60s")
+        async with self._restart_lock:
+            log.warning("LangGraph unreachable — restarting container")
+            await self._run_docker(["docker", "compose", "up", "-d", "--no-deps", "langgraph"])
+            # Reconnect networks (lost after container recreation)
+            for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
+                await self._run_docker(["docker", "network", "connect", net, _LANGGRAPH_CONTAINER])
+            # Wait for LangGraph to become healthy
+            for _ in range(max(1, self.config.langgraph_ready_timeout // 2)):
+                await asyncio.sleep(2)
+                try:
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        r = await client.get(f"{self.config.langgraph_url}/ok")
+                    if r.status_code == 200:
+                        log.info("LangGraph restarted successfully")
+                        return
+                except Exception as exc:
+                    # Suppress connection/timeout errors while waiting for container restart
+                    log.debug("langgraph restart health check failed: %s", exc)
+            log.error("LangGraph failed to restart after %ds", self.config.langgraph_ready_timeout)
 
-    def _reset_sandbox_state(self) -> None:
+    async def _reset_sandbox_state(self) -> None:
         """Restart the sandbox container so each challenge starts clean.
 
         Without this, tmux sessions / python procs / curl workers leak across
@@ -473,35 +535,78 @@ class Harness:
         if shutil.which("docker") is None:
             log.warning("harness.sandbox: docker not found on PATH — skipping sandbox reset")
             return
-        log.info("harness.sandbox: restarting sandbox container for fresh state")
-        _run_docker(["docker", "compose", "restart", "sandbox"], timeout=60)
-        # Reconnect to required networks (compose restart usually preserves them
-        # but be defensive for benchmark / make dev variants)
-        for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
-            _run_docker(["docker", "network", "connect", net, "decepticon-sandbox"])
-        # Wait for `docker exec true` to succeed before returning
-        for attempt in range(40):
-            r = _run_docker(["docker", "exec", "decepticon-sandbox", "true"])
-            if r.returncode == 0:
-                log.info("harness.sandbox: ready after %.1fs", attempt * 0.5)
+        async with self._restart_lock:
+            log.info("harness.sandbox: restarting sandbox container for fresh state")
+            restart = await self._run_docker(
+                ["docker", "compose", "restart", "sandbox"], timeout=60
+            )
+            if restart is None:
                 return
-            time.sleep(0.5)
-        log.warning("harness.sandbox: not responsive after 20s — proceeding anyway")
+            # Reconnect to required networks (compose restart usually preserves
+            # them but be defensive for benchmark / make dev variants)
+            for net in ("benchmark_decepticon-net", "benchmark_sandbox-net"):
+                await self._run_docker(["docker", "network", "connect", net, _SANDBOX_CONTAINER])
+            # Wait for `docker exec true` to succeed before returning
+            for attempt in range(max(1, self.config.sandbox_ready_timeout * 2)):
+                r = await self._run_docker(["docker", "exec", _SANDBOX_CONTAINER, "true"])
+                if r is not None and r.returncode == 0:
+                    log.info("harness.sandbox: ready after %.1fs", attempt * 0.5)
+                    return
+                await asyncio.sleep(0.5)
+            log.warning(
+                "harness.sandbox: not responsive after %ds — proceeding anyway",
+                self.config.sandbox_ready_timeout,
+            )
+
+    def _safe_teardown(self, challenge: Challenge) -> None:
+        """Teardown that never decides a result.
+
+        A challenge that evaluated PASS must stay a PASS even when target
+        cleanup throws — letting a teardown exception escape into the generic
+        exception handler would discard the result and double-teardown.
+        """
+        try:
+            self.provider.teardown(challenge)
+        except Exception as exc:
+            log.warning("harness.teardown: provider.teardown(%s) failed: %s", challenge.id, exc)
 
     async def run_challenge(self, challenge: Challenge) -> ChallengeResult:
+        # In-flight accounting lives in this thin wrapper so the counter is
+        # balanced on every exit path of the (large) inner method.
+        self._in_flight += 1
+        try:
+            return await self._run_challenge_inner(challenge)
+        finally:
+            self._in_flight -= 1
+
+    async def _run_challenge_inner(self, challenge: Challenge) -> ChallengeResult:
         # Use ~/.decepticon/workspace/ which is bind-mounted as /workspace/ in the sandbox
         workspace = (Path.home() / f".decepticon/workspace/benchmark-{challenge.id}").resolve()
 
         # Each challenge starts on a clean sandbox: no stale tmux sessions,
         # no leftover python processes, no /tmp clutter from prior cycle.
-        self._reset_sandbox_state()
+        # Only when this challenge is the sole runner — the sandbox is shared,
+        # and restarting it with siblings in flight kills their tmux sessions
+        # mid-exploit. Sequential mode always resets; parallel waves reset on
+        # the first challenge only and accept leaked state for the rest.
+        if self._in_flight == 1:
+            await self._reset_sandbox_state()
+        else:
+            log.info(
+                "harness.sandbox: skipping reset — %d sibling challenge(s) in flight",
+                self._in_flight - 1,
+            )
+            # Wait out any restart a sibling is mid-way through before
+            # submitting work against the sandbox.
+            async with self._restart_lock:
+                pass
 
         # Ensure LangGraph is alive before each challenge
-        self._ensure_services_healthy()
+        await self._ensure_services_healthy()
 
         # Clean residual sandbox workspace from previous runs (sandbox is persistent)
         sandbox_ws = f"/workspace/benchmark-{challenge.id}"
-        _run_docker(["docker", "exec", "decepticon-sandbox", "rm", "-rf", sandbox_ws])
+        await self._run_docker(["docker", "exec", _SANDBOX_CONTAINER, "rm", "-rf", sandbox_ws])
         # Clean orphan files at workspace root (top-level, not in a benchmark-* subdir).
         # Sandbox mounts the entire workspace root as /workspace/ — orphan flag.txt files
         # at the root contaminate ALL challenge runs by being readable via cat /workspace/flag.txt.
@@ -564,7 +669,7 @@ class Harness:
             )
 
             # Also scan workspace for any findings/outputs containing flags
-            workspace_text = self._scan_workspace_for_output(workspace)
+            workspace_text = self._scan_workspace_for_output(workspace, challenge.flag_pattern)
             if workspace_text:
                 state.step_history.append(
                     BenchmarkStepResult(
@@ -589,7 +694,7 @@ class Harness:
             result.terminal_status_at_teardown = "success"
             if cost_start_iso is not None:
                 result.cost_usd = await self._query_cost(cost_start_iso, self._utc_iso())
-            self.provider.teardown(challenge)
+            self._safe_teardown(challenge)
             return result
 
         except asyncio.TimeoutError:
@@ -606,7 +711,7 @@ class Harness:
             )
             agent_summary, trace_id, token_count = postmortem
             # Agent timed out, but may have written flags to workspace
-            workspace_text = self._scan_workspace_for_output(workspace)
+            workspace_text = self._scan_workspace_for_output(workspace, challenge.flag_pattern)
             if workspace_text and "FLAG{" in workspace_text:
                 state = BenchmarkRunState()
                 now = time.time()
@@ -629,7 +734,7 @@ class Harness:
                 result.token_count = token_count
                 if cost_start_iso is not None:
                     result.cost_usd = await self._query_cost(cost_start_iso, self._utc_iso())
-                self.provider.teardown(challenge)
+                self._safe_teardown(challenge)
                 return result
 
             now = time.time()
@@ -638,7 +743,7 @@ class Harness:
                 if cost_start_iso is not None
                 else None
             )
-            self.provider.teardown(challenge)
+            self._safe_teardown(challenge)
             return ChallengeResult(
                 challenge_id=challenge.id,
                 challenge_name=challenge.name,
@@ -669,7 +774,7 @@ class Harness:
                 if cost_start_iso is not None
                 else None
             )
-            self.provider.teardown(challenge)
+            self._safe_teardown(challenge)
             return ChallengeResult(
                 challenge_id=challenge.id,
                 challenge_name=challenge.name,
@@ -692,6 +797,77 @@ class Harness:
             # branch above so it only fires AFTER cancel-and-verify-terminal.
             if self.config.cleanup_workspaces and workspace.exists():
                 shutil.rmtree(workspace, ignore_errors=True)
+
+    async def _submit_run(
+        self,
+        client: LangGraphClient,
+        challenge: Challenge,
+        input_state: dict,
+        *,
+        sandbox_workspace: str,
+        active: _ActiveRun,
+    ) -> tuple[str, str]:
+        """Create the LangGraph thread + run, retrying transient failures.
+
+        Submission failures are usually transient (langgraph mid-boot,
+        brief network blip) — retry with a FRESH thread id each attempt so
+        a half-created thread from a failed attempt can't collide. On final
+        failure raise instead of returning empty ids: an empty
+        ``AgentResponse`` would be evaluated as an agent FAIL with no
+        ``error`` field, masking the infra failure from the report.
+
+        Returns ``(thread_id, run_id)`` — both already published onto
+        ``active`` so the caller's cancel paths work.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(1, _SUBMIT_ATTEMPTS + 1):
+            thread_id = str(uuid.uuid4())
+            # Publish to the per-call active handle so run_challenge can
+            # issue a cancel on timeout and so finally: can clean up an
+            # orphan.
+            active.thread_id = thread_id
+            active.run_id = None
+            try:
+                # Pre-create the thread with a fixed id we control.
+                await client.threads.create(thread_id=thread_id)
+                run = await client.runs.create(
+                    thread_id,
+                    "decepticon",
+                    input=input_state,
+                    config={
+                        "configurable": {
+                            "workspace": sandbox_workspace,
+                            "workspace_path": sandbox_workspace,
+                            "engagement_name": f"benchmark-{challenge.id}",
+                        },
+                        "recursion_limit": 400,
+                    },
+                    # SDK does not auto-enable LangSmith tracing even when
+                    # the langgraph container has LANGSMITH_TRACING=true;
+                    # pass an explicit project_name so traces show up in
+                    # the dashboard. Honor LANGSMITH_PROJECT from host env
+                    # so the harness and observer agree on the trace
+                    # destination.
+                    langsmith_tracing={"project_name": os.getenv("LANGSMITH_PROJECT", "Benchmark")},
+                )
+                run_id = run["run_id"]
+                active.run_id = run_id
+                return thread_id, run_id
+            except Exception as exc:
+                last_exc = exc
+                if attempt < _SUBMIT_ATTEMPTS:
+                    log.warning(
+                        "Run submission attempt %d/%d failed for %s: %s — retrying",
+                        attempt,
+                        _SUBMIT_ATTEMPTS,
+                        challenge.id,
+                        exc,
+                    )
+                    await asyncio.sleep(_SUBMIT_BACKOFF_SECONDS * attempt)
+        raise RuntimeError(
+            f"Run submission failed after {_SUBMIT_ATTEMPTS} attempts "
+            f"(langgraph at {self.config.langgraph_url}): {last_exc}"
+        ) from last_exc
 
     async def _invoke_agent(
         self,
@@ -742,55 +918,22 @@ class Harness:
             "mission_brief": f"{challenge.name} — {challenge.description}",
         }
 
-        thread_id = str(uuid.uuid4())
-        # Publish to the per-call active handle so run_challenge can issue a
-        # cancel on timeout and so the finally-block can clean up an orphan.
-        active.thread_id = thread_id
-        active.run_id = None
-
         # Tracks whether the polling loop observed a terminal status. If
-        # _invoke_agent exits via any early-return path (httpx.ConnectError,
-        # run-submission Exception, polling Exception, or outer cancellation)
-        # WITHOUT having observed terminal, finally: schedules a cancel/verify
-        # so the run does not orphan into the next challenge.
+        # _invoke_agent exits via any early-return path (run-submission
+        # failure, polling Exception, or outer cancellation) WITHOUT having
+        # observed terminal, finally: schedules a cancel/verify so the run
+        # does not orphan into the next challenge.
         terminal_observed = False
 
         client = get_client(url=self.config.langgraph_url)
         try:
-            try:
-                # Pre-create the thread with a fixed id we control.
-                await client.threads.create(thread_id=thread_id)
-                run = await client.runs.create(
-                    thread_id,
-                    "decepticon",
-                    input=input_state,
-                    config={
-                        "configurable": {
-                            "workspace": sandbox_workspace,
-                            "workspace_path": sandbox_workspace,
-                            "engagement_name": f"benchmark-{challenge.id}",
-                        },
-                        "recursion_limit": 400,
-                    },
-                    # SDK does not auto-enable LangSmith tracing even when the
-                    # langgraph container has LANGSMITH_TRACING=true; pass an
-                    # explicit project_name so traces show up in the dashboard.
-                    # Honor LANGSMITH_PROJECT from host env so the harness and
-                    # observer agree on the trace destination.
-                    langsmith_tracing={"project_name": os.getenv("LANGSMITH_PROJECT", "Benchmark")},
-                )
-                run_id = run["run_id"]
-                active.run_id = run_id
-            except httpx.ConnectError:
-                log.warning("Cannot reach LangGraph at %s", self.config.langgraph_url)
-                # Run never created — no orphan to cancel; mark as observed
-                # so finally: skips the cancel/verify path.
-                terminal_observed = True
-                return AgentResponse(text="")
-            except Exception as exc:
-                log.warning("Run submission failed for %s: %s", challenge.id, exc)
-                terminal_observed = True
-                return AgentResponse(text="")
+            thread_id, run_id = await self._submit_run(
+                client,
+                challenge,
+                input_state,
+                sandbox_workspace=sandbox_workspace,
+                active=active,
+            )
 
             # Poll status until terminal. Avoid client.runs.join() because its
             # internal request_reconnect logic ignores asyncio.CancelledError,
@@ -930,14 +1073,16 @@ class Harness:
 
         return json.dumps(data)
 
-    def _scan_workspace_for_output(self, workspace: Path) -> str:
+    def _scan_workspace_for_output(self, workspace: Path, flag_pattern: re.Pattern[str]) -> str:
         """Scan workspace files for flag patterns recursively.
+
+        ``flag_pattern`` comes from ``Challenge.flag_pattern`` so the scan and
+        the provider's evaluation agree on what counts as a flag.
 
         The Docker sandbox creates files as root, so OSError (permission
         denied) is caught and silently skipped.
         """
         texts: list[str] = []
-        flag_pattern = re.compile(r"FLAG\{[a-f0-9]+\}")
         scannable = {".md", ".txt", ".json", ".log", ".html", ".jsonl", ".csv"}
 
         if not workspace.is_dir():

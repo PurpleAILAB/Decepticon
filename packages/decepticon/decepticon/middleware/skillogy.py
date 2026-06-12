@@ -65,6 +65,7 @@ Graph schema — what the tool filters walk:
     (:Skill   {name, path, subdomain, description, when_to_use, body})
     (:Phase   {name, kill_chain_order, kind})    e.g. 'reconnaissance', 'active-directory'
     (:MoC     {name, parent_phase, description}) per-phase concept navigation map
+    (:Playbook {name, phase, step_count})        ordered multi-skill engagement chains
     (:Tag     {name})                            e.g. 'kerberoasting', 'credential-theft'
     (:Tactic  {id, name})                        e.g. id='TA0001' 'Initial Access'
     (:Technique {id, name, is_subtechnique, parent_id, platforms})
@@ -77,6 +78,7 @@ Graph schema — what the tool filters walk:
     (:Tactic)-[:HAS_TECHNIQUE]->(:Technique)
     (:Technique)-[:HAS_SUBTECHNIQUE]->(:Technique)
     (:MoC)-[:BELONGS_TO_PHASE]->(:Phase)
+    (:Playbook)-[:STEP {order}]->(:Skill)
 
 Three tools:
   • find_skill(query?, subdomain?, mitre_id?, tag?, tactic_id?, limit=20)
@@ -94,6 +96,13 @@ Three tools:
       BFS from a Skill seed along the edge whitelist
       (IN_PHASE, IMPLEMENTS, TAGGED, BELONGS_TO, RELATED_TO,
        HAS_TECHNIQUE, HAS_SUBTECHNIQUE). depth ≤ 5.
+  • get_playbook(name)
+      Fetch a curated, ordered multi-skill chain for a scenario
+      (e.g. 'exposed-ai-service-takeover'). Returns its ordered steps —
+      load_skill each as you reach it — instead of re-deriving a sequence.
+  • suggest_next(last_skill)
+      Given the skill you just used, the skill(s) that follow it in any
+      playbook (with playbook name + step order). Advance a chain step by step.
 
 Workflow: find_skill to narrow candidates → load_skill on the chosen
 match. Use traverse for "what is related to this skill" questions.
@@ -292,6 +301,55 @@ def _make_traverse_tool(backend, allowed_path_prefixes: list[str] | None = None)
     return traverse
 
 
+def _make_get_playbook_tool(backend, allowed_path_prefixes: list[str] | None = None):
+    _acl_kwargs: dict[str, Any] = (
+        {"allowed_path_prefixes": allowed_path_prefixes} if allowed_path_prefixes else {}
+    )
+
+    @tool
+    def get_playbook(name: str) -> str:
+        """Fetch an ordered engagement playbook (a curated multi-skill chain) by name.
+
+        Returns the playbook's description, phase, and ordered steps — each
+        step carries a skill ``name``, ``path`` and one-line ``description``.
+        Use it to run a known scenario end-to-end (e.g.
+        'exposed-ai-service-takeover', 'ad-domain-dominance') instead of
+        re-deriving the sequence; ``load_skill`` each step as you reach it.
+        """
+        try:
+            playbook = backend.get_playbook(name, **_acl_kwargs)
+            if playbook is None:
+                return json.dumps({"error": f"no playbook named {name!r}"})
+            return json.dumps(playbook, ensure_ascii=False, default=str)
+        except Exception as exc:  # noqa: BLE001 — surface as ToolMessage payload
+            return json.dumps({"error": f"get_playbook failed: {exc!r}"})
+
+    return get_playbook
+
+
+def _make_suggest_next_tool(backend, allowed_path_prefixes: list[str] | None = None):
+    _acl_kwargs: dict[str, Any] = (
+        {"allowed_path_prefixes": allowed_path_prefixes} if allowed_path_prefixes else {}
+    )
+
+    @tool
+    def suggest_next(last_skill: str) -> str:
+        """Suggest the next skill(s) after ``last_skill`` from playbook orderings.
+
+        Given the skill you just used (by name), returns the skills that
+        immediately follow it in any playbook, each with the ``playbook`` it
+        came from and the step ``order``. Use it to advance a chain without
+        loading the whole playbook.
+        """
+        try:
+            rows = backend.suggest_next(last_skill, **_acl_kwargs)
+            return json.dumps({"count": len(rows), "next": rows}, ensure_ascii=False, default=str)
+        except Exception as exc:  # noqa: BLE001
+            return json.dumps({"error": f"suggest_next failed: {exc!r}"})
+
+    return suggest_next
+
+
 class SkillogyMiddleware(AgentMiddleware):
     """Wire the agent to the skillogy knowledge graph (Neo4j).
 
@@ -344,6 +402,8 @@ class SkillogyMiddleware(AgentMiddleware):
             _make_find_skill_tool(self._backend, self._allowed_path_prefixes),
             _make_load_skill_tool(self._backend, self._allowed_path_prefixes),
             _make_traverse_tool(self._backend, self._allowed_path_prefixes),
+            _make_get_playbook_tool(self._backend, self._allowed_path_prefixes),
+            _make_suggest_next_tool(self._backend, self._allowed_path_prefixes),
         ]
         # Render the phase block once at boot. Failures are non-fatal —
         # the agent keeps the schema cheat-sheet and the three tools.
@@ -364,12 +424,13 @@ class SkillogyMiddleware(AgentMiddleware):
     def _render_phase_block(self) -> str:
         """Build the dynamic ``[Phase context]`` block for this agent's phase.
 
-        Returns an empty string when the backend lookup fails or the
-        phase has no MoCs registered yet (no point injecting a header
-        with no concept areas under it).
+        Lists the phase's MoC concept areas and any composition-plane
+        playbooks. Returns an empty string only when the phase has neither
+        (no point injecting an empty header).
         """
         if not self._phase:
             return ""
+        moc_failed = False
         try:
             mocs = self._backend.query_moc_summary(self._phase)
         except Exception as exc:  # noqa: BLE001
@@ -378,15 +439,21 @@ class SkillogyMiddleware(AgentMiddleware):
                 self._phase,
                 exc,
             )
-            return ""
-        if not mocs:
-            # Phase exists in the graph but has no MoCs yet — emit a
-            # one-liner so the agent knows the phase name to filter by,
+            mocs = []
+            moc_failed = True
+        playbooks = self._query_playbooks()
+        if not mocs and not playbooks:
+            if moc_failed:
+                # Backend is unreachable, not a genuinely empty phase — emit
+                # nothing rather than a misleading "no MoCs" line.
+                return ""
+            # Phase exists in the graph but has no MoCs/playbooks yet — emit
+            # a one-liner so the agent knows the phase name to filter by,
             # without a misleading empty bullet list.
             return (
                 f"\n\n[Phase context]\n"
                 f"You are operating in phase: {self._phase}\n"
-                f"(no MoCs registered for this phase yet — "
+                f"(no MoCs or playbooks registered for this phase yet — "
                 f'use find_skill(subdomain="{self._phase}") to explore.)\n'
             )
         lines = [
@@ -394,23 +461,48 @@ class SkillogyMiddleware(AgentMiddleware):
             "",
             "[Phase context]",
             f"You are operating in phase: {self._phase}",
-            "",
-            "Concept areas (MoCs) in this phase — start with these:",
         ]
-        for m in mocs:
-            name = m.get("name", "?")
-            desc = (m.get("description") or "").strip()
-            if desc:
-                lines.append(f"  • {name} — {desc}")
-            else:
-                lines.append(f"  • {name}")
-        lines.append("")
-        lines.append(
-            f'To enter a concept area: find_skill(subdomain="{self._phase}", tag="<moc>") '
-            f"or traverse() from any matching Skill."
-        )
+        if mocs:
+            lines.append("")
+            lines.append("Concept areas (MoCs) in this phase — start with these:")
+            for m in mocs:
+                name = m.get("name", "?")
+                desc = (m.get("description") or "").strip()
+                lines.append(f"  • {name} — {desc}" if desc else f"  • {name}")
+            lines.append("")
+            lines.append(
+                f'To enter a concept area: find_skill(subdomain="{self._phase}", tag="<moc>") '
+                f"or traverse() from any matching Skill."
+            )
+        if playbooks:
+            lines.append("")
+            lines.append("Playbooks (ordered multi-skill chains) for this phase:")
+            for p in playbooks:
+                name = p.get("name", "?")
+                desc = (p.get("description") or "").strip()
+                if len(desc) > 140:
+                    desc = desc[:137] + "..."
+                step_count = p.get("step_count")
+                head = f"  • {name} ({step_count} steps)" if step_count else f"  • {name}"
+                lines.append(f"{head} — {desc}" if desc else head)
+            lines.append("")
+            lines.append(
+                'Run one end-to-end with get_playbook("<name>"); '
+                "advance a chain with suggest_next(<last_skill>)."
+            )
         lines.append("")
         return "\n".join(lines)
+
+    def _query_playbooks(self) -> list[dict[str, Any]]:
+        """Playbooks for this agent's phase; empty on any failure or older backend."""
+        lister = getattr(self._backend, "list_playbooks", None)
+        if lister is None:
+            return []
+        try:
+            return lister(phase=self._phase)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("skillogy playbook list failed for phase %r: %s", self._phase, exc)
+            return []
 
     @override
     def wrap_model_call(self, request, handler):

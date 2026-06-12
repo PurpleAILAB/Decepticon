@@ -33,6 +33,9 @@ class _FakeBackend:
         load_response: dict | None = None,
         traverse_response: list[dict] | None = None,
         moc_response: list[dict] | None = None,
+        playbook_response: dict | None = None,
+        next_response: list[dict] | None = None,
+        list_response: list[dict] | None = None,
     ) -> None:
         self._health_response = health_response or {"status": "ok", "skill_count": 42}
         self._health_exc = health_exc
@@ -45,6 +48,12 @@ class _FakeBackend:
         self.load_calls: list[str] = []
         self.traverse_calls: list[dict] = []
         self.moc_calls: list[str] = []
+        self._playbook_response = playbook_response
+        self._next_response = next_response if next_response is not None else []
+        self._list_response = list_response if list_response is not None else []
+        self.playbook_calls: list[str] = []
+        self.next_calls: list[str] = []
+        self.list_calls: list[str | None] = []
 
     def health(self) -> dict[str, Any]:
         if self._health_exc is not None:
@@ -107,6 +116,22 @@ class _FakeBackend:
     def query_moc_summary(self, phase: str, *, limit: int = 25) -> list[dict]:
         self.moc_calls.append(phase)
         return self._moc_response
+
+    def get_playbook(
+        self, name: str, *, allowed_path_prefixes: list[str] | None = None
+    ) -> dict | None:
+        self.playbook_calls.append(name)
+        return self._playbook_response
+
+    def suggest_next(
+        self, skill: str, *, allowed_path_prefixes: list[str] | None = None
+    ) -> list[dict]:
+        self.next_calls.append(skill)
+        return self._next_response
+
+    def list_playbooks(self, *, phase: str | None = None) -> list[dict]:
+        self.list_calls.append(phase)
+        return self._list_response
 
 
 # ── health ─────────────────────────────────────────────────────────────
@@ -314,6 +339,64 @@ class TestMoc:
         assert r.status_code == 200
         body = r.json()
         assert body == {"count": 0, "mocs": []}
+
+
+# ── playbooks (composition plane) ───────────────────────────────────────
+
+
+class TestPlaybooks:
+    def test_get_returns_ordered_steps(self) -> None:
+        backend = _FakeBackend(
+            playbook_response={
+                "name": "exposed-ai-service-takeover",
+                "description": "d",
+                "phase": "ai-security",
+                "steps": [
+                    {"order": 1, "name": "ai-surface-mapping", "path": "/skills/a"},
+                    {"order": 2, "name": "llm-api-abuse", "path": "/skills/b"},
+                ],
+            }
+        )
+        with TestClient(build_app(backend)) as client:
+            r = client.post("/v1/playbooks:get", json={"name": "exposed-ai-service-takeover"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["playbook"]["steps"][0]["name"] == "ai-surface-mapping"
+        assert backend.playbook_calls == ["exposed-ai-service-takeover"]
+
+    def test_get_missing_is_404(self) -> None:
+        backend = _FakeBackend(playbook_response=None)
+        with TestClient(build_app(backend)) as client:
+            r = client.post("/v1/playbooks:get", json={"name": "nope"})
+        assert r.status_code == 404
+
+    def test_list_scopes_to_phase(self) -> None:
+        backend = _FakeBackend(
+            list_response=[
+                {"name": "pb", "description": "d", "phase": "ai-security", "step_count": 5}
+            ]
+        )
+        with TestClient(build_app(backend)) as client:
+            r = client.post("/v1/playbooks:list", json={"phase": "ai-security"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 1
+        assert body["playbooks"][0]["name"] == "pb"
+        assert backend.list_calls == ["ai-security"]
+
+    def test_suggest_next_returns_candidates(self) -> None:
+        backend = _FakeBackend(
+            next_response=[
+                {"name": "llm-api-abuse", "path": "/skills/b", "playbook": "pb", "order": 2}
+            ]
+        )
+        with TestClient(build_app(backend)) as client:
+            r = client.post("/v1/skills:next", json={"skill": "ai-surface-mapping"})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["count"] == 1
+        assert body["next"][0]["name"] == "llm-api-abuse"
+        assert backend.next_calls == ["ai-surface-mapping"]
 
 
 # ── auth gating ────────────────────────────────────────────────────────

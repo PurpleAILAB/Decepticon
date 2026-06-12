@@ -168,6 +168,39 @@ class RestSkillogyClient:
         data = self._post("/v1/skills:moc", {"phase": phase, "limit": limit})
         return list(data.get("mocs") or [])
 
+    def get_playbook(
+        self,
+        name: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> dict[str, Any] | None:
+        payload: dict[str, Any] = {"name": name}
+        if allowed_path_prefixes:
+            payload["allowed_path_prefixes"] = list(allowed_path_prefixes)
+        data = self._post("/v1/playbooks:get", payload)
+        if data.get("_status") == 404:
+            return None
+        return dict(data.get("playbook") or {})
+
+    def suggest_next(
+        self,
+        skill: str,
+        *,
+        allowed_path_prefixes: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        payload: dict[str, Any] = {"skill": skill}
+        if allowed_path_prefixes:
+            payload["allowed_path_prefixes"] = list(allowed_path_prefixes)
+        data = self._post("/v1/skills:next", payload)
+        return list(data.get("next") or [])
+
+    def list_playbooks(self, *, phase: str | None = None) -> list[dict[str, Any]]:
+        payload: dict[str, Any] = {}
+        if phase is not None:
+            payload["phase"] = phase
+        data = self._post("/v1/playbooks:list", payload)
+        return list(data.get("playbooks") or [])
+
 
 # ── factory helper used by SkillogyMiddleware ─────────────────────────
 
