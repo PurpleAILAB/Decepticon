@@ -49,6 +49,7 @@ jobs:
   codeql:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -58,25 +59,26 @@ jobs:
       matrix:
         language: [python, javascript-typescript]
     steps:
-      - uses: actions/checkout@v6
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           languages: ${{ matrix.language }}
           queries: security-and-quality
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           category: "/language:${{ matrix.language }}"
 
   semgrep:
     name: Semgrep (repo rules — hard gate)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     container:
       image: semgrep/semgrep:latest
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       # Blocks the run on ERROR-severity findings from the repo's own rules
       # (e.g. no hardcoded default LiteLLM key). Public rule packs are covered
       # by CodeQL's security-and-quality suite and are not re-run here.
@@ -93,7 +95,7 @@ jobs:
             --exclude=benchmark/MHBench
       - name: Upload Semgrep SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -101,13 +103,14 @@ jobs:
   trivy:
     name: Trivy (deps + IaC config)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Trivy filesystem scan (dependency CVEs)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -117,7 +120,7 @@ jobs:
           ignore-unfixed: true
           exit-code: "0"
       - name: Trivy config scan (Dockerfile / compose misconfig)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           scan-type: config
           scan-ref: .
@@ -127,13 +130,13 @@ jobs:
           exit-code: "0"
       - name: Upload Trivy fs SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
       - name: Upload Trivy config SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
@@ -141,14 +144,15 @@ jobs:
   secrets:
     name: Secret scan (TruffleHog)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
       - name: TruffleHog OSS (verified secrets)
-        uses: trufflesecurity/trufflehog@v3.82.13
+        uses: trufflesecurity/trufflehog@1aa1871f9ae24a8c8a3a48a9345514acf42beb39 # v3.82.13
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
@@ -159,16 +163,31 @@ jobs:
     name: Dependency review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
-      # Advisory until the repo's dependency graph is confirmed enabled; flip
-      # off continue-on-error to hard-gate vulnerable / bad-license new deps.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # ENFORCED when available: blocks PRs that introduce a dependency with
+      # a known high/critical vulnerability or a disallowed license. The
+      # dependency graph is a repo setting we cannot toggle from a workflow,
+      # so probe for it first and skip (with a visible notice) when disabled
+      # instead of hard-failing every PR.
+      - name: Probe dependency graph availability
+        id: depgraph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --silent 2>/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dependency review skipped::Dependency graph is not enabled on this repository (Settings → Security → Dependency graph). Enable it to enforce this gate."
+          fi
       - name: Dependency review
-        uses: actions/dependency-review-action@v4
-        continue-on-error: true
+        if: steps.depgraph.outputs.enabled == 'true'
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
           comment-summary-in-pr: on-failure
