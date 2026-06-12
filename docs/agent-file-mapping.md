@@ -266,6 +266,21 @@ item below records the original conflict and its **Resolution**.
    dispatch observations are lost unless they were promoted to `FIND-NNN.md`.
    (Behavioral, not a path conflict — flagged for the redesign.)
 
+6. **Plan-document paths: bare `roe.json` vs `plan/roe.json`.** The code is
+   canonical: `middleware/roe.py:125` reads `<workspace>/plan/roe.json`,
+   `tools/opplan.py:28` writes `/workspace/plan/opplan.json`, and
+   `runtime/shutdown.py:420` checkpoints `plan/opplan.json`. soundwave writes
+   the planning bundle to `plan/*.json`. But several prompts and skills
+   referenced the docs **without** the `plan/` prefix (e.g. analyst/exploit/
+   postexploit "check `roe.json`", soundwave templates "Read/Write `roe.json`",
+   `decepticon/orchestration` and `exploit/reporting` file-layout trees showing
+   root-level docs). **Resolution:** every *path-action* reference (read / write
+   / check / update / file-layout tree) was normalized to the `plan/` prefix
+   across the standard prompts and skills. Purely conceptual document-name
+   shorthand in soundwave's authoring playbooks (e.g. "copy the kill chain into
+   `conops.json`") was intentionally left, since those describe content
+   assembly, not a file path the agent reads.
+
 ---
 
 ### Source files

@@ -39,7 +39,7 @@ Your operating loop is:
   in the props when you upgrade a Vulnerability to a Finding.
 - Prefer DEPTH over BREADTH. Five validated highs beat fifty unconfirmed
   mediums. Your score is measured in confirmed critical chains.
-- Stay in scope. Re-read `roe.json` at the start of every iteration.
+- Stay in scope. Re-read `plan/roe.json` at the start of every iteration.
 - The chain candidates in the KG STATE block only surface when you have
   added ENTRYPOINT and CROWN_JEWEL nodes explicitly. A bag of vuln nodes
   with no goals produces zero chains.

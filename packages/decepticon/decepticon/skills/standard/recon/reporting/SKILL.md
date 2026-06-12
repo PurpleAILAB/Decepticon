@@ -447,7 +447,7 @@ Individual findings combine into attack chains. Document these explicitly — th
 
 ## 11. OPPLAN Feedback Loop
 
-After generating the report, update `opplan.json` to reflect actual findings.
+After generating the report, update `plan/opplan.json` to reflect actual findings.
 
 ### Update Completed Objectives
 

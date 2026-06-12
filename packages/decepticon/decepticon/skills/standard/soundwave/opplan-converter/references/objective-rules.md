@@ -37,7 +37,7 @@ exfiltration → requires c2 channel or post-exploit access
 
 Every objective MUST include these three types:
 
-1. **Scope check:** "All targets verified against roe.json in-scope list"
+1. **Scope check:** "All targets verified against plan/roe.json in-scope list"
 2. **OPSEC check:** At least one OPSEC criterion (rate limit, timing, UA)
 3. **Output persistence:** "Results saved to <engagement>/recon/..." (or exploit/, post-exploit/) with specific path
 

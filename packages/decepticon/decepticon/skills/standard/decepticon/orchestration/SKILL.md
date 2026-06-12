@@ -76,10 +76,11 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 ### Engagement State Files
 ```
 ./
-├── roe.json              # Immutable scope boundaries (read every iteration)
-├── conops.json           # Operation concept
-├── deconfliction.json    # Deconfliction identifiers and procedures
-├── opplan.json           # Objective tracker (update status after each sub-agent)
+├── plan/
+│   ├── roe.json          # Immutable scope boundaries (read every iteration)
+│   ├── conops.json       # Operation concept
+│   ├── deconfliction.json # Deconfliction identifiers and procedures
+│   └── opplan.json       # Objective tracker (update status after each sub-agent)
 ├── findings/            # Per-finding Markdown files, created lazily
 ├── lessons_learned.md    # Failed approaches + what worked
 └── .ralph_state.json     # Loop iteration counter + completion flags
@@ -87,7 +88,7 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 
 ### State Update Protocol (After Each Sub-Agent Returns)
 1. **Parse result** — Did the sub-agent report PASSED or BLOCKED?
-2. **Update opplan.json** — Set objective status (`passed`, `blocked`, `in_progress`)
+2. **Update plan/opplan.json** — Set objective status (`passed`, `blocked`, `in_progress`)
 3. **Record verified findings** — Add `findings/FIND-{NNN}.md` only when a real finding exists
 4. **Append lessons_learned.md** — Record what worked, what failed, and why
 5. **Check completion** — All objectives passed? → Generate summary
