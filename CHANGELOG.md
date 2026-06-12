@@ -111,7 +111,6 @@ LangGraph, sandbox) keeps the always-on contract.
 - `test_subagent_streaming` None-id guard tests updated for the
   `session_id` parameter added to `StreamingRunnable._process_messages`
   in v1.1.10 — the fast test lane was red.
->>>>>>> origin/main
 
 ## [1.1.6] — 2026-06-01
 
