@@ -586,7 +586,7 @@ def test_middleware_slot_enum_order_is_assembly_order():
     assert [s.value for s in MiddlewareSlot] == [
         "engagement-context",
         "guidance",
-        "roe-enforcement",
+        "roe-guardrail",
         "hitl-approval",
         "untrusted-output",
         "prompt-injection-shield",

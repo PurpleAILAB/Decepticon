@@ -609,13 +609,13 @@ jobs:
 
   # Atomic release gate. Waits until every Docker image AND the launcher
   # binaries are pushed, verifies each :<version> manifest exists on GHCR,
-  # then promotes :<version> → :latest and flips the GitHub release from
-  # draft → published. Until this job succeeds:
+  # then promotes :<version> → channel tags (:stable for finals, :latest
+  # for all) and flips the GitHub release from draft → published. Until
+  # this job succeeds:
   #   - GitHub `releases/latest` keeps returning the previous version, so
-  #     the launcher's update notice never points users at images that are
-  #     still mid-push.
-  #   - The :latest tag is not moved, so `${DECEPTICON_VERSION:-latest}`
-  #     fallbacks keep resolving to the previous (working) release.
+  #     the launcher's stable channel never points at images mid-push.
+  #   - The channel tags are not moved, so a `${DECEPTICON_VERSION:-stable}`
+  #     fallback keeps resolving to the previous (working) release.
   publish-release:
     name: Verify images & publish release
     needs: [launcher, docker, docker-heavy-merge, docker-web-merge]
@@ -663,7 +663,15 @@ jobs:
             docker buildx imagetools inspect "${ref}" >/dev/null
           done
 
-      - name: Promote :<version> → :latest
+      # Channel tags (Claude-Code-style soak model; see
+      # docs/update-channels.md). Both channels are FINAL-only:
+      #   :latest — newest FINAL release, moved here immediately on every
+      #             final release (this step).
+      #   :stable — newest FINAL release that has baked >= the soak window;
+      #             moved separately by the scheduled `promote-stable.yml`
+      #             workflow, NOT here.
+      # Pre-releases move neither tag (the channels never auto-select them).
+      - name: Promote :<version> → :latest (final releases only)
         if: steps.version.outputs.prerelease != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}

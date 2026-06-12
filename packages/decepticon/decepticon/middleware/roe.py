@@ -1,4 +1,4 @@
-"""RoE enforcement middleware - the authoritative ROE pass/refuse gate.
+"""RoE guardrail middleware - the advisory command-parse RoE gate.
 
 This middleware sits between the LLM and the tool surface. Every
 ``bash`` (and other tool) call is evaluated against the engagement's
@@ -9,7 +9,19 @@ This middleware sits between the LLM and the tool surface. Every
     tool's return so the model sees it failed RoE, but the call still
     executes.
   * **REFUSE** in enforce mode - logged, the tool call short-circuits
-    with a ``[ROE_REFUSED]`` ToolMessage. No bytes leave the sandbox.
+    with a ``[ROE_REFUSED]`` ToolMessage before the handler runs.
+
+Defense-in-depth: this middleware is a *guardrail*, not the sole gate.
+It parses the literal command text for target hosts, which is a strong
+**fast-fail UX signal** (it tells the model early, before a wasted
+round-trip) but cannot be the authoritative boundary — a determined
+agent can hide a target behind variable indirection, command
+substitution, or DNS resolution the parser never sees. The
+authoritative scope boundary is the sandbox's network **egress**
+(``middleware/egress.py`` → DNS allowlist + nftables connect
+allowlist), compiled from the *same* ``machine_enforcement`` rules, so
+the packet cannot leave even when the parse misses. One scope
+definition, two enforcement points.
 
 Every decision (PASS too, not just REFUSE) lands in the HMAC-chained
 audit ledger via :class:`RoEAuditSink`. The ledger is the legal record
@@ -244,7 +256,24 @@ def _command_from_tool_call(request) -> str:
     return cmd if isinstance(cmd, str) else ""
 
 
-class RoEEnforcementMiddleware(AgentMiddleware):
+def _egress_disabled() -> bool:
+    """Whether the Layer-2 egress guardrail is turned OFF (opt-out).
+
+    Default ON: an ``enforce``-mode engagement automatically gets the
+    authoritative network boundary compiled + pushed to the sandbox — no
+    extra env needed. ``DECEPTICON_EGRESS_DISABLE=1`` is the escape hatch
+    for an operator whose environment the in-sandbox firewall doesn't fit
+    (it falls back to the parser layer alone). audit / warn modes never
+    touch the network regardless.
+    """
+    return os.environ.get("DECEPTICON_EGRESS_DISABLE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+class RoEGuardrailMiddleware(AgentMiddleware):
     """Evaluate every bash tool call against the engagement's RoE.
 
     Args:
@@ -278,6 +307,20 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         self._jitter_frac = max(0.0, jitter_frac)
         self._pace_lock = threading.Lock()
         self._last_gated_monotonic = 0.0
+        self._egress_lock = threading.Lock()
+        self._egress_provisioned: set[str] = set()
+
+    @override
+    def before_agent(self, state, runtime) -> None:
+        self._maybe_provision_egress(state)
+        return None
+
+    @override
+    async def abefore_agent(self, state, runtime) -> None:
+        # Provisioning does a one-time synchronous HTTP round-trip to the
+        # sandbox daemon; offload it so the event loop isn't blocked.
+        await asyncio.to_thread(self._maybe_provision_egress, state)
+        return None
 
     @override
     def wrap_tool_call(self, request, handler) -> ToolMessage | Command:
@@ -406,6 +449,46 @@ class RoEEnforcementMiddleware(AgentMiddleware):
         except Exception as exc:  # noqa: BLE001 - audit must never break tool execution
             log.error("roe: audit sink write failed: %s", exc)
 
+    def _maybe_provision_egress(self, state) -> None:
+        """Compile + push the Layer-2 egress guardrail, once per workspace.
+
+        Default ON for ``enforce`` mode: skipped only when the operator
+        opts out via ``DECEPTICON_EGRESS_DISABLE``. audit / warn modes
+        never reach here (guarded below). Best-effort: any failure is
+        logged and never propagates into agent execution.
+        """
+        if _egress_disabled():
+            return
+        get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+        workspace = get("workspace_path") or None
+        if not workspace:
+            return
+        rules = _load_rules_for_workspace(workspace)
+        if rules.mode != EnforcementMode.ENFORCE:
+            return
+        with self._egress_lock:
+            if workspace in self._egress_provisioned:
+                return
+            self._egress_provisioned.add(workspace)
+        try:
+            from decepticon.backends.factory import build_sandbox_backend
+            from decepticon.middleware.egress import compile_egress_policy
+
+            policy = compile_egress_policy(rules)
+            result = build_sandbox_backend().provision_egress(policy)
+            log.info(
+                "roe: egress provisioned for %s: applied=%s detail=%s",
+                workspace,
+                result.get("applied"),
+                result.get("detail"),
+            )
+        except Exception as exc:  # noqa: BLE001 - provisioning must never break the run
+            log.error("roe: egress provisioning failed for %s: %s", workspace, exc)
+            # Un-mark so a later agent turn can retry rather than silently
+            # leaving the engagement with no network boundary.
+            with self._egress_lock:
+                self._egress_provisioned.discard(workspace)
+
     def _evaluate(self, request) -> tuple[Decision, MachineEnforcement, str]:
         tool = getattr(request, "tool", None)
         tool_name = getattr(tool, "name", "unknown") if tool else "unknown"
@@ -531,3 +614,11 @@ def build_default_sink(workspace_path: str | None) -> RoEAuditSink | None:
     if not workspace_path:
         return None
     return RoEAuditSink(path=Path(workspace_path) / "audit" / "roe-decisions.jsonl")
+
+
+# Compat alias (removed at 2.0.0). The class was renamed
+# ``RoEEnforcementMiddleware`` → ``RoEGuardrailMiddleware`` when RoE
+# enforcement became genuinely layered (advisory command-parse here +
+# authoritative sandbox egress). Downstream plugins / SaaS subagents
+# that import the old name keep working for one minor cycle.
+RoEEnforcementMiddleware = RoEGuardrailMiddleware

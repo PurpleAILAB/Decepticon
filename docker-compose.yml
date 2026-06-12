@@ -13,7 +13,7 @@ services:
   # LiteLLM Proxy — LLM API Gateway
   # Handles model routing, authentication, usage tracking, billing
   litellm:
-    image: ghcr.io/purpleailab/decepticon-litellm:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-litellm:${DECEPTICON_VERSION:-stable}
     build:
       context: .
       dockerfile: containers/litellm.Dockerfile
@@ -192,7 +192,7 @@ services:
   # via ``/var/run/docker.sock`` was removed in the HTTP-only migration —
   # see decepticon/backends/factory.py for the rationale.
   sandbox:
-    image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-sandbox:${DECEPTICON_VERSION:-stable}
     # Multi-arch image — linux/amd64 + linux/arm64. Apple Silicon and
     # Linux arm64 hosts pull the native manifest; no Rosetta needed.
     # On an unusual arch the manifest list won't match — force a
@@ -310,7 +310,7 @@ services:
         # an upgrade is a single-line change here. To verify, see
         # https://github.com/NationalSecurityAgency/ghidra/releases.
         GHIDRA_SHA256: ""
-    image: decepticon-sandbox-reversing:${DECEPTICON_VERSION:-latest}
+    image: decepticon-sandbox-reversing:${DECEPTICON_VERSION:-stable}
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-ghidra-mcp
     # Keep the container alive with a long-running analyzeHeadless that
     # imports a placeholder binary. The MCP plugin (when installed) auto-
@@ -339,7 +339,7 @@ services:
   # Exposes all agents (decepticon, soundwave, recon, exploit, postexploit)
   # as a streaming API on port 2024. Ink CLI connects here.
   langgraph:
-    image: ghcr.io/purpleailab/decepticon-langgraph:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-langgraph:${DECEPTICON_VERSION:-stable}
     # Append --allow-blocking by default so blockbuster doesn't fatally
     # abort runs on sync I/O in third-party deps (e.g. deepagents'
     # subagents.py uses a sync httpx send in its atask path). Decepticon's
@@ -437,7 +437,7 @@ services:
   # Web Dashboard — Next.js UI
   # Migrations run automatically at startup via web-entrypoint.sh (prisma migrate deploy).
   web:
-    image: ghcr.io/purpleailab/decepticon-web:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-web:${DECEPTICON_VERSION:-stable}
     build:
       context: .
       dockerfile: containers/web.Dockerfile
@@ -490,7 +490,7 @@ services:
   # Ink CLI — Interactive terminal UI
   # Runs via: docker compose run --rm cli
   cli:
-    image: ghcr.io/purpleailab/decepticon-cli:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-cli:${DECEPTICON_VERSION:-stable}
     build:
       context: .
       dockerfile: containers/cli.Dockerfile
@@ -545,7 +545,7 @@ services:
   # `ops_start("c2-havoc")` once that workload ships.
   # Agent connects via: sliver-client (pre-installed in sandbox)
   c2-sliver:
-    image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-c2-sliver:${DECEPTICON_VERSION:-stable}
     # Multi-arch image — see decepticon-sandbox above for the same notes.
     build:
       context: .
@@ -585,7 +585,7 @@ services:
   #   - OTEL_SERVICE_NAME=decepticon
 
   skillogy:
-    image: ghcr.io/purpleailab/decepticon-skillogy:${DECEPTICON_VERSION:-latest}
+    image: ghcr.io/purpleailab/decepticon-skillogy:${DECEPTICON_VERSION:-stable}
     build:
       context: .
       dockerfile: containers/skillogy.Dockerfile

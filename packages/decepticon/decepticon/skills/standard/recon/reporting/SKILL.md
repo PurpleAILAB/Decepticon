@@ -240,8 +240,8 @@ Raw scan evidence is stored separately from finding documents:
 
 ```
 findings/
-├── critical-exposed-mysql-api-example-com.md    # Finding document (Markdown)
-├── high-git-config-disclosure-dev-example-com.md
+├── FIND-001.md                       # Finding document (Markdown; id in frontmatter)
+├── FIND-002.md
 └── evidence/
     ├── FIND-001_nmap.txt              # Raw nmap output
     ├── FIND-001_mysql_banner.txt      # Raw banner grab
@@ -413,14 +413,16 @@ Individual findings combine into attack chains. Document these explicitly — th
 
 ```
 /workspace/
-├── roe.json                               # Rules of Engagement (read-only)
-├── conops.json                            # Threat actor profile
-├── opplan.json                            # Objectives tracker
-├── findings.txt                           # Append-only cross-iteration memory
-├── report_<target>_final.md               # Consolidated engagement report
+├── plan/
+│   ├── roe.json                          # Rules of Engagement (read-only)
+│   ├── conops.json                       # Threat actor profile
+│   └── opplan.json                       # Objectives tracker
+├── timeline.jsonl                         # Append-only activity/finding timeline
+├── recon/
+│   └── report_<target>.md                # Consolidated recon report
 ├── findings/
-│   ├── critical-exposed-mysql-api-example-com.md   # Individual finding (Markdown)
-│   ├── high-dangling-cname-staging-herokuapp.md
+│   ├── FIND-001.md                       # Individual finding (Markdown; id in frontmatter)
+│   ├── FIND-002.md
 │   └── evidence/
 │       ├── FIND-001_nmap.txt              # Raw scan output (plain text)
 │       └── FIND-002_nuclei.txt
@@ -445,7 +447,7 @@ Individual findings combine into attack chains. Document these explicitly — th
 
 ## 11. OPPLAN Feedback Loop
 
-After generating the report, update `opplan.json` to reflect actual findings.
+After generating the report, update `plan/opplan.json` to reflect actual findings.
 
 ### Update Completed Objectives
 
@@ -488,6 +490,6 @@ Before concluding reconnaissance and handing off to the exploitation phase:
 - [ ] Raw evidence saved to `findings/evidence/` with correct naming
 - [ ] Raw scan data preserved in `recon/` directory
 - [ ] Attack chains documented in consolidated report
-- [ ] Final consolidated report saved to `report_<target>_final.md`
+- [ ] Consolidated recon report saved to `recon/report_<target>.md`
 - [ ] `opplan.json` updated with completed objectives and findings
 - [ ] New follow-up objectives created for next phase (if authorized)

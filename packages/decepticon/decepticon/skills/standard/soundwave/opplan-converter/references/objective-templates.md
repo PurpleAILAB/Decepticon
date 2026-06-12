@@ -17,7 +17,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "amass enum -passive -d <TARGET> results saved to <engagement>/recon/amass.txt",
     "crt.sh query results saved to <engagement>/recon/crtsh.txt",
     "All sources merged and deduplicated into <engagement>/recon/subdomains.txt",
-    "All discovered targets verified against roe.json in-scope list",
+    "All discovered targets verified against plan/roe.json in-scope list",
     "OPSEC: No direct DNS queries sent to target nameservers — public resolvers only"
   ],
   "priority": 1,
@@ -40,7 +40,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "dig queries for A, AAAA, MX, NS, TXT, SOA, CAA completed",
     "Results saved to <engagement>/recon/dns_records.txt",
     "Dangling CNAMEs identified and flagged",
-    "All queried domains verified against roe.json in-scope list",
+    "All queried domains verified against plan/roe.json in-scope list",
     "OPSEC: Queries routed through public resolvers, not target nameservers"
   ],
   "priority": 2,
@@ -86,7 +86,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "httpx probe results saved to <engagement>/recon/httpx_results.txt",
     "JSON output saved to <engagement>/recon/httpx.json for parsing",
     "Technology stack identified per live host",
-    "All probed targets verified against roe.json in-scope list",
+    "All probed targets verified against plan/roe.json in-scope list",
     "OPSEC: Request rate ≤ 10 req/sec, custom User-Agent set"
   ],
   "priority": 4,
@@ -135,7 +135,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "nmap SYN scan completed on all in-scope IPs",
     "Results saved to <engagement>/recon/nmap_syn.txt (text) and nmap_syn.xml (XML)",
     "Open ports summarized in table format",
-    "All scanned IPs verified against roe.json in-scope list BEFORE scan",
+    "All scanned IPs verified against plan/roe.json in-scope list BEFORE scan",
     "OPSEC: Scan rate ≤ 100 packets/sec (-T3), within authorized testing window"
   ],
   "priority": 6,
@@ -158,7 +158,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "nmap -sV completed on all open ports",
     "Results saved to <engagement>/recon/nmap_versions.txt and nmap_versions.xml",
     "Service versions mapped for CVE research",
-    "All targets verified against roe.json",
+    "All targets verified against plan/roe.json",
     "OPSEC: Version probes limited to previously discovered open ports only"
   ],
   "priority": 7,
@@ -181,7 +181,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "ffuf run against top 5 highest-value web targets",
     "Results saved to <engagement>/recon/ffuf_<host>.json per target",
     "Interesting paths (admin panels, API docs, config files) flagged",
-    "All targets verified against roe.json",
+    "All targets verified against plan/roe.json",
     "OPSEC: Request rate ≤ 10 req/sec (-rate 10), custom User-Agent"
   ],
   "priority": 8,
@@ -204,7 +204,7 @@ Copy and customize these templates for common recon objectives. Replace `<TARGET
     "nuclei scan completed on all live web hosts",
     "Results saved to <engagement>/recon/nuclei_results.txt",
     "Findings categorized by severity (critical, high, medium, low)",
-    "All targets verified against roe.json",
+    "All targets verified against plan/roe.json",
     "OPSEC: Rate limited (-rl 5 -c 2), within authorized testing window"
   ],
   "priority": 9,

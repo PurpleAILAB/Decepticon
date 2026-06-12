@@ -238,10 +238,12 @@ class TestBookkeeping:
         ):
             mgr.initialize()
 
-        # Fast path: probe pane, sync env, skip create + PS1 injection.
+        # Fast path: probe pane only — skip create, PS1 injection, AND env
+        # re-sync (the re-sync export's PS1 marker races the user command's
+        # marker; env persists from session creation).
         mock_ensure.assert_not_called()
         mock_inject.assert_not_called()
-        mock_sync.assert_called_once()
+        mock_sync.assert_not_called()
         # display-message probe must have been issued at least once.
         assert any(c.args[0][0] == "display-message" for c in mock_tmux.call_args_list)
 

@@ -23,7 +23,10 @@ from decepticon.middleware.opplan import OPPLANMiddleware
 from decepticon.middleware.prompt_injection_shield import (
     PromptInjectionShieldMiddleware,
 )
-from decepticon.middleware.roe import RoEEnforcementMiddleware
+from decepticon.middleware.roe import (
+    RoEEnforcementMiddleware,  # compat alias, removed at 2.0.0
+    RoEGuardrailMiddleware,
+)
 from decepticon.middleware.skillogy import SkillogyMiddleware, maybe_install_skillogy
 from decepticon.middleware.skills import SkillsMiddleware
 from decepticon.middleware.untrusted_output import UntrustedOutputMiddleware
@@ -45,6 +48,7 @@ __all__ = [
     "OPPLANMiddleware",
     "PromptInjectionShieldMiddleware",
     "RoEEnforcementMiddleware",
+    "RoEGuardrailMiddleware",
     "SandboxNotificationMiddleware",
     "SkillogyMiddleware",
     "SkillsMiddleware",

@@ -9,9 +9,13 @@ has been retired in favor of `HTTPSandbox` + the in-container daemon,
 so the docker-exec branch is no longer reachable from any production
 caller (`exec_prefix` defaults to `[]`).
 
-The semantics — PS1 marker parsing, polling cadence, stall detection,
-size watchdog, output truncation, auto-background after 60 s — are
-unchanged from the docker_sandbox.py original.
+The semantics — PS1 marker parsing, stall detection, size watchdog,
+output truncation, auto-background after 60 s — are unchanged from the
+docker_sandbox.py original. The polling cadence is adaptive: while the
+command has produced no output yet it backs off geometrically (see
+``_next_poll_interval``); the moment any output appears it returns to
+``POLL_INTERVAL`` and stays there, so stall/interactive-prompt detection
+keeps its original timing.
 """
 
 from __future__ import annotations
@@ -36,7 +40,64 @@ log = logging.getLogger("decepticon.sandbox_kernel.tmux")
 # joining without relying on backtracking or on '.' implicitly excluding '\n'.
 PS1_PATTERN = re.compile(r"\[DCPTN:(\d+):([^\]\n]+)\]")
 
+# ─── Terminal-noise sanitizer (for the pipe-pane session log) ───────────
+#
+# ``capture-pane`` (foreground bash) renders to a clean screen, so its
+# output is already escape-free. ``pipe-pane`` (the streaming session log
+# behind ``bash_output``) instead streams the RAW pane bytes, which carry
+# every control sequence the shell emits: OSC shell-integration markers
+# (incl. the ``OSC 3008`` ``type=shell;cwd=…`` ones), CSI sequences
+# (colors, cursor moves, bracketed-paste ``?2004h/l`` toggles), the
+# ``[DCPTN:…]`` PS1 markers, and stray C0 control chars. Returned verbatim
+# they reach the agent / LangSmith as unreadable noise — so the log diff
+# is run through ``strip_terminal_noise`` before it is handed back.
+#
+# OSC: ESC ] … terminated by BEL or ST (ESC \).
+_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+# CSI: ESC [ params intermediates final. Covers SGR, cursor, and the
+# private ``?2004h/l`` bracketed-paste toggles.
+_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# Other two-char ESC sequences (RIS ``ESC c``, save/restore cursor, etc.).
+# The final-byte class deliberately excludes ``[`` (0x5b) so it never eats
+# a CSI introducer; OSC is handled above.
+_ESC_RE = re.compile(r"\x1b[@-Z\\-_]")
+# Remaining C0 control chars EXCEPT tab (0x09) and newline (0x0a); carriage
+# returns are normalized away separately.
+_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def strip_terminal_noise(text: str) -> str:
+    """Strip raw-terminal control noise from a pipe-pane log diff.
+
+    Removes OSC / CSI / two-char ESC sequences, the ``[DCPTN:…]`` PS1
+    markers, and stray C0 control chars; normalizes ``\\r\\n`` → ``\\n``.
+    Plain text, newlines, and tabs are preserved.
+    """
+    if not text:
+        return text
+    text = _OSC_RE.sub("", text)
+    text = _CSI_RE.sub("", text)
+    text = _ESC_RE.sub("", text)
+    text = PS1_PATTERN.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    return _C0_RE.sub("", text)
+
+
 POLL_INTERVAL: float = 0.5
+# Adaptive backoff: while the command has produced no output yet and the
+# screen is unchanged between polls, the interval grows geometrically
+# (×POLL_BACKOFF_FACTOR) up to POLL_INTERVAL × POLL_BACKOFF_MAX_MULTIPLIER,
+# and snaps back to POLL_INTERVAL as soon as any output appears. Every poll
+# is a full `tmux capture-pane -S -` subprocess (scrollback dump), so a
+# silent long-running command (sleep, blocking connect, slow scan that
+# hasn't printed yet) at the fixed cadence costs 2 captures/s for its whole
+# life; backoff cuts that ~4×. Backoff is deliberately NOT applied once
+# output exists, so stall/interactive-prompt detection (which only triggers
+# after output) keeps the original 0.5s cadence. The cap is a multiplier
+# (not an absolute) so tests that patch POLL_INTERVAL down to milliseconds
+# keep their fast cadence.
+POLL_BACKOFF_FACTOR: float = 1.5
+POLL_BACKOFF_MAX_MULTIPLIER: float = 4.0
 STALL_SECONDS: float = 3.0
 # Fallback after STALL_SECONDS when the tail is NOT a recognizable prompt:
 # treat as possibly-hung instead of mislabeling as interactive.
@@ -63,6 +124,19 @@ _PROMPT_TAIL_RE = re.compile(
     r"|(?:^\(Pdb\)\s*$)"
     r"|(?:^>>>\s*$)"
 )
+
+
+def _next_poll_interval(current: float) -> float:
+    """Grow the poll interval geometrically, capped at a POLL_INTERVAL multiple.
+
+    Reads the module-level constants at call time so tests that patch
+    ``POLL_INTERVAL`` get a proportionally scaled cap. Incremental
+    pane capture was considered as the complementary optimization and
+    deliberately rejected: completion detection counts PS1 markers over
+    the *whole* scrollback, and a partial capture can split a marker
+    across reads — backoff keeps captures whole and merely less frequent.
+    """
+    return min(current * POLL_BACKOFF_FACTOR, POLL_INTERVAL * POLL_BACKOFF_MAX_MULTIPLIER)
 
 
 def _looks_like_interactive_prompt(screen: str) -> bool:
@@ -472,7 +546,19 @@ class TmuxSessionManager:
                 self._pane_id = None
 
         if cached_alive:
-            self._sync_passthrough_env()
+            # Do NOT re-sync passthrough env here. initialize() runs on EVERY
+            # non-input execute(), and _sync_passthrough_env() sends an
+            # ``export DECEPTICON_… HTTP_PROXY=…`` line as its own command —
+            # which produces its OWN PS1 completion marker. execute() captures
+            # ``baseline`` immediately after initialize(), before that marker
+            # lands, so it is excluded from ``initial_count``; the poll loop
+            # then fires on the EXPORT's marker, not the user command's, and
+            # _extract_output() returns the stray ``export DECEPTICON_SKIP_BOOT
+            # =1`` + command echo BEFORE the real output appears (observed:
+            # ``whois``/network commands returning only their echoed input).
+            # A cached-alive session was always synced at creation (below) and
+            # the env persists for the life of the persistent shell, so this
+            # per-command re-sync is redundant AND a correctness bug.
             return
 
         session_exists = self._ensure_session()
@@ -543,9 +629,10 @@ class TmuxSessionManager:
         prev_screen = baseline
         last_change_time = start
         consecutive_capture_failures = 0
+        poll_interval = POLL_INTERVAL
 
         while time.monotonic() - start < timeout:
-            time.sleep(POLL_INTERVAL)
+            time.sleep(poll_interval)
             try:
                 screen = self._capture()
             except RuntimeError as poll_err:
@@ -617,10 +704,21 @@ class TmuxSessionManager:
             # only if the tail actually looks like a prompt. Otherwise keep
             # polling until HUNG_PROCESS_SECONDS, then surface a distinct
             # "may be hung" message instead of falsely claiming interactive.
+            #
+            # Backoff is applied ONLY while no output has appeared yet
+            # (screen == baseline): in that window the command cannot be sitting
+            # at an interactive prompt, so a lazier cadence is pure win. Once
+            # output exists (screen != baseline) the next quiet stretch might be
+            # a prompt, so we hold the base cadence to keep stall detection at
+            # its original timing.
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline:
+                poll_interval = POLL_INTERVAL
+            elif screen == baseline:
+                poll_interval = _next_poll_interval(poll_interval)
+            else:
+                poll_interval = POLL_INTERVAL
                 stalled_for = time.monotonic() - last_change_time
                 if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
                     log.info(
@@ -731,9 +829,10 @@ class TmuxSessionManager:
         prev_screen = baseline
         last_change_time = start
         consecutive_capture_failures = 0
+        poll_interval = POLL_INTERVAL
 
         while time.monotonic() - start < timeout:
-            await asyncio.sleep(POLL_INTERVAL)  # CancelledError delivered here
+            await asyncio.sleep(poll_interval)  # CancelledError delivered here
             try:
                 screen = await asyncio.to_thread(self._capture)
             except RuntimeError as poll_err:
@@ -824,11 +923,18 @@ class TmuxSessionManager:
                     f'bash_output(session="{self.session}").'
                 )
 
-            # Stall detection (see sync execute() for rationale)
+            # Stall detection + adaptive backoff (see sync execute() for rationale).
+            # Backoff only while no output has appeared yet (screen == baseline);
+            # once output exists, hold base cadence so stall detection keeps its
+            # original timing.
             if screen != prev_screen:
                 last_change_time = time.monotonic()
                 prev_screen = screen
-            elif screen != baseline:
+                poll_interval = POLL_INTERVAL
+            elif screen == baseline:
+                poll_interval = _next_poll_interval(poll_interval)
+            else:
+                poll_interval = POLL_INTERVAL
                 stalled_for = time.monotonic() - last_change_time
                 if stalled_for >= STALL_SECONDS and _looks_like_interactive_prompt(screen):
                     log.info(

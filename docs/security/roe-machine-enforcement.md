@@ -176,11 +176,44 @@ explaining the block and is told to change target/technique rather than
 re-issue the command. The PASS for `app.acme.com` and every refusal above
 are written to the audit ledger.
 
+## Two enforcement points
+
+RoE enforcement is layered (defense-in-depth), and the names reflect it:
+
+1. **RoE Guardrail Middleware** (parser, this document) — reads the
+   literal command text, extracts the target hosts, and refuses early in
+   `enforce` mode. This is a **fast-fail UX signal**: it tells the model
+   before a wasted round-trip with a clear `[ROE_REFUSED]` reason. It is
+   a guardrail, not the authoritative boundary — a determined agent can
+   hide a target behind variable indirection (`H=evil; ping "$H"`),
+   command substitution, encodings, or out-of-band DNS the parser never
+   sees.
+2. **RoE Egress Guardrail** (network) — compiles the *same*
+   `machine_enforcement` block into a sandbox nftables connect-allowlist
+   + DNS allowlist (`decepticon.middleware.egress` →
+   `decepticon.sandbox_kernel.egress`). A packet to an out-of-scope host
+   cannot leave the sandbox even when the parser missed the target. One
+   scope definition, two enforcement points. **On by default** for
+   `enforce` mode — no extra config; the operator can opt out with
+   `DECEPTICON_EGRESS_DISABLE=1`. The sandbox discovers its own
+   management subnet locally (from `/proc/net/route`, needing no `ip`
+   binary) so a scope rule can never sever the agent↔management (Neo4j /
+   daemon) link.
+
+The parser's `[ROE_REFUSED]` short-circuit happens before the tool
+handler runs, so in the common case no bytes leave the sandbox. The
+guarantee that they *cannot* leave for an out-of-scope destination is
+the egress layer's job.
+
 ## Limitations
 
-- Target extraction is regex-based and best-effort; it errs toward more
-  targets than the command would actually reach (false-positive-safe),
-  not fewer.
+- Target extraction in the parser layer is fail-closed but best-effort:
+  any host/IP/CIDR-shaped command token is treated as a candidate target
+  unless it is a known non-target, so it errs toward **more** targets
+  than the command reaches (spurious target → refused, operator-
+  overridable), never toward dropping a real one. The authoritative
+  boundary for what a packet can actually reach is the egress layer
+  above, not the command parse.
 - `max_concurrent_connections` and `min_inter_request_delay_ms` are
   carried in the schema but are advisory — they are not throttled by this
   middleware.

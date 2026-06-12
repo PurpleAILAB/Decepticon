@@ -42,7 +42,7 @@ All paths below are relative to the engagement working directory (set via `cd` b
 | Recon Only | Recon | recon only | No exploitation, intelligence gathering only |
 | Objective-Based | Varies | Targeted subset | Focus on specific crown jewels |
 
-Read `roe.json` to determine engagement type and adjust phase ordering accordingly.
+Read `plan/roe.json` to determine engagement type and adjust phase ordering accordingly.
 
 ## Phase Transitions
 
@@ -66,7 +66,7 @@ PostExploit → Report: All OPPLAN objectives resolved (passed or blocked)
 
 ### Handling Cross-Phase Dependencies
 Some objectives may uncover new targets or invalidate assumptions:
-- **New targets discovered during recon** → Update opplan.json with new objectives
+- **New targets discovered during recon** → Update plan/opplan.json with new objectives
 - **Exploit fails, need more recon** → Return to recon phase for that specific target
 - **PostExploit reveals new network segments** → May need additional recon/exploit cycles
 
@@ -83,7 +83,7 @@ If engagement must be halted:
 1. Immediately stop all active sub-agent tasks
 2. Document current state: which objectives in-progress, what's deployed
 3. Record the halt in `timeline.jsonl` and update the affected OPPLAN objectives
-4. Save opplan.json with current status for potential resumption
+4. Save plan/opplan.json with current status for potential resumption
 
 ## Engagement Metrics
 

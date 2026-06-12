@@ -34,11 +34,14 @@ bash(command="mkdir -p /workspace/report")
 
 ### Step 2: Aggregate Findings
 
-Read every `findings/*.md` (named `{severity}-{slug}.md`) and extract frontmatter fields:
+Read every `findings/FIND-*.md` (canonical name `findings/FIND-{NNN}.md`; the
+`id` frontmatter field matches the filename) and extract frontmatter fields:
 
 ```
-for each FIND-xxx.md:
-  - id, title, severity, cvss, target, phase, technique (ATT&CK ID), status, confidence
+for each FIND-NNN.md:
+  - id, title, severity, cwe, cvss_score, cvss_vector, vrt,
+    target (affected_target), affected_component, phase,
+    technique (ATT&CK ID), status, confidence
 ```
 
 Sorting rules:
@@ -218,7 +221,8 @@ Total techniques tested: [N]
 ### Critical Findings
 
 #### [FIND-ID]: [Title]
-**Severity**: Critical | **CVSS**: [score] | **Confidence**: [verified/unverified]
+**Severity**: Critical | **CVSS**: [score] `[vector]` (v[4.0]) | **Confidence**: [verified/unverified]
+**CWE**: [CWE-ID] | **VRT**: [category/sub-category/variant]
 **Target**: [host/service/URL]
 **Phase**: [kill chain phase]
 **ATT&CK Technique**: [[T-ID](https://attack.mitre.org/techniques/T-ID/)] — [Technique Name]
@@ -415,7 +419,8 @@ fields a sub-agent needs to make a decision: id, severity, title,
 agent, objective_id, discovered_at, evidence_pointer, plus
 Description / Evidence / Next sections. The orchestrator's
 final-report pass PROMOTES each operational finding into a
-deliverable-tier finding document (`report/finding-NNN.md`) with the
+deliverable-tier finding document (`report/<severity><NN>-<slug>.md`,
+e.g. `report/critical01-struts-rce.md`) with the
 heavyweight schema below — fields the orchestrator can compute from
 engagement context that sub-agents could not infer mid-engagement.
 
@@ -438,7 +443,8 @@ title: <one-line summary>                   # copied from operational
 cvss_score: 9.8                             # orchestrator-computed from severity + technique
 cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 cvss_version: "4.0"
-cwe: [CWE-89]                               # orchestrator-derived from technique evidence
+cwe: [CWE-89]                               # REQUIRED at deliverable tier — orchestrator-derived from technique evidence
+vrt: server-side-injection/sql-injection/blind  # Bugcrowd VRT category/sub-category/variant (carries P1–P5 + CVSS/CWE cross-walk)
 mitre: [T1190]                              # orchestrator-derived from technique evidence
 affected_target: "10.0.0.5"                 # extracted from operational description / evidence
 affected_component: "MySQL 5.7 on port 3306"
@@ -468,14 +474,28 @@ When the technique evidence does not yield a precise CVSS vector, fall back to s
 
 ### Promotion Algorithm
 
-For each operational `findings/FIND-NNN.md` in `findings/`:
+Deliverable filenames are **severity-sorted and human-readable** —
+`report/<severity><NN>-<slug>.md` — because at engagement end severity is
+final, no further cross-references are created against these files, and a plain
+`ls report/` should list findings worst-first. `<severity>` is the lowercased
+label (`critical`/`high`/`medium`/`low`/`info`), `<NN>` is a per-severity
+counter (`critical01`, `critical02`, `high01`, …), and `<slug>` is a short
+kebab-case form of the title. The operational `id: FIND-NNN` is preserved in
+the deliverable frontmatter, so the readable file stays traceable to its
+operational finding and to all `finding_id` cross-references.
+
+For each operational `findings/FIND-NNN.md` in `findings/`, sorted by severity
+(critical → informational) then discovery order:
 
 1. Read frontmatter and body (operational tier).
 2. If severity in {critical, high, medium}:
-   - Promote to `report/finding-NNN.md` with the full deliverable schema above.
+   - Promote to `report/<severity><NN>-<slug>.md` with the full deliverable
+     schema above (keep `id: FIND-NNN` in frontmatter).
 3. If severity in {low, informational}:
    - Promote in condensed form (id / title / description / remediation only) per the existing "Low / Informational Findings" rule in Findings Detail (Section 3 of the technical-report template).
-4. Update the technical-report.md "Findings Detail" section to reference `report/finding-NNN.md`, not `findings/FIND-NNN.md`.
+4. Update the technical-report.md "Findings Detail" section to reference the
+   deliverable `report/<severity><NN>-<slug>.md` path (carrying its `FIND-NNN`
+   id), not `findings/FIND-NNN.md`.
 
 ### Promotion is One-Way
 
@@ -485,7 +505,7 @@ Operational findings remain in `findings/` (the orchestrator does not mutate the
 
 Before writing the final files, verify:
 
-- [ ] Every finding file (`{severity}-{slug}.md`) is referenced in the technical report findings table
+- [ ] Every deliverable finding file (`report/<severity><NN>-<slug>.md`) is referenced in the technical report findings table
 - [ ] Every CRITICAL/HIGH finding has `confidence: verified` — if not, add unverified disclaimer
 - [ ] Detection gap matrix covers all findings (no FIND-ID omitted)
 - [ ] Remediation roadmap has specific, actionable items (not generic "patch the system")

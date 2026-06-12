@@ -6,7 +6,11 @@
 #   curl -fsSL https://decepticon.red/install | bash
 #
 # Environment variables:
-#   VERSION              — Install a specific version (default: latest)
+#   CHANNEL              — Update channel (default: stable):
+#                            stable — newest final release baked >= SOAK days
+#                            latest — newest final release, immediately
+#   DECEPTICON_STABLE_SOAK_DAYS — stable soak window (default: 7)
+#   VERSION              — Install a specific version (overrides CHANNEL)
 #   DECEPTICON_HOME      — Install directory (default: ~/.decepticon)
 #   SKIP_PULL            — Skip Docker image pull (default: false)
 # ─────────────────────────────────────────────────────────────────────
@@ -16,6 +20,20 @@ set -euo pipefail
 # ── Constants ─────────────────────────────────────────────────────
 REPO="PurpleAILAB/Decepticon"
 BRANCH="${BRANCH:-main}"
+
+# Update channel (Claude-Code-style soak model; both are final-only):
+#   stable (default) — newest FINAL release baked >= STABLE_SOAK_DAYS
+#   latest           — newest FINAL release, immediately
+# Decepticon defaults to stable (conservative for a security tool); the
+# channel *semantics* match Claude Code, only the default differs.
+# Default + any unrecognized value resolves to stable.
+CHANNEL="$(printf '%s' "${CHANNEL:-stable}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+case "$CHANNEL" in
+    latest) ;;
+    *) CHANNEL="stable" ;;
+esac
+# Days the stable channel waits before adopting a final release.
+STABLE_SOAK_DAYS="${DECEPTICON_STABLE_SOAK_DAYS:-7}"
 RAW_BASE="https://raw.githubusercontent.com/$REPO/$BRANCH"
 # release asset base — same host every install, used for binary +
 # checksum manifests. raw.githubusercontent.com hosts the source-tree
@@ -130,23 +148,74 @@ assert_sha256() {
 }
 
 # ── Version resolution ───────────────────────────────────────────
+# Resolve the newest FINAL release that has baked >= STABLE_SOAK_DAYS.
+# Needs python3 for the published_at date filter; prints nothing (caller
+# falls back to /releases/latest) when python3 is absent or none qualify.
+resolve_stable_soaked() {
+    command -v python3 >/dev/null 2>&1 || return 0
+    curl -s "https://api.github.com/repos/$REPO/releases?per_page=30" | python3 - "$STABLE_SOAK_DAYS" <<'PY' 2>/dev/null
+import sys, json, datetime
+try:
+    soak = float(sys.argv[1])
+except (IndexError, ValueError):
+    soak = 7.0
+now = datetime.datetime.now(datetime.timezone.utc)
+try:
+    rels = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+def key(tag):
+    base = tag.split("-", 1)[0].split(".")
+    out = []
+    for i in range(3):
+        out.append(int(base[i]) if i < len(base) and base[i].isdigit() else 0)
+    return tuple(out)
+best = None
+for r in rels if isinstance(rels, list) else []:
+    if r.get("draft") or r.get("prerelease"):
+        continue
+    tag = (r.get("tag_name") or "").lstrip("v")
+    pub = r.get("published_at")
+    if not tag or not pub:
+        continue
+    try:
+        p = datetime.datetime.fromisoformat(pub.replace("Z", "+00:00"))
+    except Exception:
+        continue
+    if (now - p).total_seconds() < soak * 86400:
+        continue  # not yet soaked
+    if best is None or key(tag) > key(best):
+        best = tag
+print(best or "")
+PY
+}
+
 resolve_version() {
     if [[ -n "${VERSION:-}" ]]; then
         DECEPTICON_VERSION="$VERSION"
         return
     fi
 
-    info "Fetching latest version..."
-    local latest
-    latest=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
-        | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    local resolved=""
+    if [[ "$CHANNEL" == "stable" ]]; then
+        # stable: newest FINAL release baked >= STABLE_SOAK_DAYS.
+        info "Fetching stable version (soaked >= ${STABLE_SOAK_DAYS}d)..."
+        resolved=$(resolve_stable_soaked)
+    fi
+    if [[ -z "$resolved" ]]; then
+        # latest channel, OR stable with nothing soaked / no python3 —
+        # fall back to GitHub "latest" (newest final, excludes pre-releases).
+        [[ "$CHANNEL" == "latest" ]] && info "Fetching latest version (newest final)..."
+        resolved=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+    fi
 
-    if [[ -z "$latest" ]]; then
-        # No releases yet — use branch
-        DECEPTICON_VERSION="latest"
-        info "No releases found, using latest from $BRANCH branch."
+    if [[ -z "$resolved" ]]; then
+        # No releases at all — fall back to the moving channel image tag.
+        DECEPTICON_VERSION="$CHANNEL"
+        info "No releases found, using the :$CHANNEL image tag."
     else
-        DECEPTICON_VERSION="$latest"
+        DECEPTICON_VERSION="$resolved"
         # Pin config downloads to the release tag (not the moving main branch)
         RAW_BASE="https://raw.githubusercontent.com/$REPO/v$DECEPTICON_VERSION"
     fi
@@ -172,9 +241,18 @@ download_files() {
         if ! grep -q "^DECEPTICON_HOME=" "$install_dir/.env" 2>/dev/null; then
             echo "DECEPTICON_HOME=$install_dir" >> "$install_dir/.env"
         fi
+        # Record the update channel so future `decepticon update` runs and
+        # the launch-time self-update track the same stream. An existing
+        # value is preserved (the user's prior choice wins).
+        if ! grep -q "^DECEPTICON_CHANNEL=" "$install_dir/.env" 2>/dev/null; then
+            echo "DECEPTICON_CHANNEL=$CHANNEL" >> "$install_dir/.env"
+        fi
         info ".env already exists, preserving your configuration."
     else
         info "No .env yet — run 'decepticon onboard' to create one."
+        if [[ "$CHANNEL" == "latest" ]]; then
+            info "After onboarding, set DECEPTICON_CHANNEL=latest in .env to keep tracking the latest channel."
+        fi
     fi
 
     # LiteLLM config
@@ -201,7 +279,7 @@ download_files() {
 # release job (.github/workflows/release.yml).
 verify_config_manifest() {
     local install_dir="$1"
-    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+    if [[ "$DECEPTICON_VERSION" == "latest" || "$DECEPTICON_VERSION" == "stable" ]]; then
         # resolve_version's fallback path. No release tag → no manifest.
         # We already abort the launcher download in that branch, so this
         # path is only hit when someone runs the installer with branch-
@@ -260,7 +338,7 @@ create_launcher() {
 
     local binary_name="decepticon-${os}-${arch}"
 
-    if [[ "$DECEPTICON_VERSION" == "latest" ]]; then
+    if [[ "$DECEPTICON_VERSION" == "latest" || "$DECEPTICON_VERSION" == "stable" ]]; then
         error "Could not resolve a release version automatically."
         error "Set VERSION explicitly with a tag from:"
         error "  https://github.com/$REPO/releases"

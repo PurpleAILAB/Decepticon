@@ -1,4 +1,4 @@
-"""Tests for the RoE enforcement middleware + machine-readable schema."""
+"""Tests for the RoE guardrail middleware + machine-readable schema."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from decepticon.middleware import roe as roe_mod
 from decepticon.middleware._audit_sink import RoEAuditSink, verify_ledger
 from decepticon.middleware._command_targets import extract_targets
 from decepticon.middleware.roe import (
-    RoEEnforcementMiddleware,
+    RoEGuardrailMiddleware,
     _load_rules_for_workspace,
     _redact_secrets,
     _to_text,
@@ -418,7 +418,7 @@ class TestRoEMiddleware:
     def test_audit_mode_logs_but_allows(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit", "in_scope": ["10.0.0.0/24"]})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -429,7 +429,7 @@ class TestRoEMiddleware:
 
     def test_enforce_mode_refuses_out_of_scope(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock()
         result = mw.wrap_tool_call(req, handler)
@@ -439,7 +439,7 @@ class TestRoEMiddleware:
 
     def test_enforce_mode_allows_in_scope(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -448,7 +448,7 @@ class TestRoEMiddleware:
 
     def test_enforce_blocks_imds_by_default(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/8"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request(
             "bash",
             "curl -s http://169.254.169.254/latest/meta-data/",
@@ -461,7 +461,7 @@ class TestRoEMiddleware:
 
     def test_warn_mode_allows_with_warning(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="scan output", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -471,7 +471,7 @@ class TestRoEMiddleware:
 
     def test_ungated_tool_passes_through(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("opplan_add_objective", "", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         mw.wrap_tool_call(req, handler)
@@ -479,7 +479,7 @@ class TestRoEMiddleware:
 
     def test_missing_roe_defaults_to_audit_mode(self, tmp_path: Path) -> None:
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -489,7 +489,7 @@ class TestRoEMiddleware:
     def test_audit_records_carry_engagement_and_command(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit", "in_scope": ["10.0.0.0/24"]})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request(
             "bash",
             "nmap 10.0.0.10",
@@ -506,7 +506,7 @@ class TestRoEMiddleware:
     def test_audit_records_refuse(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock()
         mw.wrap_tool_call(req, handler)
@@ -525,7 +525,7 @@ class TestRoEMiddleware:
             },
         )
         now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
-        mw = RoEEnforcementMiddleware(now=lambda: now)
+        mw = RoEGuardrailMiddleware(now=lambda: now)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock()
         result = mw.wrap_tool_call(req, handler)
@@ -542,7 +542,7 @@ class TestRoEMiddleware:
             },
         )
         now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
-        mw = RoEEnforcementMiddleware(now=lambda: now)
+        mw = RoEGuardrailMiddleware(now=lambda: now)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -559,7 +559,7 @@ class TestRoEMiddleware:
             },
         )
         now = datetime(2026, 6, 1, 12, 30, tzinfo=timezone.utc)
-        mw = RoEEnforcementMiddleware(now=lambda: now)
+        mw = RoEGuardrailMiddleware(now=lambda: now)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock()
         result = mw.wrap_tool_call(req, handler)
@@ -569,7 +569,7 @@ class TestRoEMiddleware:
     def test_enforce_allows_when_no_windows_configured(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
         now = datetime(2026, 6, 1, 3, 0, tzinfo=timezone.utc)
-        mw = RoEEnforcementMiddleware(now=lambda: now)
+        mw = RoEGuardrailMiddleware(now=lambda: now)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -585,7 +585,7 @@ class TestRoEMiddleware:
             },
         )
         now = datetime(2026, 6, 1, 22, 0, tzinfo=timezone.utc)
-        mw = RoEEnforcementMiddleware(now=lambda: now)
+        mw = RoEGuardrailMiddleware(now=lambda: now)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="scan output", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -599,7 +599,7 @@ class TestEmergencyAbort:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
         (tmp_path / ".abort").write_text("", encoding="utf-8")
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -614,7 +614,7 @@ class TestEmergencyAbort:
 
     def test_no_marker_allows_gated_call(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -623,7 +623,7 @@ class TestEmergencyAbort:
 
     def test_abort_marker_ignored_for_ungated_tool(self, tmp_path: Path) -> None:
         (tmp_path / ".abort").write_text("", encoding="utf-8")
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("opplan_add_objective", "", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -631,7 +631,7 @@ class TestEmergencyAbort:
         assert result.content == "ok"
 
     def test_no_workspace_does_not_halt(self) -> None:
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.0.0.10", state={})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -709,7 +709,7 @@ class TestAuditRecordRedaction:
     def test_password_redacted_in_audit_record(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit"})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request(
             "bash", "mysql -u root -p s3cr3t -h db", state={"workspace_path": str(tmp_path)}
         )
@@ -722,7 +722,7 @@ class TestAuditRecordRedaction:
     def test_bearer_header_redacted_in_audit_record(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit"})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request(
             "bash",
             'curl -H "Authorization: Bearer s3cr3ttoken" https://api.acme.com',
@@ -737,7 +737,7 @@ class TestAuditRecordRedaction:
     def test_sshpass_redacted_in_audit_record(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit"})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request(
             "bash",
             "sshpass -p HunterPass ssh user@10.0.0.5",
@@ -753,7 +753,7 @@ class TestAuditRecordRedaction:
 class TestNetworkToolGating:
     def test_http_request_out_of_scope_refused_in_enforce(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "http_request",
             {"method": "GET", "url": "https://evilcorp.com/x"},
@@ -767,7 +767,7 @@ class TestNetworkToolGating:
 
     def test_http_request_in_scope_allowed(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "http_request",
             {"method": "GET", "url": "https://api.acme.com/v1"},
@@ -780,7 +780,7 @@ class TestNetworkToolGating:
 
     def test_proxy_send_request_out_of_scope_refused(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "proxy_send_request",
             {"method": "POST", "url": "https://evilcorp.com/login"},
@@ -793,7 +793,7 @@ class TestNetworkToolGating:
 
     def test_browser_action_goto_url_respected(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "browser_action",
             {"action": "goto", "params_json": json.dumps({"url": "https://evilcorp.com/"})},
@@ -806,7 +806,7 @@ class TestNetworkToolGating:
 
     def test_browser_action_in_scope_url_allowed(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "browser_action",
             {"action": "goto", "params_json": json.dumps({"url": "https://app.acme.com/"})},
@@ -819,7 +819,7 @@ class TestNetworkToolGating:
 
     def test_browser_action_malformed_params_degrades_to_allow(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "browser_action",
             {"action": "goto", "params_json": "{not valid json"},
@@ -832,7 +832,7 @@ class TestNetworkToolGating:
 
     def test_browser_action_without_url_allowed(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "browser_action",
             {"action": "screenshot", "params_json": json.dumps({"full_page": True})},
@@ -845,7 +845,7 @@ class TestNetworkToolGating:
 
     def test_http_request_imds_blocked_by_default(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/8"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "http_request",
             {"method": "GET", "url": "http://169.254.169.254/latest/meta-data/"},
@@ -858,7 +858,7 @@ class TestNetworkToolGating:
 
     def test_http_request_warn_mode_appends_warning(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["evilcorp.com"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_network_request(
             "http_request",
             {"method": "GET", "url": "https://evilcorp.com/x"},
@@ -871,6 +871,79 @@ class TestNetworkToolGating:
         assert "resp body" in result.content
 
 
+class _FakeSandbox:
+    def __init__(self) -> None:
+        self.pushed: list = []
+
+    def provision_egress(self, policy) -> dict:
+        self.pushed.append(policy)
+        return {"applied": True, "detail": "ok"}
+
+
+class TestEgressProvisioningHook:
+    """Layer-2 hook: the guardrail middleware compiles + pushes the egress
+    policy once per workspace. Default ON for enforce mode; opt-out only."""
+
+    def test_provisions_by_default_for_enforce_mode(self, tmp_path: Path, monkeypatch) -> None:
+        # No env set — egress provisioning is on by default.
+        monkeypatch.delenv("DECEPTICON_EGRESS_DISABLE", raising=False)
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        sandbox = _FakeSandbox()
+        monkeypatch.setattr("decepticon.backends.factory.build_sandbox_backend", lambda: sandbox)
+        mw = RoEGuardrailMiddleware()
+        state = {"workspace_path": str(tmp_path)}
+        mw.before_agent(state, runtime=None)
+        mw.before_agent(state, runtime=None)  # second turn must not re-push
+        assert len(sandbox.pushed) == 1
+        from decepticon.middleware.egress import EgressPolicy
+
+        assert isinstance(sandbox.pushed[0], EgressPolicy)
+        assert "10.0.0.0/24" in sandbox.pushed[0].allowed_cidrs
+
+    def test_opt_out_env_disables_provisioning(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("DECEPTICON_EGRESS_DISABLE", "1")
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        calls: list = []
+        monkeypatch.setattr(
+            "decepticon.backends.factory.build_sandbox_backend",
+            lambda: calls.append(1),
+        )
+        mw = RoEGuardrailMiddleware()
+        mw.before_agent({"workspace_path": str(tmp_path)}, runtime=None)
+        assert calls == []
+
+    def test_audit_mode_does_not_provision(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("DECEPTICON_EGRESS_DISABLE", raising=False)
+        _write_roe(tmp_path, {"mode": "audit", "in_scope": ["10.0.0.0/24"]})
+        calls: list = []
+        monkeypatch.setattr(
+            "decepticon.backends.factory.build_sandbox_backend",
+            lambda: calls.append(1),
+        )
+        mw = RoEGuardrailMiddleware()
+        mw.before_agent({"workspace_path": str(tmp_path)}, runtime=None)
+        assert calls == []
+
+    def test_retries_after_provision_failure(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.delenv("DECEPTICON_EGRESS_DISABLE", raising=False)
+        _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
+        attempts: list = []
+
+        class _Flaky:
+            def provision_egress(self, policy) -> dict:
+                attempts.append(policy)
+                if len(attempts) == 1:
+                    raise RuntimeError("daemon down")
+                return {"applied": True, "detail": "ok"}
+
+        monkeypatch.setattr("decepticon.backends.factory.build_sandbox_backend", lambda: _Flaky())
+        mw = RoEGuardrailMiddleware()
+        state = {"workspace_path": str(tmp_path)}
+        mw.before_agent(state, runtime=None)  # fails, un-marks workspace
+        mw.before_agent(state, runtime=None)  # retries, succeeds
+        assert len(attempts) == 2
+
+
 class TestSlotRegistration:
     def test_slot_is_in_enum_and_safety_critical(self) -> None:
         from decepticon_core.contracts.slots import (
@@ -879,21 +952,45 @@ class TestSlotRegistration:
             MiddlewareSlot,
         )
 
-        assert MiddlewareSlot.ROE_ENFORCEMENT.value == "roe-enforcement"
-        assert MiddlewareSlot.ROE_ENFORCEMENT in SAFETY_CRITICAL_SLOTS
+        assert MiddlewareSlot.ROE_GUARDRAIL.value == "roe-guardrail"
+        assert MiddlewareSlot.ROE_GUARDRAIL in SAFETY_CRITICAL_SLOTS
         for role, slots in SLOTS_PER_ROLE.items():
-            assert MiddlewareSlot.ROE_ENFORCEMENT in slots, (
-                f"role {role!r} missing ROE_ENFORCEMENT slot"
+            assert MiddlewareSlot.ROE_GUARDRAIL in slots, (
+                f"role {role!r} missing ROE_GUARDRAIL slot"
             )
 
     def test_default_factory_is_registered(self) -> None:
         from decepticon.agents.middleware_slots import DEFAULT_SLOT_FACTORIES
         from decepticon_core.contracts.slots import MiddlewareSlot
 
-        assert MiddlewareSlot.ROE_ENFORCEMENT in DEFAULT_SLOT_FACTORIES
-        factory = DEFAULT_SLOT_FACTORIES[MiddlewareSlot.ROE_ENFORCEMENT]
+        assert MiddlewareSlot.ROE_GUARDRAIL in DEFAULT_SLOT_FACTORIES
+        factory = DEFAULT_SLOT_FACTORIES[MiddlewareSlot.ROE_GUARDRAIL]
         mw = factory(role="recon")
-        assert isinstance(mw, RoEEnforcementMiddleware)
+        assert isinstance(mw, RoEGuardrailMiddleware)
+
+    def test_legacy_names_alias_to_guardrail(self) -> None:
+        """Compat shim (removed at 2.0.0): the pre-rename slot member and
+        class name must still resolve to the renamed canonicals so
+        downstream plugins / SaaS subagents keep importing them."""
+        from decepticon.middleware import (
+            RoEEnforcementMiddleware,
+            RoEGuardrailMiddleware,
+        )
+        from decepticon.middleware.roe import (
+            RoEEnforcementMiddleware as RoEEnforcementFromModule,
+        )
+        from decepticon_core.contracts.slots import MiddlewareSlot
+
+        # Enum alias: same member, same value, same assembly position.
+        assert MiddlewareSlot.ROE_ENFORCEMENT is MiddlewareSlot.ROE_GUARDRAIL
+        assert MiddlewareSlot.ROE_ENFORCEMENT.value == "roe-guardrail"
+        # The legacy slot name must NOT appear as its own member in
+        # iteration (else the slot would be assembled twice).
+        assert MiddlewareSlot.ROE_ENFORCEMENT in list(MiddlewareSlot)
+        assert sum(1 for s in MiddlewareSlot if s.value == "roe-guardrail") == 1
+        # Class alias points at the renamed class.
+        assert RoEEnforcementMiddleware is RoEGuardrailMiddleware
+        assert RoEEnforcementFromModule is RoEGuardrailMiddleware
 
 
 class TestFqdnTrailingDotNormalization:
@@ -951,7 +1048,7 @@ class TestLoadRulesFallback:
         (tmp_path / "plan").mkdir(parents=True, exist_ok=True)
         (tmp_path / "plan" / "roe.json").write_text("}}garbage{{", encoding="utf-8")
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))
         result = mw.wrap_tool_call(req, handler)
@@ -967,7 +1064,7 @@ class TestLoadRulesFallback:
 class TestToTextFlattening:
     def test_list_of_str_flattened_in_warn(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
         tool_msg = ToolMessage(content=["part-a", "part-b"], tool_call_id="tc-test")
         handler = MagicMock(return_value=tool_msg)
@@ -977,7 +1074,7 @@ class TestToTextFlattening:
 
     def test_list_of_text_dicts_flattened_in_warn(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
         content = [
             {"type": "text", "text": "alpha "},
@@ -1001,7 +1098,7 @@ class TestToTextFlattening:
 class TestRoEMiddlewareAsync:
     def test_async_enforce_refuses_out_of_scope(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         called = False
 
@@ -1018,7 +1115,7 @@ class TestRoEMiddlewareAsync:
 
     def test_async_enforce_allows_in_scope(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.0.0.10", state={"workspace_path": str(tmp_path)})
 
         async def handler(_req):
@@ -1029,7 +1126,7 @@ class TestRoEMiddlewareAsync:
 
     def test_async_warn_wraps_output(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "warn", "out_of_scope": ["10.99.0.0/16"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 10.99.1.1", state={"workspace_path": str(tmp_path)})
 
         async def handler(_req):
@@ -1043,7 +1140,7 @@ class TestRoEMiddlewareAsync:
 class TestTcidFallback:
     def test_refused_carries_id_from_tool_call(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["10.0.0.0/24"]})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         del req.tool_call_id
         req.tool_call.id = "fallback-id"
@@ -1091,7 +1188,7 @@ class _ConcurrencyProbe:
 
 class TestConcurrencyGate:
     def test_limit_none_means_unlimited(self) -> None:
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         rules = MachineEnforcement.from_dict({"mode": "audit"})
         assert mw._resolve_limit(rules) is None
         with mw._sync_gate(rules, gated=True):
@@ -1099,7 +1196,7 @@ class TestConcurrencyGate:
         assert mw._sync_sema is None
 
     def test_limit_zero_means_unlimited(self) -> None:
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         rules = MachineEnforcement.from_dict({"max_concurrent_connections": 0})
         assert mw._resolve_limit(rules) is None
         with mw._sync_gate(rules, gated=True):
@@ -1107,14 +1204,14 @@ class TestConcurrencyGate:
         assert mw._sync_sema is None
 
     def test_first_seen_limit_wins(self) -> None:
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         first = MachineEnforcement.from_dict({"max_concurrent_connections": 2})
         second = MachineEnforcement.from_dict({"max_concurrent_connections": 9})
         assert mw._resolve_limit(first) == 2
         assert mw._resolve_limit(second) == 2
 
     def test_ungated_call_is_not_gated(self) -> None:
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         rules = MachineEnforcement.from_dict({"max_concurrent_connections": 1})
         with mw._sync_gate(rules, gated=False):
             pass
@@ -1125,7 +1222,7 @@ class TestConcurrencyGate:
             tmp_path,
             {"mode": "audit", "max_concurrent_connections": 2},
         )
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         probe = _ConcurrencyProbe()
         release = threading.Event()
 
@@ -1155,7 +1252,7 @@ class TestConcurrencyGate:
 
     def test_sync_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit"})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         probe = _ConcurrencyProbe()
         release = threading.Event()
         started = threading.Semaphore(0)
@@ -1186,7 +1283,7 @@ class TestConcurrencyGate:
             tmp_path,
             {"mode": "audit", "max_concurrent_connections": 2},
         )
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         active = 0
         peak = 0
         gate = asyncio.Event()
@@ -1215,7 +1312,7 @@ class TestConcurrencyGate:
 
     async def test_async_gate_unlimited_runs_all_concurrently(self, tmp_path: Path) -> None:
         _write_roe(tmp_path, {"mode": "audit"})
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         active = 0
         peak = 0
         gate = asyncio.Event()
@@ -1245,7 +1342,7 @@ class TestConcurrencyGate:
             tmp_path,
             {"mode": "enforce", "in_scope": ["10.0.0.0/24"], "max_concurrent_connections": 1},
         )
-        mw = RoEEnforcementMiddleware()
+        mw = RoEGuardrailMiddleware()
         req = _make_request("bash", "nmap 8.8.8.8", state={"workspace_path": str(tmp_path)})
         handler = MagicMock()
         result = mw.wrap_tool_call(req, handler)
@@ -1256,12 +1353,12 @@ class TestConcurrencyGate:
 
 class TestRoEThrottle:
     def test_zero_delay_never_waits(self) -> None:
-        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.0)
         rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 0})
         assert mw._pace_wait_seconds(rules) == 0.0
 
     def test_first_call_does_not_wait_then_burst_is_spaced(self, monkeypatch) -> None:
-        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.0)
         rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 200})
         clock = {"t": 1000.0}
         monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
@@ -1270,7 +1367,7 @@ class TestRoEThrottle:
         assert abs(mw._pace_wait_seconds(rules) - 0.4) < 1e-9
 
     def test_elapsed_gap_resets_wait(self, monkeypatch) -> None:
-        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.0)
         rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 100})
         clock = {"t": 5000.0}
         monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
@@ -1279,7 +1376,7 @@ class TestRoEThrottle:
         assert mw._pace_wait_seconds(rules) == 0.0
 
     def test_jitter_added_above_floor_under_contention(self, monkeypatch) -> None:
-        mw = RoEEnforcementMiddleware(jitter_frac=0.5)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.5)
         rules = MachineEnforcement.from_dict({"min_inter_request_delay_ms": 200})
         clock = {"t": 1000.0}
         monkeypatch.setattr(roe_mod.time, "monotonic", lambda: clock["t"])
@@ -1290,7 +1387,7 @@ class TestRoEThrottle:
     def test_dispatch_sleeps_and_records_throttle(self, tmp_path: Path, monkeypatch) -> None:
         _write_roe(tmp_path, {"mode": "audit", "min_inter_request_delay_ms": 150})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink, jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(sink=sink, jitter_frac=0.0)
         slept: list[float] = []
         monkeypatch.setattr(roe_mod.time, "monotonic", lambda: 1000.0)
         monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
@@ -1311,7 +1408,7 @@ class TestRoEThrottle:
             tmp_path,
             {"mode": "enforce", "in_scope": ["10.0.0.0/24"], "min_inter_request_delay_ms": 500},
         )
-        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.0)
         slept: list[float] = []
         monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
         handler = MagicMock()
@@ -1323,7 +1420,7 @@ class TestRoEThrottle:
 
     def test_ungated_tool_not_paced(self, tmp_path: Path, monkeypatch) -> None:
         _write_roe(tmp_path, {"mode": "audit", "min_inter_request_delay_ms": 500})
-        mw = RoEEnforcementMiddleware(jitter_frac=0.0)
+        mw = RoEGuardrailMiddleware(jitter_frac=0.0)
         slept: list[float] = []
         monkeypatch.setattr(roe_mod.time, "sleep", lambda s: slept.append(s))
         handler = MagicMock(return_value=ToolMessage(content="ok", tool_call_id="tc-test"))

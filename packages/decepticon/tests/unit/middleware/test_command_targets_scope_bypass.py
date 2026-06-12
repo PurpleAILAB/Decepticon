@@ -68,3 +68,77 @@ def test_tld_colliding_hosts_not_dropped_by_extension_denylist():
 def test_genuine_local_file_argument_still_excluded():
     assert extract_targets("nmap -oA key.pem 10.0.0.1") == {"10.0.0.1"}
     assert extract_targets("nmap -oA scan.txt 10.0.0.1") == {"10.0.0.1"}
+
+
+# ── Fail-closed: bare hostname on a verb NOT in the legacy allowlist ──
+#
+# Before the verb-agnostic token fallback, every command below extracted
+# ZERO targets (the verb was not in ``_HOSTNAME_AFTER_VERB_RE``), so the
+# RoE scope gate had nothing to evaluate and allowed the command by
+# default — a fail-OPEN scope bypass. Each must now surface the host so
+# the gate can refuse an out-of-scope target.
+
+
+def test_ping_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("ping -c 3 evil-oos.example")
+
+
+def test_traceroute_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("traceroute evil-oos.example")
+
+
+def test_mtr_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("mtr evil-oos.example")
+
+
+def test_nc_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("nc -vz evil-oos.example 443")
+
+
+def test_ncat_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("ncat evil-oos.example 80")
+
+
+def test_telnet_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("telnet evil-oos.example 22")
+
+
+def test_openssl_s_client_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("openssl s_client -connect evil-oos.example:443")
+
+
+def test_hping3_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("hping3 evil-oos.example")
+
+
+def test_fping_bare_hostname_is_extracted():
+    assert "evil-oos.example" in extract_targets("fping evil-oos.example")
+
+
+def test_unknown_custom_tool_bare_hostname_is_extracted():
+    # The whole point: an arbitrary binary the parser has never seen must
+    # still surface its host argument, not slip through fail-open.
+    assert "evil-oos.example" in extract_targets("./exploit evil-oos.example 1337")
+
+
+def test_host_with_path_on_unknown_verb_is_extracted():
+    assert "evil-oos.example" in extract_targets("./exploit evil-oos.example/admin")
+
+
+def test_bare_hostname_after_verb_chain_is_extracted():
+    assert "evil-oos.example" in extract_targets(
+        "echo hi > /tmp/x.txt && ping -c1 evil-oos.example"
+    )
+
+
+def test_token_fallback_skipped_for_matched_tool_excludes_option_value():
+    # nmap matches a precise tool extractor, so the greedy token scan does
+    # NOT run — the engineered ``-i key.pem`` / ``-oA out.txt`` exclusions
+    # must be preserved (no spurious key.pem target).
+    assert extract_targets("nmap -oA out.txt 10.0.0.1") == {"10.0.0.1"}
+
+
+def test_token_fallback_does_not_emit_port_or_flags():
+    targets = extract_targets("nc -vz evil-oos.example 443")
+    assert "443" not in targets
+    assert "-vz" not in targets
