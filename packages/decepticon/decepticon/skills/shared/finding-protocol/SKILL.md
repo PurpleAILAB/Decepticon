@@ -38,6 +38,8 @@ YAML frontmatter — required fields only:
 id: FIND-001
 severity: critical
 title: <one-line summary>
+cwe: CWE-89               # optional at operational tier; REQUIRED at deliverable promotion
+vrt: server-side-injection/sql-injection/blind   # optional Bugcrowd VRT path (category/sub-category/variant)
 agent: recon | exploit | postexploit | analyst | ...
 objective_id: OBJ-001
 discovered_at: "2026-04-06T14:23:11Z"
@@ -68,7 +70,22 @@ reads it to choose the next dispatch.
 - **LOW**: Hardening recommendation, informational
 - **INFORMATIONAL**: Observation, no direct security impact
 
-CVSS-numeric ranges live in deliverable tier (see final-report skill).
+CVSS-numeric ranges live in deliverable tier (see final-report skill). When a
+CVSS score is recorded, always store the **vector string** (CVSS v4.0, e.g.
+`CVSS:4.0/AV:N/AC:L/...`) alongside the numeric score — the vector encodes the
+version and makes the score reproducible/auditable (per FIRST CVSS v4.0). A
+bare number is ambiguous between v3.1 and v4.0.
+
+## Classification fields (CWE + VRT)
+
+- `cwe` — the CWE identifier (e.g. `CWE-89`). Optional at operational tier
+  (recon often cannot determine it; exploit usually can), **required** when the
+  finding is promoted to the deliverable tier.
+- `vrt` — Bugcrowd Vulnerability Rating Taxonomy path
+  `category/sub-category/variant` (e.g. `server-side-injection/sql-injection/blind`).
+  Optional but recommended; it carries a machine-readable cross-walk to CVSS/CWE
+  and a P1–P5 priority, and keeps classifications interoperable with bug-bounty
+  triage. See the VRT at github.com/bugcrowd/vulnerability-rating-taxonomy.
 
 ## After Creating a Finding
 
@@ -86,8 +103,24 @@ CVSS-numeric ranges live in deliverable tier (see final-report skill).
 ## Promotion to Deliverable Tier
 
 When the orchestrator runs the final-report skill at engagement end,
-operational findings are promoted to deliverable-tier finding documents
-in `report/finding-NNN.md` with the heavyweight schema (CVSS, CWE,
-MITRE, affected_target, affected_component, confidence, phase,
-detected, remediation_priority, plus full body sections). See
+operational findings are promoted to deliverable-tier finding documents under
+`report/` with the heavyweight schema (CVSS score + vector, CWE, VRT, MITRE,
+affected_target, affected_component, confidence, phase, detected,
+remediation_priority, plus full body sections). See
 `skills/decepticon/final-report/SKILL.md` for the deliverable template.
+
+**Two-tier naming — the key vs. the deliverable:**
+
+- **Operational tier** (`findings/FIND-{NNN}.md`) keeps the *stable*
+  `FIND-NNN` key for the whole engagement. Severity and title may change as the
+  exploit confirms impact, but the filename never does — so every cross-
+  reference (`shells.json` / `creds` `finding_id`, `attack-paths/PATH-NNN`
+  `finding_ids`, `timeline.jsonl`, `evidence/FIND-NNN_*.txt`) stays intact.
+- **Deliverable tier** (`report/<severity><NN>-<slug>.md`) is the terminal
+  snapshot generated once at engagement end, when severity is final. It uses a
+  human-readable, severity-sorted name — e.g. `report/critical01-struts-rce.md`,
+  `report/high01-git-config-disclosure.md`. The `<NN>` is a per-severity
+  counter (`critical01`, `critical02`, `high01`, …) so a plain `ls report/`
+  lists findings worst-first. The frontmatter still carries `id: FIND-NNN`, so
+  the readable deliverable remains traceable back to its operational finding and
+  to the attack-path / shell / credential cross-references.
