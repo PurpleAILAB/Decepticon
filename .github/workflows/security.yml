@@ -169,10 +169,24 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      # ENFORCED (was advisory): the dependency graph is enabled on this
-      # public repo, so a PR that introduces a dependency with a known
-      # high/critical vulnerability — or a disallowed license — blocks.
+      # ENFORCED when available: blocks PRs that introduce a dependency with
+      # a known high/critical vulnerability or a disallowed license. The
+      # dependency graph is a repo setting we cannot toggle from a workflow,
+      # so probe for it first and skip (with a visible notice) when disabled
+      # instead of hard-failing every PR.
+      - name: Probe dependency graph availability
+        id: depgraph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" --silent 2>/dev/null; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dependency review skipped::Dependency graph is not enabled on this repository (Settings → Security → Dependency graph). Enable it to enforce this gate."
+          fi
       - name: Dependency review
+        if: steps.depgraph.outputs.enabled == 'true'
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         with:
           fail-on-severity: high
