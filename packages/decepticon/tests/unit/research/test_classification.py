@@ -120,7 +120,6 @@ def test_kg_ingest_katana_with_classification(
         "decepticon.tools.research._state.graph_transaction", lambda: pytest.raises(RuntimeError)
     )  # not needed
 
-    # We patch graph_transaction context manager
     class Transaction:
         def __enter__(self):
             return fake
@@ -140,7 +139,6 @@ def test_kg_ingest_katana_with_classification(
     result = json.loads(kg_ingest_katana.invoke({"path": str(p)}))
     assert result["urls_added"] == 1
 
-    # Find the created URL node
     url_nodes = [n for n in fake.nodes.values() if n.kind == NodeKind.URL]
     assert len(url_nodes) == 1
     node = url_nodes[0]
@@ -189,7 +187,6 @@ def test_critical_path_score_boost_with_command_params(monkeypatch: pytest.Monke
     fake = FakeStore()
     monkeypatch.setattr("decepticon.tools.research.chain.get_store", lambda: fake)
 
-    # Make an Entrypoint node with command_params
     ep = Node.make(
         NodeKind.ENTRYPOINT,
         "https://example.com/run",
@@ -198,7 +195,6 @@ def test_critical_path_score_boost_with_command_params(monkeypatch: pytest.Monke
     )
     fake.nodes[ep.id] = ep
 
-    # Construct a chain containing this entrypoint
     chain = Chain(
         entrypoint_id=ep.id,
         entrypoint_label=ep.label,
@@ -216,7 +212,6 @@ def test_critical_path_score_boost_with_command_params(monkeypatch: pytest.Monke
         ],
     )
 
-    # Score with boost
     score_with_boost = critical_path_score(chain)
 
     # Score without boost (empty param_classes)

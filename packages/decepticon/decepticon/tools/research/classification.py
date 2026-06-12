@@ -299,7 +299,6 @@ def classify_endpoints(urls: list[str]) -> str:
             path = parsed.path or "/"
             query_params = []
             if parsed.query:
-                # Simple query parse to extract param names and values
                 for part in parsed.query.split("&"):
                     if "=" in part:
                         k, v = part.split("=", 1)
