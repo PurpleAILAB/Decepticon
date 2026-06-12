@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 import zipfile
 from pathlib import Path
 
@@ -167,3 +168,51 @@ def test_top_level_dispatcher_routes_zip(tmp_path: Path) -> None:
 
     assert rc == EXIT_OK
     assert archive.is_file()
+
+
+def test_import_rejects_symlink_entry(tmp_path: Path, capsys) -> None:
+    malicious = tmp_path / "link.zip"
+    with zipfile.ZipFile(malicious, "w") as zf:
+        info = zipfile.ZipInfo("acme-2026/link")
+        info.external_attr = (stat.S_IFLNK | 0o777) << 16
+        zf.writestr(info, "/etc/passwd")
+
+    rc = zip_main(["import", str(malicious), "--workspace", str(tmp_path / "ws")])
+
+    assert rc == EXIT_ERROR
+    assert "symlink entry not allowed" in capsys.readouterr().err
+    assert not (tmp_path / "ws" / "engagements" / "acme-2026" / "link").exists()
+
+
+def test_import_refuses_overwrite_without_force(tmp_path: Path, capsys) -> None:
+    src_ws = tmp_path / "src"
+    _seed_engagement(src_ws)
+    archive = tmp_path / "acme.zip"
+    export_engagement("acme-2026", src_ws, archive)
+
+    dst_ws = tmp_path / "dst"
+    import_engagement(archive, dst_ws)
+
+    rc = zip_main(["import", str(archive), "--workspace", str(dst_ws)])
+
+    assert rc == EXIT_ERROR
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_import_force_replaces_stale_files(tmp_path: Path) -> None:
+    src_ws = tmp_path / "src"
+    _seed_engagement(src_ws)
+    archive = tmp_path / "acme.zip"
+    export_engagement("acme-2026", src_ws, archive)
+
+    dst_ws = tmp_path / "dst"
+    import_engagement(archive, dst_ws)
+    stale = dst_ws / "engagements" / "acme-2026" / "stale.txt"
+    stale.write_text("leftover", encoding="utf-8")
+
+    engagement_id, restored = import_engagement(archive, dst_ws, force=True)
+
+    assert engagement_id == "acme-2026"
+    assert restored == 3
+    assert not stale.exists()
+    assert (dst_ws / "engagements" / "acme-2026" / "events.jsonl").is_file()
