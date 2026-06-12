@@ -809,7 +809,7 @@ class TestNetworkToolGating:
         # but must still be audited + throttled by the middleware.
         _write_roe(tmp_path, {"mode": "enforce", "in_scope": ["*.acme.com"]})
         sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
-        mw = RoEEnforcementMiddleware(sink=sink)
+        mw = RoEGuardrailMiddleware(sink=sink)
         req = _make_network_request(
             "web_search",
             {"query": "site:evilcorp.com login"},
