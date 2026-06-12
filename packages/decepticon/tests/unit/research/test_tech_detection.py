@@ -109,6 +109,25 @@ async def test_word_boundary_avoids_false_ray_match() -> None:
     assert all(t["name"] != "ray" for t in out["technologies"])
 
 
+@pytest.mark.asyncio
+async def test_cloudflare_cf_ray_header_does_not_match_ray() -> None:
+    # The near-universal Cloudflare ``cf-ray`` trace header must not be
+    # misread as the Ray AI framework (hyphen-adjacent token).
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"server": "cloudflare", "cf-ray": "8d1f2a3b4c5d-DFW"},
+            text="<html></html>",
+        )
+
+    with patch.object(tech_detection, "_load_roe_rules", _audit_rules), _install_transport(handler):
+        out = await _run()
+
+    names = [t["name"] for t in out["technologies"]]
+    assert "ray" not in names
+    assert "cloudflare" in names  # genuine banner still detected
+
+
 # ── Body engine ──────────────────────────────────────────────────────────
 
 
