@@ -1,0 +1,8 @@
+# Vulnerability ids (PYSEC-… / GHSA-…) accepted by the blocking pip-audit
+# gate in .github/workflows/ci.yml — one id per line, `#` comments allowed.
+#
+# Every entry MUST carry: why it is accepted, and the condition under which
+# it must be removed (e.g. "remove when upstream X releases >= Y").
+#
+# Empty file = nothing ignored. Keep it that way whenever possible: prefer
+# upgrading the locked dependency (uv lock -P <pkg>==<fixed>) over ignoring.
