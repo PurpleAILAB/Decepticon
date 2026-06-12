@@ -193,3 +193,89 @@ def test_dataclass_shape_is_stable() -> None:
     r = WebSearchResult(title="t", url="https://x", snippet="s")
     assert r.source == "duckduckgo"
     assert r.title == "t"
+
+
+_META_FIXTURE = """
+<html><body>
+<div class="result"><h2>
+  <a class="result__a" href="https://example.com/ok">OK</a>
+</h2><a class="result__snippet" href="https://example.com/ok">ok</a></div>
+
+<div class="result"><h2>
+  <a class="result__a" href="http://169.254.169.254/latest/meta-data/">IMDS</a>
+</h2><a class="result__snippet" href="http://169.254.169.254/latest/meta-data/">imds</a></div>
+</body></html>
+"""
+
+
+@_asyncio
+async def test_web_search_drops_cloud_metadata_even_without_scope(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # Regression: with no in_scope/out_of_scope configured, the tool must
+    # still drop the always-on forbidden destinations (cloud-metadata/IMDS),
+    # otherwise an unscoped engagement leaks SSRF-bait URLs to the agent.
+    async def fake_fetch(query: str, *, timeout_s: float) -> str:
+        return _META_FIXTURE
+
+    monkeypatch.setattr(ws_mod, "_fetch_ddg", fake_fetch)
+
+    sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+    out = await run_web_search(
+        "anything",
+        workspace_path=str(tmp_path),  # no plan/roe.json -> empty scope
+        sink=sink,
+    )
+
+    hosts = {r["url"] for r in out["results"]}
+    assert "http://169.254.169.254/latest/meta-data/" not in hosts
+    assert out["filtered_count"] == 1
+
+    filtered = [
+        e
+        for e in _audit_lines(tmp_path / "audit.jsonl")
+        if e.get("event") == "web_search.result_filtered"
+    ]
+    assert len(filtered) == 1
+    assert filtered[0]["host"] == "169.254.169.254"
+    assert filtered[0]["reason_code"] == "FORBIDDEN_DESTINATION"
+
+
+_BAD_HOST_FIXTURE = """
+<html><body>
+<div class="result"><h2>
+  <a class="result__a" href="https://example.com/ok">OK</a>
+</h2><a class="result__snippet" href="https://example.com/ok">ok</a></div>
+
+<div class="result"><h2>
+  <a class="result__a" href="http://[::1/x">Bad</a>
+</h2><a class="result__snippet" href="http://[::1/x">bad</a></div>
+</body></html>
+"""
+
+
+@_asyncio
+async def test_web_search_drops_unparseable_host_and_never_raises(
+    monkeypatch, tmp_path: Path
+) -> None:
+    # A malformed result URL whose host cannot be parsed must be dropped
+    # (default-deny) rather than crash the tool or leak through.
+    async def fake_fetch(query: str, *, timeout_s: float) -> str:
+        return _BAD_HOST_FIXTURE
+
+    monkeypatch.setattr(ws_mod, "_fetch_ddg", fake_fetch)
+
+    sink = RoEAuditSink(path=tmp_path / "audit.jsonl")
+    out = await run_web_search("anything", workspace_path=str(tmp_path), sink=sink)
+
+    assert "error" not in out
+    assert [r["url"] for r in out["results"]] == ["https://example.com/ok"]
+    assert out["filtered_count"] == 1
+
+    filtered = [
+        e
+        for e in _audit_lines(tmp_path / "audit.jsonl")
+        if e.get("event") == "web_search.result_filtered"
+    ]
+    assert len(filtered) == 1
+    assert filtered[0]["reason_code"] == "UNPARSEABLE_HOST"

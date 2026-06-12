@@ -144,15 +144,27 @@ def _filter_by_roe(
     from decepticon.middleware.roe import _load_rules_for_workspace
 
     rules = _load_rules_for_workspace(workspace_path)
-    if not rules.in_scope and not rules.out_of_scope:
-        return results
+    # NB: do NOT short-circuit when in_scope/out_of_scope are empty.
+    # evaluate_target still enforces the always-on forbidden destinations
+    # (cloud-metadata / IMDS endpoints) and the default-deny sensitive TLDs,
+    # so a result pointing at e.g. 169.254.169.254 must never be handed to
+    # the agent just because the engagement left its scope lists empty.
     kept: list[WebSearchResult] = []
     for r in results:
-        host = urlsplit(r.url).hostname or ""
-        decision = evaluate_target(host, rules)
-        if decision.allow:
-            kept.append(r)
-            continue
+        try:
+            host = urlsplit(r.url).hostname or ""
+        except ValueError:
+            host = ""
+        if host:
+            decision = evaluate_target(host, rules)
+            if decision.allow:
+                kept.append(r)
+                continue
+            reason_code = decision.reason_code
+        else:
+            # Unparseable / hostless URL: we cannot prove it is in scope,
+            # so default-deny rather than leak an opaque URL to the agent.
+            reason_code = "UNPARSEABLE_HOST"
         _audit_event(
             sink,
             {
@@ -161,7 +173,7 @@ def _filter_by_roe(
                 "objective_id": objective,
                 "tool": "web_search",
                 "decision": "refuse",
-                "reason_code": decision.reason_code,
+                "reason_code": reason_code,
                 "host": host,
                 "url": r.url,
                 "query": query[:256],
@@ -246,8 +258,9 @@ async def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
     Returns:
         JSON string ``{"query", "results": [{title,url,snippet,source}, ...],
         "filtered_count"}``. Result URLs whose host fails the engagement's
-        RoE ``in_scope``/``out_of_scope`` check are dropped *before* the
-        agent sees them and logged as ``web_search.result_filtered`` in
+        RoE check (``in_scope``/``out_of_scope``, plus the always-on
+        forbidden destinations and default-deny sensitive TLDs) are dropped
+        *before* the agent sees them and logged as ``web_search.result_filtered`` in
         the RoE audit ledger. Network errors collapse to
         ``{"results": [], "error": ...}`` — the tool never raises.
     """
