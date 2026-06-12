@@ -2,8 +2,8 @@
 
 - **Status:** Proposed
 - **Date:** 2026-06-05 (renumbered 0008 → 0010 on 2026-06-06: this draft sat
-  while #614's skillogy-ACL ADR landed on 0008 — per the README lifecycle rule,
-  the sitting draft renumbers)
+  while #614's skillogy-ACL ADR took 0008 and #610's HITL ADR took 0009 — per
+  the README lifecycle rule, the sitting draft renumbers)
 - **Deciders:** @PurpleCHOIms
 - **Related:** #593 (roadmap — open-web `web_search` Tier-1 item), ADR-0006
   (agent-driven container lifecycle), ADR-0008 (skillogy hard ACL, #614 — took

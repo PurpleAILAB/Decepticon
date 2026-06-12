@@ -69,7 +69,7 @@ Use [`template.md`](template.md) as the starting point.
 | [0005](0005-bloodhound-via-bhce-rest-client.md) | Integrate BloodHound via the official BHCE REST API, not via in-house reimplementation | Accepted |
 | [0006](0006-agent-driven-container-lifecycle.md) | Agent-driven domain-tool container lifecycle via an ops-control sidecar | Proposed |
 | [0007](0007-ai-surface-technology-node.md) | Add a Technology KG node kind for AI-surface / tech-detection signals | Accepted |
-| [0008](0008-skillogy-hard-acl-phase1a.md) | Skillogy hard path-prefix ACL (Phase 1a) | Accepted |
+| [0008](0008-skillogy-hard-acl-phase1a.md) | Skillogy enforces path-prefix ACL in Phase 1a (don't wait for Phase 2) | Accepted |
 | [0009](0009-hitl-langgraph-native-migration.md) | Migrate HITL to LangGraph-native `interrupt()` + explicit-policy sets | Proposed |
 | [0010](0010-open-web-acquisition.md) | Acquire open-web content with a sandbox-side, RoE-gated fetch engine | Proposed |
 | [0010-alt](0010-open-web-acquisition-scrapling.md) | Acquire open-web content via Scrapling, behind RoE-gated tools | Proposed |
