@@ -24,8 +24,12 @@ export async function POST(
     }
 
     const body = await req.json();
-    const text = body.text?.trim();
-    if (!text || typeof text !== "string" || text.length > 1000) {
+    // Validate type *before* trimming: `body.text?.trim()` throws a TypeError
+    // on a non-string (e.g. number) which would surface as a 500 instead of a
+    // clean 400, and a post-trim `typeof` check is dead (trim always returns a
+    // string).
+    const text = typeof body?.text === "string" ? body.text.trim() : "";
+    if (!text || text.length > 1000) {
       return NextResponse.json({ error: "Invalid text parameter (max 1000 characters)" }, { status: 400 });
     }
 
