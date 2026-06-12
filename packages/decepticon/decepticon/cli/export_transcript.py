@@ -73,9 +73,19 @@ def _as_json_block(value: Any) -> str:
     return f"```json\n{text}\n```"
 
 
+def _payload(event: EngagementEvent) -> dict[str, Any]:
+    """Return the event payload as a dict, tolerating malformed (non-dict) payloads.
+
+    ``read_events`` yields events for any well-formed JSON line, so a corrupted
+    or hand-edited log may carry a non-dict ``payload`` (e.g. a list). Coerce
+    such payloads to an empty dict so a single bad line cannot crash the export.
+    """
+    return event.payload if isinstance(event.payload, dict) else {}
+
+
 def _render_engagement_start(event: EngagementEvent) -> list[str]:
     lines = [f"## Engagement started — {_format_ts(event.ts)}"]
-    payload = event.payload
+    payload = _payload(event)
     name = payload.get("name") or payload.get("engagement") or payload.get("target")
     if name:
         lines.append(f"- **engagement:** {name}")
@@ -97,7 +107,7 @@ def _render_engagement_end(event: EngagementEvent) -> list[str]:
 def _render_agent_turn(event: EngagementEvent) -> list[str]:
     name = event.agent or "agent"
     lines = [f"### {name} — {_format_ts(event.ts)}"]
-    payload = event.payload
+    payload = _payload(event)
     content = payload.get("content") or payload.get("message") or payload.get("text")
     if content:
         lines.append(str(content))
@@ -109,7 +119,7 @@ def _render_agent_turn(event: EngagementEvent) -> list[str]:
 
 
 def _render_tool_call(event: EngagementEvent) -> list[str]:
-    payload = event.payload
+    payload = _payload(event)
     tool = payload.get("tool") or "tool"
     lines = [f"#### Tool call: `{tool}` — {_format_ts(event.ts)}"]
     args = payload.get("args")
@@ -120,7 +130,7 @@ def _render_tool_call(event: EngagementEvent) -> list[str]:
 
 
 def _render_tool_result(event: EngagementEvent) -> list[str]:
-    payload = event.payload
+    payload = _payload(event)
     tool = payload.get("tool") or "tool"
     lines = [f"#### Tool result: `{tool}` — {_format_ts(event.ts)}"]
     if "result" in payload:
@@ -159,6 +169,23 @@ def render_transcript(engagement_id: str, events: list[EngagementEvent]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def _write_stdout(text: str) -> None:
+    """Emit ``text`` on stdout as UTF-8, independent of the locale encoding.
+
+    The transcript intentionally contains non-ASCII characters (em dashes,
+    ``ensure_ascii=False`` JSON), which a plain ``sys.stdout.write`` would fail
+    to encode under an ASCII/``C`` locale or a legacy Windows code page. Writing
+    through the underlying binary buffer keeps stdout consistent with the
+    UTF-8 file output above.
+    """
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(text.encode("utf-8"))
+        sys.stdout.flush()
+    else:
+        sys.stdout.write(text)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     workspace = _resolve_workspace(args.workspace)
@@ -175,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(transcript, encoding="utf-8")
     else:
-        sys.stdout.write(transcript)
+        _write_stdout(transcript)
     return EXIT_OK
 
 
