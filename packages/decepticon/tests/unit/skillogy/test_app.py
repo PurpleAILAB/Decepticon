@@ -208,9 +208,8 @@ class TestLoad:
         assert r.json()["props"]["name"] == "x"
         assert backend.load_calls == ["/skills/x/SKILL.md"]
 
-    def test_name_route_resolves_via_find_then_loads(self) -> None:
+    def test_name_route_loads_directly_without_find(self) -> None:
         backend = _FakeBackend(
-            find_response=[{"name": "kerberoasting", "path": "/skills/ad/k/SKILL.md"}],
             load_response={
                 "name": "kerberoasting",
                 "path": "/skills/ad/k/SKILL.md",
@@ -220,15 +219,17 @@ class TestLoad:
         with TestClient(build_app(backend)) as client:
             r = client.post("/v1/skills:load", json={"name_or_path": "kerberoasting"})
         assert r.status_code == 200
-        # The server hit find_skill once with query=name, then load_skill
-        # with the matched path.
-        assert backend.find_calls and backend.find_calls[0]["query"] == "kerberoasting"
-        assert backend.load_calls == ["/skills/ad/k/SKILL.md"]
+        # The server passes a bare name straight to backend.load_skill —
+        # never through find_skill, whose keyword ranking the mixed APT+web
+        # corpus pollutes (a name outside find's top-N would 404).
+        assert backend.find_calls == []
+        assert backend.load_calls == ["kerberoasting"]
 
     def test_name_no_exact_match_is_404(self) -> None:
-        backend = _FakeBackend(
-            find_response=[{"name": "kerberoasting-blind", "path": "/skills/x/SKILL.md"}]
-        )
+        # load_response=None — backend.load_skill resolves neither a path
+        # nor an exact name (near-misses like "kerberoasting-blind" don't
+        # count; only exact matches resolve).
+        backend = _FakeBackend()
         with TestClient(build_app(backend)) as client:
             r = client.post("/v1/skills:load", json={"name_or_path": "kerberoasting"})
         assert r.status_code == 404

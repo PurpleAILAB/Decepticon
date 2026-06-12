@@ -39,7 +39,7 @@ Drive each dimension through one `ask_user_question` call (per CRITICAL_RULES #8
 9. Escalation contacts — minimum 2 (client + red team lead). One ask per contact slot covering name, role, channel
 10. Authorization reference / contract # (free-form, `allow_other=true`)
 
-### Step 2: Generate roe.json
+### Step 2: Generate plan/roe.json
 
 Use the `RoE` schema from `decepticon.core.schemas`. Write to the engagement directory.
 
@@ -59,4 +59,4 @@ Run through the checklist in `references/validation-checklist.md` before present
 
 ## Output
 
-Write `roe.json` to the engagement directory, then present a human-readable summary to the user for confirmation.
+Write `plan/roe.json` to the engagement directory, then present a human-readable summary to the user for confirmation.

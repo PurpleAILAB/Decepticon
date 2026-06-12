@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCompareVersions(t *testing.T) {
@@ -28,11 +29,45 @@ func TestCompareVersions(t *testing.T) {
 		{"1.10.0", "1.9.0", false},
 		{"2.0.0", "1.99.99", false},
 		{"0.9.9", "1.0.0", true},
+		// SemVer §11 prerelease precedence: a prerelease is LOWER than
+		// its associated normal version. Matters for the `latest`
+		// channel, which surfaces -rc builds.
+		{"1.2.0-rc.1", "1.2.0", true},      // rc → final is an update
+		{"1.2.0", "1.2.0-rc.1", false},     // final → rc is NOT an update (downgrade)
+		{"1.2.0-rc.1", "1.2.0-rc.2", true}, // rc.1 → rc.2 is an update
+		{"1.2.0-rc.2", "1.2.0-rc.1", false},
+		{"1.2.0-rc.2", "1.2.0-rc.10", true}, // numeric identifiers compare numerically (10 > 2)
+		{"1.2.0-rc.1", "1.2.0-rc.1", false},
+		{"1.1.0", "1.2.0-rc.1", true}, // a prerelease of a higher version still beats a lower final
+		{"1.2.0-rc.1", "1.1.0", false},
+		{"v1.2.0-rc.1", "v1.2.0", true},      // tolerates the leading v
+		{"1.2.0-alpha", "1.2.0-beta", true},  // alphanumeric identifiers compare lexically
+		{"1.2.0-rc.1", "1.2.0-rc.1.1", true}, // more fields > fewer when the prefix is equal
 	}
 	for _, tt := range tests {
 		got := CompareVersions(tt.current, tt.latest)
 		if got != tt.want {
 			t.Errorf("CompareVersions(%q, %q) = %v, want %v", tt.current, tt.latest, got, tt.want)
+		}
+	}
+}
+
+func TestResolveChannel(t *testing.T) {
+	// Default + unrecognized → stable (Decepticon's conservative default;
+	// soak semantics still match Claude Code, only the default differs).
+	tests := map[string]Channel{
+		"":          ChannelStable, // default
+		"stable":    ChannelStable,
+		"STABLE":    ChannelStable,
+		"  stable ": ChannelStable,
+		"latest":    ChannelLatest,
+		"LATEST":    ChannelLatest,
+		" latest":   ChannelLatest,
+		"garbage":   ChannelStable, // unrecognized → safe default (stable)
+	}
+	for in, want := range tests {
+		if got := ResolveChannel(in); got != want {
+			t.Errorf("ResolveChannel(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -85,11 +120,132 @@ func TestFetchLatestRelease_Mock(t *testing.T) {
 	}
 }
 
+func TestFetchRelease_LatestUsesReleasesLatestEndpoint(t *testing.T) {
+	// latest = newest FINAL release immediately. GitHub's /releases/latest
+	// already excludes pre-releases and drafts.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/releases/latest" {
+			t.Errorf("latest channel must call /releases/latest, got %q", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(Release{TagName: "v1.3.0"})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+
+	rel, err := FetchRelease(ChannelLatest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.3.0" {
+		t.Errorf("TagName = %q, want v1.3.0", rel.TagName)
+	}
+}
+
+func TestFetchRelease_StableSoaksByPublishedAt(t *testing.T) {
+	// stable = newest FINAL release that has baked for the soak window.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/releases/latest" {
+			t.Errorf("stable channel must list /releases, not /releases/latest")
+		}
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.3.0", PublishedAt: "2026-06-10T00:00:00Z"},                        // 2d old — too fresh
+			{TagName: "v1.2.0", PublishedAt: "2026-06-01T00:00:00Z"},                        // 11d old — soaked, newest soaked
+			{TagName: "v1.1.0", PublishedAt: "2026-05-01T00:00:00Z"},                        // soaked but lower
+			{TagName: "v1.4.0-rc.1", Prerelease: true, PublishedAt: "2026-05-01T00:00:00Z"}, // prerelease — excluded
+			{TagName: "v2.0.0", Draft: true, PublishedAt: "2026-01-01T00:00:00Z"},           // draft — excluded
+		})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+	defer withSoakClock(time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), 7*24*time.Hour)()
+
+	rel, err := FetchRelease(ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.2.0" {
+		t.Errorf("stable TagName = %q, want v1.2.0 (newest final older than 7d)", rel.TagName)
+	}
+}
+
+func TestFetchRelease_StableFallsBackToLatestWhenNoneSoaked(t *testing.T) {
+	// Every release is younger than the soak window (brand-new project) —
+	// stable must still resolve, by falling back to the newest final.
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits[r.URL.Path]++
+		if r.URL.Path == "/releases/latest" {
+			json.NewEncoder(w).Encode(Release{TagName: "v1.3.0"})
+			return
+		}
+		json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.3.0", PublishedAt: "2026-06-11T00:00:00Z"}, // 1d old
+		})
+	}))
+	defer srv.Close()
+	defer withAPIBaseURL(srv.URL)()
+	defer withSoakClock(time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC), 7*24*time.Hour)()
+
+	rel, err := FetchRelease(ChannelStable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.TagName != "v1.3.0" {
+		t.Errorf("fallback TagName = %q, want v1.3.0", rel.TagName)
+	}
+	if hits["/releases/latest"] == 0 {
+		t.Errorf("expected a fallback to /releases/latest")
+	}
+}
+
+func TestPickSoakedStable(t *testing.T) {
+	now := time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC)
+	soak := 7 * 24 * time.Hour
+	got := pickSoakedStable([]Release{
+		{TagName: "v1.3.0", PublishedAt: "2026-06-10T00:00:00Z"}, // 2d — too fresh
+		{TagName: "v1.2.0", PublishedAt: "2026-06-01T00:00:00Z"}, // 11d — soaked, highest
+		{TagName: "v1.1.0", PublishedAt: "2026-05-01T00:00:00Z"}, // soaked, lower
+		{TagName: "v1.4.0-rc.1", Prerelease: true, PublishedAt: "2026-04-01T00:00:00Z"},
+		{TagName: "v2.0.0", Draft: true, PublishedAt: "2026-04-01T00:00:00Z"},
+		{TagName: "", PublishedAt: "2026-04-01T00:00:00Z"},
+	}, now, soak)
+	if got == nil || got.TagName != "v1.2.0" {
+		t.Fatalf("pickSoakedStable = %+v, want v1.2.0", got)
+	}
+	// None soaked → nil (caller falls back).
+	none := pickSoakedStable([]Release{
+		{TagName: "v1.3.0", PublishedAt: "2026-06-11T00:00:00Z"},
+	}, now, soak)
+	if none != nil {
+		t.Errorf("pickSoakedStable(all fresh) = %+v, want nil", none)
+	}
+	if pickSoakedStable(nil, now, soak) != nil {
+		t.Errorf("pickSoakedStable(nil) should be nil")
+	}
+}
+
+// withAPIBaseURL points the updater at a test server and returns a
+// restore func.
+func withAPIBaseURL(url string) func() {
+	old := APIBaseURL
+	APIBaseURL = url
+	return func() { APIBaseURL = old }
+}
+
+// withSoakClock pins the updater's "now" and soak window for deterministic
+// stable-channel soak math; returns a restore func.
+func withSoakClock(now time.Time, soak time.Duration) func() {
+	oldNow, oldSoak := nowFn, stableSoak
+	nowFn = func() time.Time { return now }
+	stableSoak = soak
+	return func() { nowFn, stableSoak = oldNow, oldSoak }
+}
+
 func TestPromptIfUpdateAvailable_SkipsDevBuilds(t *testing.T) {
 	// "dev" / empty version means a local build that does not track
 	// published releases — no prompt, no GitHub round-trip.
 	for _, v := range []string{"dev", ""} {
-		applied, err := PromptIfUpdateAvailable(v)
+		applied, err := PromptIfUpdateAvailable(v, ChannelStable)
 		if err != nil {
 			t.Errorf("PromptIfUpdateAvailable(%q) err = %v", v, err)
 		}
@@ -105,7 +261,7 @@ func TestPromptIfUpdateAvailable_SkipsNonInteractive(t *testing.T) {
 	// without ever calling huh.Run. A non-zero version that would
 	// otherwise fail the "is dev?" gate is safe — the function returns
 	// silently on the TTY check before fetching anything.
-	applied, err := PromptIfUpdateAvailable("0.0.0")
+	applied, err := PromptIfUpdateAvailable("0.0.0", ChannelStable)
 	if err != nil {
 		t.Errorf("PromptIfUpdateAvailable err = %v", err)
 	}
@@ -325,7 +481,7 @@ func TestAutoUpdateIfAvailable_SkipsDevBuilds(t *testing.T) {
 	// releases — the unattended AUTO_UPDATE path must no-op without any
 	// GitHub round-trip (mirrors PromptIfUpdateAvailable's dev gate).
 	for _, v := range []string{"dev", ""} {
-		applied, err := AutoUpdateIfAvailable(v)
+		applied, err := AutoUpdateIfAvailable(v, ChannelStable)
 		if err != nil {
 			t.Errorf("AutoUpdateIfAvailable(%q) err = %v", v, err)
 		}

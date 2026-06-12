@@ -123,7 +123,7 @@ Every engagement has one terminal state and one final-response sequence.
 1. `load_skill("/skills/standard/decepticon/final-report/SKILL.md")`
 2. Generate `report/executive-summary.md` per the skill's executive-summary template
 3. Generate `report/technical-report.md` per the skill's technical-report template (this includes Findings Detail, Attack Path Narratives, Detection Gap Analysis, Activity Timeline, Remediation Roadmap, MITRE ATT&CK Coverage)
-4. Promote operational `findings/FIND-NNN.md` to deliverable `report/finding-NNN.md` per the skill's deliverable-tier promotion section
+4. Promote operational `findings/FIND-NNN.md` to deliverable `report/<severity><NN>-<slug>.md` (severity-sorted, human-readable; `id: FIND-NNN` retained in frontmatter) per the skill's deliverable-tier promotion section
 5. Final assistant message references both report paths and provides a 3-bullet headline summary
 
 **Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.

@@ -28,7 +28,7 @@ class MiddlewareSlot(StrEnum):
     """
 
     ENGAGEMENT_CONTEXT = "engagement-context"
-    ROE_ENFORCEMENT = "roe-enforcement"
+    ROE_GUARDRAIL = "roe-guardrail"
     HITL_APPROVAL = "hitl-approval"
     UNTRUSTED_OUTPUT = "untrusted-output"
     PROMPT_INJECTION_SHIELD = "prompt-injection-shield"
@@ -51,6 +51,17 @@ class MiddlewareSlot(StrEnum):
     PROMPT_CACHING = "prompt-caching"
     PATCH_TOOL_CALLS = "patch-tool-calls"
 
+    # ── Compat alias (removed at 2.0.0) ──
+    # The slot was renamed ``ROE_ENFORCEMENT`` → ``ROE_GUARDRAIL`` when
+    # enforcement became genuinely layered (advisory command-parse +
+    # authoritative sandbox egress); the parser is one guardrail among
+    # several, not *the* enforcement. This alias keeps plugin bundles
+    # that reference ``MiddlewareSlot.ROE_ENFORCEMENT`` resolving to the
+    # same member. As an enum alias it shares ROE_GUARDRAIL's value and
+    # assembly position, and is excluded from iteration — so the slot is
+    # never assembled twice.
+    ROE_ENFORCEMENT = "roe-guardrail"
+
 
 SAFETY_CRITICAL_SLOTS: frozenset[MiddlewareSlot] = frozenset(
     {
@@ -60,12 +71,12 @@ SAFETY_CRITICAL_SLOTS: frozenset[MiddlewareSlot] = frozenset(
         # middleware honours the same contract; full disable is the
         # actual hazard.
         MiddlewareSlot.ENGAGEMENT_CONTEXT,
-        # RoEEnforcementMiddleware is the legal/safety gate for every
+        # RoEGuardrailMiddleware is the legal/safety gate for every
         # bash tool call. Disabling it lets the agent attempt commands
         # against out-of-scope targets without record. Replacement is
         # fine if the new middleware honours the same contract (target
         # extraction + RoE evaluation + chained audit log).
-        MiddlewareSlot.ROE_ENFORCEMENT,
+        MiddlewareSlot.ROE_GUARDRAIL,
         # UntrustedOutputMiddleware structurally separates attacker-
         # influenceable tool output (bash stdout, file reads, KG
         # queries) from authoritative instructions via the
@@ -136,7 +147,7 @@ _BASE_SLOTS: frozenset[MiddlewareSlot] = _TAIL_SLOTS | {
     MiddlewareSlot.SKILLS,
     MiddlewareSlot.FILESYSTEM,
     MiddlewareSlot.UNTRUSTED_OUTPUT,
-    MiddlewareSlot.ROE_ENFORCEMENT,
+    MiddlewareSlot.ROE_GUARDRAIL,
     # Additive / no-op-safe slots every agent gets: structured event
     # logging, the prompt-injection shield (deny-list wrap; coexists
     # with UNTRUSTED_OUTPUT's allow-list via dedup in the shield), and

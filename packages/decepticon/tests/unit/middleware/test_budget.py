@@ -123,3 +123,87 @@ def test_soft_warn_fires_once_per_scope():
     assert "engagement:engagement:test" in mw._warned_scopes
     mw._enforce(_Req())
     assert len(mw._warned_scopes) == 1
+
+
+# ------------------------------------------------------------- _tag_request
+
+
+class _OverridableReq:
+    """Minimal ModelRequest stand-in supporting ``override``."""
+
+    def __init__(self, model_settings: dict | None = None):
+        self.state = {"engagement_name": "test"}
+
+        class _RT:
+            agent_name = "recon"
+
+        self.runtime = _RT()
+        self.model_settings = model_settings or {}
+
+    def override(self, **kwargs):
+        new = _OverridableReq()
+        new.__dict__.update(self.__dict__)
+        new.__dict__.update(kwargs)
+        return new
+
+
+def test_tag_request_injects_scope_tags():
+    mw = BudgetEnforcementMiddleware(
+        engagement_cap_usd=10.0,
+        per_agent_cap_usd=0.0,
+        spend_provider=lambda _k: 0.0,
+    )
+    tagged = mw._tag_request(_OverridableReq())
+    tags = tagged.model_settings["extra_body"]["metadata"]["tags"]
+    assert tags == ["engagement:test", "agent:test:recon"]
+
+
+def test_tag_request_preserves_existing_extra_body_and_tags():
+    mw = BudgetEnforcementMiddleware(
+        engagement_cap_usd=10.0,
+        per_agent_cap_usd=0.0,
+        spend_provider=lambda _k: 0.0,
+    )
+    req = _OverridableReq(
+        model_settings={
+            "extra_body": {
+                "thinking": {"type": "enabled"},
+                "metadata": {"tags": ["custom-tag"], "trace_id": "t-1"},
+            },
+            "max_tokens": 64,
+        }
+    )
+    tagged = mw._tag_request(req)
+    extra = tagged.model_settings["extra_body"]
+    assert extra["thinking"] == {"type": "enabled"}
+    assert tagged.model_settings["max_tokens"] == 64
+    assert extra["metadata"]["trace_id"] == "t-1"
+    assert extra["metadata"]["tags"] == [
+        "custom-tag",
+        "engagement:test",
+        "agent:test:recon",
+    ]
+    # the original request's settings must not be mutated in place
+    assert req.model_settings["extra_body"]["metadata"]["tags"] == ["custom-tag"]
+
+
+def test_tag_request_is_idempotent():
+    mw = BudgetEnforcementMiddleware(
+        engagement_cap_usd=10.0,
+        per_agent_cap_usd=0.0,
+        spend_provider=lambda _k: 0.0,
+    )
+    once = mw._tag_request(_OverridableReq())
+    twice = mw._tag_request(once)
+    tags = twice.model_settings["extra_body"]["metadata"]["tags"]
+    assert tags == ["engagement:test", "agent:test:recon"]
+
+
+def test_tag_request_noop_when_disabled():
+    mw = BudgetEnforcementMiddleware(
+        engagement_cap_usd=0.0,
+        per_agent_cap_usd=0.0,
+        spend_provider=lambda _k: 0.0,
+    )
+    req = _OverridableReq()
+    assert mw._tag_request(req) is req

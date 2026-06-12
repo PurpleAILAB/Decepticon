@@ -15,13 +15,13 @@ The OPPLAN is the **direct analogue of ralph's prd.json** — it's the file the 
 
 ## When to Use
 
-- After both `roe.json` and `conops.json` exist
+- After both `plan/roe.json` and `plan/conops.json` exist
 - User wants to convert planning docs into executable tasks
 - Starting the autonomous red team loop
 
 ## Prerequisites
 
-Read both `roe.json` and `conops.json` first. The RoE constrains what's allowed; the CONOPS defines the kill chain and threat profile.
+Read both `plan/roe.json` and `plan/conops.json` first. The RoE constrains what's allowed; the CONOPS defines the kill chain and threat profile.
 
 See `../references/schema-quick-reference.md` for the `OPPLAN` and `Objective` schema fields, valid status values, and enum types.
 
@@ -53,7 +53,7 @@ See `references/objective-templates.md` for recon-phase templates and `reference
 
 Every objective MUST have three mandatory criteria types:
 
-1. **Scope check** — "All targets verified against roe.json in-scope list"
+1. **Scope check** — "All targets verified against plan/roe.json in-scope list"
 2. **OPSEC check** — At least one OPSEC-related criterion (rate limit, timing, etc.)
 3. **Output persistence** — "Results saved to <engagement>/recon/..." (or exploit/, post-exploit/) with specific file path
 

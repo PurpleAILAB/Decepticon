@@ -15,13 +15,13 @@ The CONOPS bridges the legal RoE and the tactical OPPLAN. It must be **readable 
 
 ## When to Use
 
-- After `roe.json` exists
+- After `plan/roe.json` exists
 - User says "create CONOPS", "design the operation", "build threat model"
 - Before OPPLAN can be generated
 
 ## Prerequisites
 
-Read `roe.json` first — scope and boundaries constrain the CONOPS.
+Read `plan/roe.json` first — scope and boundaries constrain the CONOPS.
 
 See `../references/schema-quick-reference.md` for the `CONOPS`, `ThreatActor`, `KillChainPhase`, and `DeconflictionPlan` schema fields.
 
@@ -54,8 +54,8 @@ Based on RoE scope + threat profile, select applicable phases. See `references/k
 
 ### Step 3: Generate Documents
 
-1. `conops.json` — matching `CONOPS` schema
-2. `deconfliction.json` — matching `DeconflictionPlan` schema
+1. `plan/conops.json` — matching `CONOPS` schema
+2. `plan/deconfliction.json` — matching `DeconflictionPlan` schema
 
 ### Step 4: Validate
 

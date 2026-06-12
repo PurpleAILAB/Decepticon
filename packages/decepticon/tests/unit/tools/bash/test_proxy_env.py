@@ -202,9 +202,13 @@ def test_sync_passthrough_env_swallows_send_errors_without_raising(
         mgr._sync_passthrough_env()
 
 
-def test_initialize_calls_sync_passthrough_env_when_cached_session_is_alive(
+def test_initialize_skips_sync_passthrough_env_when_cached_session_is_alive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Re-syncing on the cached-alive path emits an export line whose PS1
+    # marker races the user command's marker (see tmux.py initialize()).
+    # The env was synced at session creation and persists, so the fast
+    # path must NOT re-sync.
     _clear_proxy_and_decepticon_env(monkeypatch)
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy:8080")
 
@@ -216,7 +220,7 @@ def test_initialize_calls_sync_passthrough_env_when_cached_session_is_alive(
     ):
         mgr.initialize()
 
-    assert sync_calls == [1]
+    assert sync_calls == []
 
 
 def test_initialize_calls_sync_passthrough_env_after_creating_new_session(

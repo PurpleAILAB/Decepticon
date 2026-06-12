@@ -162,30 +162,24 @@ def build_app(
     async def load_skill(req: LoadReq) -> dict[str, Any]:
         target = req.name_or_path
         allowed = req.allowed_path_prefixes
-        if target.startswith("/skills/"):
-            props = backend.load_skill(target, allowed_path_prefixes=allowed)
-        else:
-            # Resolve the name through find_skill so the same path-prefix
-            # ACL guards the name → path lookup the agent sees (otherwise
-            # a name match would leak the existence of skills outside the
-            # allowlist via 404 vs success).
-            try:
-                hits = backend.find_skill(
-                    query=target,
-                    limit=10,
-                    allowed_path_prefixes=allowed,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            exact = [h for h in hits if h.get("name") == target]
-            if not exact:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"no Skill with name or path matching {target!r}",
-                )
-            props = backend.load_skill(exact[0]["path"], allowed_path_prefixes=allowed)
+        # ``backend.load_skill`` resolves an exact canonical path OR an exact
+        # frontmatter name, and applies the path-prefix ACL to the RESOLVED
+        # path (so a name match cannot leak a skill outside the allowlist) —
+        # a single direct lookup is correct for both inputs.
+        #
+        # The previous code resolved a name via ``find_skill(query=name,
+        # limit=10)`` and filtered for an exact-name hit, which depends on the
+        # name landing in find_skill's top-10 KEYWORD ranking. The mixed
+        # APT + web skill corpus pollutes that: ``load_skill("oauth")`` 404'd
+        # because adversary-emulation skills whose descriptions mention
+        # "oauth" outranked the web ``oauth`` skill and pushed it past the
+        # limit. A direct name lookup is unambiguous and pollution-proof.
+        props = backend.load_skill(target, allowed_path_prefixes=allowed)
         if props is None:
-            raise HTTPException(status_code=404, detail=f"no Skill at path {target!r}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"no Skill with name or path matching {target!r}",
+            )
         return {"props": props}
 
     @app.post("/v1/skills:traverse", dependencies=_protected)

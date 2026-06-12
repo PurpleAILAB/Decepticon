@@ -22,6 +22,21 @@ The fallback (``_extract_generic``) catches IP literals, CIDR-like
 ``x.x.x.x/yy``, hostnames after ``://``, and bare hostnames after
 common verbs (``curl``, ``ssh``). The result is the union of
 tool-specific extraction + the generic scrape.
+
+Fail-closed token scrape
+------------------------
+The generic scrape only recognises a host after ``://`` or a hardcoded
+verb. A network tool *not* on that verb list, invoked with a bare
+hostname (``ping evil.com``, ``nc evil.com 443``, ``./exploit
+evil.com``), used to extract ZERO targets — leaving the RoE scope gate
+nothing to evaluate, so it allowed the command by default. For an
+allowlist enforcer that is the unsafe direction (a fail-OPEN bypass).
+``_extract_token_hosts`` closes that class: when no tool-specific
+extractor matched, every shell token that validates as a host / IP /
+CIDR is treated as a candidate target unless it is a known non-target.
+The failure mode flips from "missed target → allowed" to "spurious
+target → refused (operator-overridable)", which matches the allowlist
+posture the RoE evaluator already assumes.
 """
 
 from __future__ import annotations
@@ -260,6 +275,73 @@ def _looks_ipv6(token: str) -> bool:
         return False
 
 
+def _is_ip_network(token: str) -> bool:
+    try:
+        ipaddress.ip_network(token, strict=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _host_candidates(token: str) -> list[str]:
+    """Split one shell token into the host-shaped pieces worth validating.
+
+    Strips a trailing path (``evil.com/admin`` → ``evil.com``) while
+    preserving CIDR literals (``10.0.0.0/24`` validates as a network, so
+    it is left whole), and splits ``host:port`` / ``--resolve
+    host:port:ip`` compounds on ``:`` so each piece is checked on its own
+    rather than emitting a junk ``host:port`` target. IPv6 literals keep
+    their colons.
+    """
+    candidates = [token]
+    if "/" in token and not _is_ip_network(token):
+        candidates.append(token.split("/", 1)[0])
+    pieces: list[str] = []
+    for cand in candidates:
+        if ":" in cand and not _looks_ipv6(cand):
+            pieces.extend(cand.split(":"))
+        else:
+            pieces.append(cand)
+    return pieces
+
+
+def _extract_token_hosts(command: str) -> set[str]:
+    """Verb-agnostic, fail-closed scrape of host/IP/CIDR-shaped tokens.
+
+    The legacy generic extractor only recognised a host argument when it
+    followed ``scheme://`` or one of ~30 hardcoded verbs. Any network
+    tool *not* on that list, invoked with a bare hostname (``ping
+    evil.com``, ``nc evil.com 443``, ``./exploit evil.com``), extracted
+    zero targets — so the RoE scope gate had nothing to evaluate and
+    allowed the command by default. That is a fail-OPEN bypass of an
+    allowlist enforcer.
+
+    This fallback inverts the default: every shell token that validates
+    as a host / IP / CIDR is a candidate target unless it is a known
+    non-target (flag, absolute path, file-extension argument — all
+    rejected by ``_is_valid_target``). It runs only when no precise
+    tool-specific extractor matched, so the engineered option-value
+    exclusions for nmap / ssh / impacket are preserved.
+    """
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        # Malformed quoting still must not hide a host — fall back to a
+        # whitespace split rather than returning nothing (fail-closed).
+        tokens = command.split()
+    found: set[str] = set()
+    for tok in tokens:
+        if not tok or tok.startswith("-"):
+            continue
+        if "@" in tok:  # strip userinfo: user@host / cred@host → host
+            tok = tok.rsplit("@", 1)[1]
+        for piece in _host_candidates(tok):
+            canon = _canon_host(piece)
+            if canon and _is_valid_target(canon):
+                found.add(canon)
+    return found
+
+
 def _extract_impacket_targets(command: str) -> set[str]:
     targets: set[str] = set()
     try:
@@ -294,9 +376,17 @@ _TOOL_EXTRACTORS: tuple[tuple[re.Pattern[str], Callable[[str], set[str]]], ...] 
 def extract_targets(command: str) -> set[str]:
     """Return every host/IP/CIDR the command appears to target.
 
-    The result is the UNION of the tool-specific extractor (if the
-    command's leading token matches a known tool) and the generic
-    scrape (URLs, IP literals, CIDRs, hostnames after recognised verbs).
+    The result is the UNION of:
+
+      * the tool-specific extractor (if the command's leading token
+        matches a known tool — nmap / ssh / impacket), which precisely
+        skips option *values* (``-oA out.txt``, ``-i key.pem``);
+      * the generic scrape (URLs, IP literals, CIDRs, hostnames after
+        recognised verbs); and
+      * a verb-agnostic token scrape (``_extract_token_hosts``) that
+        runs ONLY when no tool-specific extractor matched — this is the
+        fail-closed fallback that surfaces bare-hostname targets on
+        tools the parser has never seen (``ping``/``nc``/``./exploit``).
 
     Returns an empty set when the command is empty or the parsers
     can't find anything (e.g. ``ls -la /tmp`` legitimately has no
@@ -305,8 +395,10 @@ def extract_targets(command: str) -> set[str]:
     if not command or not command.strip():
         return set()
     targets: set[str] = set()
+    matched_tool = False
     for pattern, extractor in _TOOL_EXTRACTORS:
         if pattern.match(command):
+            matched_tool = True
             try:
                 targets.update(extractor(command))
             except Exception:
@@ -317,4 +409,9 @@ def extract_targets(command: str) -> set[str]:
                 pass
             break
     targets.update(_extract_generic(command))
+    if not matched_tool:
+        # No precise extractor claimed this command, so its option-value
+        # exclusions don't apply — run the fail-closed token scan to
+        # surface bare-hostname targets the generic verb list misses.
+        targets.update(_extract_token_hosts(command))
     return targets

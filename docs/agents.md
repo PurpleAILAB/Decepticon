@@ -82,7 +82,7 @@ These slots are part of the base set every role receives — they are the engage
 
 | Middleware | Slot | Purpose |
 |------------|------|---------|
-| `RoEEnforcementMiddleware` | `roe-enforcement` | Legal/safety gate on tool calls — extracts the target, evaluates it against the Rules of Engagement, and appends to a chained audit log (`<workspace>/audit/roe-decisions.jsonl`, or `DECEPTICON_ROE_AUDIT_PATH`). |
+| `RoEGuardrailMiddleware` | `roe-guardrail` | Legal/safety gate on tool calls — extracts the target, evaluates it against the Rules of Engagement, and appends to a chained audit log (`<workspace>/audit/roe-decisions.jsonl`, or `DECEPTICON_ROE_AUDIT_PATH`). A fast-fail command-parse gate; the authoritative scope boundary is the egress layer (sandbox nftables, on by default for `enforce` mode, opt-out via `DECEPTICON_EGRESS_DISABLE`). The pre-rename name `RoEEnforcementMiddleware` / slot `roe-enforcement` stays as a compat alias until 2.0.0. |
 | `UntrustedOutputMiddleware` | `untrusted-output` | Quarantines attacker-influenceable tool output (bash stdout, file reads, KG queries) inside a `<UNTRUSTED_TOOL_OUTPUT>` envelope so hostile content can't re-author the agent's instructions. |
 | `PromptInjectionShieldMiddleware` | `prompt-injection-shield` | Deny-list wrap of attacker-controlled tool output (HTTP bodies, banners, file reads); dedups against `UNTRUSTED_OUTPUT` and does not re-inject the system policy. |
 | `EventLogMiddleware` | `event-log` | Structured event logging for every model and tool call. |
@@ -112,7 +112,7 @@ Bash-executing agents and the orchestrator additionally get:
 
 ### Safety-critical slots
 
-`SAFETY_CRITICAL_SLOTS` — `engagement-context`, `roe-enforcement`, `untrusted-output`, `prompt-injection-shield`, `sandbox-notification`, `hitl-approval` — can only be replaced or disabled by a plugin when `DECEPTICON_ALLOW_SAFETY_OVERRIDES=1` is set in the environment. The gate is enforced by `build_middleware` in `decepticon.agents.build`; without it, an override raises `SafetyOverrideViolation`. Replacement is fine if the new middleware honours the same contract — the gate exists so an accidentally-installed plugin can't silently subvert the safety story.
+`SAFETY_CRITICAL_SLOTS` — `engagement-context`, `roe-guardrail`, `untrusted-output`, `prompt-injection-shield`, `sandbox-notification`, `hitl-approval` — can only be replaced or disabled by a plugin when `DECEPTICON_ALLOW_SAFETY_OVERRIDES=1` is set in the environment. The gate is enforced by `build_middleware` in `decepticon.agents.build`; without it, an override raises `SafetyOverrideViolation`. Replacement is fine if the new middleware honours the same contract — the gate exists so an accidentally-installed plugin can't silently subvert the safety story.
 
 ### Stack per Agent Role
 

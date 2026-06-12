@@ -173,8 +173,8 @@ Cross-validate the bundle (per TOOL_GUIDANCE invariants) before Phase 3.
    tool, stop and call the tool first — the prose comes from the
    tool's emitted event, not from a chat message.
 
-Note: The orchestrator reads `roe.json`, `conops.json`, and
-`deconfliction.json` and maps the kill chain phases to objectives via
+Note: The orchestrator reads `plan/roe.json`, `plan/conops.json`, and
+`plan/deconfliction.json` and maps the kill chain phases to objectives via
 `add_objective`. The OPPLAN persists to `plan/opplan.json` automatically
 on every mutation — no save step required, and Soundwave does NOT
 generate it.

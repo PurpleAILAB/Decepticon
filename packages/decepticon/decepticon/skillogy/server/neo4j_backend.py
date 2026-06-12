@@ -148,21 +148,44 @@ class Neo4jBackend:
         *,
         allowed_path_prefixes: list[str] | None = None,
     ) -> dict[str, Any] | None:
-        """Fetch one ``:Skill`` node by canonical path. Returns its full
-        property dict, or ``None`` if no such skill exists.
+        """Fetch one ``:Skill`` node by canonical path OR unique frontmatter
+        name. Returns its full property dict, or ``None`` if no such skill
+        exists.
 
-        When ``allowed_path_prefixes`` is non-empty, paths not under any
-        listed prefix return ``None`` (the same shape the agent sees for
-        a genuinely missing skill — ADR-0008). ``None`` / empty list
-        preserves the unrestricted behaviour for the standalone library,
-        the skillogy CLI, and pytest, where no role context exists.
+        Agents routinely pass a skill ``name`` (the field ``find_skill``
+        surfaces most prominently — e.g. ``load_skill("oauth")``), not the
+        ``/skills/.../SKILL.md`` path. A path-only match silently returned
+        ``None`` for every name, which forced a fragile client-side
+        ``find_skill`` fallback that the mixed APT + web skill corpus
+        pollutes (``"oauth"``/``"ssrf"`` never resolved while ``"sqli"`` did,
+        purely by which name happened to win the polluted keyword search).
+        Match by exact ``path`` first (always unique), then fall back to an
+        exact ``name`` match.
+
+        When ``allowed_path_prefixes`` is non-empty, the **resolved** skill's
+        path must be under a listed prefix, else ``None`` (the same shape the
+        agent sees for a genuinely missing skill — ADR-0008). The check is
+        applied AFTER resolution: a bare name has no prefix of its own, so
+        gating on the *input* would reject every name-based load. ``None`` /
+        empty list preserves the unrestricted behaviour for the standalone
+        library, the skillogy CLI, and pytest, where no role context exists.
         """
-        if allowed_path_prefixes and not _path_under_any_prefix(path, allowed_path_prefixes):
-            return None
-        query = "MATCH (s:Skill {path: $path}) RETURN properties(s) AS props"
+        query = (
+            "MATCH (s:Skill) WHERE s.path = $arg OR s.name = $arg "
+            "RETURN properties(s) AS props "
+            "ORDER BY CASE WHEN s.path = $arg THEN 0 ELSE 1 END "
+            "LIMIT 1"
+        )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
-            result = session.run(query, path=path).single()
-        return None if result is None else dict(result["props"])
+            result = session.run(query, arg=path).single()
+        if result is None:
+            return None
+        props = dict(result["props"])
+        if allowed_path_prefixes and not _path_under_any_prefix(
+            str(props.get("path", "")), allowed_path_prefixes
+        ):
+            return None
+        return props
 
     def health(self) -> dict[str, Any]:
         """Return service liveness + a count of :Skill nodes in the graph."""
