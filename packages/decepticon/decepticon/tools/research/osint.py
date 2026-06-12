@@ -146,7 +146,7 @@ def _parse_shodan(host_data: dict[str, Any], dns_data: dict[str, Any]) -> dict[s
     for match in host_data.get("matches", []):
         port = match.get("port")
         ip = match.get("ip_str") or match.get("ip")
-        service = match.get("_shodan", {}).get("module") or match.get("product")
+        service = (match.get("_shodan") or {}).get("module") or match.get("product")
         if port is not None:
             out["open_ports"].append({"port": port, "transport": match.get("transport", "tcp")})
         banner = match.get("data")
@@ -213,7 +213,7 @@ def _parse_censys(data: dict[str, Any]) -> dict[str, list[Any]]:
                         "fingerprint_sha256": cert.get("fingerprint_sha256"),
                     }
                 )
-        for name in hit.get("dns", {}).get("names", []):
+        for name in (hit.get("dns") or {}).get("names", []):
             out["dns_records"].append({"type": "A", "name": name, "value": ip})
     return out
 
@@ -406,7 +406,7 @@ async def osint_enrich(domain: str) -> str:
                     _merge_findings(findings, part)
                     used.append(name)
                     log.info("osint_enrich %s ok for %r", name, target)
-                except (httpx.HTTPError, ValueError, KeyError) as e:
+                except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as e:
                     log.warning("osint_enrich %s failed for %r: %s", name, target, e)
                     errors.append(f"{name}: {e}")
 
