@@ -380,6 +380,7 @@ def test_merge_dynamic_models_registers_gateway_override() -> None:
         "api_base": "https://zenmux.ai/api/v1",
     }
 
+
 # ── error-proofing: null / malformed YAML config blocks ─────────────────
 
 
@@ -396,9 +397,7 @@ def test_merge_dynamic_models_tolerates_null_model_list() -> None:
 def test_merge_dynamic_models_tolerates_null_litellm_settings() -> None:
     """A bare ``litellm_settings:`` key parses to ``None``; injecting a
     subscription route must not call ``.setdefault`` on ``None``."""
-    merged = merge_dynamic_models(
-        {"litellm_settings": None}, {"DECEPTICON_AUTH_CHATGPT": "true"}
-    )
+    merged = merge_dynamic_models({"litellm_settings": None}, {"DECEPTICON_AUTH_CHATGPT": "true"})
     assert isinstance(merged["litellm_settings"], dict)
     names = [e.get("model_name", "") for e in merged["model_list"]]
     assert any(n.startswith("auth/gpt") for n in names)
@@ -431,6 +430,7 @@ def test_write_dynamic_config_tolerates_null_blocks(tmp_path: Path) -> None:
     out = write_dynamic_config(src, tmp_path / "out.yaml")
     data = yaml.safe_load(out.read_text())
     assert isinstance(data["model_list"], list)
+
 
 # ── full LiteLLM provider catalog coverage (v1.89.0) ────────────────────
 # Source of truth: the 114 providers researched from litellm 1.89.0 source.
@@ -580,7 +580,9 @@ def test_every_catalog_provider_validates_and_builds(prefix: str) -> None:
         assert "api_key" in entry["litellm_params"], provider
 
 
-@pytest.mark.parametrize("prefix,expected_key", [(p, k) for p, k in _CATALOG if p not in _REJECTED_CATALOG_PREFIXES])
+@pytest.mark.parametrize(
+    "prefix,expected_key", [(p, k) for p, k in _CATALOG if p not in _REJECTED_CATALOG_PREFIXES]
+)
 def test_every_catalog_provider_uses_source_verified_key_env(
     prefix: str, expected_key: str | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:

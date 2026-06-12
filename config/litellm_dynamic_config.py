@@ -192,8 +192,18 @@ OPENAI_COMPAT_GATEWAYS: dict[str, tuple[str, str]] = {
 # rather than crashing proxy startup. Source-verified against litellm's
 # get_secret_str() alias chains (v1.89.0).
 PROVIDER_KEY_ENV_ALIASES: dict[str, tuple[str, ...]] = {
-    "together_ai": ("TOGETHERAI_API_KEY", "TOGETHER_API_KEY", "TOGETHER_AI_API_KEY", "TOGETHER_AI_TOKEN"),
-    "fireworks_ai": ("FIREWORKS_AI_API_KEY", "FIREWORKS_API_KEY", "FIREWORKSAI_API_KEY", "FIREWORKS_AI_TOKEN"),
+    "together_ai": (
+        "TOGETHERAI_API_KEY",
+        "TOGETHER_API_KEY",
+        "TOGETHER_AI_API_KEY",
+        "TOGETHER_AI_TOKEN",
+    ),
+    "fireworks_ai": (
+        "FIREWORKS_AI_API_KEY",
+        "FIREWORKS_API_KEY",
+        "FIREWORKSAI_API_KEY",
+        "FIREWORKS_AI_TOKEN",
+    ),
     "perplexity": ("PERPLEXITYAI_API_KEY", "PERPLEXITY_API_KEY"),
     "cohere": ("COHERE_API_KEY", "CO_API_KEY"),
     "cohere_chat": ("COHERE_API_KEY", "CO_API_KEY"),
@@ -216,11 +226,20 @@ PROVIDER_KEY_ENV_ALIASES: dict[str, tuple[str, ...]] = {
 # on the existing vertex_ai (project+location) and azure (base+version)
 # branches, now table-driven instead of an elif chain.
 PROVIDER_EXTRA_PARAMS: dict[str, dict[str, str]] = {
-    "azure": {"api_base": "os.environ/AZURE_API_BASE", "api_version": "os.environ/AZURE_API_VERSION"},
+    "azure": {
+        "api_base": "os.environ/AZURE_API_BASE",
+        "api_version": "os.environ/AZURE_API_VERSION",
+    },
     "azure_ai": {"api_base": "os.environ/AZURE_AI_API_BASE"},
-    "vertex_ai": {"vertex_project": "os.environ/VERTEXAI_PROJECT", "vertex_location": "os.environ/VERTEXAI_LOCATION"},
+    "vertex_ai": {
+        "vertex_project": "os.environ/VERTEXAI_PROJECT",
+        "vertex_location": "os.environ/VERTEXAI_LOCATION",
+    },
     "databricks": {"api_base": "os.environ/DATABRICKS_API_BASE"},
-    "watsonx": {"api_base": "os.environ/WATSONX_URL", "project_id": "os.environ/WATSONX_PROJECT_ID"},
+    "watsonx": {
+        "api_base": "os.environ/WATSONX_URL",
+        "project_id": "os.environ/WATSONX_PROJECT_ID",
+    },
     "predibase": {"tenant_id": "os.environ/PREDIBASE_TENANT_ID"},
     "snowflake": {"account_id": "os.environ/SNOWFLAKE_ACCOUNT_ID"},
     "litellm_proxy": {"api_base": "os.environ/LITELLM_PROXY_API_BASE"},
@@ -922,13 +941,9 @@ def write_dynamic_config(config_path: str | Path, output_path: str | Path) -> Pa
         with source_path.open("r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
     except FileNotFoundError as exc:
-        raise FileNotFoundError(
-            f"LiteLLM base config not found at {source_path}: {exc}"
-        ) from exc
+        raise FileNotFoundError(f"LiteLLM base config not found at {source_path}: {exc}") from exc
     except yaml.YAMLError as exc:
-        raise ValueError(
-            f"LiteLLM base config at {source_path} is not valid YAML: {exc}"
-        ) from exc
+        raise ValueError(f"LiteLLM base config at {source_path} is not valid YAML: {exc}") from exc
     if config is None:
         config = {}
     if not isinstance(config, MutableMapping):

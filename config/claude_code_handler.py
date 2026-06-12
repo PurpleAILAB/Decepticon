@@ -573,10 +573,7 @@ class ClaudeCodeCustomHandler(CustomLLM):
         except (json.JSONDecodeError, ValueError) as exc:
             raise litellm.APIError(
                 status_code=resp.status_code,
-                message=(
-                    "Anthropic API returned a non-JSON response: "
-                    f"{resp.text[:500]}"
-                ),
+                message=(f"Anthropic API returned a non-JSON response: {resp.text[:500]}"),
                 model=model,
                 llm_provider="auth",
             ) from exc

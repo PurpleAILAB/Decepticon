@@ -336,6 +336,7 @@ class TestCompletionMalformedResponse:
         with pytest.raises(mod.litellm.APIError):
             handler.completion(model=model, messages=[{"role": "user", "content": "hi"}])
 
+
 # ── Claude refresh hardening: malformed refresh response ────────────────
 
 

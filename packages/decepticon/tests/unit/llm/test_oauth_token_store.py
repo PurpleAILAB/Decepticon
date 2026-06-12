@@ -437,6 +437,7 @@ def test_with_retry_on_401_does_not_retry_other_4xx() -> None:
     assert resp.status_code == 403
     assert calls == [False]
 
+
 def test_with_retry_on_401_clamps_nonpositive_attempts() -> None:
     # max_attempts <= 0 must still send once and return a real response —
     # not leave ``resp`` unbound (AssertionError, or None under python -O).
