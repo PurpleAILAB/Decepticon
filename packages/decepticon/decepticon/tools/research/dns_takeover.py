@@ -298,12 +298,17 @@ async def _analyze_domain(client: httpx.AsyncClient, domain: str) -> dict[str, A
     txt_records = _extract_records(txt_doh, "TXT")
 
     findings: list[dict[str, Any]] = []
+    # The live body is served at ``domain`` (not at the CNAME target), so it
+    # is identical across every matching CNAME — fetch it at most once, and
+    # only when a fingerprint actually matches.
+    body: str | None = None
 
     for cname in cnames:
         fp = _match_fingerprint(cname)
         if fp is None:
             continue
-        body = await _fetch_http_body(client, domain)
+        if body is None:
+            body = await _fetch_http_body(client, domain)
         claimable = await _resource_claimable(client, cname)
         verdict = _classify_cname(fp, body, claimable)
         signature_matched = bool(body and any(sig.lower() in body.lower() for sig in fp.signatures))
