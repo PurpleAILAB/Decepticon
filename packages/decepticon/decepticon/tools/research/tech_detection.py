@@ -124,7 +124,14 @@ _HEADER_SIGNATURES: tuple[_Signature, ...] = (
         r"x-litellm-version:\s*v?([\d][\w.\-]*)",
     ),
     _sig("mlflow", TechnologyCategory.AI_FRAMEWORK, _tok("mlflow"), r"mlflow[/ ]v?([\d][\w.\-]*)"),
-    _sig("ray", TechnologyCategory.AI_FRAMEWORK, _tok("ray"), r"\bray[/ ]v?([\d][\w.\-]*)"),
+    # ``-`` is part of ray's boundary so the near-universal Cloudflare ``cf-ray``
+    # header (and ``x-ray-id``) can't masquerade as the Ray AI framework.
+    _sig(
+        "ray",
+        TechnologyCategory.AI_FRAMEWORK,
+        r"(?<![a-z0-9-])ray(?![a-z0-9-])",
+        r"\bray[/ ]v?([\d][\w.\-]*)",
+    ),
     # ── Web servers ──
     _sig("nginx", TechnologyCategory.WEB_SERVER, _tok("nginx"), r"nginx/([\d][\w.]*)"),
     _sig("apache", TechnologyCategory.WEB_SERVER, _tok("apache"), r"apache/([\d][\w.]*)"),
