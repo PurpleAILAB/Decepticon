@@ -123,6 +123,86 @@ def test_scope_keys_ultimate_defaults(monkeypatch: pytest.MonkeyPatch):
     assert agent == "default-agent"
 
 
+# ---------------------------------------------------------------- concurrency
+
+
+def test_check_one_soft_warn_fires_once_under_concurrent_threads():
+    """The _lock keeps the soft-warn invariant under the thread-pool path.
+
+    awrap_model_call runs _enforce via asyncio.to_thread, so concurrent
+    agents land in _check_one on different OS threads. Without the lock the
+    check-then-add on _warned_scopes races and emits duplicate warnings; with
+    it, exactly one fires per scope no matter how many threads pile in.
+    """
+    import threading
+
+    emitted: list[tuple[str, float, float, float]] = []
+    barrier = threading.Barrier(8)
+
+    def provider(_k: str) -> float:
+        return 8.0  # 80% of a 10.0 cap → over the 0.7 soft-warn threshold
+
+    mw = BudgetEnforcementMiddleware(
+        engagement_cap_usd=10.0,
+        soft_warn_at_pct=0.7,
+        spend_provider=provider,
+    )
+
+    import decepticon.middleware.budget as budget_mod
+
+    # capture every emit instead of reaching into langgraph stream internals
+    def fake_emit(scope: str, spent: float, cap: float, frac: float) -> None:
+        emitted.append((scope, spent, cap, frac))
+
+    original_emit = budget_mod._emit_warning_event
+    budget_mod._emit_warning_event = fake_emit
+    try:
+
+        def worker() -> None:
+            barrier.wait()  # maximize overlap on the check-then-add
+            mw._check_one("engagement", "engagement:test", 10.0)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    finally:
+        budget_mod._emit_warning_event = original_emit
+
+    assert len(emitted) == 1
+    assert mw._warned_scopes == {"engagement:engagement:test"}
+
+
+def test_check_one_concurrent_cold_cache_fetches_once():
+    """A cold cache hit by N concurrent threads issues exactly one provider call."""
+    import threading
+
+    calls = {"n": 0}
+    gate = threading.Event()
+    barrier = threading.Barrier(6)
+
+    def provider(_k: str) -> float:
+        calls["n"] += 1
+        gate.wait(timeout=2.0)  # hold the first fetcher so others pile up on the lock
+        return 1.0
+
+    mw = BudgetEnforcementMiddleware(engagement_cap_usd=100.0, spend_provider=provider)
+
+    def worker() -> None:
+        barrier.wait()
+        mw._check_one("engagement", "engagement:test", 100.0)
+
+    threads = [threading.Thread(target=worker) for _ in range(6)]
+    for t in threads:
+        t.start()
+    gate.set()
+    for t in threads:
+        t.join()
+
+    assert calls["n"] == 1  # the lock collapsed 6 cold-cache calls into one fetch
+
+
 # ---------------------------------------------------------------- wrap_model_call
 
 
@@ -247,7 +327,9 @@ class _StubConfig:
 def _install_stub_config(monkeypatch: pytest.MonkeyPatch) -> None:
     import decepticon_core.utils.config as core_config
 
-    monkeypatch.setattr(core_config, "load_config", lambda: _StubConfig())
+    # _StubConfig is itself the callable load_config should become: load_config()
+    # then constructs a fresh _StubConfig instance, matching the real signature.
+    monkeypatch.setattr(core_config, "load_config", _StubConfig)
 
 
 def test_default_provider_returns_matching_tag_spend(monkeypatch: pytest.MonkeyPatch):

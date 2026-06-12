@@ -55,6 +55,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 import time
 from typing import Any, ClassVar
 
@@ -189,6 +190,15 @@ class BudgetEnforcementMiddleware(AgentMiddleware):
         self._cache = _SpendCache(ttl_seconds=poll)
         self._spend_provider = spend_provider or _default_litellm_spend_provider
         self._warned_scopes: set[str] = set()
+        # awrap_model_call runs _enforce in a thread-pool executor, so two
+        # concurrent agents sharing an engagement can enter _check_one on
+        # different threads. This lock keeps the cache-miss→fetch→set window
+        # and the soft-warn check-then-add on _warned_scopes atomic, so the
+        # "at most one HTTP fetch per poll interval" and "soft-warn fires once
+        # per scope" invariants hold under concurrency. It only serializes
+        # budget-enforce threads — the event loop itself is never blocked
+        # (enforcement runs off-loop via asyncio.to_thread).
+        self._lock = threading.Lock()
 
     def _enabled(self) -> bool:
         return self._engagement_cap > 0 or self._per_agent_cap > 0
@@ -213,32 +223,37 @@ class BudgetEnforcementMiddleware(AgentMiddleware):
     def _check_one(self, scope_kind: str, scope_key: str, cap_usd: float) -> None:
         if cap_usd <= 0:
             return
-        cached = self._cache.get(scope_key)
-        if cached is None:
-            try:
-                cached = float(self._spend_provider(scope_key))
-            except Exception as exc:  # noqa: BLE001
+        # Hold the lock across the whole check so a cache miss serializes
+        # concurrent agents onto a single fetch (the loser sees the warm
+        # cache), and so the soft-warn check-then-add can't double-fire.
+        with self._lock:
+            cached = self._cache.get(scope_key)
+            if cached is None:
+                try:
+                    cached = float(self._spend_provider(scope_key))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "spend provider failed for scope=%s: %s; not enforcing this turn",
+                        scope_key,
+                        exc,
+                    )
+                    return
+                self._cache.set(scope_key, cached)
+            frac = cached / cap_usd if cap_usd else 0.0
+            if frac >= 1.0:
+                raise BudgetExceeded(scope_kind, cached, cap_usd)
+            warn_key = f"{scope_kind}:{scope_key}"
+            already_warned = warn_key in self._warned_scopes
+            if frac >= self._soft_warn and not already_warned:
+                self._warned_scopes.add(warn_key)
                 log.warning(
-                    "spend provider failed for scope=%s: %s; not enforcing this turn",
-                    scope_key,
-                    exc,
+                    "budget soft-warn: scope=%s spent=$%.4f of $%.2f (%.0f%%)",
+                    scope_kind,
+                    cached,
+                    cap_usd,
+                    frac * 100,
                 )
-                return
-            self._cache.set(scope_key, cached)
-        frac = cached / cap_usd if cap_usd else 0.0
-        if frac >= 1.0:
-            raise BudgetExceeded(scope_kind, cached, cap_usd)
-        warn_key = f"{scope_kind}:{scope_key}"
-        if frac >= self._soft_warn and warn_key not in self._warned_scopes:
-            self._warned_scopes.add(warn_key)
-            log.warning(
-                "budget soft-warn: scope=%s spent=$%.4f of $%.2f (%.0f%%)",
-                scope_kind,
-                cached,
-                cap_usd,
-                frac * 100,
-            )
-            _emit_warning_event(scope_kind, cached, cap_usd, frac)
+                _emit_warning_event(scope_kind, cached, cap_usd, frac)
 
     def _enforce(self, request: Any) -> None:
         if not self._enabled():
