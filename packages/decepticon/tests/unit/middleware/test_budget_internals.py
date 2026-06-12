@@ -126,7 +126,9 @@ def test_scope_keys_ultimate_defaults(monkeypatch: pytest.MonkeyPatch):
 # ---------------------------------------------------------------- concurrency
 
 
-def test_check_one_soft_warn_fires_once_under_concurrent_threads():
+def test_check_one_soft_warn_fires_once_under_concurrent_threads(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """The _lock keeps the soft-warn invariant under the thread-pool path.
 
     awrap_model_call runs _enforce via asyncio.to_thread, so concurrent
@@ -148,27 +150,21 @@ def test_check_one_soft_warn_fires_once_under_concurrent_threads():
         spend_provider=provider,
     )
 
-    import decepticon.middleware.budget as budget_mod
-
     # capture every emit instead of reaching into langgraph stream internals
     def fake_emit(scope: str, spent: float, cap: float, frac: float) -> None:
         emitted.append((scope, spent, cap, frac))
 
-    original_emit = budget_mod._emit_warning_event
-    budget_mod._emit_warning_event = fake_emit
-    try:
+    monkeypatch.setattr(budget_mod, "_emit_warning_event", fake_emit)
 
-        def worker() -> None:
-            barrier.wait()  # maximize overlap on the check-then-add
-            mw._check_one("engagement", "engagement:test", 10.0)
+    def worker() -> None:
+        barrier.wait()  # maximize overlap on the check-then-add
+        mw._check_one("engagement", "engagement:test", 10.0)
 
-        threads = [threading.Thread(target=worker) for _ in range(8)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-    finally:
-        budget_mod._emit_warning_event = original_emit
+    threads = [threading.Thread(target=worker) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert len(emitted) == 1
     assert mw._warned_scopes == {"engagement:engagement:test"}
