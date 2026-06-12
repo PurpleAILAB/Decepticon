@@ -205,6 +205,39 @@ class TestValidationStatus:
         assert out["count"] == 2
         assert calls["n"] == 1
 
+    async def test_probe_count_capped_on_many_distinct_secrets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls = {"n": 0}
+
+        def handler(req: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(200, json={})
+
+        _patch_client(monkeypatch, handler)
+        cap = secret_scanner.MAX_VALIDATION_PROBES
+        overflow = 5
+        tokens = [f"ghp_{i:036d}" for i in range(cap + overflow)]
+        js = "\n".join(f"t='{t}'" for t in tokens)
+        out = _payload(await scan_secrets.ainvoke({"js_content": js}))
+        # Every distinct secret is still detected and reported...
+        assert out["count"] == cap + overflow
+        # ...but outbound probes are bounded by the budget.
+        assert calls["n"] == cap
+        live = sum(1 for f in out["secrets"] if f["status"] == "live")
+        unval = sum(1 for f in out["secrets"] if f["status"] == "unvalidated")
+        assert live == cap
+        assert unval == overflow
+
+    async def test_slack_non_dict_body_is_unvalidated(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A 200 with a non-object JSON body must not abort the scan with a
+        # stray AttributeError; it falls back to unvalidated.
+        _patch_client(monkeypatch, lambda req: httpx.Response(200, json=["unexpected"]))
+        out = _payload(await scan_secrets.ainvoke({"js_content": f"'{SLACK_TOKEN}'"}))
+        assert out["secrets"][0]["status"] == "unvalidated"
+
 
 # ── validate_credential direct ──────────────────────────────────────────
 

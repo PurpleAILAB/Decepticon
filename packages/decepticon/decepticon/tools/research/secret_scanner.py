@@ -33,6 +33,14 @@ from decepticon.tools.research._state import _json
 
 DEFAULT_TIMEOUT = 8.0
 
+# Upper bound on live-credential probes per scan. ``js_content`` is often
+# attacker-controlled (it is the page we are reconnoitring); without a cap a
+# bundle stuffed with thousands of distinct pattern-matching strings would make
+# the scanner fire one outbound request per string — slow, and a fast way to get
+# our egress IP rate-limited or blocked by the probed APIs. Secrets past the
+# budget are still reported, just left ``unvalidated``.
+MAX_VALIDATION_PROBES = 50
+
 # ── Detection patterns ──────────────────────────────────────────────────
 #
 # High-signal, low-false-positive regexes. Each entry maps a stable
@@ -104,7 +112,13 @@ async def _probe_slack(client: httpx.AsyncClient, secret: str) -> bool:
     )
     if resp.status_code != 200:
         return False
-    return bool(resp.json().get("ok"))
+    data = resp.json()
+    # auth.test returns a JSON object; guard against unexpected shapes so a
+    # non-dict body raises ValueError (caught by _classify) instead of a stray
+    # AttributeError that would abort the whole scan.
+    if not isinstance(data, dict):
+        raise ValueError("slack auth.test returned a non-object body")
+    return bool(data.get("ok"))
 
 
 async def _probe_gitlab(client: httpx.AsyncClient, secret: str) -> bool:
@@ -224,6 +238,7 @@ async def scan_secrets(js_content: str) -> str:
     # Cache probe results so a secret repeated across many lines is only
     # validated once.
     status_cache: dict[tuple[str, str], str] = {}
+    probes_done = 0
 
     for line_no, line in enumerate(js_content.splitlines(), start=1):
         for pattern_name, pattern in SECRET_PATTERNS.items():
@@ -237,7 +252,13 @@ async def scan_secrets(js_content: str) -> str:
                 cache_key = (pattern_name, secret)
                 status = status_cache.get(cache_key)
                 if status is None:
-                    status = await _classify(pattern_name, secret)
+                    if pattern_name in _VALIDATORS and probes_done >= MAX_VALIDATION_PROBES:
+                        # Probe budget exhausted — report without a live check.
+                        status = "unvalidated"
+                    else:
+                        if pattern_name in _VALIDATORS:
+                            probes_done += 1
+                        status = await _classify(pattern_name, secret)
                     status_cache[cache_key] = status
 
                 findings.append(
