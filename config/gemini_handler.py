@@ -82,10 +82,24 @@ def _refresh_google_token(tokens: dict[str, Any]) -> dict[str, Any]:
         provider_label="gemini-sub",
     )
 
+    access_token = data.get("access_token")
+    if not access_token or not isinstance(access_token, str):
+        raise litellm.AuthenticationError(
+            message=(
+                "Google OAuth refresh response did not include an access_token — the "
+                "refresh_token may be revoked or expired. Re-extract from browser."
+            ),
+            model="gemini-sub",
+            llm_provider="gemini-sub",
+        )
+    try:
+        expires_in = int(data.get("expires_in", 3600) or 3600)
+    except (TypeError, ValueError):
+        expires_in = 3600
     new_tokens = {
         **tokens,
-        "accessToken": data["access_token"],
-        "expiresAt": int(time.time() + data.get("expires_in", 3600)),
+        "accessToken": access_token,
+        "expiresAt": int(time.time() + expires_in),
     }
 
     write_json_atomic(GEMINI_TOKENS_PATH, new_tokens)
@@ -238,16 +252,35 @@ class GeminiSubHandler(CustomLLM):
                 llm_provider="gemini-sub",
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message=f"Gemini returned a malformed (non-JSON) response: {resp.text[:300]}",
+                model=model,
+                llm_provider="gemini-sub",
+            ) from exc
+        if not isinstance(data, dict):
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message="Gemini response JSON was not an object.",
+                model=model,
+                llm_provider="gemini-sub",
+            )
         candidates = data.get("candidates", [])
         text = ""
         finish_reason = "stop"
-        if candidates:
-            parts = candidates[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts)
-            finish_reason = _map_finish_reason(candidates[0].get("finishReason"))
+        if candidates and isinstance(candidates[0], dict):
+            cand = candidates[0]
+            content = cand.get("content")
+            parts = content.get("parts", []) if isinstance(content, dict) else []
+            text = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+            finish_reason = _map_finish_reason(cand.get("finishReason"))
 
-        usage_meta = data.get("usageMetadata", {})
+        usage_meta = data.get("usageMetadata") or {}
+        if not isinstance(usage_meta, dict):
+            usage_meta = {}
 
         return ModelResponse(
             id=f"gemini-sub-{actual_model}-{int(time.time())}",

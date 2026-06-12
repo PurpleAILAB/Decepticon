@@ -75,6 +75,85 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     # have validate_model_name() accept it — the actual route is built
     # by build_model_entry() below.
     "xiaomi_mimo": "XIAOMI_MIMO_API_KEY",
+    # ── Full LiteLLM provider catalog (v1.89.0) ──────────────────────────
+    # Every native provider that authenticates via a single API-key env var,
+    # using the source-verified env name (litellm validate_environment /
+    # get_secret_str), not the derived ``<PROVIDER>_API_KEY`` guess. Keys are
+    # the ``_provider_prefix``-normalized form (hyphens → underscores), e.g.
+    # ``nano-gpt`` → ``nano_gpt``, ``text-completion-openai`` →
+    # ``text_completion_openai``. Providers with multiple accepted key aliases
+    # live in PROVIDER_KEY_ENV_ALIASES; key-less providers (SigV4 / ADC / OCI
+    # signing / OAuth exchange / local no-auth) live in _NO_API_KEY_PROVIDERS.
+    "text_completion_openai": "OPENAI_API_KEY",
+    "codestral": "CODESTRAL_API_KEY",
+    "text_completion_codestral": "CODESTRAL_API_KEY",
+    "azure_ai": "AZURE_AI_API_KEY",
+    "sambanova": "SAMBANOVA_API_KEY",
+    "databricks": "DATABRICKS_API_KEY",
+    "watsonx": "WATSONX_API_KEY",
+    "deepinfra": "DEEPINFRA_API_KEY",
+    "anyscale": "ANYSCALE_API_KEY",
+    "ai21": "AI21_API_KEY",
+    "ai21_chat": "AI21_API_KEY",
+    "nlp_cloud": "NLP_CLOUD_API_KEY",
+    "cloudflare": "CLOUDFLARE_API_KEY",
+    "baseten": "BASETEN_API_KEY",
+    "snowflake": "SNOWFLAKE_JWT",
+    "novita": "NOVITA_API_KEY",
+    "hyperbolic": "HYPERBOLIC_API_KEY",
+    "lambda_ai": "LAMBDA_API_KEY",
+    "nebius": "NEBIUS_API_KEY",
+    "galadriel": "GALADRIEL_API_KEY",
+    "gradient_ai": "GRADIENT_AI_API_KEY",
+    "predibase": "PREDIBASE_API_KEY",
+    "clarifai": "CLARIFAI_API_KEY",
+    "aleph_alpha": "ALEPH_ALPHA_API_KEY",
+    "maritalk": "MARITALK_API_KEY",
+    "empower": "EMPOWER_API_KEY",
+    "meta_llama": "LLAMA_API_KEY",
+    "nscale": "NSCALE_API_KEY",
+    "v0": "V0_API_KEY",
+    "morph": "MORPH_API_KEY",
+    "inception": "INCEPTION_API_KEY",
+    "litellm_proxy": "LITELLM_PROXY_API_KEY",
+    "vercel_ai_gateway": "VERCEL_AI_GATEWAY_API_KEY",
+    "wandb": "WANDB_API_KEY",
+    "aiml": "AIML_API_KEY",
+    "heroku": "HEROKU_API_KEY",
+    "ovhcloud": "OVHCLOUD_API_KEY",
+    "scaleway": "SCW_SECRET_KEY",
+    "compactifai": "COMPACTIFAI_API_KEY",
+    "publicai": "PUBLICAI_API_KEY",
+    "apertis": "STIMA_API_KEY",
+    "nano_gpt": "NANOGPT_API_KEY",
+    "poe": "POE_API_KEY",
+    "chutes": "CHUTES_API_KEY",
+    "parasail": "PARASAIL_API_KEY",
+    "tensormesh": "TENSORMESH_INFERENCE_API_KEY",
+    "infinity": "INFINITY_API_KEY",
+    "datarobot": "DATAROBOT_API_TOKEN",
+    "manus": "MANUS_API_KEY",
+    # Audio / image / video providers (single bearer key).
+    "deepgram": "DEEPGRAM_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
+    "assemblyai": "ASSEMBLYAI_API_KEY",
+    "recraft": "RECRAFT_API_KEY",
+    "runwayml": "RUNWAYML_API_KEY",
+    "stability": "STABILITY_API_KEY",
+    "fal_ai": "FAL_AI_API_KEY",
+    "topaz": "TOPAZ_API_KEY",
+    "bedrock_mantle": "BEDROCK_MANTLE_API_KEY",
+    "amazon_nova": "AMAZON_NOVA_API_KEY",
+    "soniox": "SONIOX_API_KEY",
+    # Local / self-hosted OpenAI-compatible servers: key (optional, any
+    # string for local) + a required api_base from PROVIDER_EXTRA_PARAMS.
+    "hosted_vllm": "HOSTED_VLLM_API_KEY",
+    "llamafile": "LLAMAFILE_API_KEY",
+    "xinference": "XINFERENCE_API_KEY",
+    "lemonade": "LEMONADE_API_KEY",
+    "docker_model_runner": "DOCKER_MODEL_RUNNER_API_KEY",
+    "ragflow": "RAGFLOW_API_KEY",
+    "openai_like": "OPENAI_LIKE_API_KEY",
 }
 
 # OpenAI-compatible gateways / aggregators with no native LiteLLM provider
@@ -104,6 +183,102 @@ OPENAI_COMPAT_GATEWAYS: dict[str, tuple[str, str]] = {
     # never proxy startup.
     "cfgateway": ("os.environ/CLOUDFLARE_AI_GATEWAY_API_BASE", "CLOUDFLARE_AI_GATEWAY_API_KEY"),
 }
+
+# Providers that accept SEVERAL key env-var names. Resolved at config-write
+# time, preferring the first var actually set in the environment (mirrors the
+# ollama_cloud OLLAMA_CLOUD_API_KEY → OLLAMA_API_KEY fallback). The first name
+# is the canonical fallback emitted when none are set, so the generated route
+# references the documented var and fails with a clear 401 at request time
+# rather than crashing proxy startup. Source-verified against litellm's
+# get_secret_str() alias chains (v1.89.0).
+PROVIDER_KEY_ENV_ALIASES: dict[str, tuple[str, ...]] = {
+    "together_ai": (
+        "TOGETHERAI_API_KEY",
+        "TOGETHER_API_KEY",
+        "TOGETHER_AI_API_KEY",
+        "TOGETHER_AI_TOKEN",
+    ),
+    "fireworks_ai": (
+        "FIREWORKS_AI_API_KEY",
+        "FIREWORKS_API_KEY",
+        "FIREWORKSAI_API_KEY",
+        "FIREWORKS_AI_TOKEN",
+    ),
+    "perplexity": ("PERPLEXITYAI_API_KEY", "PERPLEXITY_API_KEY"),
+    "cohere": ("COHERE_API_KEY", "CO_API_KEY"),
+    "cohere_chat": ("COHERE_API_KEY", "CO_API_KEY"),
+    "friendliai": ("FRIENDLIAI_API_KEY", "FRIENDLI_TOKEN"),
+    "huggingface": ("HUGGINGFACE_API_KEY", "HF_TOKEN"),
+    "openrouter": ("OPENROUTER_API_KEY", "OR_API_KEY"),
+    "voyage": ("VOYAGE_API_KEY", "VOYAGE_AI_API_KEY", "VOYAGE_AI_TOKEN"),
+    "jina_ai": ("JINA_AI_API_KEY", "JINA_AI_TOKEN"),
+    "volcengine": ("VOLCENGINE_API_KEY", "ARK_API_KEY"),
+    "featherless_ai": ("FEATHERLESS_AI_API_KEY", "FEATHERLESS_API_KEY"),
+    "black_forest_labs": ("BFL_API_KEY", "BLACK_FOREST_LABS_API_KEY"),
+    "cometapi": ("COMETAPI_API_KEY", "COMETAPI_KEY"),
+    "nvidia_riva": ("NVIDIA_RIVA_API_KEY", "NVIDIA_NIM_API_KEY"),
+}
+
+# Providers needing more than an api_key: extra litellm_params merged into the
+# route (api_base / api_version / project / tenant / account). Values are
+# ``os.environ/<NAME>`` refs resolved by LiteLLM at request time, so an unset
+# var only fails the call with a clear message — never proxy startup. Modeled
+# on the existing vertex_ai (project+location) and azure (base+version)
+# branches, now table-driven instead of an elif chain.
+PROVIDER_EXTRA_PARAMS: dict[str, dict[str, str]] = {
+    "azure": {
+        "api_base": "os.environ/AZURE_API_BASE",
+        "api_version": "os.environ/AZURE_API_VERSION",
+    },
+    "azure_ai": {"api_base": "os.environ/AZURE_AI_API_BASE"},
+    "vertex_ai": {
+        "vertex_project": "os.environ/VERTEXAI_PROJECT",
+        "vertex_location": "os.environ/VERTEXAI_LOCATION",
+    },
+    "databricks": {"api_base": "os.environ/DATABRICKS_API_BASE"},
+    "watsonx": {
+        "api_base": "os.environ/WATSONX_URL",
+        "project_id": "os.environ/WATSONX_PROJECT_ID",
+    },
+    "predibase": {"tenant_id": "os.environ/PREDIBASE_TENANT_ID"},
+    "snowflake": {"account_id": "os.environ/SNOWFLAKE_ACCOUNT_ID"},
+    "litellm_proxy": {"api_base": "os.environ/LITELLM_PROXY_API_BASE"},
+    "heroku": {"api_base": "os.environ/HEROKU_API_BASE"},
+    # Self-hosted OpenAI-compatible servers reached by a required base URL.
+    "hosted_vllm": {"api_base": "os.environ/HOSTED_VLLM_API_BASE"},
+    "llamafile": {"api_base": "os.environ/LLAMAFILE_API_BASE"},
+    "xinference": {"api_base": "os.environ/XINFERENCE_API_BASE"},
+    "lemonade": {"api_base": "os.environ/LEMONADE_API_BASE"},
+    "docker_model_runner": {"api_base": "os.environ/DOCKER_MODEL_RUNNER_API_BASE"},
+    "ragflow": {"api_base": "os.environ/RAGFLOW_API_BASE"},
+    "openai_like": {"api_base": "os.environ/OPENAI_LIKE_API_BASE"},
+    "vllm": {"api_base": "os.environ/VLLM_API_BASE"},
+}
+
+# Providers that DON'T use an Authorization-bearer api_key: AWS SigV4
+# (bedrock/sagemaker), Google ADC (vertex_ai), OCI request signing, SAP /
+# GigaChat OAuth token exchange, and local no-auth servers (petals / triton /
+# oobabooga / vllm). LiteLLM resolves their credentials from their own env
+# vars; emitting ``api_key=os.environ/<X>_API_KEY`` here would inject a bogus
+# empty bearer. ``_provider_prefix``-normalized form.
+_NO_API_KEY_PROVIDERS = frozenset(
+    {
+        "bedrock",
+        "sagemaker",
+        "sagemaker_chat",
+        "vertex_ai",
+        "oci",
+        "sap",
+        "gigachat",
+        "petals",
+        "triton",
+        "oobabooga",
+        "vllm",
+    }
+)
+
+# OAuth device-flow providers that cannot be registered as API-key routes.
+_OAUTH_REJECTED_PROVIDERS = frozenset({"github_copilot"})
 
 ALLOWED_DYNAMIC_PROVIDERS = frozenset(
     {
@@ -139,6 +314,16 @@ ALLOWED_DYNAMIC_PROVIDERS = frozenset(ALLOWED_DYNAMIC_PROVIDERS | {"vertex_ai"})
 # explicitly or validate_model_name would reject the alias as an unknown
 # provider before the gateway branch runs.
 ALLOWED_DYNAMIC_PROVIDERS = frozenset(ALLOWED_DYNAMIC_PROVIDERS | set(OPENAI_COMPAT_GATEWAYS))
+# Alias-key, extra-param, and no-key providers may not all appear in
+# PROVIDER_API_KEY_ENV — union them so every catalog prefix validates and the
+# dynamic API-key path stays the single source of truth for "is this a known
+# provider".
+ALLOWED_DYNAMIC_PROVIDERS = frozenset(
+    ALLOWED_DYNAMIC_PROVIDERS
+    | set(PROVIDER_KEY_ENV_ALIASES)
+    | set(PROVIDER_EXTRA_PARAMS)
+    | _NO_API_KEY_PROVIDERS
+)
 
 # Environment variables that are model-selection controls, not model names.
 _MODEL_CONTROL_SUFFIXES = (
@@ -280,6 +465,12 @@ def validate_model_name(model_name: str) -> None:
             f"DECEPTICON_AUTH_<provider>=true so the route is registered "
             f"through litellm_startup.py's custom_provider_map instead."
         )
+    if provider in _OAUTH_REJECTED_PROVIDERS:
+        raise ValueError(
+            f"{provider}/* uses interactive OAuth device-flow auth, not an "
+            "API-key env var, so it cannot be registered as a dynamic model "
+            "route. It is not supported through DECEPTICON_LITELLM_MODELS."
+        )
     if provider == "ollama":
         # Legacy ``ollama/`` (/api/generate) lacks tool calling — fail
         # closed since Decepticon agents always emit tool calls.
@@ -293,12 +484,32 @@ def validate_model_name(model_name: str) -> None:
     if provider not in ALLOWED_DYNAMIC_PROVIDERS:
         raise ValueError(
             f"unsupported model provider {provider!r} for {model_name!r}; "
-            "use custom/<model> with CUSTOM_OPENAI_API_BASE for OpenAI-compatible gateways"
+            f"{len(ALLOWED_DYNAMIC_PROVIDERS)} providers are supported "
+            "(see the DECEPTICON_LITELLM_MODELS docs for the full list). "
+            "Use custom/<model> with CUSTOM_OPENAI_API_BASE for an "
+            "OpenAI-compatible gateway that isn't listed."
         )
 
 
 def _derived_api_key_env(provider: str) -> str:
     return f"{provider.upper()}_API_KEY"
+
+
+def _resolve_key_env(provider: str) -> str:
+    """Pick the api_key env var name for ``provider``.
+
+    Multi-alias providers resolve at write time to the first candidate var
+    actually set, falling back to the canonical (first-listed) name when none
+    are set. Otherwise use the explicit PROVIDER_API_KEY_ENV mapping, then the
+    derived ``<PROVIDER>_API_KEY`` guess for any provider not in either table.
+    """
+    aliases = PROVIDER_KEY_ENV_ALIASES.get(provider)
+    if aliases:
+        for name in aliases:
+            if os.environ.get(name, "").strip():
+                return name
+        return aliases[0]
+    return PROVIDER_API_KEY_ENV.get(provider, _derived_api_key_env(provider))
 
 
 def build_model_entry(model_name: str) -> dict[str, Any]:
@@ -437,25 +648,18 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
                 "api_key": f"os.environ/{cloud_key_env}",
                 "api_base": cloud_base,
             }
-        elif provider == "bedrock":
-            # AWS Bedrock — uses AWS SigV4 with three env vars rather
-            # than an Authorization header. LiteLLM reads them
-            # automatically; we just don't set api_key.
-            pass
-        elif provider == "vertex_ai":
-            # Vertex AI — service-account JSON path + project + location.
-            # LiteLLM reads GOOGLE_APPLICATION_CREDENTIALS automatically;
-            # only project + location need to be passed through.
-            params["vertex_project"] = "os.environ/VERTEXAI_PROJECT"
-            params["vertex_location"] = "os.environ/VERTEXAI_LOCATION"
-        elif provider == "azure":
-            # Azure OpenAI deployment — needs base URL + version.
-            params["api_key"] = "os.environ/AZURE_API_KEY"
-            params["api_base"] = "os.environ/AZURE_API_BASE"
-            params["api_version"] = "os.environ/AZURE_API_VERSION"
         else:
-            api_key_env = PROVIDER_API_KEY_ENV.get(provider, _derived_api_key_env(provider))
-            params["api_key"] = f"os.environ/{api_key_env}"
+            # Every other native LiteLLM provider, table-driven. Extra
+            # litellm_params (api_base / api_version / vertex_project /
+            # tenant_id / account_id ...) come from PROVIDER_EXTRA_PARAMS; the
+            # api_key env var from _resolve_key_env (alias-aware), unless the
+            # provider authenticates without a bearer key (SigV4 / ADC / OCI
+            # signing / OAuth exchange / local no-auth) — those are listed in
+            # _NO_API_KEY_PROVIDERS. Replaces the former bedrock / vertex_ai /
+            # azure / derived-key elif chain.
+            params.update(PROVIDER_EXTRA_PARAMS.get(provider, {}))
+            if provider not in _NO_API_KEY_PROVIDERS:
+                params["api_key"] = f"os.environ/{_resolve_key_env(provider)}"
 
     return {"model_name": model_name, "litellm_params": params}
 
@@ -658,11 +862,22 @@ def _inject_subscription_routes(
     enabled the auth method.
     """
     source = env if env is not None else os.environ
-    model_list = config.setdefault("model_list", [])
+    # A YAML config may carry ``model_list:`` / ``litellm_settings:`` /
+    # ``fallbacks:`` keys that parse to ``None`` (key present, no value).
+    # ``setdefault`` keeps that ``None`` (the key exists), so coerce each to
+    # the right empty container before iterating — otherwise startup dies with
+    # a raw ``'NoneType' is not iterable`` / ``has no attribute 'setdefault'``.
+    if not isinstance(config.get("model_list"), list):
+        config["model_list"] = []
+    model_list = config["model_list"]
     existing = {e.get("model_name") for e in model_list if isinstance(e, dict)}
 
-    settings = config.setdefault("litellm_settings", {})
-    fallbacks = settings.setdefault("fallbacks", [])
+    if not isinstance(config.get("litellm_settings"), MutableMapping):
+        config["litellm_settings"] = {}
+    settings = config["litellm_settings"]
+    if not isinstance(settings.get("fallbacks"), list):
+        settings["fallbacks"] = []
+    fallbacks = settings["fallbacks"]
 
     for flag, routes in _SUBSCRIPTION_ROUTES.items():
         if not _is_truthy(source.get(flag, "")):
@@ -722,8 +937,21 @@ def write_dynamic_config(config_path: str | Path, output_path: str | Path) -> Pa
     source_path = Path(config_path)
     target_path = Path(output_path)
 
-    with source_path.open("r", encoding="utf-8") as f:
-        config = yaml.safe_load(f) or {}
+    try:
+        with source_path.open("r", encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"LiteLLM base config not found at {source_path}: {exc}") from exc
+    except yaml.YAMLError as exc:
+        raise ValueError(f"LiteLLM base config at {source_path} is not valid YAML: {exc}") from exc
+    if config is None:
+        config = {}
+    if not isinstance(config, MutableMapping):
+        raise ValueError(
+            f"LiteLLM base config at {source_path} must be a YAML mapping "
+            f"(got {type(config).__name__}); expected top-level keys like "
+            "'model_list:' / 'litellm_settings:'."
+        )
 
     merged = merge_dynamic_models(config, os.environ)
 

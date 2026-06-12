@@ -116,7 +116,17 @@ def write_json_atomic(
     try:
         # mkstemp creates with 0o600; widen/narrow only to honor ``mode``.
         os.chmod(tmp, mode)
-        os.write(fd, payload)
+        # ``os.write`` is a thin wrapper over the write(2) syscall and may
+        # write fewer bytes than requested (short write). Looping until the
+        # whole payload is flushed prevents a truncated, corrupt token file
+        # from being renamed into place.
+        written = 0
+        view = memoryview(payload)
+        while written < len(payload):
+            n = os.write(fd, view[written:])
+            if n == 0:
+                raise OSError("os.write returned 0 — device full or broken pipe")
+            written += n
         os.fsync(fd)
     except OSError as exc:
         log.warning("oauth_token_store: write failed for %s: %s", path, exc)
@@ -320,12 +330,17 @@ def with_retry_on_401(
     context. After ``max_attempts`` 401s the last response is returned for
     the caller to surface.
     """
+    # Clamp to at least one attempt: a caller passing 0 / negative would
+    # otherwise leave ``resp`` unbound and trip the assert (or, under
+    # ``python -O`` where asserts are stripped, return None and crash the
+    # caller). Always send at least once so a real response comes back.
+    attempts = max(1, max_attempts)
     resp: httpx.Response | None = None
-    for attempt in range(max_attempts):
+    for attempt in range(attempts):
         resp = send(attempt > 0)
         if resp.status_code != 401:
             return resp
-    assert resp is not None  # max_attempts >= 1 always sets resp
+    assert resp is not None  # attempts >= 1 always sets resp
     return resp
 
 
