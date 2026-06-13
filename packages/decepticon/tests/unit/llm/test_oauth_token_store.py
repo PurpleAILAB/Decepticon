@@ -43,7 +43,15 @@ class _StubAuthenticationError(Exception):
 if not hasattr(litellm, "AuthenticationError"):
     litellm.AuthenticationError = _StubAuthenticationError
 
-_MODULE_PATH = Path(__file__).resolve().parents[5] / "config" / "oauth_token_store.py"
+_CONFIG_DIR = Path(__file__).resolve().parents[5] / "config"
+# ``oauth_token_store`` does ``from http_client import post`` by bare name, so
+# ``config/`` must be on sys.path before we exec it. Insert it here rather than
+# relying on another test module (test_oauth_handlers) having run first — that
+# import-order coupling makes this module fail to collect in isolation.
+if str(_CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(_CONFIG_DIR))
+
+_MODULE_PATH = _CONFIG_DIR / "oauth_token_store.py"
 _spec = importlib.util.spec_from_file_location("decepticon_oauth_token_store", _MODULE_PATH)
 assert _spec is not None
 assert _spec.loader is not None
@@ -140,6 +148,10 @@ def test_write_json_atomic_uses_unique_temp_paths(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="chmod-based directory locking is a no-op on Windows")
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root bypasses directory write permissions, so the 0o500 lock is a no-op",
+)
 def test_write_json_atomic_returns_false_when_target_dir_unwritable(tmp_path: Path) -> None:
     locked = tmp_path / "locked"
     locked.mkdir()

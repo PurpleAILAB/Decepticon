@@ -41,7 +41,7 @@ def _install_transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
 
     def _fake(*args: Any, **kwargs: Any) -> httpx.Client:
         kwargs.pop("timeout", None)
-        return real_client(transport=transport, timeout=5.0, *args, **kwargs)
+        return real_client(*args, transport=transport, timeout=5.0, **kwargs)
 
     monkeypatch.setattr(httpx, "Client", _fake)
 
