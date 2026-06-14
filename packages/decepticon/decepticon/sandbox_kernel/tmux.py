@@ -1031,9 +1031,7 @@ def _extract_interactive_output(screen: str, baseline: str) -> str:
     return "\n".join(new_lines) if new_lines else screen.strip()
 
 
-def _extract_output(
-    screen: str, command: str, since_count: int = 0
-) -> tuple[str, int, str]:
+def _extract_output(screen: str, command: str, since_count: int = 0) -> tuple[str, int, str]:
     """Extract a foreground command's output, exit code, and cwd from the pane.
 
     ``since_count`` is the number of PS1 markers present in the *baseline*

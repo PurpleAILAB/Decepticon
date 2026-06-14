@@ -147,9 +147,7 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         while len(self._notified) > _NOTIFIED_KEYS_MAX:
             self._notified.popitem(last=False)
 
-    def _pull_diff(
-        self, session: str, workspace_path: str | None
-    ) -> tuple[str, str | None, bool]:
+    def _pull_diff(self, session: str, workspace_path: str | None) -> tuple[str, str | None, bool]:
         """Read the accumulated diff for ``session``.
 
         Returns ``(output, log_path, read_ok)``. ``read_ok`` is False ONLY when
