@@ -145,6 +145,92 @@ def test_workspace_path_reducer_handles_concurrent_updates(schema) -> None:
     assert result["workspace_path"] == "/workspace"
 
 
+# Every launcher-/harness-set EngagementContextState channel must survive a
+# parallel fan-out (two subagent branches writing the same inherited value in
+# one superstep). Without a reducer LangGraph raises INVALID_CONCURRENT_GRAPH_
+# UPDATE — this is the bug that crashed bugclaw's parallel hunter dispatch on
+# `language`. Each branch carries the same value, so last-write-wins converges.
+_CONVERGING_ENGAGEMENT_FIELDS = [
+    ("language", "ko"),
+    ("target_url", "http://target.example"),
+    ("target_extra_ports", {22: 2222}),
+    ("vulnerability_tags", ["xss", "sqli"]),
+    ("flag_format", "flag{...}"),
+    ("mission_brief", "Demo challenge"),
+]
+
+
+@pytest.mark.parametrize(("field", "value"), _CONVERGING_ENGAGEMENT_FIELDS)
+@pytest.mark.parametrize(
+    "schema",
+    [
+        EngagementContextState,
+        _resolve_schemas({AgentState, OPPLANState, EngagementContextState})[0],
+    ],
+)
+def test_engagement_context_fields_survive_parallel_fanout(schema, field, value) -> None:
+    def branch_a(_state):
+        return {field: value}
+
+    def branch_b(_state):
+        return {field: value}
+
+    graph = StateGraph(schema)
+    graph.add_node("branch_a", branch_a)
+    graph.add_node("branch_b", branch_b)
+    graph.add_edge(START, "branch_a")
+    graph.add_edge(START, "branch_b")
+    graph.add_edge("branch_a", END)
+    graph.add_edge("branch_b", END)
+
+    # Must not raise INVALID_CONCURRENT_GRAPH_UPDATE; value converges.
+    result = graph.compile().invoke({"messages": []})
+    assert result[field] == value
+
+
+_CONVERGING_KG_FIELDS = [
+    ("kg_engagement", "eng-scope"),
+    ("kg_revision", "rev-7"),
+    ("kg_summary", "## graph state"),
+]
+
+
+@pytest.mark.parametrize(("field", "value"), _CONVERGING_KG_FIELDS)
+def test_kg_state_fields_survive_parallel_fanout(field, value) -> None:
+    """KG slot runs in analyst / contract_auditor / ad_operator — dispatching
+    two in parallel writes these channels concurrently; the reducer must let
+    them converge instead of tripping INVALID_CONCURRENT_GRAPH_UPDATE."""
+    from decepticon.middleware.kg_internal.state import KGState
+
+    def branch_a(_state):
+        return {field: value}
+
+    def branch_b(_state):
+        return {field: value}
+
+    graph = StateGraph(KGState)
+    graph.add_node("branch_a", branch_a)
+    graph.add_node("branch_b", branch_b)
+    graph.add_edge(START, "branch_a")
+    graph.add_edge(START, "branch_b")
+    graph.add_edge("branch_a", END)
+    graph.add_edge("branch_b", END)
+
+    result = graph.compile().invoke({"messages": []})
+    assert result[field] == value
+
+
+def test_reduce_converging_value_semantics() -> None:
+    from decepticon.middleware.state_reducers import reduce_converging_value
+
+    assert reduce_converging_value("old", "new") == "new"
+    assert reduce_converging_value("keep", None) == "keep"
+    assert reduce_converging_value(None, "set") == "set"
+    # generic over container types (dict / list channels)
+    assert reduce_converging_value({22: 1}, {22: 2}) == {22: 2}
+    assert reduce_converging_value(["a"], None) == ["a"]
+
+
 # ── inject paths ───────────────────────────────────────────────────────
 
 
