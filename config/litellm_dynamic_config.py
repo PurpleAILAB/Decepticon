@@ -32,8 +32,12 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "azure": "AZURE_API_KEY",
-    "bedrock": "AWS_ACCESS_KEY_ID",
-    "vertex_ai": "GOOGLE_APPLICATION_CREDENTIALS",
+    # NOTE: bedrock (SigV4) and vertex_ai (Google ADC) are key-less — they live
+    # in _NO_API_KEY_PROVIDERS, so build_model_entry never calls _resolve_key_env
+    # for them. They are still admitted to ALLOWED_DYNAMIC_PROVIDERS via the
+    # _NO_API_KEY_PROVIDERS union below. A bearer-key entry here would be dead and
+    # misleading (no AWS_ACCESS_KEY_ID / GOOGLE_APPLICATION_CREDENTIALS bearer
+    # path exists), so they are intentionally omitted from this map.
     "gemini": "GOOGLE_API_KEY",
     "google": "GOOGLE_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
