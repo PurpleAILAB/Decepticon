@@ -1436,3 +1436,35 @@ class TestLLMTimeout:
         monkeypatch.setenv("DECEPTICON_LLM__TIMEOUT", "0")
         with pytest.raises(ValueError, match="DECEPTICON_LLM__TIMEOUT.*greater than 0"):
             _resolve_llm_timeout_seconds()
+
+    def test_ainvoke_resolves_timeout_before_creating_request_coroutine(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A misconfigured timeout env must fail loudly *without* creating
+        (and leaking un-awaited) the upstream request coroutine. Regression:
+        the timeout was previously resolved as the second argument to
+        ``call_with_timeout``, so ``super().ainvoke(...)`` was already
+        evaluated — a ValueError then left that coroutine never awaited."""
+        from langchain_openai import ChatOpenAI
+        from pydantic import SecretStr
+
+        from decepticon.llm.factory import _ProxiedChatOpenAI
+
+        called = False
+
+        async def _tracking_ainvoke(self, *args, **kwargs):  # noqa: ANN001
+            nonlocal called
+            called = True
+            return "should-not-happen"
+
+        monkeypatch.setattr(ChatOpenAI, "ainvoke", _tracking_ainvoke)
+        monkeypatch.setenv("DECEPTICON_LLM_TIMEOUT_SECONDS", "-5")
+
+        model = _ProxiedChatOpenAI(
+            model="openai/gpt-5.5",
+            base_url="http://localhost:4000",
+            api_key=SecretStr("test-key"),
+        )
+        with pytest.raises(ValueError, match="greater than 0"):
+            asyncio.run(model.ainvoke("hi"))
+        assert called is False, "upstream request coroutine must not be created on bad timeout"

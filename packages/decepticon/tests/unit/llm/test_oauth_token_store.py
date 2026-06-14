@@ -43,7 +43,14 @@ class _StubAuthenticationError(Exception):
 if not hasattr(litellm, "AuthenticationError"):
     litellm.AuthenticationError = _StubAuthenticationError
 
-_MODULE_PATH = Path(__file__).resolve().parents[5] / "config" / "oauth_token_store.py"
+_CONFIG_DIR = Path(__file__).resolve().parents[5] / "config"
+# ``oauth_token_store`` does ``from http_client import post`` by bare name, so
+# ``config/`` must be importable. Insert it here instead of relying on a sibling
+# test module (test_oauth_handlers) having run first — that ordering dependency
+# made this file fail when run in isolation.
+if str(_CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(_CONFIG_DIR))
+_MODULE_PATH = _CONFIG_DIR / "oauth_token_store.py"
 _spec = importlib.util.spec_from_file_location("decepticon_oauth_token_store", _MODULE_PATH)
 assert _spec is not None
 assert _spec.loader is not None
@@ -429,3 +436,40 @@ def test_with_retry_on_401_does_not_retry_other_4xx() -> None:
     resp = with_retry_on_401(send)
     assert resp.status_code == 403
     assert calls == [False]
+
+
+def test_with_retry_on_401_clamps_nonpositive_attempts() -> None:
+    # max_attempts <= 0 must still send once and return a real response —
+    # not leave ``resp`` unbound (AssertionError, or None under python -O).
+    calls: list[bool] = []
+
+    def send(force_refresh: bool) -> httpx.Response:
+        calls.append(force_refresh)
+        return _stub_response(200)
+
+    resp = with_retry_on_401(send, max_attempts=0)
+    assert resp.status_code == 200
+    assert calls == [False]
+
+
+# ── write_json_atomic: short os.write ───────────────────────────────────
+
+
+@pytest.mark.skipif(os.name == "nt", reason="os.write short-write loop is POSIX-specific")
+def test_write_json_atomic_handles_short_os_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # os.write may write fewer bytes than requested (short write). The helper
+    # must loop until the whole payload is flushed; otherwise a truncated,
+    # corrupt token file gets renamed into place.
+    path = tmp_path / "tokens.json"
+    payload = {"access_token": "x" * 200, "refresh_token": "y" * 200}
+    real_write = os.write
+
+    def short_write(fd: int, data: Any) -> int:
+        # Honor at most 8 bytes per call to force the loop to iterate.
+        return real_write(fd, bytes(data)[:8])
+
+    monkeypatch.setattr(_module.os, "write", short_write)
+    assert write_json_atomic(path, payload) is True
+    assert json.loads(path.read_text()) == payload

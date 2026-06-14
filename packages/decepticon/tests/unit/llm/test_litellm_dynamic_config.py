@@ -20,6 +20,11 @@ merge_dynamic_models = _module.merge_dynamic_models
 validate_model_name = _module.validate_model_name
 OPENAI_COMPAT_GATEWAYS = _module.OPENAI_COMPAT_GATEWAYS
 ALLOWED_DYNAMIC_PROVIDERS = _module.ALLOWED_DYNAMIC_PROVIDERS
+write_dynamic_config = _module.write_dynamic_config
+_provider_prefix = _module._provider_prefix
+_NO_API_KEY_PROVIDERS = _module._NO_API_KEY_PROVIDERS
+PROVIDER_KEY_ENV_ALIASES = _module.PROVIDER_KEY_ENV_ALIASES
+PROVIDER_EXTRA_PARAMS = _module.PROVIDER_EXTRA_PARAMS
 
 
 def test_collect_requested_models_includes_global_and_role_overrides() -> None:
@@ -374,3 +379,313 @@ def test_merge_dynamic_models_registers_gateway_override() -> None:
         "api_key": "os.environ/ZENMUX_API_KEY",
         "api_base": "https://zenmux.ai/api/v1",
     }
+
+
+# ── error-proofing: null / malformed YAML config blocks ─────────────────
+
+
+def test_merge_dynamic_models_tolerates_null_model_list() -> None:
+    """A YAML config with a bare ``model_list:`` key parses to ``None``.
+
+    ``_inject_subscription_routes`` must coerce it to ``[]`` instead of
+    iterating ``None`` (regression: raw ``'NoneType' is not iterable``).
+    """
+    merged = merge_dynamic_models({"model_list": None}, {})
+    assert merged["model_list"] == []
+
+
+def test_merge_dynamic_models_tolerates_null_litellm_settings() -> None:
+    """A bare ``litellm_settings:`` key parses to ``None``; injecting a
+    subscription route must not call ``.setdefault`` on ``None``."""
+    merged = merge_dynamic_models({"litellm_settings": None}, {"DECEPTICON_AUTH_CHATGPT": "true"})
+    assert isinstance(merged["litellm_settings"], dict)
+    names = [e.get("model_name", "") for e in merged["model_list"]]
+    assert any(n.startswith("auth/gpt") for n in names)
+
+
+def test_write_dynamic_config_rejects_non_mapping_yaml(tmp_path: Path) -> None:
+    """A top-level YAML list is not a valid LiteLLM config — surface an
+    actionable ValueError rather than a cryptic ``dict()`` TypeError."""
+    src = tmp_path / "bad.yaml"
+    src.write_text("- one\n- two\n")
+    with pytest.raises(ValueError, match="must be a YAML mapping"):
+        write_dynamic_config(src, tmp_path / "out.yaml")
+
+
+def test_write_dynamic_config_rejects_malformed_yaml(tmp_path: Path) -> None:
+    """Malformed YAML raises a clear ValueError naming the config path."""
+    src = tmp_path / "broken.yaml"
+    src.write_text("model_list: [unclosed\n")
+    with pytest.raises(ValueError, match="not valid YAML"):
+        write_dynamic_config(src, tmp_path / "out.yaml")
+
+
+def test_write_dynamic_config_tolerates_null_blocks(tmp_path: Path) -> None:
+    """A config whose ``model_list:`` / ``litellm_settings:`` keys are null
+    must write a usable generated config instead of crashing at boot."""
+    import yaml
+
+    src = tmp_path / "cfg.yaml"
+    src.write_text("model_list:\nlitellm_settings:\n")
+    out = write_dynamic_config(src, tmp_path / "out.yaml")
+    data = yaml.safe_load(out.read_text())
+    assert isinstance(data["model_list"], list)
+
+
+# ── full LiteLLM provider catalog coverage (v1.89.0) ────────────────────
+# Source of truth: the 114 providers researched from litellm 1.89.0 source.
+# Pinned here (not read from the catalog JSON, which isn't shipped to the
+# container) so this test fails loudly if a provider regresses out of the
+# tables. ``(prefix, expected_key_env)``: expected_key_env is the api_key env
+# var the route must reference, or None for key-less / local-no-key routes.
+_REJECTED_CATALOG_PREFIXES = {"ollama", "github_copilot"}
+
+_CATALOG: list[tuple[str, str | None]] = [
+    ("openai", "OPENAI_API_KEY"),
+    ("text-completion-openai", "OPENAI_API_KEY"),
+    ("anthropic", "ANTHROPIC_API_KEY"),
+    ("gemini", "GOOGLE_API_KEY"),
+    ("vertex_ai", None),
+    ("azure", "AZURE_API_KEY"),
+    ("azure_ai", "AZURE_AI_API_KEY"),
+    ("bedrock", None),
+    ("sagemaker", None),
+    ("sagemaker_chat", None),
+    ("mistral", "MISTRAL_API_KEY"),
+    ("codestral", "CODESTRAL_API_KEY"),
+    ("text-completion-codestral", "CODESTRAL_API_KEY"),
+    ("groq", "GROQ_API_KEY"),
+    ("together_ai", "TOGETHERAI_API_KEY"),
+    ("fireworks_ai", "FIREWORKS_AI_API_KEY"),
+    ("deepseek", "DEEPSEEK_API_KEY"),
+    ("xai", "XAI_API_KEY"),
+    ("cohere", "COHERE_API_KEY"),
+    ("cohere_chat", "COHERE_API_KEY"),
+    ("perplexity", "PERPLEXITYAI_API_KEY"),
+    ("openrouter", "OPENROUTER_API_KEY"),
+    ("cerebras", "CEREBRAS_API_KEY"),
+    ("sambanova", "SAMBANOVA_API_KEY"),
+    ("nvidia_nim", "NVIDIA_API_KEY"),
+    ("databricks", "DATABRICKS_API_KEY"),
+    ("watsonx", "WATSONX_API_KEY"),
+    ("ollama", None),
+    ("ollama_chat", None),
+    ("vllm", None),
+    ("hosted_vllm", "HOSTED_VLLM_API_KEY"),
+    ("deepinfra", "DEEPINFRA_API_KEY"),
+    ("anyscale", "ANYSCALE_API_KEY"),
+    ("replicate", "REPLICATE_API_TOKEN"),
+    ("huggingface", "HUGGINGFACE_API_KEY"),
+    ("ai21", "AI21_API_KEY"),
+    ("ai21_chat", "AI21_API_KEY"),
+    ("nlp_cloud", "NLP_CLOUD_API_KEY"),
+    ("voyage", "VOYAGE_API_KEY"),
+    ("jina_ai", "JINA_AI_API_KEY"),
+    ("cloudflare", "CLOUDFLARE_API_KEY"),
+    ("baseten", "BASETEN_API_KEY"),
+    ("snowflake", "SNOWFLAKE_JWT"),
+    ("github", "GITHUB_API_KEY"),
+    ("github_copilot", None),
+    ("lm_studio", "LMSTUDIO_API_KEY"),
+    ("llamafile", "LLAMAFILE_API_KEY"),
+    ("novita", "NOVITA_API_KEY"),
+    ("hyperbolic", "HYPERBOLIC_API_KEY"),
+    ("lambda_ai", "LAMBDA_API_KEY"),
+    ("nebius", "NEBIUS_API_KEY"),
+    ("dashscope", "DASHSCOPE_API_KEY"),
+    ("moonshot", "MOONSHOT_API_KEY"),
+    ("zai", "ZAI_API_KEY"),
+    ("minimax", "MINIMAX_API_KEY"),
+    ("volcengine", "VOLCENGINE_API_KEY"),
+    ("friendliai", "FRIENDLIAI_API_KEY"),
+    ("featherless_ai", "FEATHERLESS_AI_API_KEY"),
+    ("galadriel", "GALADRIEL_API_KEY"),
+    ("gradient_ai", "GRADIENT_AI_API_KEY"),
+    ("predibase", "PREDIBASE_API_KEY"),
+    ("clarifai", "CLARIFAI_API_KEY"),
+    ("aleph_alpha", "ALEPH_ALPHA_API_KEY"),
+    ("petals", None),
+    ("maritalk", "MARITALK_API_KEY"),
+    ("xinference", "XINFERENCE_API_KEY"),
+    ("empower", "EMPOWER_API_KEY"),
+    ("meta_llama", "LLAMA_API_KEY"),
+    ("nscale", "NSCALE_API_KEY"),
+    ("v0", "V0_API_KEY"),
+    ("morph", "MORPH_API_KEY"),
+    ("inception", "INCEPTION_API_KEY"),
+    ("litellm_proxy", "LITELLM_PROXY_API_KEY"),
+    ("vercel_ai_gateway", "VERCEL_AI_GATEWAY_API_KEY"),
+    ("wandb", "WANDB_API_KEY"),
+    ("cometapi", "COMETAPI_API_KEY"),
+    ("aiml", "AIML_API_KEY"),
+    ("heroku", "HEROKU_API_KEY"),
+    ("oci", None),
+    ("gigachat", None),
+    ("datarobot", "DATAROBOT_API_TOKEN"),
+    ("ovhcloud", "OVHCLOUD_API_KEY"),
+    ("scaleway", "SCW_SECRET_KEY"),
+    ("lemonade", "LEMONADE_API_KEY"),
+    ("docker_model_runner", "DOCKER_MODEL_RUNNER_API_KEY"),
+    ("ragflow", "RAGFLOW_API_KEY"),
+    ("compactifai", "COMPACTIFAI_API_KEY"),
+    ("publicai", "PUBLICAI_API_KEY"),
+    ("synthetic", "SYNTHETIC_API_KEY"),
+    ("apertis", "STIMA_API_KEY"),
+    ("nano-gpt", "NANOGPT_API_KEY"),
+    ("poe", "POE_API_KEY"),
+    ("chutes", "CHUTES_API_KEY"),
+    ("parasail", "PARASAIL_API_KEY"),
+    ("tensormesh", "TENSORMESH_INFERENCE_API_KEY"),
+    ("infinity", "INFINITY_API_KEY"),
+    ("triton", None),
+    ("oobabooga", None),
+    ("deepgram", "DEEPGRAM_API_KEY"),
+    ("elevenlabs", "ELEVENLABS_API_KEY"),
+    ("assemblyai", "ASSEMBLYAI_API_KEY"),
+    ("recraft", "RECRAFT_API_KEY"),
+    ("runwayml", "RUNWAYML_API_KEY"),
+    ("stability", "STABILITY_API_KEY"),
+    ("fal_ai", "FAL_AI_API_KEY"),
+    ("black_forest_labs", "BFL_API_KEY"),
+    ("topaz", "TOPAZ_API_KEY"),
+    ("bedrock_mantle", "BEDROCK_MANTLE_API_KEY"),
+    ("amazon_nova", "AMAZON_NOVA_API_KEY"),
+    ("soniox", "SONIOX_API_KEY"),
+    ("nvidia_riva", "NVIDIA_RIVA_API_KEY"),
+    ("sap", None),
+    ("openai_like", "OPENAI_LIKE_API_KEY"),
+    ("manus", "MANUS_API_KEY"),
+]
+
+
+def test_catalog_has_full_provider_count() -> None:
+    """Guard against silent shrinkage of the pinned catalog list."""
+    assert len(_CATALOG) == 114
+
+
+@pytest.mark.parametrize("prefix", [p for p, _ in _CATALOG if p not in _REJECTED_CATALOG_PREFIXES])
+def test_every_catalog_provider_validates_and_builds(prefix: str) -> None:
+    """Every supported catalog provider prefix passes validation and builds a
+    route whose ``model_name`` is preserved verbatim."""
+    model = f"{prefix}/some-model"
+    validate_model_name(model)  # must not raise
+    entry = build_model_entry(model)
+    assert entry["model_name"] == model
+    assert entry["litellm_params"]["model"]  # a model is always set
+    provider = _provider_prefix(model)
+    # Key-bearing providers must reference an api_key env; key-less ones
+    # (SigV4 / ADC / OCI / OAuth / local-no-auth, plus local ollama_chat)
+    # legitimately omit it.
+    if provider not in _NO_API_KEY_PROVIDERS and provider != "ollama_chat":
+        assert "api_key" in entry["litellm_params"], provider
+
+
+@pytest.mark.parametrize(
+    "prefix,expected_key", [(p, k) for p, k in _CATALOG if p not in _REJECTED_CATALOG_PREFIXES]
+)
+def test_every_catalog_provider_uses_source_verified_key_env(
+    prefix: str, expected_key: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The api_key env ref must be the source-verified name, not the derived
+    ``<PROVIDER>_API_KEY`` guess. Run with a clean env so alias providers fall
+    back to their canonical (first-listed) var."""
+    for _, candidates in PROVIDER_KEY_ENV_ALIASES.items():
+        for name in candidates:
+            monkeypatch.delenv(name, raising=False)
+    params = build_model_entry(f"{prefix}/some-model")["litellm_params"]
+    if expected_key is None:
+        assert "api_key" not in params
+    else:
+        assert params["api_key"] == f"os.environ/{expected_key}"
+
+
+@pytest.mark.parametrize("prefix", sorted(_REJECTED_CATALOG_PREFIXES))
+def test_rejected_catalog_providers_raise(prefix: str) -> None:
+    with pytest.raises(ValueError):
+        validate_model_name(f"{prefix}/some-model")
+
+
+def test_github_copilot_rejected_as_oauth() -> None:
+    with pytest.raises(ValueError, match="OAuth"):
+        validate_model_name("github_copilot/gpt-4o")
+
+
+def test_unsupported_provider_error_mentions_count_and_docs() -> None:
+    with pytest.raises(ValueError, match="providers are supported") as exc:
+        validate_model_name("totally-made-up/model")
+    assert "DECEPTICON_LITELLM_MODELS" in str(exc.value)
+    assert str(len(ALLOWED_DYNAMIC_PROVIDERS)) in str(exc.value)
+
+
+def test_bedrock_route_has_no_api_key() -> None:
+    params = build_model_entry("bedrock/anthropic.claude-3-5-sonnet")["litellm_params"]
+    assert "api_key" not in params
+    assert params == {"model": "bedrock/anthropic.claude-3-5-sonnet"}
+
+
+def test_vertex_ai_route_passes_project_and_location_without_key() -> None:
+    params = build_model_entry("vertex_ai/gemini-2.0-flash")["litellm_params"]
+    assert "api_key" not in params
+    assert params["vertex_project"] == "os.environ/VERTEXAI_PROJECT"
+    assert params["vertex_location"] == "os.environ/VERTEXAI_LOCATION"
+
+
+def test_watsonx_route_carries_url_and_project_params() -> None:
+    params = build_model_entry("watsonx/ibm/granite-13b-chat-v2")["litellm_params"]
+    assert params["api_key"] == "os.environ/WATSONX_API_KEY"
+    assert params["api_base"] == "os.environ/WATSONX_URL"
+    assert params["project_id"] == "os.environ/WATSONX_PROJECT_ID"
+
+
+def test_predibase_route_carries_tenant_id() -> None:
+    params = build_model_entry("predibase/llama-3-8b-instruct")["litellm_params"]
+    assert params["api_key"] == "os.environ/PREDIBASE_API_KEY"
+    assert params["tenant_id"] == "os.environ/PREDIBASE_TENANT_ID"
+
+
+def test_alias_key_prefers_first_env_var_actually_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    """together_ai accepts 4 key aliases; the route must reference the first
+    one actually set, not always the canonical TOGETHERAI_API_KEY."""
+    for name in PROVIDER_KEY_ENV_ALIASES["together_ai"]:
+        monkeypatch.delenv(name, raising=False)
+    # None set → canonical fallback.
+    assert (
+        build_model_entry("together_ai/x")["litellm_params"]["api_key"]
+        == "os.environ/TOGETHERAI_API_KEY"
+    )
+    # Only a non-canonical alias set → that one wins.
+    monkeypatch.setenv("TOGETHER_AI_TOKEN", "secret")
+    assert (
+        build_model_entry("together_ai/x")["litellm_params"]["api_key"]
+        == "os.environ/TOGETHER_AI_TOKEN"
+    )
+
+
+def test_cohere_falls_back_to_co_api_key_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in PROVIDER_KEY_ENV_ALIASES["cohere"]:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("CO_API_KEY", "secret")
+    assert (
+        build_model_entry("cohere/command-r")["litellm_params"]["api_key"]
+        == "os.environ/CO_API_KEY"
+    )
+
+
+def test_local_no_key_providers_accepted_with_api_base() -> None:
+    """vllm/hosted_vllm/lemonade/llamafile are accepted and pinned to their
+    api_base env ref."""
+    assert build_model_entry("vllm/m")["litellm_params"]["api_base"] == "os.environ/VLLM_API_BASE"
+    assert (
+        build_model_entry("lemonade/m")["litellm_params"]["api_base"]
+        == "os.environ/LEMONADE_API_BASE"
+    )
+
+
+def test_every_catalog_prefix_is_allowed_or_rejected() -> None:
+    """No catalog provider falls through the cracks: each normalized prefix is
+    either in ALLOWED_DYNAMIC_PROVIDERS or explicitly rejected."""
+    for prefix, _ in _CATALOG:
+        provider = _provider_prefix(f"{prefix}/x")
+        if prefix in _REJECTED_CATALOG_PREFIXES:
+            continue
+        assert provider in ALLOWED_DYNAMIC_PROVIDERS, prefix

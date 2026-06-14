@@ -40,12 +40,24 @@ _PREFIX_HANDLERS: list[tuple[str, CustomLLM]] = [
 
 def _select_auth_handler(model: str) -> CustomLLM:
     """Resolve a ``auth/<slug>`` model name to its subscription handler."""
+    supported = ", ".join(f"{p}*" for p, _ in _PREFIX_HANDLERS)
+    if not isinstance(model, str) or not model.strip():
+        # None / non-string / empty model: LiteLLM occasionally dispatches with
+        # the model passed neither positionally nor by keyword. Fail with a typed
+        # BadRequestError instead of letting ``.split`` raise a raw TypeError.
+        raise litellm.BadRequestError(
+            message=(
+                f"auth/ provider: missing or invalid model {model!r}. "
+                f"Expected a non-empty 'auth/<slug>' string. Supported prefixes: {supported}."
+            ),
+            model=str(model),
+            llm_provider="auth",
+        )
     slug = model.split("/", 1)[-1] if "/" in model else model
     slug_lower = slug.lower()
     for prefix, handler in _PREFIX_HANDLERS:
         if slug_lower.startswith(prefix):
             return handler
-    supported = ", ".join(f"{p}*" for p, _ in _PREFIX_HANDLERS)
     raise litellm.BadRequestError(
         message=(
             f"auth/ provider: model slug {slug!r} did not match any known "

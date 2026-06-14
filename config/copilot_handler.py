@@ -194,10 +194,34 @@ def _mint_copilot_token(github_token: str) -> dict[str, Any]:
             llm_provider="copilot",
         )
     resp.raise_for_status()
-    body = resp.json()
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise litellm.AuthenticationError(
+            message=(
+                "GitHub returned a non-JSON response while minting a Copilot token "
+                f"(HTTP {resp.status_code}). Body: {resp.text[:200]}"
+            ),
+            model="copilot",
+            llm_provider="copilot",
+        ) from exc
+    token = body.get("token") if isinstance(body, dict) else None
+    if not token or not isinstance(token, str):
+        raise litellm.AuthenticationError(
+            message=(
+                "GitHub mint response did not include a Copilot token — your "
+                "subscription may be inactive. Run `gh auth login --scopes copilot`."
+            ),
+            model="copilot",
+            llm_provider="copilot",
+        )
+    try:
+        expires_at = int(body.get("expires_at", 0) or 0)
+    except (TypeError, ValueError):
+        expires_at = 0
     return {
-        "copilot_token": body["token"],
-        "expires_at": int(body.get("expires_at", 0)),
+        "copilot_token": token,
+        "expires_at": expires_at,
         "endpoints": body.get("endpoints", {}),
     }
 
@@ -351,7 +375,22 @@ class CopilotHandler(CustomLLM):
                 llm_provider="copilot",
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message=f"Copilot returned a malformed (non-JSON) response: {resp.text[:300]}",
+                model=model,
+                llm_provider="copilot",
+            ) from exc
+        if not isinstance(data, dict):
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message="Copilot response JSON was not an object.",
+                model=model,
+                llm_provider="copilot",
+            )
         return ModelResponse(
             id=data.get("id", f"copilot-{actual_model}"),
             model=actual_model,
