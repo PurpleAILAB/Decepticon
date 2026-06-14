@@ -66,9 +66,7 @@ class EngagementContextState(AgentState):
         Annotated[str, "Per-run output language (ISO 639-1).", reduce_converging_value]
     ]
     # Benchmark / CTF challenge context — populated by the benchmark harness.
-    target_url: NotRequired[
-        Annotated[str, "CTF challenge target URL.", reduce_converging_value]
-    ]
+    target_url: NotRequired[Annotated[str, "CTF challenge target URL.", reduce_converging_value]]
     target_extra_ports: NotRequired[
         Annotated[
             dict[int, int],
