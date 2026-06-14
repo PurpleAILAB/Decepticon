@@ -52,6 +52,19 @@ from decepticon_core.utils.logging import get_logger
 log = get_logger("llm.factory")
 
 
+# Default output-token cap for every model created through this factory.
+# We must set one explicitly: the LiteLLM proxy applies the Anthropic default
+# of 4096 when the client sends no ``max_tokens``, and a single large
+# ``write_file`` tool call (e.g. a full finding report or a recon target model)
+# then truncates mid-argument at 4096 output tokens — the tool-call JSON never
+# closes, so the ``content`` arg is dropped and the write fails. Modern Claude
+# models (opus-4-8 / sonnet-4-6 / haiku-4-5) support far larger outputs; 16384
+# is a generous cap (it is a ceiling, not a forced value — short replies cost
+# nothing extra) that lets large deliverables complete in one call.
+# Override with ``DECEPTICON_LLM_MAX_TOKENS``.
+DEFAULT_LLM_MAX_TOKENS = 16384
+LLM_MAX_TOKENS_ENV = "DECEPTICON_LLM_MAX_TOKENS"
+
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 600
 LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # `.env.example` documents the pydantic-settings nested form
@@ -63,6 +76,19 @@ LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # ``DECEPTICON_LLM_TIMEOUT_SECONDS`` (explicit, whole-coroutine) >
 # ``DECEPTICON_LLM__TIMEOUT`` (the published env knob) > default.
 LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
+
+
+def _resolve_max_tokens() -> int:
+    """Output-token cap for factory-created models (env override, safe parse)."""
+    raw = os.environ.get(LLM_MAX_TOKENS_ENV)
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+    return DEFAULT_LLM_MAX_TOKENS
 
 
 class LLMTimeoutError(RuntimeError):
@@ -1582,6 +1608,9 @@ class LLMFactory:
             "api_key": SecretStr(self._proxy.api_key),
             "timeout": self._proxy.timeout,
             "max_retries": self._proxy.max_retries,
+            # Explicit cap so large single-call deliverables (finding reports,
+            # recon target models) don't truncate at the proxy's 4096 default.
+            "max_tokens": _resolve_max_tokens(),
         }
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}
