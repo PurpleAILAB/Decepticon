@@ -433,6 +433,13 @@ class HTTPSandbox(BaseSandbox):
             "/kill_session",
             json={"session": session, "workspace_path": workspace_path},
         )
+        # Clear the agent-side mirror job. The daemon already dropped its own
+        # tracker entry inside the /kill_session route (base.kill_session), but
+        # bash_status / pending_completions read THIS local mirror — without
+        # this remove a killed session lingers as "running" until a later
+        # poll_completion reconciles it. Keeps the two transports' local state
+        # in parity (idempotent: remove() is a no-op when absent).
+        self._jobs.remove(session, key=_mirror_key(session, workspace_path))
 
     def read_session_log_diff(
         self,

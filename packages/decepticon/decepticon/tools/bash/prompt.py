@@ -27,7 +27,7 @@ bash(command, session="main", background=False, timeout=120, is_input=False, des
 | `command` | `""` | Shell command. Empty = read current screen |
 | `session` | `"main"` | Different names = parallel sessions. Use a dedicated name for background jobs |
 | `background` | `False` | Start without waiting. Returns `[BACKGROUND]` immediately |
-| `timeout` | `120` | Max seconds to wait. Commands running >60s auto-background |
+| `timeout` | `120` | Upper bound on blocking. Foreground commands **auto-background at 60s**, so values >60 never take effect; only set <60 to give up sooner |
 | `is_input` | `False` | True ONLY when sending input to a waiting interactive process |
 | `description` | `""` | Short UI label |
 
@@ -36,9 +36,14 @@ Return-value markers from `bash()`:
 - `[BACKGROUND]` — `background=True` accepted; job tracking started
 - `[AUTO-BACKGROUND]` — command exceeded 60s and was auto-converted; partial output preview included
 - `[SIZE LIMIT]` — output exceeded 5M chars; command was interrupted; redirect to file
-- `[TIMEOUT]` — `timeout` reached; session still occupied (use a different session for new commands; check this one with `bash_output`)
-- `[session: <name> — interactive, send next command with is_input=True]` — interactive prompt detected (msf, sliver, REPL)
+- `[TIMEOUT]` — only when you set `timeout` BELOW 60; session still occupied (use a different session for new commands; check this one with `bash_output`). At the default, a long command auto-backgrounds instead.
+- `[session: <name> — interactive, send next command with is_input=True]` — interactive prompt detected (msf, sliver, REPL). Reply with `is_input=True`; interactive turns are NEVER auto-backgrounded.
 - `[ERROR]` — sandbox/tmux failure; message explains; retry or `bash_kill`
+
+Empty `command` (passive screen read of `session`) returns one of:
+- `[RUNNING] cwd=<dir>` — a foreground command is still occupying the shell (distinct from `bash_output`'s `[RUNNING elapsed=Ts]`, which is about a *background job*)
+- `[IDLE] exit_code=<N> — Session is ready` — shell is at a prompt, ready for the next command (distinct from `bash_output`'s `[IDLE]` = "no background job in this session")
+- `[UNKNOWN]` — pane state could not be parsed; re-issue the read or run a concrete command
 
 ### bash_output(session="main") — fetch new output / completion status
 
@@ -271,10 +276,12 @@ Recovery, in order:
 
 1. Open a NEW bash session (e.g. tag it `<challenge>_recovery` so the original
    tmux name does not collide).
-2. `pkill -9 -f <script>` AND `rm -f /tmp/log` AND
-   `tmux kill-session -t main 2>/dev/null` (the `2>/dev/null` covers the
-   no-such-session case so the recovery does not error out before the next
-   step).
+2. `pkill -9 -f <script>` AND `rm -f /tmp/log`, then tear down the wedged
+   session with `bash_kill(session=<wedged>)`. Do NOT run raw
+   `tmux kill-session` inside the shell — the sandbox manages tmux on a private
+   `-L` socket, so a bare `tmux kill-session -t main` targets the wrong server
+   (or kills your own live session). `bash_kill` is the correct socket-aware
+   teardown and preserves the session log.
 3. Re-launch the same probe **inline** —
    `timeout 60 python3 -u -c '<inlined harness>' 2>&1 | tee log.txt` —
    bypassing tmux entirely. Inline `python3 -u -c` writes to the tool's
@@ -288,7 +295,7 @@ Recovery, in order:
 
 | Symptom | Cause | Recovery |
 |---------|-------|----------|
-| `ps -p <PID>` alive, `/tmp/log` empty across consecutive polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + tmux kill-session, switch to inline `timeout <bounded> python3 -u -c '...' \\| tee log.txt`. |
+| `ps -p <PID>` alive, `/tmp/log` empty across consecutive polls, script has progress logging | Tmux pipe degradation (writes silently dropped) | New session, pkill + rm log + `bash_kill(session=<wedged>)`, switch to inline `timeout <bounded> python3 -u -c '...' \\| tee log.txt`. |
 | `ps -p <PID>` dead, `/tmp/log` empty | Process crashed before first flush (likely import error or syntax error) | `python3 -c '<harness>'` directly to surface the traceback (no `&`, no log redirect). Fix syntax, retry. |
 | `ps -p <PID>` alive, `/tmp/log` has bytes but stops growing | Network wedge (no `sock.settimeout`, slow-loris peer, or sandbox throttling) | Apply Wedged-Session Recovery above. Add `sock.settimeout(5)` before connect AND each recv. Outer `timeout 60`. |
 | 3+ consecutive empty-command polls (`""`, `echo`, `pwd`) on the SAME shell session | The previous tool call wedged the shell stdin/stdout pump | Open a fresh bash session immediately. Polling the wedged shell will not unwedge it. |
