@@ -52,6 +52,12 @@ dependencies = [
     # HTTP
     "httpx>=0.27.0",
     "deepagents>=0.5.0",
+    # Open-web engine (decepticon/sandbox_web) — runs inside the sandbox, which
+    # mounts decepticon as /deps/decepticon, so its pure-Python parse deps ride
+    # the main install set (same rationale as the FastAPI/uvicorn note below).
+    # The network tier (curl_cffi) is heavier and stays sandbox-image-only; unit
+    # tests mock it. beautifulsoup4 backs the validator's success_selector proof.
+    "beautifulsoup4>=4.12.0",
     # Sandbox HTTP daemon — the FastAPI app that ships inside the
     # sandbox container and that `HTTPSandbox` (decepticon/backends/
     # http_sandbox.py) talks to. Carried in the main install set

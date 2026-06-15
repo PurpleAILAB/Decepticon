@@ -1,0 +1,163 @@
+# WAF product profiles — NEVER site-specific.
+#
+# Derived from fivetaku/insane-search (MIT), engine/waf_profiles.yaml.
+#
+# NO-SITE-NAME RULE (enforced by bias_check.py):
+#   * Keys are WAF products (akamai_bot_manager), not sites.
+#   * Detectors use product artifacts (cookies / headers / vendor strings).
+#   * A field value must hold for ANY site running that WAF, not just one. If a
+#     value only fits one site, it belongs to a runtime hint, not this file.
+#
+# Profiles are *recommendations* (priors), not deterministic recipes. The
+# planner treats them as priors; every attempt still validates the real
+# response. Refresh tls candidates quarterly — vendors shift trusted JA3/JA4s.
+
+_meta:
+  schema_version: 1
+  last_reviewed: "2026-06-15"
+
+akamai_bot_manager:
+  detectors:
+    cookie: ["_abck", "bm_sz", "ak_bmsc", "bm_sv", "bm_so"]
+    header: ["X-Akamai-*"]
+    server_contains: ["AkamaiGHost"]
+    body: ["sec-if-cpt-container", "Powered and protected by Akamai"]
+  confidence_rules:
+    strong: 2     # any 2 signals → confidence 0.9
+    weak: 1       # 1 signal → confidence 0.6
+  capabilities_needed:
+    - needs_real_tls_stack   # bundled-Chromium (BoringSSL) TLS is detected
+    - needs_js_exec          # JS sensor challenge
+  tls_impersonate_candidates:
+    - [safari, safari15_3, safari15_5, safari17_0, safari260]
+    - [safari_ios, safari17_2_ios, safari260_ios]
+    - [chrome99, chrome100, chrome101, chrome104, chrome110, chrome116, chrome119, chrome124, chrome131, chrome133a, chrome136]
+    - [chrome_android, chrome131_android]
+    - [edge99, edge101]
+  tls_impersonate_avoid:
+    - safari18_0
+    - chrome107
+    - chrome120
+    - chrome123
+    - firefox
+    - firefox133
+    - firefox135
+  referer_strategies:
+    - self_root
+  url_transform_order:
+    - original
+    - mobile_subdomain
+  fallback_when_challenge:
+    - curl_grid_exhaust
+    - playwright_real_chrome
+  notes: |
+    Do NOT encode site-specific selectors or byte-size fingerprints here.
+    Those belong to the caller's success_selectors or a runtime hint.
+
+cloudflare_turnstile:
+  detectors:
+    cookie: ["cf_clearance", "__cf_bm", "__cfduid"]
+    header: ["cf-ray", "cf-cache-status"]
+    server_contains: ["cloudflare"]
+    body: ["Just a moment...", "Checking your browser", "cf-chl-bypass", "Attention Required! | Cloudflare"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_js_exec        # Chromium TLS passes the CF baseline; no real-TLS
+  tls_impersonate_candidates:
+    - [chrome, chrome_android]
+  referer_strategies:
+    - google_search
+    - self_root
+  fallback_when_challenge:
+    - playwright_real_chrome
+
+f5_big_ip:
+  detectors:
+    cookie: ["BigIPServer", "TS01*", "F5_*"]
+    body: ["The requested URL was rejected", "support ID is:"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+  tls_impersonate_candidates:
+    - [safari, chrome]
+  referer_strategies:
+    - self_root
+
+aws_waf:
+  detectors:
+    cookie: ["aws-waf-token"]
+    header: ["x-amzn-requestid", "x-amzn-errortype", "x-amzn-waf-*"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+  tls_impersonate_candidates:
+    - [chrome]
+  referer_strategies:
+    - self_root
+
+datadome_probable:
+  detectors:
+    cookie: ["datadome"]
+    body: ["DataDome"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+    - needs_js_exec
+  tls_impersonate_candidates:
+    - [safari, chrome]
+  fallback_when_challenge:
+    - playwright_real_chrome
+  notes: |
+    "_probable" reminds us this is tentative until cross-site evidence
+    accumulates.
+
+perimeterx_human:
+  detectors:
+    cookie: ["_px3", "_pxhd", "_px2", "pxcts"]
+    body: ["px-captcha", "Press & Hold to confirm you are a human"]
+  confidence_rules:
+    strong: 2
+    weak: 1
+  capabilities_needed:
+    - needs_real_tls_stack
+    - needs_js_exec
+  tls_impersonate_candidates:
+    - [safari, chrome]
+  fallback_when_challenge:
+    - playwright_real_chrome
+  notes: |
+    PerimeterX (now HUMAN Bot Defender). Distinct cookie family from DataDome —
+    keep profiles separate so the planner does not pick the wrong fallback.
+
+# ---------------------------------------------------------------------------
+# Safety net: always-valid fallback profile (never actively matches).
+# ---------------------------------------------------------------------------
+unknown_challenge:
+  detectors: {}
+  confidence_rules:
+    strong: 0
+    weak: 0
+  capabilities_needed:
+    - needs_js_exec
+  tls_impersonate_candidates:
+    - [safari, chrome, firefox]
+    - [safari_ios, chrome_android]
+  referer_strategies:
+    - self_root
+    - google_search
+    - none
+  url_transform_order:
+    - original
+    - mobile_subdomain
+  fallback_when_challenge:
+    - playwright_real_chrome
+  notes: |
+    Landed here when detection is low-confidence. Broad, conservative grid.
