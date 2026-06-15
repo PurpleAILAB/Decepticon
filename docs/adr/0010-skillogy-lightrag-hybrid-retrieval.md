@@ -124,11 +124,74 @@ behaviour and continue to AND with the keyword path.
 - A query-time embedding call is added to the `find_skill` hot path
   (one small embedding request; cache by query string).
 
+## Implementation plan (for the implementing session)
+
+Touch points, in dependency order. Each step is independently testable.
+
+### Step 1 — embedding helper (new module)
+`skillogy/embeddings.py` (new):
+- `embed_text(text: str) -> list[float]` and `embed_batch(texts) -> list[list[float]]`,
+  calling the **litellm gateway** (`DECEPTICON_SKILLOGY_EMBED_MODEL`, default chosen
+  per Open Questions; base URL + key reuse the existing proxy env the agents use).
+- A small on-disk cache keyed by `sha256(model + "\n" + text)` so re-builds and
+  repeated queries don't re-spend. Used by BOTH ingest (Step 2) and query (Step 4).
+- Returns the embedding dimension via a `EMBED_DIM` constant (drives the index DDL).
+
+### Step 2 — ingest: embed each skill (builder)
+- `builder/skills.py::emit_skill_records` (where the `:Skill` `Node` is built): add an
+  `embedding` property = `embed_text(name + "\n" + description + "\n" + when_to_use
+  + "\n" + moc_summary)`. Keep the field deterministic given the model (cache by
+  content hash) so the checked-in `skills.cypher` stays reproducible.
+- `emit.py::cypher_literal` already emits float lists via `repr`; confirm a
+  `list[float]` round-trips (add a test). No emitter API change expected.
+- The MERGE statement then carries `n.embedding = [...]` like any other property.
+
+### Step 3 — vector index DDL (boot ingest)
+- `skillogy/__main__.py::_maybe_ingest` (or a sibling `_ensure_indexes`): after the
+  bulk cypher load, run
+  `CREATE VECTOR INDEX skill_embedding IF NOT EXISTS FOR (s:Skill) ON s.embedding
+   OPTIONS {indexConfig: {`vector.dimensions`: EMBED_DIM, `vector.similarity_function`: 'cosine'}}`.
+  Idempotent; Neo4j 5.24.2 supports native vector indexes (confirmed).
+
+### Step 4 — find_skill hybrid retrieval (backend)
+`server/neo4j_backend.py::find_skill` — replace ONLY the keyword Path E
+(lines ~252-258 today) and the `ORDER BY name`:
+1. **local**: if `query`, `qvec = embed_text(query)`, then
+   `CALL db.index.vector.queryNodes('skill_embedding', $k, $qvec) YIELD node AS s, score`
+   for the top-k seeds (k ≈ 20).
+2. **global**: one-hop expand from the seeds over the existing edges —
+   `OPTIONAL MATCH (s)-[:IMPLEMENTS|TAGGED|IN_PHASE]-(:*)<-[...]-(rel:Skill)` plus
+   the analyst `chains` relation — collect related `:Skill` nodes as additional
+   candidates with a discounted score.
+3. **fuse + rerank**: merge local + global (+ an optional exact-substring keyword
+   signal for tokens like CVE ids / tool names) via reciprocal-rank fusion; order by
+   fused score. This replaces `ORDER BY name`.
+4. **ACL**: keep the existing `allowed_path_prefixes` filter (ADR-0008) over the
+   fused candidate set — unchanged.
+- **Fallback**: if the vector index is missing (old dump) or the embed call fails,
+  fall back to the current substring path so the service never 500s.
+- Facet filters (`subdomain`/`mitre_id`/`tag`/`tactic_id`) keep AND-ing as today.
+
+### Step 5 — tests
+- `tests/unit/skillogy/`: the run-004 footgun cases must pass —
+  `"oauth redirect_uri bypass"`, `"redirect uri"`, `"oauth2"` all return the
+  `oauth` / `open-redirect` skills; ranking puts the best match first; ACL still
+  scopes; facet-only (no query) unchanged; missing-index fallback path covered.
+- A `respx`/stub embedding so unit tests don't hit the network; one integration
+  test (marked) against a live Neo4j + embedding for the real vector path.
+
+### Step 6 — CI / image
+- The `skills.cypher` build (CI) now needs the embedding model creds; cache by
+  content hash so only changed skills re-embed. Document the env in the builder.
+
 ## Open questions
 
 - **Embedding model**: `voyage-3` vs `text-embedding-3-large` vs a code/security-tuned
-  model — pick on retrieval quality over the security corpus.
+  model — pick on retrieval quality over the security corpus. (Decision needed
+  before Step 1; sets `EMBED_DIM`.)
 - **Rerank fusion weights** (local vs global vs keyword) — tune on a small
   labelled query set drawn from real hunt logs.
 - **Re-embedding cadence**: only changed skills need re-embedding; key the
-  cache on a content hash in the builder.
+  cache on a content hash in the builder (Step 1 cache covers this).
+- **k and expansion fan-out**: top-k seeds (≈20) and one-hop vs two-hop global
+  expansion — start conservative (k=20, one hop) and tune.
