@@ -471,6 +471,7 @@ def _parse_nmap_xml(xml_output: str, target: str, start_time: str) -> NetworkSca
 
     # Extract hosts
     for host in root.findall(".//host"):
+        host_target = target
         address = host.find("address")
         if address is not None and address.get("addrtype") == "ipv4":
             host_target = address.get("addr", target)
