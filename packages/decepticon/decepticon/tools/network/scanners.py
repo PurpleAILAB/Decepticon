@@ -16,7 +16,6 @@ import asyncio
 import json
 import logging
 import socket
-import struct
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -169,7 +168,6 @@ SERVICE_PORTS: dict[str, list[int]] = {
     "rabbitmq": [5672, 15672],
     "kafka": [9092],
     "elasticsearch": [9200, 9300],
-    "nfs": [2049],
     "cifs": [445],
     "smb": [445],
     "rpc": [111, 135],
@@ -798,6 +796,7 @@ async def _tcp_stack_fingerprinting(
             try:
                 sock.connect((target, port))
             except Exception:
+                # Port closed/unreachable; nothing to fingerprint here.
                 pass
 
             # Get socket options
@@ -805,12 +804,14 @@ async def _tcp_stack_fingerprinting(
                 window_size = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
                 stack_characteristics["window_size"] = window_size
             except Exception:
+                # Socket option unsupported on this platform; skip it.
                 pass
 
             try:
                 mss = sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_MAXSEG)
                 stack_characteristics["mss"] = mss
             except Exception:
+                # Socket option unsupported on this platform; skip it.
                 pass
 
             sock.close()

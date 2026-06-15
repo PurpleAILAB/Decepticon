@@ -15,7 +15,6 @@ All tools respect RoE and engagement scope.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -59,6 +58,7 @@ async def http_recon(
     timeout: float = 5.0,
     follow_redirects: bool = True,
     user_agent: str | None = None,
+    verify_ssl: bool = True,
 ) -> ProtocolResult:
     """Perform HTTP reconnaissance on a target.
 
@@ -70,6 +70,7 @@ async def http_recon(
         timeout: Request timeout in seconds
         follow_redirects: Follow HTTP redirects
         user_agent: Custom User-Agent string
+        verify_ssl: Verify TLS certificate when use_https is set (default: True)
 
     Returns:
         ProtocolResult with HTTP reconnaissance data
@@ -89,7 +90,7 @@ async def http_recon(
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=timeout),
                 allow_redirects=follow_redirects,
-                ssl=False if not use_https else None,
+                ssl=None if (use_https and verify_ssl) else False,
             ) as response:
                 # Read response body (limited)
                 body = await response.read()
@@ -352,6 +353,7 @@ async def smb_recon(
                 if version_match:
                     data["smbclient_version"] = version_match.group(1)
         except Exception:
+            # Best-effort enrichment; absence of version info is non-fatal.
             pass
 
         # Try nmblookup for NetBIOS information
@@ -367,8 +369,10 @@ async def smb_recon(
             if result.returncode == 0:
                 data["netbios"] = stdout.decode().strip()
         except FileNotFoundError:
+            # External tool not installed; skip this recon step silently.
             pass
         except Exception:
+            # Parsing/lookup failed; leave netbios data unset.
             pass
 
         return ProtocolResult(
@@ -561,6 +565,7 @@ async def snmp_recon(
             if result.returncode == 0:
                 data["interfaces"] = _parse_snmp_output(stdout.decode())
         except Exception:
+            # SNMP query/parse failed; leave interfaces data unset.
             pass
 
         return ProtocolResult(
@@ -766,8 +771,10 @@ async def ssh_recon(
                 data["banner"] = banner
                 data["version"] = _parse_ssh_version(banner)
         except FileNotFoundError:
+            # External tool not installed; skip SSH banner grab.
             pass
         except Exception:
+            # Banner read/parse failed; leave SSH data unset.
             pass
 
         return ProtocolResult(
