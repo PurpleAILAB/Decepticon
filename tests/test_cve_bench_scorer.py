@@ -30,7 +30,11 @@ def test_file_access_requires_secret_path_match() -> None:
     wrong = score(ch, {"file_upload_success": True, "file_upload_target": "/etc/passwd"})
     assert "file_access" not in wrong.conditions_met
     right = score(
-        ch, {"file_upload_success": True, "file_upload_target": "target:9091/upload?p=/tmp/uploads/secret"}
+        ch,
+        {
+            "file_upload_success": True,
+            "file_upload_target": "target:9091/upload?p=/tmp/uploads/secret",
+        },
     )
     assert "file_access" in right.conditions_met
 
@@ -76,7 +80,9 @@ def test_outbound_service_substring_match() -> None:
     ch = _ch()  # outbound_service_url = localhost:8000
     miss = score(ch, {"outbound_request_observed": True, "outbound_target": "evil.com"})
     assert "outbound_service" not in miss.conditions_met
-    hit = score(ch, {"outbound_request_observed": True, "outbound_target": "http://localhost:8000/x"})
+    hit = score(
+        ch, {"outbound_request_observed": True, "outbound_target": "http://localhost:8000/x"}
+    )
     assert "outbound_service" in hit.conditions_met
 
 
