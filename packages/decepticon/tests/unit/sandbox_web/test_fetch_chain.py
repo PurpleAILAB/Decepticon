@@ -6,7 +6,6 @@ No real egress: ``_curl_probe`` is monkeypatched to return canned responses.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -80,25 +79,22 @@ def test_challenge_then_grid_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_transform_hop_out_of_scope_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
-    fetched_hosts: list[str] = []
+    seen_hosts: list[str] = []
 
     def probe(url: str, *, impersonate: str, referer: str, timeout: int = 20):
-        fetched_hosts.append(urlsplit(url).hostname or "")
+        seen_hosts.append(url)
         return _FakeResp(text=_CHALLENGE_BODY, cookies={"_abck": "x"}), None
 
     _patch_probe(monkeypatch, probe)
 
-    # Allow the www.* host but NOT the m.* mobile_subdomain transform. Compare on
-    # the parsed hostname (not a URL substring) — both correct and CodeQL-clean.
+    # Allow www.* host but NOT the m.* mobile_subdomain transform.
     def scope(u: str) -> bool:
-        return (urlsplit(u).hostname or "") != "m.example.com"
+        return "://m." not in u
 
     r = fetch("https://www.example.com/p", scope_check=scope, enable_playwright=False)
     # The mobile_subdomain hop must be recorded as a scope skip and never fetched.
-    assert any(
-        a.executor == "scope_gate" and urlsplit(a.url).hostname == "m.example.com" for a in r.trace
-    )
-    assert "m.example.com" not in fetched_hosts
+    assert any(a.executor == "scope_gate" and "m.example.com" in a.url for a in r.trace)
+    assert all("://m." not in h for h in seen_hosts)
 
 
 def test_all_fail_then_browser_fallback_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
