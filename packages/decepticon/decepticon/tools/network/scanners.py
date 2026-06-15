@@ -20,8 +20,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from decepticon_core.types.llm import ChatMessage
-
 log = logging.getLogger(__name__)
 
 
@@ -325,7 +323,6 @@ async def _nmap_scan_external(
     start_time: str,
 ) -> NetworkScanReport:
     """Execute nmap scan using system nmap command."""
-    import subprocess
 
     # Build nmap command
     cmd = ["nmap", "-Pn", "--max-retries", "1", "--host-timeout", str(timeout) + "s"]
@@ -699,7 +696,6 @@ async def _nmap_os_detection(
     ports: list[int] | None,
 ) -> dict[str, Any]:
     """Use nmap for OS detection."""
-    import subprocess
 
     cmd = ["nmap", "-O", "--os-detection", "-Pn"]
     if ports:

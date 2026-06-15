@@ -236,7 +236,6 @@ async def dns_recon(
     Returns:
         ProtocolResult with DNS reconnaissance data
     """
-    import subprocess
 
     if record_types is None:
         record_types = ["A", "AAAA", "MX", "TXT", "CNAME", "NS", "SOA", "PTR"]
@@ -306,7 +305,6 @@ async def smb_recon(
     Returns:
         ProtocolResult with SMB reconnaissance data
     """
-    import subprocess
 
     data: dict[str, Any] = {
         "target": target,
@@ -434,7 +432,6 @@ async def rpc_recon(
     Returns:
         ProtocolResult with RPC reconnaissance data
     """
-    import subprocess
 
     data: dict[str, Any] = {
         "target": target,
@@ -520,7 +517,6 @@ async def snmp_recon(
     Returns:
         ProtocolResult with SNMP reconnaissance data
     """
-    import subprocess
 
     data: dict[str, Any] = {
         "target": target,
@@ -531,7 +527,7 @@ async def snmp_recon(
 
     try:
         # Try snmpwalk to get system information
-        cmd = ["snmpwalk", f"-v", version, f"-c", community, target, "SYSTEM"]
+        cmd = ["snmpwalk", "-v", version, "-c", community, target, "SYSTEM"]
 
         try:
             result = await asyncio.create_subprocess_exec(
@@ -554,7 +550,7 @@ async def snmp_recon(
 
         # Try to get interface information
         try:
-            cmd = ["snmpwalk", f"-v", version, f"-c", community, target, "IF-MIB::ifDescr"]
+            cmd = ["snmpwalk", "-v", version, "-c", community, target, "IF-MIB::ifDescr"]
             result = await asyncio.create_subprocess_exec(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -618,7 +614,6 @@ async def ftp_recon(
     Returns:
         ProtocolResult with FTP reconnaissance data
     """
-    import subprocess
 
     data: dict[str, Any] = {
         "target": target,
@@ -722,7 +717,6 @@ async def ssh_recon(
     Returns:
         ProtocolResult with SSH reconnaissance data
     """
-    import subprocess
 
     data: dict[str, Any] = {
         "target": target,
