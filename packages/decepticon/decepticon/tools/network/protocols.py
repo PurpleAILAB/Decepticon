@@ -111,7 +111,9 @@ async def http_recon(
                 # Extract title if HTML
                 title = None
                 if "text/html" in server_info["content_type"]:
-                    title_match = re.search(r"<title[^>]*>([^<]+)</title>", body_text, re.IGNORECASE)
+                    title_match = re.search(
+                        r"<title[^>]*>([^<]+)</title>", body_text, re.IGNORECASE
+                    )
                     if title_match:
                         title = title_match.group(1).strip()
 
@@ -252,7 +254,15 @@ async def dns_recon(
         for record_type in record_types:
             try:
                 # Use dig command
-                cmd = ["dig", f"@{dns_server}" if dns_server else "", target, record_type, "+short", "+time=1", "+tries=1"]
+                cmd = [
+                    "dig",
+                    f"@{dns_server}" if dns_server else "",
+                    target,
+                    record_type,
+                    "+short",
+                    "+time=1",
+                    "+tries=1",
+                ]
                 cmd = [c for c in cmd if c]  # Remove empty strings
 
                 result = await asyncio.create_subprocess_exec(
@@ -265,7 +275,9 @@ async def dns_recon(
 
                 if result.returncode == 0:
                     records = stdout.decode().strip().split("\n") if stdout else []
-                    data["queries"][record_type] = [r for r in records if r and not r.startswith(";")]
+                    data["queries"][record_type] = [
+                        r for r in records if r and not r.startswith(";")
+                    ]
                 else:
                     data["queries"][record_type] = {"error": stderr.decode().strip()}
 
@@ -398,7 +410,12 @@ def _parse_smb_shares(output: str) -> list[dict[str, Any]]:
 
     for line in lines:
         line = line.strip()
-        if not line or line.startswith("-") or line.startswith("Domain") or line.startswith("Server"):
+        if (
+            not line
+            or line.startswith("-")
+            or line.startswith("Domain")
+            or line.startswith("Server")
+        ):
             continue
 
         # Parse share line: Sharename       Type      Comment
@@ -408,11 +425,13 @@ def _parse_smb_shares(output: str) -> list[dict[str, Any]]:
             share_name = parts[0]
             share_type = parts[1]
             comment = " ".join(parts[2:])
-            shares.append({
-                "name": share_name,
-                "type": share_type,
-                "comment": comment,
-            })
+            shares.append(
+                {
+                    "name": share_name,
+                    "type": share_type,
+                    "comment": comment,
+                }
+            )
 
     return shares
 
@@ -487,13 +506,15 @@ def _parse_rpcinfo_output(output: str) -> list[dict[str, Any]]:
     for line in lines[1:]:  # Skip header line
         parts = line.split()
         if len(parts) >= 4:
-            services.append({
-                "program": parts[0],
-                "version": parts[1],
-                "protocol": parts[2],
-                "port": parts[3],
-                "service": " ".join(parts[4:]) if len(parts) > 4 else None,
-            })
+            services.append(
+                {
+                    "program": parts[0],
+                    "version": parts[1],
+                    "protocol": parts[2],
+                    "port": parts[3],
+                    "service": " ".join(parts[4:]) if len(parts) > 4 else None,
+                }
+            )
 
     return services
 
@@ -628,7 +649,15 @@ async def ftp_recon(
         try:
             # Use openssl for FTPS, netcat for FTP
             if use_ftps:
-                cmd = ["openssl", "s_client", "-connect", f"{target}:{port}", "-starttls", "ftp", "-quiet"]
+                cmd = [
+                    "openssl",
+                    "s_client",
+                    "-connect",
+                    f"{target}:{port}",
+                    "-starttls",
+                    "ftp",
+                    "-quiet",
+                ]
             else:
                 cmd = ["nc", "-w", str(int(timeout)), target, str(port)]
 

@@ -127,8 +127,31 @@ class NetworkScanReport:
 
 # Common ports for different scan profiles
 COMMON_PORTS = [
-    21, 22, 23, 25, 53, 80, 110, 139, 143, 443, 445, 465, 587, 993, 995, 1433,
-    1521, 1723, 3306, 3389, 5432, 5900, 8000, 8080, 8443,
+    21,
+    22,
+    23,
+    25,
+    53,
+    80,
+    110,
+    139,
+    143,
+    443,
+    445,
+    465,
+    587,
+    993,
+    995,
+    1433,
+    1521,
+    1723,
+    3306,
+    3389,
+    5432,
+    5900,
+    8000,
+    8080,
+    8443,
 ]
 
 WEB_PORTS = [80, 443, 8000, 8008, 8080, 8443, 8888, 9000, 9090]
@@ -649,7 +672,11 @@ def _detect_service_from_banner(banner: str | None, port: int) -> tuple[str | No
     # Redis
     if "redis" in banner_lower:
         if "redis_server" in banner_lower:
-            version = banner.split("redis_version:")[1].split()[0] if "redis_version:" in banner_lower else None
+            version = (
+                banner.split("redis_version:")[1].split()[0]
+                if "redis_version:" in banner_lower
+                else None
+            )
             return "redis", version
         return "redis", None
 
@@ -751,6 +778,7 @@ def _parse_nmap_os_output(output: str) -> dict[str, Any]:
     if not result["oses"]:
         # Try alternative parsing
         import re
+
         os_matches = re.findall(r"\n\d+%\s+([^\n]+)", output)
         result["oses"] = os_matches
 
