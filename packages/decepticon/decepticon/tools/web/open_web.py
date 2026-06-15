@@ -54,7 +54,7 @@ def _extract_json(output: str) -> dict[str, Any] | None:
         if isinstance(obj, dict):
             return obj
     except (json.JSONDecodeError, ValueError):
-        pass
+        pass  # not a bare JSON blob (log noise around it) — fall through to the line scan
     for line in reversed(text.splitlines()):
         line = line.strip()
         if not (line.startswith("{") and line.endswith("}")):

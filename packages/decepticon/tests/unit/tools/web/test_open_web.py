@@ -112,7 +112,11 @@ async def test_web_search_hits(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _patch_sandbox(monkeypatch, payload)
     out = await open_web.web_search.ainvoke({"query": "q"})
     assert "2 results" in out
-    assert "https://a.test" in out and "https://b.test" in out
+    # Exact per-line membership (not URL substring-in-string — keeps CodeQL's
+    # incomplete-url-substring-sanitization query from firing on test asserts).
+    lines = [ln.strip() for ln in out.splitlines()]
+    assert "https://a.test" in lines
+    assert "https://b.test" in lines
     assert "decepticon.sandbox_web search" in fake.commands[0]
 
 
