@@ -64,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     output = args.output or DEFAULT_RESULTS_DIR / f"dry-run-{date.today().isoformat()}.jsonl"
     if os.environ.get("PYTHONHASHSEED") != str(SEED):
         import warnings
+
         warnings.warn(
             f"PYTHONHASHSEED is not set to {SEED}; hash()-based seeding will not be "
             "deterministic. Run via `make cve-bench-dry` to ensure reproducibility.",
