@@ -153,12 +153,26 @@ def _refresh_token(tokens: dict[str, Any]) -> dict[str, Any]:
         timeout=30,
         provider_label="auth",
     )
+    # The refresh endpoint normally returns access_token; a malformed or
+    # error-shaped response would otherwise blow up with a raw KeyError.
+    # Never interpolate ``data`` here — it carries the freshly minted
+    # access / refresh tokens. Report only the missing field name.
+    access_token = data.get("access_token")
+    if not access_token:
+        raise litellm.AuthenticationError(
+            message=(
+                "Claude Code token refresh response missing field: access_token. "
+                "Run 'claude /login' and retry."
+            ),
+            model="auth",
+            llm_provider="auth",
+        )
 
     new_tokens = {
-        "accessToken": data["access_token"],
-        "refreshToken": data.get("refresh_token", tokens["refreshToken"]),
-        "expiresAt": int(time.time() + data.get("expires_in", 3600)),
-        "scopes": data.get("scope", "").split(),
+        "accessToken": access_token,
+        "refreshToken": data.get("refresh_token") or tokens["refreshToken"],
+        "expiresAt": int(time.time() + (data.get("expires_in") or 3600)),
+        "scopes": (data.get("scope") or "").split(),
         "updatedAt": int(time.time() * 1000),
     }
 
@@ -554,25 +568,50 @@ class ClaudeCodeCustomHandler(CustomLLM):
                 llm_provider="auth",
             )
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message=(f"Anthropic API returned a non-JSON response: {resp.text[:500]}"),
+                model=model,
+                llm_provider="auth",
+            ) from exc
+        if not isinstance(data, dict):
+            raise litellm.APIError(
+                status_code=resp.status_code,
+                message=f"Anthropic API response was not a JSON object: {resp.text[:500]}",
+                model=model,
+                llm_provider="auth",
+            )
 
-        # Convert Anthropic response to LiteLLM ModelResponse (OpenAI format)
-        content_blocks = data.get("content", [])
+        # Convert Anthropic response to LiteLLM ModelResponse (OpenAI format).
+        # ``content``/``usage`` may be absent or explicitly null on edge
+        # responses; ``.get(k) or default`` keeps iteration/arithmetic safe.
+        content_blocks = data.get("content") or []
+        if not isinstance(content_blocks, list):
+            content_blocks = []
 
         # Extract text content
-        text_parts = [block["text"] for block in content_blocks if block.get("type") == "text"]
+        text_parts = [
+            block["text"]
+            for block in content_blocks
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and isinstance(block.get("text"), str)
+        ]
         response_text = "\n".join(text_parts) if text_parts else None
 
         # Extract tool_use blocks → OpenAI tool_calls format
         tool_calls = []
         for block in content_blocks:
-            if block.get("type") == "tool_use":
+            if isinstance(block, dict) and block.get("type") == "tool_use":
                 tool_calls.append(
                     {
                         "id": block.get("id", ""),
                         "type": "function",
                         "function": {
-                            "name": block["name"],
+                            "name": block.get("name", ""),
                             "arguments": json.dumps(block.get("input", {})),
                         },
                     }
@@ -587,9 +626,9 @@ class ClaudeCodeCustomHandler(CustomLLM):
         if tool_calls:
             message["tool_calls"] = tool_calls
 
-        usage_data = data.get("usage", {})
-        input_tokens = usage_data.get("input_tokens", 0)
-        output_tokens = usage_data.get("output_tokens", 0)
+        usage_data = data.get("usage") or {}
+        input_tokens = usage_data.get("input_tokens") or 0
+        output_tokens = usage_data.get("output_tokens") or 0
 
         # Map finish_reason: tool_use → tool_calls (OpenAI convention)
         stop_reason = data.get("stop_reason", "end_turn")

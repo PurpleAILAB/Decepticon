@@ -661,7 +661,7 @@ class TmuxSessionManager:
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
-                output, exit_code, cwd = _extract_output(screen, command)
+                output, exit_code, cwd = _extract_output(screen, command, initial_count)
                 log.info(
                     "Command completed: exit=%s cwd=%s [%s]",
                     exit_code,
@@ -861,7 +861,7 @@ class TmuxSessionManager:
             current_count = len(PS1_PATTERN.findall(screen))
 
             if current_count > initial_count:
-                output, exit_code, cwd = _extract_output(screen, command)
+                output, exit_code, cwd = _extract_output(screen, command, initial_count)
                 log.info(
                     "Command completed: exit=%s cwd=%s [%s]",
                     exit_code,
@@ -895,12 +895,19 @@ class TmuxSessionManager:
                     f"{_truncate(output).strip()}\n\n"
                     f"[SIZE LIMIT] Output exceeded {SIZE_WATCHDOG_CHARS // 1_000_000}M chars. "
                     f"Command interrupted.\n"
-                    f"Redirect output to a file: command > /workspace/output.txt"
+                    f"Redirect output to a file: command > {self._workspace_path}/output.txt"
                 )
 
-            # Auto-background: convert blocking commands after threshold
+            # Auto-background: convert blocking commands after threshold.
+            # Exempt is_input: auto-background exists to detach a blocking
+            # *foreground command* the agent is waiting on. is_input is the
+            # agent interacting with an already-running process (msfconsole /
+            # sliver / pdb); it emits no terminating foreground PS1 marker, so
+            # backgrounding it would strand the job as forever-"running" and
+            # corrupt the interactive session. Slow interactive turns fall
+            # through to the stall/hung path below instead.
             elapsed = time.monotonic() - start
-            if elapsed >= AUTO_BACKGROUND_SECONDS and command:
+            if elapsed >= AUTO_BACKGROUND_SECONDS and command and not is_input:
                 log.info(
                     "Auto-backgrounding after %.0fs [%s] in session '%s'",
                     elapsed,
@@ -1024,18 +1031,45 @@ def _extract_interactive_output(screen: str, baseline: str) -> str:
     return "\n".join(new_lines) if new_lines else screen.strip()
 
 
-def _extract_output(screen: str, command: str) -> tuple[str, int, str]:
+def _extract_output(screen: str, command: str, since_count: int = 0) -> tuple[str, int, str]:
+    """Extract a foreground command's output, exit code, and cwd from the pane.
+
+    ``since_count`` is the number of PS1 markers present in the *baseline*
+    capture (before the command ran). Completion is detected upstream as
+    "≥1 new marker since baseline" (``current_count > initial_count``), so the
+    command's output is *everything between the baseline's last marker and the
+    final marker* — regardless of how many markers landed in between.
+
+    Slicing between only the final two markers (the old behaviour) silently
+    dropped earlier output whenever a single ``bash()`` call produced 2+ new
+    markers (a multi-line / compound command, a subshell that re-cycles the
+    prompt, or any injected prompt line): the detector fires on the first new
+    marker but the extractor would return only the last segment. Anchoring the
+    slice on ``since_count`` keeps detection and extraction in lockstep.
+
+    In the common single-new-marker case (``current_count == initial_count + 1``)
+    this is identical to the old ``matches[-2]..last`` slice, so existing
+    behaviour and tests are unchanged.
+    """
     matches = list(PS1_PATTERN.finditer(screen))
     if not matches:
         return screen, -1, ""
     last = matches[-1]
     exit_code = int(last.group(1))
     cwd = last.group(2)
-    if len(matches) >= 2:
+    # Start at the end of the baseline's last marker; the final marker is the
+    # completion prompt. Fall back to start-of-screen when the baseline had no
+    # marker (cold session) or when since_count is out of range.
+    if 1 <= since_count <= len(matches) - 1:
+        raw = screen[matches[since_count - 1].end() : last.start()]
+    elif len(matches) >= 2:
         raw = screen[matches[-2].end() : last.start()]
     else:
         raw = screen[: last.start()]
     lines = raw.strip().split("\n")
+    # Drop any intermediate PS1 marker lines (extra prompt cycles from a
+    # multi-line command) so the sentinels never leak into returned output.
+    lines = [ln for ln in lines if not PS1_PATTERN.search(ln)]
     if lines and command and lines[0].strip().endswith(command.strip()):
         lines = lines[1:]
     return "\n".join(lines).strip(), exit_code, cwd

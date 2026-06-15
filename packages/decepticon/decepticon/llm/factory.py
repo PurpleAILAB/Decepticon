@@ -52,6 +52,19 @@ from decepticon_core.utils.logging import get_logger
 log = get_logger("llm.factory")
 
 
+# Default output-token cap for every model created through this factory.
+# We must set one explicitly: the LiteLLM proxy applies the Anthropic default
+# of 4096 when the client sends no ``max_tokens``, and a single large
+# ``write_file`` tool call (e.g. a full finding report or a recon target model)
+# then truncates mid-argument at 4096 output tokens — the tool-call JSON never
+# closes, so the ``content`` arg is dropped and the write fails. Modern Claude
+# models (opus-4-8 / sonnet-4-6 / haiku-4-5) support far larger outputs; 16384
+# is a generous cap (it is a ceiling, not a forced value — short replies cost
+# nothing extra) that lets large deliverables complete in one call.
+# Override with ``DECEPTICON_LLM_MAX_TOKENS``.
+DEFAULT_LLM_MAX_TOKENS = 16384
+LLM_MAX_TOKENS_ENV = "DECEPTICON_LLM_MAX_TOKENS"
+
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 600
 LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # `.env.example` documents the pydantic-settings nested form
@@ -63,6 +76,19 @@ LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # ``DECEPTICON_LLM_TIMEOUT_SECONDS`` (explicit, whole-coroutine) >
 # ``DECEPTICON_LLM__TIMEOUT`` (the published env knob) > default.
 LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
+
+
+def _resolve_max_tokens() -> int:
+    """Output-token cap for factory-created models (env override, safe parse)."""
+    raw = os.environ.get(LLM_MAX_TOKENS_ENV)
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError:
+            value = 0
+        if value > 0:
+            return value
+    return DEFAULT_LLM_MAX_TOKENS
 
 
 class LLMTimeoutError(RuntimeError):
@@ -836,11 +862,14 @@ class _ProxiedChatOpenAI(ChatOpenAI):
         return result
 
     async def ainvoke(self, *args, **kwargs):
+        # Resolve the timeout *before* creating the request coroutine. A
+        # misconfigured ``DECEPTICON_LLM_TIMEOUT_SECONDS`` raises ValueError;
+        # if that were evaluated as the second argument to
+        # ``call_with_timeout`` the ``super().ainvoke(...)`` coroutine would
+        # already exist and leak un-awaited ("coroutine was never awaited").
+        timeout = _resolve_llm_timeout_seconds()
         try:
-            result = await call_with_timeout(
-                super().ainvoke(*args, **kwargs),
-                _resolve_llm_timeout_seconds(),
-            )
+            result = await call_with_timeout(super().ainvoke(*args, **kwargs), timeout)
         except LLMTimeoutError:
             raise
         except Exception as exc:
@@ -999,9 +1028,13 @@ class _DeepSeekThinkingChatOpenAI(_ProxiedChatOpenAI):
 
     async def _agenerate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
         """Wrap _agenerate to preserve reasoning_content in the response."""
+        # Resolve the timeout before creating the request coroutine so a
+        # misconfigured timeout env raises ValueError without leaving the
+        # ``super()._agenerate(...)`` coroutine un-awaited.
+        timeout = _resolve_llm_timeout_seconds()
         result = await call_with_timeout(
             super()._agenerate(messages, *args, **kwargs),
-            _resolve_llm_timeout_seconds(),
+            timeout,
         )
         return result
 
@@ -1155,6 +1188,18 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # Generic long opaque tokens (>=24 chars of key-ish alphabet) that survive
     # the targeted passes above — e.g. provider keys without an sk- prefix.
     (re.compile(r"\b[A-Za-z0-9_\-]{24,}\b"), "[REDACTED]"),
+)
+
+# High-confidence credential shapes used to decide whether an *unclassified*
+# provider error would leak a secret if its text were re-raised verbatim.
+# Deliberately excludes the broad ``>=24-char`` catch-all from
+# ``_SECRET_PATTERNS`` (that one also matches long model ids / hashes and
+# would over-trigger), keeping only the unambiguous ``Bearer``/``sk-``/
+# ``authorization:`` shapes.
+_CREDENTIAL_SHAPE = re.compile(
+    r"(?i)\bBearer\s+[\w.\-+/=]+"
+    r"|\bsk-(?:ant-)?[\w.\-]{8,}"
+    r"|['\"]?(?:authorization|x-api-key|api[_-]?key)['\"]?\s*[:=]\s*['\"]?[^'\"\s,}]+"
 )
 
 
@@ -1317,6 +1362,19 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"or run 'decepticon onboard --reset'.\nUnderlying: {safe_msg}"
         ) from exc
 
+    if (
+        "permissiondenied" in err_type.lower()
+        or "forbidden" in err_type.lower()
+        or "code: 403" in msg_lower
+    ):
+        raise RuntimeError(
+            f"{fatal_prefix}Model '{model_name}' refused access (403). The "
+            f"provider accepted your credentials but forbids this model "
+            f"(region lock, plan tier, or org policy). Verify your account "
+            f"can use that model, or route to another method via "
+            f"DECEPTICON_AUTH_PRIORITY.\nUnderlying: {safe_msg}"
+        ) from exc
+
     if "ratelimit" in err_type.lower() or "code: 429" in msg_lower:
         raise RuntimeError(
             f"Model '{model_name}' hit the provider's rate limit (429). "
@@ -1331,6 +1389,20 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"actually pulled ('ollama list'). For cloud providers, check "
             f"that the model id matches config/litellm.yaml.\n"
             f"Underlying: {safe_msg}"
+        ) from exc
+
+    # Final safety net for *unclassified* provider errors. None of the
+    # branches above matched, so the caller's trailing ``raise`` would
+    # re-raise ``exc`` verbatim. If its text carries a credential-shaped
+    # substring (e.g. an echoed Authorization header on a 500/422/region
+    # error we don't special-case), re-raising raw would leak the secret
+    # into CLI output and logs. Re-wrap with the scrubbed copy. Errors with
+    # no credential shape fall through untouched so their original traceback
+    # is preserved (see test_unmatched_error_passes_through).
+    if _CREDENTIAL_SHAPE.search(msg):
+        raise RuntimeError(
+            f"{fatal_prefix}Model '{model_name}' failed with an unclassified "
+            f"provider error. Underlying: {safe_msg}"
         ) from exc
 
 
@@ -1536,6 +1608,9 @@ class LLMFactory:
             "api_key": SecretStr(self._proxy.api_key),
             "timeout": self._proxy.timeout,
             "max_retries": self._proxy.max_retries,
+            # Explicit cap so large single-call deliverables (finding reports,
+            # recon target models) don't truncate at the proxy's 4096 default.
+            "max_tokens": _resolve_max_tokens(),
         }
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}

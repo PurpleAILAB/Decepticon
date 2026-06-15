@@ -29,6 +29,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge-queue ready: when the repo enables a merge queue, the same
+  # required checks run on the queued merge commit. No-op until then.
+  merge_group:
 
 permissions:
   contents: read
@@ -40,6 +43,7 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       python: ${{ steps.app.outputs.python }}
       cli: ${{ steps.app.outputs.cli }}
@@ -48,8 +52,8 @@ jobs:
       compose: ${{ steps.app.outputs.compose }}
       docker-images: ${{ steps.docker.outputs.changes }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: app
         with:
           filters: |
@@ -80,7 +84,7 @@ jobs:
               - '.github/workflows/ci.yml'
       # Per-image filter: filter name == image name so the matrix can pull
       # `outputs.changes` directly as the list of images to build.
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@d1c1ffe0248fe513906c8e24db8ea791d46f8590 # v3.0.3
         id: docker
         with:
           filters: |
@@ -135,8 +139,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.compose == 'true' || github.event_name == 'push' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       # The compose files reference a project-local ``.env`` for the
       # runtime stack. CI doesn't ship one (and shouldn't — keys live
       # in the user's $DECEPTICON_HOME), so the validator runs against
@@ -164,13 +169,14 @@ jobs:
     needs: changes
     if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           version: "0.8.15"
           enable-cache: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
       # Cache the resolved virtualenv across runs. setup-uv's enable-cache
@@ -180,7 +186,7 @@ jobs:
       # invalidated when dependencies actually change.
       - name: Cache .venv
         id: venv-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
@@ -192,7 +198,7 @@ jobs:
         run: make ci-lint
       - name: Upload basedpyright JSON (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: basedpyright-${{ github.run_id }}
           path: bp.json
@@ -248,7 +254,7 @@ jobs:
         run: make ci-test-coverage
       - name: Upload coverage artifact
         if: github.event_name == 'push' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-xml
           path: coverage.xml
@@ -272,6 +278,7 @@ jobs:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.python == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The real non-blocking guarantee is that this job is NOT in the
     # required-status list in branch protection — that is what keeps a
     # red result here from blocking merge. `continue-on-error: true` is
@@ -281,25 +288,48 @@ jobs:
     # the job's own conclusion in the run UI will still read `failure`.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Full history so diff-cover can diff against the merge base.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           version: "0.8.15"
           enable-cache: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
       # Share the cached .venv with the blocking `python` job (same key
       # shape) so the cold-cache cost of this job is mostly checkout +
       # pytest, not a full uv resolve.
       - name: Cache .venv
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .venv
           key: venv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock', 'pyproject.toml') }}
       - run: uv sync --dev --locked
       - name: Pytest with coverage (no threshold — `make ci-test-coverage-report`)
         run: make ci-test-coverage-report
+      # Patch coverage: which lines CHANGED by this PR lack test
+      # coverage. Far higher signal for reviewers than the global
+      # percentage — a PR can keep global coverage flat while shipping
+      # entirely untested new code. Still informational (this job is
+      # non-blocking by design, see header comment).
+      - name: Patch coverage on changed lines (diff-cover)
+        if: always()
+        run: |
+          if [ -f coverage.xml ]; then
+            git fetch origin "${{ github.base_ref }}" --depth=1 || true
+            {
+              echo ""
+              echo "## Patch coverage (changed lines)"
+              echo ""
+              uv tool run diff-cover coverage.xml \
+                --compare-branch "origin/${{ github.base_ref }}" \
+                --markdown-report diff-cover.md --quiet \
+                && cat diff-cover.md || echo "_diff-cover failed — see logs._"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Write coverage summary to step summary
         if: always()
         run: |
@@ -321,7 +351,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-xml-pr
           path: coverage.xml
@@ -340,6 +370,7 @@ jobs:
     # ruleset treats a literal ``skipping`` status as missing-required,
     # so every required-status job must always report success/failure.
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -350,9 +381,9 @@ jobs:
     steps:
       - if: needs.changes.outputs.cli != 'true'
         run: 'echo "No CLI-relevant changes — emitting success."'
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.cli == 'true'
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         if: needs.changes.outputs.cli == 'true'
         with:
           node-version: 24
@@ -396,12 +427,13 @@ jobs:
     # per-step ``if`` gating: the ruleset requires this status, so it must
     # always succeed/fail rather than be skipped.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - if: needs.changes.outputs.web != 'true'
         run: 'echo "No Web-relevant changes — emitting success."'
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.web == 'true'
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         if: needs.changes.outputs.web == 'true'
         with:
           node-version: 24
@@ -441,6 +473,7 @@ jobs:
     # See the ``cli`` job for the rationale on job-level ``if`` removal +
     # per-step ``if`` gating.
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -448,9 +481,9 @@ jobs:
     steps:
       - if: needs.changes.outputs.launcher != 'true'
         run: 'echo "No Launcher-relevant changes — emitting success."'
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         if: needs.changes.outputs.launcher == 'true'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         if: needs.changes.outputs.launcher == 'true'
         with:
           # Read the toolchain from go.mod so CI never drifts from the
@@ -472,14 +505,15 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docker-images != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         image: ${{ fromJSON(needs.changes.outputs.docker-images) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+      - uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           file: containers/${{ matrix.image }}.Dockerfile
@@ -496,7 +530,7 @@ jobs:
       # base images (langgraph, cli) ship CRITICAL CVEs that can't be
       # fixed in a hotfix window — moved to a follow-up supply-chain PR.
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
         with:
           image-ref: decepticon-${{ matrix.image }}:ci
           format: sarif
@@ -506,7 +540,7 @@ jobs:
           exit-code: "0"
       - name: Upload Trivy SARIF
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: trivy-${{ matrix.image }}
           path: trivy-${{ matrix.image }}.sarif
@@ -529,16 +563,17 @@ jobs:
     needs: changes
     if: needs.changes.outputs.docker-images != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         image: [cli, langgraph]
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: docker/setup-qemu-action@06116385d9baf250c9f4dcb4858b16962ea869c3 # v4.1.0
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
       - name: Build linux/arm64 image (no push)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           file: containers/${{ matrix.image }}.Dockerfile
@@ -557,36 +592,38 @@ jobs:
   # Security scans always run regardless of which paths changed —
   # vulnerability databases update independently of repo state.
   security:
-    name: Security (pip-audit + gitleaks)
+    name: Security (pip-audit)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v5
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: "3.13"
       - name: Install pip-audit
         run: uv tool install pip-audit
       - name: Export requirements
         run: uv export --locked --format requirements-txt --no-hashes --no-dev > requirements.txt
-      - name: Run pip-audit
-        run: uv tool run pip-audit --requirement requirements.txt --ignore-vuln GHSA-xxxx-xxxx-xxxx || true
-      # gitleaks-action v2 requires a paid org license; until
-      # GITLEAKS_LICENSE is provisioned (or the step is swapped for
-      # the binary action / trufflehog) the action exits 1 on the
-      # license probe and would block every PR. Hard-fail enforcement
-      # for committed secrets is deferred to the follow-up
-      # supply-chain PR that handles the license + scanner swap.
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
-        env:
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # ENFORCED: a known-vulnerable locked dependency fails CI. To accept
+      # a finding temporarily (no released fix, or a fix that breaks the
+      # resolution), add its id (PYSEC-/GHSA-) on its own line to
+      # .pip-audit-ignore with a comment explaining why + a removal
+      # condition. Empty/missing file = nothing ignored.
+      - name: Run pip-audit (blocking)
+        run: |
+          ignore_args=()
+          if [ -f .pip-audit-ignore ]; then
+            while IFS= read -r vid; do
+              vid="${vid%%#*}"; vid="$(echo "$vid" | xargs)"
+              [ -n "$vid" ] && ignore_args+=(--ignore-vuln "$vid")
+            done < .pip-audit-ignore
+          fi
+          uv tool run pip-audit --requirement requirements.txt "${ignore_args[@]}"
 
   # Validate every GitHub Actions workflow + composite action. Cheap (~15s)
   # and catches expression/shell/schema errors before they ship — exactly the
@@ -595,9 +632,47 @@ jobs:
   actionlint:
     name: actionlint (workflows)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - name: Run actionlint
         run: |
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
           ./actionlint -color
+
+  # ── Single required status check ─────────────────────────────────
+  # Branch protection should require ONLY this job. It aggregates every
+  # job above, so adding a new job to this workflow automatically makes
+  # it merge-blocking — no ruleset edit, no silently-unprotected lanes.
+  #
+  # Semantics: `skipped` is a PASS (the path-gated lanes legitimately
+  # skip when their scope is untouched — see the `changes` job);
+  # `failure` and `cancelled` are FAILs. `coverage-report` is excluded
+  # by design: it is the informational, non-blocking lane.
+  ci-ok:
+    name: CI OK (required status)
+    if: always()
+    needs:
+      - changes
+      - compose-validate
+      - python
+      - cli
+      - web
+      - launcher
+      - docker-build
+      - docker-build-arm64
+      - security
+      - actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify no needed job failed or was cancelled
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled")] | length')
+          if [ "$bad" != "0" ]; then
+            echo "::error::$bad required job(s) failed or were cancelled."
+            exit 1
+          fi

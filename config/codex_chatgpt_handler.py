@@ -232,13 +232,31 @@ def _responses_input(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any
             continue
         if role == "assistant" and msg.get("tool_calls"):
             for tc in msg.get("tool_calls") or []:
-                func = tc.get("function", {}) if isinstance(tc, dict) else {}
+                # tool_calls may arrive as OpenAI dicts or as LangGraph
+                # objects; normalize both so non-dicts don't blow up with a
+                # raw AttributeError on ``tc.get``.
+                if isinstance(tc, dict):
+                    func = tc.get("function", {}) if isinstance(tc.get("function"), dict) else {}
+                    tc_id = tc.get("id")
+                    tc_name = tc.get("name")
+                    tc_args = tc.get("args", {})
+                else:
+                    func = {}
+                    fn_obj = getattr(tc, "function", None)
+                    if fn_obj is not None:
+                        func = {
+                            "name": getattr(fn_obj, "name", None),
+                            "arguments": getattr(fn_obj, "arguments", None),
+                        }
+                    tc_id = getattr(tc, "id", None)
+                    tc_name = getattr(tc, "name", None)
+                    tc_args = getattr(tc, "args", {})
                 input_items.append(
                     {
                         "type": "function_call",
-                        "call_id": tc.get("id") or f"call_{func.get('name', 'tool')}",
-                        "name": func.get("name") or tc.get("name") or "tool",
-                        "arguments": func.get("arguments") or json.dumps(tc.get("args", {})),
+                        "call_id": tc_id or f"call_{func.get('name', 'tool')}",
+                        "name": func.get("name") or tc_name or "tool",
+                        "arguments": func.get("arguments") or json.dumps(tc_args or {}),
                     }
                 )
             continue
@@ -401,7 +419,10 @@ def _completed_payload(resp: httpx.Response) -> dict[str, Any]:
             completed = event["response"]
         elif event_type in {"response.failed", "error"}:
             err = event.get("error") or (event.get("response") or {}).get("error")
-            error_message = err.get("message") if isinstance(err, dict) else str(err)
+            if isinstance(err, dict):
+                error_message = err.get("message") or json.dumps(err)
+            elif err:
+                error_message = str(err)
 
     if completed is not None:
         # Backfill output when the upstream sent an empty ``output`` array
@@ -425,10 +446,13 @@ def _completed_payload(resp: httpx.Response) -> dict[str, Any]:
             if synthesized:
                 completed["output"] = synthesized
         return completed
-
     raise litellm.APIError(
         status_code=resp.status_code,
-        message=error_message or resp.text,
+        message=(
+            error_message
+            or resp.text
+            or "ChatGPT Codex stream ended without a response.completed event."
+        ),
         model="auth",
         llm_provider="auth",
     )

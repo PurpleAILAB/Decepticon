@@ -69,6 +69,12 @@ _current_workspace_path: contextvars.ContextVar[str] = contextvars.ContextVar(
 INLINE_LIMIT = 15_000  # ≤15K chars: return inline; >15K: offload to <engagement>/.scratch/
 # >5M: size watchdog in sandbox_kernel/tmux.py kills the command (SIZE_WATCHDOG_CHARS)
 
+# Tool-status control markers — NEVER offloaded to .scratch/ (they are
+# messages the agent parses, not command output, and they carry their own
+# truncation). _truncate() caps at 30K > INLINE_LIMIT (15K), so a status-
+# bearing screen >15K could otherwise be re-offloaded and double-wrapped as if
+# it were real output. This list must stay in sync with the full marker
+# taxonomy emitted by sandbox_kernel/tmux.py + this module.
 _STATUS_PREFIXES = (
     "[BACKGROUND]",
     "[RUNNING",
@@ -77,6 +83,13 @@ _STATUS_PREFIXES = (
     "[KILLED]",
     "[EMPTY]",
     "[STALE]",
+    "[AUTO-BACKGROUND]",
+    "[SIZE LIMIT]",
+    "[TIMEOUT]",
+    "[ERROR]",
+    "[UNKNOWN]",
+    "[session:",
+    "[cwd:",
 )
 
 # ─── Scratch-file TTL prune (bounds <engagement>/.scratch/ growth) ────────

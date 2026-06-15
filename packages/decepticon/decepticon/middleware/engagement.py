@@ -38,6 +38,7 @@ from langgraph.types import Command
 from typing_extensions import override
 
 from decepticon.middleware.opplan import _reduce_engagement_name, _reduce_workspace_path
+from decepticon.middleware.state_reducers import reduce_converging_value
 from decepticon.tools.bash.bash import bash_workspace
 from decepticon_core.utils.engagement_scope import set_active_engagement
 
@@ -56,20 +57,36 @@ class EngagementContextState(AgentState):
     # the prompt-time DECEPTICON_LANGUAGE env policy. Multi-tenant launchers
     # (SaaS) need different orgs to receive different language outputs from
     # the same container, which the env-based path cannot deliver.
-    language: NotRequired[Annotated[str, "Per-run output language (ISO 639-1)."]]
+    # All launcher-/harness-set channels below carry a reducer so an
+    # orchestrator that fans out to several subagents in one turn does not
+    # trip INVALID_CONCURRENT_GRAPH_UPDATE — every concurrent writer carries
+    # the same value (last-write-wins on non-None). Same fix as #153 for the
+    # slug/workspace channels above.
+    language: NotRequired[
+        Annotated[str, "Per-run output language (ISO 639-1).", reduce_converging_value]
+    ]
     # Benchmark / CTF challenge context — populated by the benchmark harness.
-    target_url: NotRequired[Annotated[str, "CTF challenge target URL."]]
+    target_url: NotRequired[Annotated[str, "CTF challenge target URL.", reduce_converging_value]]
     target_extra_ports: NotRequired[
         Annotated[
             dict[int, int],
             "Additional published ports keyed by container target port (e.g. {22: 2222}).",
+            reduce_converging_value,
         ]
     ]
     vulnerability_tags: NotRequired[
-        Annotated[list[str], "Challenge vulnerability tags (e.g. ['sqli', 'xss'])."]
+        Annotated[
+            list[str],
+            "Challenge vulnerability tags (e.g. ['sqli', 'xss']).",
+            reduce_converging_value,
+        ]
     ]
-    flag_format: NotRequired[Annotated[str, "Expected flag format string."]]
-    mission_brief: NotRequired[Annotated[str, "Challenge name + description."]]
+    flag_format: NotRequired[
+        Annotated[str, "Expected flag format string.", reduce_converging_value]
+    ]
+    mission_brief: NotRequired[
+        Annotated[str, "Challenge name + description.", reduce_converging_value]
+    ]
 
 
 log = logging.getLogger(__name__)

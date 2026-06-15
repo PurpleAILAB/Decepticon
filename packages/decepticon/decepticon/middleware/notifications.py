@@ -46,6 +46,14 @@ log = logging.getLogger(__name__)
 # acceptable (the alternative is uncapped growth).
 _NOTIFIED_KEYS_MAX = 4096
 
+# Completion delivery is once-only (a job is marked consumed + notified after
+# we push its output). If the diff read fails transiently AT delivery time we
+# defer — leave the job pending + un-notified — and retry on the next
+# before_model tick instead of burning the one delivery on an empty stub. After
+# this many failed attempts we give up and deliver the "(no output captured)"
+# stub so the job lifecycle still closes (the agent can bash_output to recover).
+_PULL_RETRY_MAX = 3
+
 # Output budget for the notification body. Anything larger gets sliced
 # to a head+tail preview with a pointer to the on-disk session log so
 # the agent has the option to read the full content if it cares.
@@ -114,6 +122,11 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         # insertion order. Values are unused; we keep ``True`` to make the
         # intent explicit at call sites.
         self._notified: OrderedDict[str, bool] = OrderedDict()
+        # Per-job failed-diff-read counter, so a transient read failure defers
+        # delivery rather than consuming the once-only notification. Cleared on
+        # successful delivery; bounded by _PULL_RETRY_MAX (entries are removed
+        # once a job is delivered, so this cannot grow without bound).
+        self._pull_attempts: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def _jobs_view(self):
@@ -134,26 +147,28 @@ class SandboxNotificationMiddleware(AgentMiddleware):
         while len(self._notified) > _NOTIFIED_KEYS_MAX:
             self._notified.popitem(last=False)
 
-    def _pull_diff(self, session: str, workspace_path: str | None) -> tuple[str, str | None]:
-        """Read the accumulated diff for ``session`` and return (output, log_path).
+    def _pull_diff(self, session: str, workspace_path: str | None) -> tuple[str, str | None, bool]:
+        """Read the accumulated diff for ``session``.
 
-        Both calls are wrapped in try/except: a transient sandbox blip
-        cannot crash the agent's model step, and the worst case is that
-        the agent sees a "(no output captured)" stub instead of full
-        results. The job is still marked done so the lifecycle finishes
-        cleanly.
+        Returns ``(output, log_path, read_ok)``. ``read_ok`` is False ONLY when
+        the diff read itself raised — distinct from a genuinely empty diff — so
+        the caller can defer the once-only completion notification and retry
+        next turn instead of delivering an empty stub. A transient sandbox blip
+        still cannot crash the agent's model step.
         """
         kwargs = {"workspace_path": workspace_path} if workspace_path else {}
+        read_ok = True
         try:
             diff = self._sandbox.read_session_log_diff(session, **kwargs)
         except Exception as exc:  # noqa: BLE001
             log.warning("read_session_log_diff failed for session=%s: %s", session, exc)
             diff = ""
+            read_ok = False
         try:
             log_path = self._sandbox.session_log_path(session, **kwargs)
         except Exception:  # noqa: BLE001
             log_path = None
-        return _sanitize(diff), log_path
+        return _sanitize(diff), log_path, read_ok
 
     def _emit_stream_event(self, job, output: str) -> None:
         """Push a custom stream event for the CLI to render the ● bullet."""
@@ -203,24 +218,54 @@ class SandboxNotificationMiddleware(AgentMiddleware):
             new = [j for j in pending if j.key not in self._notified]
             if not new:
                 return None
-            self._record_notified(j.key for j in new)
+            # NOTE: do NOT record_notified here — only after a job's output has
+            # actually been delivered (below), so a transient diff-read failure
+            # leaves the job pending + un-notified and is retried next tick.
 
         blocks: list[str] = []
+        delivered: list = []
         for job in new:
-            diff, log_path = self._pull_diff(job.session, job.workspace_path)
+            diff, log_path, read_ok = self._pull_diff(job.session, job.workspace_path)
+            if not read_ok:
+                attempts = self._pull_attempts.get(job.key, 0) + 1
+                self._pull_attempts[job.key] = attempts
+                if attempts < _PULL_RETRY_MAX:
+                    # Defer: leave the completion pending + un-notified so the
+                    # next before_model re-attempts the diff read. The once-only
+                    # delivery is not spent on an empty stub.
+                    log.info(
+                        "deferring completion for session=%s (diff read failed %d/%d)",
+                        job.session,
+                        attempts,
+                        _PULL_RETRY_MAX,
+                    )
+                    continue
+                # Gave up after the retry cap — fall through and deliver the
+                # "(no output captured)" stub so the job lifecycle still closes.
+                log.warning(
+                    "delivering stub completion for session=%s after %d failed diff reads",
+                    job.session,
+                    attempts,
+                )
             formatted = _format_output(diff, log_path)
             blocks.append(self._format_block(job, formatted))
             self._emit_stream_event(job, formatted)
-            # Mark the daemon-side mirror consumed so a later
-            # ``bash_output`` call returns ``(no new output)`` rather
-            # than re-delivering the same diff, and so
-            # ``pending_completions`` skips it on subsequent middleware
-            # ticks. ``self._notified`` is a belt-and-suspenders dedupe
-            # for the case where mark_consumed silently fails.
+            delivered.append(job)
+            self._pull_attempts.pop(job.key, None)
+            # Mark the daemon-side mirror consumed so a later ``bash_output``
+            # call returns ``(no new output)`` rather than re-delivering the
+            # same diff, and so ``pending_completions`` skips it on subsequent
+            # middleware ticks. ``self._notified`` (recorded below) is a
+            # belt-and-suspenders dedupe for when mark_consumed silently fails.
             try:
                 jobs.mark_consumed(session=job.session, key=job.key)
             except Exception:  # noqa: BLE001 — best-effort
                 log.warning("mark_consumed failed for session=%s", job.session, exc_info=True)
+
+        if not delivered:
+            return None
+        with self._lock:
+            self._record_notified(j.key for j in delivered)
 
         body = "\n\n".join(blocks)
         reminder = (

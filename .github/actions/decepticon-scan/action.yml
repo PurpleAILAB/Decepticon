@@ -154,7 +154,7 @@ runs:
 
     - name: Upload SARIF to GitHub Code Scanning
       if: ${{ always() && inputs.upload-sarif == 'true' && steps.run.outputs.sarif-path != '' }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
       with:
         sarif_file: ${{ steps.run.outputs.sarif-path }}
         category: decepticon

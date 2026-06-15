@@ -125,3 +125,76 @@ class TestActionableMessageFatalLabel:
         msg = str(info.value)
         assert "non-retryable provider error" not in msg
         assert "rate limit (429)" in msg
+
+
+class TestActionableMessage403Forbidden:
+    """403 PermissionDenied is a distinct fatal class. Before the fix the
+    helper had no branch for it, so it fell through to the caller's bare
+    ``raise`` — surfacing the raw provider exception (no remediation, and the
+    un-redacted body could leak an echoed Authorization header)."""
+
+    def test_403_by_status_attr_gives_actionable_message(self):
+        exc = _exc_with_status("PermissionDeniedError", 403, "Error code: 403 - forbidden")
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "anthropic/claude-opus-4-7")
+        msg = str(info.value)
+        assert "refused access (403)" in msg
+        assert "non-retryable provider error" in msg
+        assert "DECEPTICON_AUTH_PRIORITY" in msg
+
+    def test_403_message_only_gives_actionable_message(self):
+        exc = Exception("litellm.PermissionDeniedError: Error code: 403 - region not allowed")
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "openai/gpt-5.5")
+        assert "refused access (403)" in str(info.value)
+
+    def test_403_redacts_echoed_bearer_token(self):
+        exc = _exc_with_status(
+            "PermissionDeniedError",
+            403,
+            "Error code: 403 - Authorization: Bearer sk-ant-FORBIDDENLEAKTOKEN12345",
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "anthropic/claude-opus-4-7")
+        msg = str(info.value)
+        assert "sk-ant-FORBIDDENLEAKTOKEN12345" not in msg
+        assert "FORBIDDENLEAKTOKEN12345" not in msg
+        assert "[REDACTED]" in msg
+
+
+class TestUnclassifiedErrorSecretNet:
+    """Final safety net: an *unclassified* provider error (no 4xx branch
+    matched) whose body echoes a credential must be re-wrapped with the
+    scrubbed text instead of re-raised verbatim — otherwise the caller's
+    trailing ``raise`` would leak the secret into CLI output / logs."""
+
+    def test_unclassified_500_with_bearer_is_redacted_and_wrapped(self):
+        # 500 is retryable and not special-cased in the actionable branches,
+        # so it lands on the fallthrough. The echoed token must not survive.
+        exc = Exception(
+            "Error code: 500 - upstream error; sent Authorization: Bearer "
+            "sk-LEAKYINTERNALSERVERTOKEN9999"
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "openai/gpt-5.5")
+        msg = str(info.value)
+        assert "sk-LEAKYINTERNALSERVERTOKEN9999" not in msg
+        assert "LEAKYINTERNALSERVERTOKEN9999" not in msg
+        assert "[REDACTED]" in msg
+        assert "unclassified provider error" in msg
+
+    def test_unclassified_with_api_key_kwarg_is_redacted(self):
+        exc = Exception("weird upstream blob api_key=sk-ANOTHERLEAKEDVALUE0001 happened")
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "openai/gpt-5.5")
+        assert "sk-ANOTHERLEAKEDVALUE0001" not in str(info.value)
+        assert "[REDACTED]" in str(info.value)
+
+    def test_unrelated_error_without_credential_passes_through(self):
+        # No credential shape → helper must NOT raise; caller re-raises the
+        # original exception with its traceback intact (regression guard for
+        # the safety net's narrow trigger). A long model id alone (which the
+        # broad >=24-char redaction pattern matches) must not trip it.
+        exc = ValueError("planner produced no model for anthropic/claude-opus-4-7-experimental")
+        # Returns None (no raise).
+        assert _reraise_with_actionable_message(exc, "anthropic/claude-opus-4-7") is None

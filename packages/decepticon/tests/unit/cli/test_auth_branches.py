@@ -321,3 +321,27 @@ def test_main_doctor_fake_inventory_with_active(monkeypatch, capsys):
     rc = auth_main(["doctor", "--no-env-file"])
     assert rc == 0
     capsys.readouterr()
+
+
+def test_load_env_file_non_utf8_returns_zero_without_raising(tmp_path):
+    # A corrupt / binary .env must not crash the CLI with a raw UnicodeDecodeError
+    # (which is a ValueError, not an OSError) — it degrades to "nothing loaded".
+    env_file = tmp_path / ".env"
+    env_file.write_bytes(b"OPENAI_API_KEY=\xff\xfe\x00bad\x80value")
+    assert auth._load_env_file(env_file) == 0
+
+
+def test_main_inventory_failure_reports_cleanly(monkeypatch, capsys):
+    # A misconfiguration surfacing from the factory probe (e.g. a malformed
+    # credential file) must yield an actionable message + EXIT_CONFIG, never a
+    # bare traceback at the operator.
+    def _boom():
+        raise RuntimeError("malformed credential file")
+
+    monkeypatch.setattr(factory, "auth_inventory", _boom)
+    rc = auth_main(["status", "--no-env-file"])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "could not inspect auth configuration" in captured.err
+    assert "malformed credential file" in captured.err
+    assert "Traceback" not in captured.err
