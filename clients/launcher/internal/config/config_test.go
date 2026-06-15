@@ -391,6 +391,55 @@ DECEPTICON_MODEL_PROFILE=eco
 	}
 }
 
+func TestWriteEnv_CommentedOutLines(t *testing.T) {
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, ".env.example")
+	outPath := filepath.Join(dir, "out", ".env")
+
+	// Template with commented-out AWS Bedrock vars (the bug in #674)
+	template := `# Config
+ANTHROPIC_API_KEY=your-anthropic-key-here
+# --- AWS Bedrock ---
+# AWS_ACCESS_KEY_ID=AKIA...
+# AWS_SECRET_ACCESS_KEY=...
+# AWS_REGION=us-east-1
+`
+	if err := os.WriteFile(tmplPath, []byte(template), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	values := map[string]string{
+		"AWS_ACCESS_KEY_ID":     "AKIAIOSFODNN7EXAMPLE",
+		"AWS_SECRET_ACCESS_KEY": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+		"AWS_REGION":            "us-west-2",
+		"AWS_REGION_NAME":       "us-west-2", // not in template at all
+	}
+
+	if err := WriteEnv(tmplPath, outPath, values); err != nil {
+		t.Fatalf("WriteEnv() error: %v", err)
+	}
+
+	env, err := LoadEnv(outPath)
+	if err != nil {
+		t.Fatalf("LoadEnv() error: %v", err)
+	}
+
+	// Commented-out lines should be uncommented and rewritten
+	if env["AWS_ACCESS_KEY_ID"] != "AKIAIOSFODNN7EXAMPLE" {
+		t.Errorf("AWS_ACCESS_KEY_ID = %q, want AKIAIOSFODNN7EXAMPLE", env["AWS_ACCESS_KEY_ID"])
+	}
+	if env["AWS_SECRET_ACCESS_KEY"] != "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" {
+		t.Errorf("AWS_SECRET_ACCESS_KEY not written")
+	}
+	if env["AWS_REGION"] != "us-west-2" {
+		t.Errorf("AWS_REGION = %q, want us-west-2", env["AWS_REGION"])
+	}
+	// AWS_REGION_NAME wasn't in the template — should be appended
+	if env["AWS_REGION_NAME"] != "us-west-2" {
+		t.Errorf("AWS_REGION_NAME = %q, want us-west-2 (should be appended)", env["AWS_REGION_NAME"])
+	}
+}
+
 func TestDecepticonHome(t *testing.T) {
 	// With DECEPTICON_HOME set
 	t.Setenv("DECEPTICON_HOME", "/custom/path")

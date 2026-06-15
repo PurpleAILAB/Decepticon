@@ -509,6 +509,15 @@ export function useAgent({
             } else {
               setPendingTool(null);
               completionReceived = true;
+              // Guard against blank AI responses — emit a system hint so
+              // the user isn't left staring at an empty screen (#617).
+              if (!text) {
+                addEvent({
+                  type: "system",
+                  content:
+                    "Agent returned an empty response. Use /resume to retry or send a new message.",
+                });
+              }
             }
 
           } else if (msg.type === "tool") {
@@ -685,13 +694,15 @@ export function useAgent({
       // If streaming/connecting, callers should use enqueue() instead
       if (abortRef.current) return;
 
-      // If paused, cancel the paused run before starting fresh
+      // If paused, cancel the paused run gracefully. Use "interrupt"
+      // strategy to preserve thread state so the follow-up message
+      // can see prior tool results and context (#617).
       if (runStateRef.current === "paused") {
         const threadId = threadIdRef.current;
         const runId = runIdRef.current;
         if (threadId && runId) {
           clientRef.current.runs
-            .cancel(threadId, runId, false, "rollback")
+            .cancel(threadId, runId, false, "interrupt")
             .catch(() => {});
         }
         runIdRef.current = null;
