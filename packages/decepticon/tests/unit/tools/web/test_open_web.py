@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from dataclasses import dataclass
 
 import pytest
@@ -72,9 +73,11 @@ async def test_web_fetch_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "strong_ok" in out
     assert "<h1>hi</h1>" in out
     # Command dispatched the engine into the sandbox with the right verb/args.
+    # Assert the URL as an exact shlex token (== — not a URL substring test).
     cmd = fake.commands[0]
+    argv = shlex.split(cmd)
     assert "decepticon.sandbox_web fetch" in cmd
-    assert "https://x.test/a" in cmd
+    assert any(a == "https://x.test/a" for a in argv)
     assert "--workspace" in cmd and "/workspace/eng1" in cmd
     assert "--selector" in cmd
 
@@ -112,11 +115,12 @@ async def test_web_search_hits(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _patch_sandbox(monkeypatch, payload)
     out = await open_web.web_search.ainvoke({"query": "q"})
     assert "2 results" in out
-    # Exact per-line membership (not URL substring-in-string — keeps CodeQL's
-    # incomplete-url-substring-sanitization query from firing on test asserts).
+    # Exact-equality match per line (== is complete sanitization — avoids
+    # CodeQL's incomplete-url-substring-sanitization query, which fires on
+    # any `<url-literal> in <expr>` membership test even in test asserts).
     lines = [ln.strip() for ln in out.splitlines()]
-    assert "https://a.test" in lines
-    assert "https://b.test" in lines
+    assert any(ln == "https://a.test" for ln in lines)
+    assert any(ln == "https://b.test" for ln in lines)
     assert "decepticon.sandbox_web search" in fake.commands[0]
 
 
