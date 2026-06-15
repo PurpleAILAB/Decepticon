@@ -16,6 +16,21 @@ LangGraph, sandbox) keeps the always-on contract.
 
 ### Added
 
+- **Open-web acquisition engine (`web_search` / `web_fetch`).** A new
+  site-agnostic fetch engine (`decepticon/sandbox_web/`) that escalates past
+  WAF/anti-bot defenses — Verdict-based 4-layer validation ("HTTP 200 is an
+  inspection-start condition, not success"), ranked WAF-product detection, a
+  transform×TLS-impersonate×referer grid, and a headless-browser fallback. It
+  runs **inside the sandbox** (all egress stays in sandbox-net behind the
+  nftables allowlist) and is dispatched by two new agent tools over the bash
+  execution surface — no new transport. RoE is layered: middleware gate
+  (management) + per-hop `scope_check` from `roe.json` (engine) + nftables
+  (authoritative). `web_fetch` is target-gated; `web_search` is OSINT over an
+  allowlisted provider (audited, target-exempt). Both outputs are
+  prompt-injection-quarantined (`UNTRUSTED_TOOL_NAMES`). Wired into the `recon`
+  and `osint_operator` agents. Engine precisely derived from
+  `fivetaku/insane-search` (MIT) with its governance inverted for RoE/network
+  isolation. See [ADR-0010](docs/adr/0010-open-web-acquisition.md). (#682)
 - **CI hardening pass.** `ci-ok` aggregator job — branch protection now
   needs exactly one required check; every job added to `ci.yml` in the
   future is automatically merge-blocking (skipped path-gated lanes

@@ -43,6 +43,7 @@ from decepticon.tools.research.tools import (
     kg_query,
     kg_stats,
 )
+from decepticon.tools.web.open_web import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 _STANDARD_TOOLS: dict[str, Any] = {
@@ -56,6 +57,9 @@ _STANDARD_TOOLS: dict[str, Any] = {
         cve_lookup,
         payload_search,
         methodology_lookup,
+        # Open-web acquisition (ADR-0010): keyword search + RoE-gated fetch
+        web_search,
+        web_fetch,
         *BASH_TOOLS,
     ]
 }

@@ -113,6 +113,26 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     "uvicorn>=0.30.0" \
     "deepagents>=0.5.0"
 
+# ── Open-web acquisition engine (ADR-0010) ───────────────────────────
+# decepticon/sandbox_web runs HERE, inside the sandbox, so all open-web
+# egress stays in sandbox-net behind the nftables allowlist. Its deps:
+#   * curl_cffi    — TLS-impersonation fetch tier
+#   * beautifulsoup4 — success-selector proof + DDG result parsing
+#   * pyyaml       — WAF profile loading
+#   * pydantic*    — required by decepticon-core (copied below) so the
+#                    engine's per-hop RoE scope_check (evaluate_target on
+#                    <workspace>/plan/roe.json) is live, not just nftables.
+# The optional Playwright browser tier is NOT installed by default (the
+# engine degrades to UNKNOWN on JS-challenge fallback); enable it in a
+# follow-up build arg if needed.
+RUN pip3 install --break-system-packages --no-cache-dir \
+    "curl_cffi>=0.7.0" \
+    "beautifulsoup4>=4.12.0" \
+    "pyyaml>=6.0.0" \
+    "pydantic>=2.0.0" \
+    "pydantic-settings>=2.0.0" \
+    "typing-extensions>=4.0.0"
+
 # ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
 #
 # Gated by a build ARG so the default sandbox image stays lean
@@ -183,6 +203,11 @@ ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
 COPY packages/decepticon/decepticon/__init__.py /opt/decepticon/__init__.py
 COPY packages/decepticon/decepticon/sandbox_kernel /opt/decepticon/sandbox_kernel
 COPY packages/decepticon/decepticon/sandbox_server /opt/decepticon/sandbox_server
+# Open-web engine (ADR-0010) + the pure contract layer it uses for the
+# per-hop RoE scope_check. decepticon-core imports only pydantic + stdlib
+# (never langchain/langgraph), so it is safe to ship to the lean sandbox.
+COPY packages/decepticon/decepticon/sandbox_web /opt/decepticon/sandbox_web
+COPY packages/decepticon-core/decepticon_core /opt/decepticon_core
 ENV PYTHONPATH=/opt
 
 # Skip the framework boot path on this image — the sandbox container
