@@ -81,6 +81,11 @@ GATED_TOOL_NAMES: frozenset[str] = frozenset(
         "http_request",
         "proxy_send_request",
         "browser_action",
+        # Open-web engine tools (ADR-0010). web_fetch is target-gated on its
+        # url; web_search is OSINT (allowlisted provider) — gated for audit/
+        # throttle but target-exempt via a no-op extractor below.
+        "web_fetch",
+        "web_search",
     }
 )
 
@@ -112,9 +117,20 @@ def _hosts_from_browser_action(args: dict[str, Any]) -> list[str]:
     return _host_from_url(params.get("url"))
 
 
+def _hosts_from_web_search(_args: dict[str, Any]) -> list[str]:
+    """OSINT exemption: web_search hits an allowlisted provider, not a target.
+
+    Returning no hosts means the per-target scope check is a no-op (the call is
+    still audited + throttled because web_search is in GATED_TOOL_NAMES).
+    """
+    return []
+
+
 NETWORK_TARGET_EXTRACTORS: dict[str, Callable[[dict[str, Any]], list[str]]] = {
     "http_request": _hosts_from_url_arg,
     "proxy_send_request": _hosts_from_url_arg,
+    "web_fetch": _hosts_from_url_arg,
+    "web_search": _hosts_from_web_search,
     "browser_action": _hosts_from_browser_action,
 }
 

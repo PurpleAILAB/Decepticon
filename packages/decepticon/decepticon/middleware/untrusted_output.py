@@ -85,6 +85,11 @@ UNTRUSTED_TOOL_NAMES: frozenset[str] = frozenset(
         "proxy_repeat_request",
         "proxy_list_sitemap",
         "proxy_view_sitemap_entry",
+        # Open-web engine tools (ADR-0010): web_fetch returns arbitrary page
+        # content; web_search returns SEO-poisonable titles/snippets. Both are
+        # attacker-influenceable and must reach the model quarantined.
+        "web_fetch",
+        "web_search",
     }
 )
 

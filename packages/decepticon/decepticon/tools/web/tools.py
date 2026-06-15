@@ -243,6 +243,8 @@ def http_history(query: str = "", last_n: int = 10) -> str:
     return _json(entries[-last_n:])
 
 
+from decepticon.tools.web.open_web import web_fetch, web_search  # noqa: E402
+
 WEB_TOOLS = [
     jwt_parse,
     jwt_forge,
@@ -252,4 +254,7 @@ WEB_TOOLS = [
     cookie_audit,
     http_request,
     http_history,
+    # Open-web acquisition (ADR-0010) — sandbox-side engine, RoE-gated.
+    web_search,
+    web_fetch,
 ]
