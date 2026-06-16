@@ -274,19 +274,16 @@ def _run_hexbe(binary_path: str, op: str, **kwargs: Any) -> dict[str, Any]:
         return {"error": "commercial RE backend not available", **avail}
 
     # Write the script to a temp file so arg quoting is not an issue.
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", delete=False
-    ) as tmp:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as tmp:
         tmp.write(_ANALYSIS_SCRIPT)
         script_path = tmp.name
 
     # Stage a writable copy of the binary so the .i64 database can be
     # written next to it without touching the original.
-    with tempfile.NamedTemporaryFile(
-        suffix=Path(binary_path).suffix, delete=False
-    ) as tbin:
+    with tempfile.NamedTemporaryFile(suffix=Path(binary_path).suffix, delete=False) as tbin:
         tbin_path = tbin.name
     import shutil
+
     shutil.copy2(binary_path, tbin_path)
 
     env = {**os.environ, "IDAUSR": str(Path.home() / ".idapro")}
@@ -335,8 +332,13 @@ def hexbe_analyze_binary(binary_path: str, func_limit: int = 100) -> HexbeAnalys
     raw = _run_hexbe(binary_path, "analyze", limit=func_limit)
     if not raw.get("ok"):
         return HexbeAnalysis(
-            binary=binary_path, arch="", file_type="", image_base="",
-            entry_point="", function_count=0, error=raw.get("error", "unknown"),
+            binary=binary_path,
+            arch="",
+            file_type="",
+            image_base="",
+            entry_point="",
+            function_count=0,
+            error=raw.get("error", "unknown"),
         )
     r = raw["result"]
     funcs = [HexbeFunction(**f) for f in r.get("functions", [])]
@@ -358,13 +360,15 @@ def hexbe_decompile(binary_path: str, function: str) -> HexbeDecompilation:
     raw = _run_hexbe(binary_path, "decompile", function=function)
     if not raw.get("ok"):
         return HexbeDecompilation(
-            function_name=function, address="",
+            function_name=function,
+            address="",
             source=f"/* error: {raw.get('error', 'unknown')} */",
         )
     r = raw["result"]
     if "error" in r:
         return HexbeDecompilation(
-            function_name=function, address="",
+            function_name=function,
+            address="",
             source=f"/* error: {r['error']} */",
         )
     return HexbeDecompilation(

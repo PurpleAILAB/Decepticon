@@ -101,7 +101,12 @@ def triage_crash(crash_output: str, binary_path: str = "") -> CrashAnalysis:
         addr_match = _ADDR_RE.search(crash_output)
         faulting_address = addr_match.group(1) if addr_match else ""
         if signal_match and signal_match.group(1) == "SIGSEGV":
-            crash_type = "null-deref" if _addr_value(faulting_address) is not None and _addr_value(faulting_address) < _LOW_ADDR else "segv"
+            crash_type = (
+                "null-deref"
+                if _addr_value(faulting_address) is not None
+                and _addr_value(faulting_address) < _LOW_ADDR
+                else "segv"
+            )
         elif signal_match:
             crash_type = signal_match.group(1).lower()
         else:

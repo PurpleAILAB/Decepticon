@@ -358,19 +358,13 @@ def plan_coverage(assets: list[str]) -> CoverageReport:
             if asset_type == "other-asset":
                 note = "generalist triage — analyst to sub-classify"
             elif phases:
-                note = (
-                    f"route to {', '.join(specialists)} "
-                    f"via phase(s) {', '.join(phases)}"
-                )
+                note = f"route to {', '.join(specialists)} via phase(s) {', '.join(phases)}"
             else:
                 note = f"route to {', '.join(specialists)} (broad-category triage)"
             engaged.update(specialists)
         else:
             uncovered.append(asset)
-            note = (
-                f"no phase mapping for type {asset_type!r} — "
-                "handle via analyst/manual"
-            )
+            note = f"no phase mapping for type {asset_type!r} — handle via analyst/manual"
         rows.append(
             AssetCoverage(
                 asset=asset,
@@ -437,12 +431,29 @@ if __name__ == "__main__":
 
     # Full user-facing label vocabulary must leave NOTHING uncovered.
     _vocab = [
-        "URL", "Wildcard", "Android", "iOS", "IP Range", "Device",
-        "Source Code", "AI Model", "Others", "AI/LLM", "API",
-        "Blockchain/Web3", "Cloud", "Hardware/IoT/Firmware",
-        "Hypervisors/Virtualization", "Mobile", "Network/Infrastructure",
-        "Reverse Engineering/Binary Exploitation", "SCADA/ICS",
-        "Source Code Review", "Supply Chain", "Videogame Hacking", "Web",
+        "URL",
+        "Wildcard",
+        "Android",
+        "iOS",
+        "IP Range",
+        "Device",
+        "Source Code",
+        "AI Model",
+        "Others",
+        "AI/LLM",
+        "API",
+        "Blockchain/Web3",
+        "Cloud",
+        "Hardware/IoT/Firmware",
+        "Hypervisors/Virtualization",
+        "Mobile",
+        "Network/Infrastructure",
+        "Reverse Engineering/Binary Exploitation",
+        "SCADA/ICS",
+        "Source Code Review",
+        "Supply Chain",
+        "Videogame Hacking",
+        "Web",
     ]
     _vocab_report = plan_coverage(_vocab)
     assert _vocab_report.uncovered == (), _vocab_report.uncovered
