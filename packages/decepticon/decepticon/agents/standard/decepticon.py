@@ -161,10 +161,11 @@ def create_decepticon_agent(
         # infrastructure). Sub-agents see neither these tools nor the
         # underlying daemon socket.
         from decepticon.tools.ops import OPS_TOOLS
+        from decepticon.tools.scope.tools import COVERAGE_TOOLS
 
         tools = build_tools(
             role=_ROLE,
-            standard_tools={t.name: t for t in OPS_TOOLS},
+            standard_tools={t.name: t for t in [*OPS_TOOLS, *COVERAGE_TOOLS]},
         )
     if middleware is None:
         middleware = build_middleware(

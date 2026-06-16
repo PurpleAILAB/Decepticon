@@ -519,6 +519,10 @@ AGENT_TIERS: dict[str, Tier] = {
     "contract_auditor": Tier.HIGH,
     "analyst": Tier.HIGH,
     "vulnresearch": Tier.HIGH,
+    # Local vuln-research / fuzzing / exploit-dev specialist (bug bounty):
+    # exploitability reasoning + PoC development put it in the HIGH band
+    # alongside exploiter/analyst, not MID with the reverser it shares a phase with.
+    "bounty_hunter": Tier.HIGH,
     # MID — precision execution, code generation, structured judgment.
     # Tool-heavy with moderate iteration.
     "detector": Tier.MID,
@@ -556,6 +560,7 @@ AGENT_TEMPERATURES: dict[str, float] = {
     "cloud_hunter": 0.2,
     "contract_auditor": 0.2,
     "reverser": 0.2,
+    "bounty_hunter": 0.2,
     "analyst": 0.2,
     "scanner": 0.2,
     "vulnresearch": 0.4,

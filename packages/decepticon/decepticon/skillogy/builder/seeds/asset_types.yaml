@@ -22,12 +22,12 @@ asset_types:
   - {name: other-asset,       category: asset}
 
   # Network identifiers / scope selectors
-  - {name: cidr,              category: network-identifier}
-  - {name: ip-address,        category: network-identifier}
+  - {name: cidr,              category: network-identifier, phases: [reconnaissance]}
+  - {name: ip-address,        category: network-identifier, phases: [reconnaissance]}
   - {name: domain,            category: network-identifier, phases: [reconnaissance, osint]}
   - {name: subdomain,         category: network-identifier, phases: [reconnaissance, osint]}
-  - {name: wildcard,          category: network-identifier}
-  - {name: url,               category: network-identifier}
+  - {name: wildcard,          category: network-identifier, phases: [reconnaissance, osint]}
+  - {name: url,               category: network-identifier, phases: [web-exploitation]}
   - {name: asn,               category: network-identifier}
 
   # Identities (OSINT entrypoints)
@@ -131,14 +131,14 @@ asset_types:
   - {name: browser-extension, category: application}
 
   # Desktop / compiled / source artifacts
-  - {name: source-code,       category: software-artifact}
+  - {name: source-code,       category: software-artifact, phases: [analyst]}
   - {name: executable,        category: software-artifact}
   - {name: elf-binary,        category: executable,        phases: [reverse-engineering]}
   - {name: pe-binary,         category: executable,        phases: [reverse-engineering]}
   - {name: macho-binary,      category: executable,        phases: [reverse-engineering]}
   - {name: firmware,          category: software-artifact, phases: [iot, reverse-engineering]}
-  - {name: sdk-client-library, category: software-artifact}
-  - {name: cryptographic-library, category: software-artifact}
+  - {name: sdk-client-library, category: software-artifact, phases: [analyst]}
+  - {name: cryptographic-library, category: software-artifact, phases: [analyst, reverse-engineering]}
 
   # Software supply chain
   - {name: software-package,  category: software-artifact}
