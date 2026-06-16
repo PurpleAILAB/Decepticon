@@ -60,7 +60,6 @@ from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.web.tools import WEB_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [

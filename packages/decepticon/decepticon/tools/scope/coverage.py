@@ -237,9 +237,10 @@ def classify_asset(asset: str) -> str:
         return "api-rest"
 
     # Mobile application bundles / store links.
-    if "apps.apple.com" in s or s.endswith(".ipa"):
+    # Match exact host to avoid subdomain-spoofing false positives.
+    if host == "apps.apple.com" or s.endswith(".ipa"):
         return "ios-ipa"
-    if "play.google.com" in s or s.endswith(".apk"):
+    if host == "play.google.com" or s.endswith(".apk"):
         return "android-apk"
 
     # Source repositories.

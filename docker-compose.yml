@@ -200,12 +200,6 @@ services:
     build:
       context: .
       dockerfile: containers/sandbox.Dockerfile
-      # To build with the commercial RE backend (set DECEPTICON_HEXBE_PATH in .env first):
-      #   INSTALL_HEXBE=true docker compose build --build-context hexbe-install=$DECEPTICON_HEXBE_PATH
-      additional_contexts:
-        hexbe-install: ${DECEPTICON_HEXBE_PATH:-/dev/null}
-      args:
-        INSTALL_HEXBE: ${INSTALL_HEXBE:-false}
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-sandbox
     networks:
       - sandbox-net

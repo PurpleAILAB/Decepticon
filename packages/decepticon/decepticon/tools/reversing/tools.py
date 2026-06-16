@@ -15,11 +15,6 @@ from decepticon.tools.reversing.ghidra import (
     ghidra_decompile_function,
     ghidra_get_xrefs,
 )
-from decepticon.tools.reversing.packer import detect_packer
-from decepticon.tools.reversing.rop import filter_gadgets_by_pattern, find_rop_gadgets
-from decepticon.tools.reversing.scripts import ghidra_recon_script, r2_recon_script
-from decepticon.tools.reversing.strings import extract_strings, group_by_category
-from decepticon.tools.reversing.symbols import summarize_symbols
 from decepticon.tools.reversing.hexbe import (
     hexbe_analyze_binary,
     hexbe_available,
@@ -27,6 +22,11 @@ from decepticon.tools.reversing.hexbe import (
     hexbe_find_functions,
     hexbe_search_bytes,
 )
+from decepticon.tools.reversing.packer import detect_packer
+from decepticon.tools.reversing.rop import filter_gadgets_by_pattern, find_rop_gadgets
+from decepticon.tools.reversing.scripts import ghidra_recon_script, r2_recon_script
+from decepticon.tools.reversing.strings import extract_strings, group_by_category
+from decepticon.tools.reversing.symbols import summarize_symbols
 
 
 def _json(data: Any) -> str:

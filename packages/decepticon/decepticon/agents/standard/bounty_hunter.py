@@ -50,8 +50,8 @@ from typing import Any
 
 from langchain.agents import create_agent
 
-from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
+from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory

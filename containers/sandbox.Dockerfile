@@ -244,31 +244,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
 
 # ── Commercial RE backend — advanced disassembler + decompiler (opt-in) ──
 #
-# Installs the Python library bindings for the commercial RE suite and
-# configures them to use the installation mounted at runtime.  The actual
-# RE suite binaries are NOT baked into the image — they are bind-mounted
-# from the host at DECEPTICON_HEXBE_PATH and appear inside the container
-# at /opt/hexbe (read-only).  The ~600 MB installation lives once on the
-# host, not inside every image layer.
+# The RE suite binaries are NOT baked into the image — they are
+# bind-mounted from the host and appear inside the container at
+# /opt/hexbe (read-only).  The library wheel is installed at first
+# container start by sandbox-entrypoint.sh (no build-time dependency
+# on the host installation).
 #
-# Build requires the `hexbe-install` named context pointing to the host
-# installation directory:
-#   INSTALL_HEXBE=true docker compose build \
-#       --build-context hexbe-install=$DECEPTICON_HEXBE_PATH
-#
-# At runtime add to docker-compose.yml / .env:
+# At runtime, set in docker-compose.yml / .env:
 #   DECEPTICON_HEXBE_PATH=<host path to installation>
-ARG INSTALL_HEXBE=false
-ARG HEXBE_PATH=/opt/hexbe
-RUN --mount=type=bind,from=hexbe-install,source=idalib/python,target=/tmp/hexbe-python \
-    if [ "$INSTALL_HEXBE" = "true" ]; then \
-        pip install --no-cache-dir --break-system-packages \
-            /tmp/hexbe-python/idapro*.whl && \
-        python3 /tmp/hexbe-python/py-activate-idalib.py -d "${HEXBE_PATH}" && \
-        echo "Commercial RE backend library installed, configured for ${HEXBE_PATH}" ; \
-    else \
-        echo "INSTALL_HEXBE=false — skipping commercial RE backend" ; \
-    fi
+#   volumes: - ${DECEPTICON_HEXBE_PATH}:/opt/hexbe:ro
 ENV DECEPTICON_HEXBE_PATH=/opt/hexbe
 
 # Ship only the modules the daemon actually imports:
