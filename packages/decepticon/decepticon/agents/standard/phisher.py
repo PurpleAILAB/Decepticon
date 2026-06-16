@@ -46,7 +46,7 @@ from decepticon.tools.references.tools import (
     methodology_lookup,
     payload_search,
 )
-from decepticon.tools.web.open_web import web_fetch, web_search
+from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 # KG tools were removed pending the Neo4j middleware redesign (see

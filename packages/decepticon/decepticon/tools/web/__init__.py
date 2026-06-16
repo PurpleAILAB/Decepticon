@@ -20,7 +20,7 @@ from decepticon.tools.web.http import HTTPHistory, HTTPRequest, HTTPResponse, HT
 from decepticon.tools.web.jwt import JWTClaims, JWTHeader, JWTToken, forge_token, parse_token
 from decepticon.tools.web.oauth import OAuthFinding, analyze_oauth_callback
 from decepticon.tools.web.session import CookieAnalysis, analyze_cookie
-from decepticon.tools.web.tools import http_history, http_request, web_search
+from decepticon.tools.web.tools import http_history, http_request, web_fetch, web_search
 
 __all__ = [
     "CookieAnalysis",
@@ -40,5 +40,6 @@ __all__ = [
     "http_request",
     "introspection_query",
     "parse_token",
+    "web_fetch",
     "web_search",
 ]

@@ -8,15 +8,6 @@ design spec, §13.4).
 
 ## [1.1.8] — Unreleased
 
-- **`web_search` tool — RoE-gated open-web search (ADR-0008, closes
-  #593 Tier-1).** First open-web reach for the agent. DuckDuckGo HTML
-  backend via `httpx` (keyless, 5 s timeout, 10-result cap), with
-  every returned URL filtered against the engagement's `roe.json`
-  `machine_enforcement` block before the agent sees it. Out-of-scope
-  hits land in `audit/roe-decisions.jsonl` as
-  `web_search.result_filtered` events. Wired into `WEB_TOOLS` and
-  `GATED_TOOL_NAMES`. See `docs/tools/web-search.md`.
-
 The agent-driven dynamic infrastructure release. Specialist workloads
 (BloodHound CE, Sliver C2, Ghidra MCP, …) and the web dashboard no
 longer come up on `decepticon start` — the orchestrator brings them
