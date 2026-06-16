@@ -77,8 +77,10 @@ dependencies = [
     # leave on older versions:
     #   cryptography — GHSA-537c-gmf6-5ccf (fixed 48.0.1)
     #   starlette    — CVE-2026-48818 / -48817 / -54283 / -54282 (fixed ≤1.3.1)
+    #   langchain    — GHSA-gr75-jv2w-4656 (fixed 1.3.9)
     "cryptography>=48.0.1",
     "starlette>=1.3.1",
+    "langchain>=1.3.9",
 ]
 
 [project.optional-dependencies]
