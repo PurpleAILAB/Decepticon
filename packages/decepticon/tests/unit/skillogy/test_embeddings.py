@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
 
 from decepticon.skillogy import embeddings
@@ -66,8 +67,12 @@ def _fake_response(
     """Patch the HTTP call to echo deterministic vectors and record calls."""
     calls: list[dict] = []
 
-    def fake_request(base_url: str, key: str, model: str, inputs: list[str]) -> list[list[float]]:
-        calls.append({"base_url": base_url, "key": key, "model": model, "inputs": list(inputs)})
+    def fake_request(
+        base_url: str, key: str, model: str, inputs: list[str], **kwargs: Any
+    ) -> list[list[float]]:
+        calls.append(
+            {"base_url": base_url, "key": key, "model": model, "inputs": list(inputs), **kwargs}
+        )
         return [vectors_by_input[text] for text in inputs]
 
     monkeypatch.setattr(embeddings, "_request_embeddings", fake_request)
@@ -129,7 +134,9 @@ def test_request_failure_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_count_mismatch_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_proxy(monkeypatch)
 
-    def short(base_url: str, key: str, model: str, inputs: list[str]) -> list[list[float]]:
+    def short(
+        base_url: str, key: str, model: str, inputs: list[str], **kwargs: Any
+    ) -> list[list[float]]:
         return [[1.0]]  # one vector for two inputs
 
     monkeypatch.setattr(embeddings, "_request_embeddings", short)
@@ -149,6 +156,9 @@ def test_request_parses_openai_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
     class _Resp:
+        status_code = 200
+        headers: dict[str, str] = {}
+
         def raise_for_status(self) -> None: ...
 
         def json(self) -> dict:
@@ -171,3 +181,96 @@ def test_request_parses_openai_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["url"] == "http://litellm:4000/v1/embeddings"
     assert captured["json"] == {"model": "m", "input": ["a", "b"]}
     assert captured["headers"]["Authorization"] == "Bearer sk-test"
+
+
+# --- retry / backoff -------------------------------------------------------
+
+
+class _FakeResp:
+    def __init__(
+        self, status_code: int, *, body: dict | None = None, retry_after: str | None = None
+    ):
+        self.status_code = status_code
+        self._body = body or {"data": [{"embedding": [1.0], "index": 0}]}
+        self.headers = {"Retry-After": retry_after} if retry_after else {}
+        self.request = httpx.Request("POST", "http://litellm:4000/v1/embeddings")
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("err", request=self.request, response=self)  # type: ignore[arg-type]
+
+    def json(self) -> dict:
+        return self._body
+
+
+def test_retry_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(embeddings.time, "sleep", lambda s: sleeps.append(s))
+    responses = iter([_FakeResp(429), _FakeResp(503), _FakeResp(200)])
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: next(responses))
+    out = embeddings._request_embeddings("http://litellm:4000", "sk", "m", ["x"])
+    assert out == [[1.0]]
+    assert sleeps == [1.0, 2.0]  # exponential backoff before each retry
+
+
+def test_retry_honours_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    sleeps: list[float] = []
+    monkeypatch.setattr(embeddings.time, "sleep", lambda s: sleeps.append(s))
+    responses = iter([_FakeResp(429, retry_after="5"), _FakeResp(200)])
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: next(responses))
+    embeddings._request_embeddings("http://litellm:4000", "sk", "m", ["x"])
+    assert sleeps == [5.0]
+
+
+def test_retry_exhausted_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(embeddings.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: _FakeResp(429))
+    with pytest.raises(httpx.HTTPStatusError):
+        embeddings._request_embeddings("http://litellm:4000", "sk", "m", ["x"])
+
+
+def test_backoff_is_capped_and_rides_full_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Persistent 429s back off exponentially but capped, spanning ~a rate
+    window before giving up — and a 429 masked as 500 is still retried."""
+    sleeps: list[float] = []
+    monkeypatch.setattr(embeddings.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: _FakeResp(500))
+    with pytest.raises(httpx.HTTPStatusError):
+        embeddings._request_embeddings("http://litellm:4000", "sk", "m", ["x"])
+    # _MAX_ATTEMPTS-1 sleeps, exponential then capped at _BACKOFF_CAP
+    assert sleeps == [1.0, 2.0, 4.0, 8.0, 16.0]
+    assert all(s <= embeddings._BACKOFF_CAP for s in sleeps)
+    assert sum(sleeps) >= 30.0  # patient enough for a rate window
+
+
+def test_non_retryable_4xx_raises_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[int] = []
+
+    def post(*_a: Any, **_k: Any) -> _FakeResp:
+        calls.append(1)
+        return _FakeResp(401)
+
+    monkeypatch.setattr(embeddings.httpx, "post", post)
+    with pytest.raises(httpx.HTTPStatusError):
+        embeddings._request_embeddings("http://litellm:4000", "sk", "m", ["x"])
+    assert len(calls) == 1  # 401 is not retried
+
+
+def test_batch_degrades_on_retry_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_proxy(monkeypatch)
+    monkeypatch.setattr(embeddings.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: _FakeResp(429))
+    assert embeddings.embed_batch(["a", "b"]) == [None, None]
+
+
+def test_query_embed_text_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Query-time embed_text must NOT use the patient ingest retry budget — a
+    sustained rate limit fails fast (≤ _QUERY_MAX_ATTEMPTS-1 sleeps) → None →
+    find_skill falls back to lexical without blocking the agent."""
+    _set_proxy(monkeypatch)
+    sleeps: list[float] = []
+    monkeypatch.setattr(embeddings.time, "sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: _FakeResp(429))
+    assert embeddings.embed_text("a live query") is None
+    assert len(sleeps) == embeddings._QUERY_MAX_ATTEMPTS - 1  # far fewer than ingest
+    assert len(sleeps) < embeddings._MAX_ATTEMPTS - 1

@@ -36,6 +36,7 @@ class _FakeBackend:
 def _fake_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(embeddings, "available", lambda: True)
     monkeypatch.setattr(embeddings, "embed_dim", lambda: 8)
+    monkeypatch.setattr(embeddings, "embed_model", lambda: "test-model")
     # Deterministic, non-None vector per input.
     monkeypatch.setattr(embeddings, "embed_batch", lambda texts: [[float(len(t))] for t in texts])
 
@@ -65,7 +66,7 @@ def test_embeds_all_missing(_fake_embeddings: None) -> None:
 
 def test_skips_unchanged_by_sha(_fake_embeddings: None) -> None:
     text = embed_ingest.build_embed_text("alpha", "d1", "w1")
-    sha = embed_ingest._input_sha(text)
+    sha = embed_ingest._input_sha("test-model", text)
     backend = _FakeBackend(
         [
             {
@@ -84,7 +85,7 @@ def test_skips_unchanged_by_sha(_fake_embeddings: None) -> None:
 
 
 def test_changed_content_reembeds(_fake_embeddings: None) -> None:
-    stale_sha = embed_ingest._input_sha("totally different text")
+    stale_sha = embed_ingest._input_sha("test-model", "totally different text")
     backend = _FakeBackend(
         [
             {
@@ -93,6 +94,26 @@ def test_changed_content_reembeds(_fake_embeddings: None) -> None:
                 "description": "NEW description",
                 "when_to_use": "w1",
                 "embedding_input_sha256": stale_sha,
+            }
+        ]
+    )
+    stats = embed_ingest.ingest_embeddings(backend)  # type: ignore[arg-type]
+    assert stats == {"embedded": 1, "skipped": 0, "failed": 0}
+
+
+def test_model_change_reembeds(_fake_embeddings: None) -> None:
+    # Same text, but the stored sha was produced by a DIFFERENT model →
+    # folding the model into the sha must force a re-embed (no stale vectors).
+    text = embed_ingest.build_embed_text("alpha", "d1", "w1")
+    old_model_sha = embed_ingest._input_sha("some-other-model", text)
+    backend = _FakeBackend(
+        [
+            {
+                "path": "/a",
+                "name": "alpha",
+                "description": "d1",
+                "when_to_use": "w1",
+                "embedding_input_sha256": old_model_sha,
             }
         ]
     )

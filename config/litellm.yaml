@@ -135,6 +135,26 @@ model_list:
       mode: embedding
       input_cost_per_token: 0.00000002
 
+  # Alternatives for non-OpenAI deployments — select via
+  # DECEPTICON_SKILLOGY_EMBED_MODEL (the helper carries the matching dim:
+  # voyage-3 → 1024, gemini-embedding-001 → 3072). Voyage is Anthropic's
+  # official embedding partner, so an Anthropic-ecosystem operator can run
+  # skillogy semantics with a VOYAGE_API_KEY and no OpenAI key; Gemini
+  # likewise for a GEMINI_API_KEY-only deployment.
+  - model_name: voyage/voyage-3
+    litellm_params:
+      model: voyage/voyage-3
+      api_key: os.environ/VOYAGE_API_KEY
+    model_info:
+      mode: embedding
+      input_cost_per_token: 0.00000006
+  - model_name: gemini/gemini-embedding-001
+    litellm_params:
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: embedding
+
   # ── Google ───────────────────────────────────────────────────────────
   # Per-1M USD as of 2026-05-14 (Gemini Developer API, ≤200K context):
   #   2.5-pro        $1.25 / $10.00

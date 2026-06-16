@@ -3,9 +3,10 @@
 #
 # The skill catalog is stored in Neo4j and queried over REST. This image
 # carries no langchain/langgraph/sandbox dependencies and no agent
-# runtime — just FastAPI + uvicorn + the Neo4j driver + the skillogy
-# server module + the CI-built ``skills.cypher`` dump that gets ingested
-# on boot.
+# runtime — just FastAPI + uvicorn + the Neo4j driver + httpx (the
+# ADR-0011 embedding client that talks to the litellm proxy) + the
+# skillogy server module + the CI-built ``skills.cypher`` dump that
+# gets ingested on boot.
 
 FROM python:3.13-slim
 
@@ -32,7 +33,8 @@ RUN pip install --no-cache-dir \
     "fastapi>=0.115.0" \
     "uvicorn[standard]>=0.30.0" \
     "pydantic>=2.0.0" \
-    "neo4j>=5.24"
+    "neo4j>=5.24" \
+    "httpx>=0.27.0"
 
 RUN groupadd -r skillogy && useradd -r -g skillogy -d /app -s /sbin/nologin skillogy \
     && chown -R skillogy:skillogy /app

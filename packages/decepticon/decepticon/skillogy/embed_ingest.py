@@ -38,8 +38,15 @@ def build_embed_text(name: str, description: str, when_to_use: str) -> str:
     return "\n".join(parts)
 
 
-def _input_sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+def _input_sha(model: str, text: str) -> str:
+    """SHA of the embedding *input identity* — the model PLUS the text.
+
+    Folding the model in means swapping ``DECEPTICON_SKILLOGY_EMBED_MODEL``
+    (even to one with the same dimension) changes every sha, so the next boot
+    re-embeds the whole corpus instead of silently serving vectors from the
+    old model. Mirrors the disk cache key in ``embeddings._cache_key``.
+    """
+    return hashlib.sha256(f"{model}\n{text}".encode()).hexdigest()
 
 
 def ingest_embeddings(backend: Neo4jBackend) -> dict[str, int]:
@@ -55,6 +62,7 @@ def ingest_embeddings(backend: Neo4jBackend) -> dict[str, int]:
 
     backend.ensure_vector_index(embeddings.embed_dim())
 
+    model = embeddings.embed_model()
     rows = backend.fetch_skills_for_embedding()
     pending: list[tuple[str, str, str]] = []  # (path, text, sha)
     skipped = 0
@@ -63,7 +71,7 @@ def ingest_embeddings(backend: Neo4jBackend) -> dict[str, int]:
         if not text:
             skipped += 1
             continue
-        sha = _input_sha(text)
+        sha = _input_sha(model, text)
         if row.get("embedding_input_sha256") == sha:
             skipped += 1
             continue

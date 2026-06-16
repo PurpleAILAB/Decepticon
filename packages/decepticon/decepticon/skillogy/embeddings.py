@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import httpx
@@ -34,12 +35,37 @@ _KNOWN_DIMS: dict[str, int] = {
     "openai/text-embedding-3-large": 3072,
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
+    "voyage/voyage-3": 1024,
+    "voyage/voyage-3-lite": 512,
     "voyage-3": 1024,
     "voyage-3-lite": 512,
+    "gemini/gemini-embedding-001": 3072,
+    "gemini-embedding-001": 3072,
 }
 _DEFAULT_DIM = 1536
 
 _REQUEST_TIMEOUT = 30.0
+# Embedding providers rate-limit aggressively (Voyage's no-payment free tier
+# is 3 RPM / 10K TPM), and boot-ingest fires several chunked requests
+# back-to-back. Providers also mask the 429 as a 500 through litellm, so the
+# retryable set includes 5xx and backoff must be patient enough to ride out a
+# ~60s rate window rather than just a brief blip. The exponential is capped so
+# a single retry can't stall boot indefinitely; once attempts are exhausted
+# the chunk degrades to substring and the next boot re-embeds it (incremental
+# by input-sha). Worst-case added boot latency ≈ sum of the backoffs (~60s).
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+# Ingest (boot, batched) can afford to be patient — it runs off the request
+# path and a re-embed is cheaper than leaving the corpus unembedded.
+_MAX_ATTEMPTS = 6
+_BACKOFF_BASE = 1.0
+_BACKOFF_CAP = 30.0
+# Query time (a live find_skill) must NOT make the agent wait. litellm already
+# retries the upstream internally, so a single client attempt with a short
+# timeout is enough: if the embedding can't come back in a few seconds we fail
+# fast to None → find_skill returns lexical results immediately instead of
+# blowing the REST client timeout and leaving the agent empty-handed.
+_QUERY_MAX_ATTEMPTS = 1
+_QUERY_REQUEST_TIMEOUT = 5.0
 
 
 def embed_model() -> str:
@@ -105,28 +131,80 @@ def _cache_put(model: str, text: str, vector: list[float]) -> None:
 
 
 def _request_embeddings(
-    base_url: str, key: str, model: str, inputs: list[str]
+    base_url: str,
+    key: str,
+    model: str,
+    inputs: list[str],
+    *,
+    max_attempts: int = _MAX_ATTEMPTS,
+    timeout: float = _REQUEST_TIMEOUT,
 ) -> list[list[float]]:
-    """POST to the proxy's OpenAI-compatible ``/v1/embeddings``. May raise."""
-    resp = httpx.post(
-        f"{base_url}/v1/embeddings",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={"model": model, "input": inputs},
-        timeout=_REQUEST_TIMEOUT,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    # OpenAI shape: {"data": [{"embedding": [...], "index": 0}, ...]}
-    rows = sorted(data["data"], key=lambda d: d.get("index", 0))
-    return [list(r["embedding"]) for r in rows]
+    """POST to the proxy's OpenAI-compatible ``/v1/embeddings``.
+
+    Retries transient HTTP failures (429 / 5xx) up to ``max_attempts`` with
+    exponential backoff, honouring a ``Retry-After`` header when the provider
+    sends one. Raises on a non-retryable error or once attempts are exhausted —
+    the caller (``embed_batch``) turns that into a ``None`` fallback. ``ingest``
+    uses the patient default; query time passes a small ``max_attempts`` so a
+    live find_skill never blocks on a slow retry.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        resp = httpx.post(
+            f"{base_url}/v1/embeddings",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={"model": model, "input": inputs},
+            timeout=timeout,
+        )
+        if resp.status_code in _RETRY_STATUS and attempt < max_attempts - 1:
+            delay = _retry_after(resp) or min(_BACKOFF_BASE * (2**attempt), _BACKOFF_CAP)
+            log.info(
+                "skillogy embedding %d; retry %d/%d in %.1fs",
+                resp.status_code,
+                attempt + 1,
+                max_attempts - 1,
+                delay,
+            )
+            time.sleep(delay)
+            continue
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            break
+        data = resp.json()
+        # OpenAI shape: {"data": [{"embedding": [...], "index": 0}, ...]}
+        rows = sorted(data["data"], key=lambda d: d.get("index", 0))
+        return [list(r["embedding"]) for r in rows]
+    raise last_exc or httpx.HTTPError("embedding request failed after retries")
 
 
-def embed_batch(texts: list[str]) -> list[list[float] | None]:
+def _retry_after(resp: httpx.Response) -> float | None:
+    """Parse a ``Retry-After`` delay (seconds form) if present and sane."""
+    raw = resp.headers.get("Retry-After", "").strip()
+    if not raw:
+        return None
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return None
+    # Clamp so a hostile/huge value can't stall boot-ingest.
+    return min(seconds, 30.0) if seconds > 0 else None
+
+
+def embed_batch(
+    texts: list[str],
+    *,
+    max_attempts: int = _MAX_ATTEMPTS,
+    timeout: float = _REQUEST_TIMEOUT,
+) -> list[list[float] | None]:
     """Embed many texts. Returns one vector per input, or ``None`` per input
     when embeddings are unavailable / the request fails. Never raises.
 
     Cached entries are served without a network call; only the cache misses
-    are sent to the proxy in one batched request.
+    are sent to the proxy in one batched request. ``max_attempts`` / ``timeout``
+    control retry patience and per-request deadline — ingest uses the patient
+    defaults; query time overrides both so a live lookup fails fast to lexical.
     """
     if not texts:
         return []
@@ -151,7 +229,14 @@ def embed_batch(texts: list[str]) -> list[list[float] | None]:
 
     base_url, key = proxy
     try:
-        vectors = _request_embeddings(base_url, key, model, [texts[i] for i in misses])
+        vectors = _request_embeddings(
+            base_url,
+            key,
+            model,
+            [texts[i] for i in misses],
+            max_attempts=max_attempts,
+            timeout=timeout,
+        )
     except Exception as exc:  # noqa: BLE001 - degrade, never raise to caller
         log.warning("skillogy embedding request failed (%s); falling back", type(exc).__name__)
         return results
@@ -165,5 +250,10 @@ def embed_batch(texts: list[str]) -> list[list[float] | None]:
 
 
 def embed_text(text: str) -> list[float] | None:
-    """Embed one text. ``None`` when unavailable / on failure (never raises)."""
-    return embed_batch([text])[0]
+    """Embed one text — the **query-time** entry point (find_skill).
+
+    Uses a small retry budget so a live lookup fails fast to ``None`` (→ lexical
+    fallback) under a sustained rate limit rather than blocking the agent past
+    the REST client timeout. ``None`` when unavailable / on failure; never raises.
+    """
+    return embed_batch([text], max_attempts=_QUERY_MAX_ATTEMPTS, timeout=_QUERY_REQUEST_TIMEOUT)[0]
