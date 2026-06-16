@@ -111,6 +111,13 @@ can be hardened. Map which model the target uses:
 - **User-mode AC** — in-process integrity checks, anti-debug, packed/obfuscated
   modules, periodic memory CRC. Easier to analyze and bypass; report the evaded
   check.
+- **VM-virtualized AC (the hard case)** — modern EAC / BattlEye / Vanguard
+  *virtualize* their critical routines (detection, integrity) with a mutated
+  custom VM (VMProtect/Themida-class), per-build randomized handlers, plus the
+  kernel driver. Static signatures don't transfer between builds. Defeating this
+  is its own discipline — load the deep methodology:
+  `load_skill("/skills/standard/reverser/deobfuscation-devirtualization/SKILL.md")`
+  (trace → lift handlers with Triton/VTIL → recover only the targeted routine).
 - **Detection vectors to enumerate** (each a candidate blind spot): module/region
   scanning, hooked-import / inline-hook detection, code-section CRC/integrity,
   debugger detection, known-tool signatures, and server-side heuristics

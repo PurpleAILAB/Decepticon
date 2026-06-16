@@ -83,10 +83,13 @@ _FIRMWARE_HINTS = (
     "bl31",
     "secure boot",
 )
-_BINARY_SUFFIXES = (".so", ".dll", ".elf")
+_BINARY_SUFFIXES = (".so", ".dll", ".elf", ".exe", ".sys", ".dylib")
 _SOURCE_HINTS = ("github.com", "gitlab")
 _HYPERVISOR_HINTS = ("hypervisor", "vmware", "qemu", "kvm", "xen", "hyper-v", "esxi")
 _GAME_HINTS = ("anti-cheat", "anticheat", "game")
+# Distinctive VM/obfuscation protector tokens (near-zero false-positive as
+# substrings) -> a protected PE binary, routed to the reverse-engineering family.
+_OBFUSCATION_HINTS = ("vmprotect", "vmprotected", "themida", "winlicense")
 
 
 def _normalize_label(s: str) -> str:
@@ -150,6 +153,26 @@ _LABEL_ALIASES: dict[str, str] = {
     "web": "url",
     "others": "other-asset",
     "other": "other-asset",
+    # Heavily obfuscated / VM-virtualized binaries (protectors) -> RE family.
+    "vmprotect": "pe-binary",
+    "themida": "pe-binary",
+    "winlicense": "pe-binary",
+    "enigma protector": "pe-binary",
+    "obfuscated": "pe-binary",
+    "obfuscated code": "pe-binary",
+    "obfuscation": "pe-binary",
+    "virtualized": "pe-binary",
+    "virtualized code": "pe-binary",
+    "code virtualization": "pe-binary",
+    "packed": "pe-binary",
+    "packed binary": "pe-binary",
+    # Virtualized anti-cheat products -> game-application (RE family).
+    "anti cheat": "game-application",
+    "anticheat": "game-application",
+    "easy anti cheat": "game-application",
+    "eac": "game-application",
+    "battleye": "game-application",
+    "vanguard": "game-application",
 }
 
 # ponytail: phases with no dedicated _PHASE_FOR_ROLE owner route to the nearest
@@ -242,6 +265,10 @@ def classify_asset(asset: str) -> str:
     # Videogame / anti-cheat targets.
     if any(h in s for h in _GAME_HINTS):
         return "game-application"
+
+    # VM-obfuscated / protected binaries (VMProtect, Themida, ...).
+    if any(h in s for h in _OBFUSCATION_HINTS):
+        return "pe-binary"
 
     # Embedded devices ("smart-device", "*-device", bare "device").
     if s == "device" or s.endswith("-device"):

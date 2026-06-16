@@ -51,6 +51,7 @@ from typing import Any
 from langchain.agents import create_agent
 
 from decepticon.agents.build import build_middleware, build_tools
+from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
@@ -75,6 +76,14 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 _ROLE = "bounty_hunter"
 _RECURSION_LIMIT = 1500
+# RE-family agent: also see the reverser skill catalog (devirtualization,
+# deobfuscation, packer-unpacking, anti-debug) for VM-obfuscated targets
+# like virtualized anti-cheat, on top of bounty_hunter's own skills.
+_SKILL_SOURCES: list[str] = [
+    "/skills/standard/bounty_hunter/",
+    "/skills/standard/reverser/",
+    "/skills/shared/",
+]
 
 
 def create_bounty_hunter_agent(
@@ -138,6 +147,7 @@ def create_bounty_hunter_agent(
     if middleware is None:
         middleware = build_middleware(
             role=_ROLE,
+            skill_sources=[*_SKILL_SOURCES, *benchmark_skill_sources()],
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,
