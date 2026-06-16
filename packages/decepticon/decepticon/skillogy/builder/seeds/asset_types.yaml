@@ -129,6 +129,7 @@ asset_types:
   - {name: linux-binary-package, category: desktop-application}
   - {name: electron-desktop-app, category: desktop-application}
   - {name: browser-extension, category: application}
+  - {name: game-application,  category: application,        phases: [reverse-engineering]}
 
   # Desktop / compiled / source artifacts
   - {name: source-code,       category: software-artifact, phases: [analyst]}
@@ -139,6 +140,7 @@ asset_types:
   - {name: firmware,          category: software-artifact, phases: [iot, reverse-engineering]}
   - {name: sdk-client-library, category: software-artifact, phases: [analyst]}
   - {name: cryptographic-library, category: software-artifact, phases: [analyst, reverse-engineering]}
+  - {name: hypervisor,        category: software-artifact, phases: [reverse-engineering]}
 
   # Software supply chain
   - {name: software-package,  category: software-artifact}

@@ -118,6 +118,7 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     "contract_auditor": "smart-contracts",
     "reverser": "reverse-engineering",
     "bounty_hunter": "reverse-engineering",
+    "ai_red_teamer": "ai-security",
     "osint_operator": "osint",
     "iot_operator": "iot",
     "ics_operator": "ics-ot",

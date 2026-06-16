@@ -523,6 +523,7 @@ AGENT_TIERS: dict[str, Tier] = {
     # exploitability reasoning + PoC development put it in the HIGH band
     # alongside exploiter/analyst, not MID with the reverser it shares a phase with.
     "bounty_hunter": Tier.HIGH,
+    "ai_red_teamer": Tier.HIGH,
     # MID — precision execution, code generation, structured judgment.
     # Tool-heavy with moderate iteration.
     "detector": Tier.MID,
@@ -561,6 +562,7 @@ AGENT_TEMPERATURES: dict[str, float] = {
     "contract_auditor": 0.2,
     "reverser": 0.2,
     "bounty_hunter": 0.2,
+    "ai_red_teamer": 0.4,
     "analyst": 0.2,
     "scanner": 0.2,
     "vulnresearch": 0.4,

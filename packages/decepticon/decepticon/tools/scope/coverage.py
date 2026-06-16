@@ -85,6 +85,90 @@ _FIRMWARE_HINTS = (
 )
 _BINARY_SUFFIXES = (".so", ".dll", ".elf")
 _SOURCE_HINTS = ("github.com", "gitlab")
+_HYPERVISOR_HINTS = ("hypervisor", "vmware", "qemu", "kvm", "xen", "hyper-v", "esxi")
+_GAME_HINTS = ("anti-cheat", "anticheat", "game")
+
+
+def _normalize_label(s: str) -> str:
+    """Normalize a human asset-type/category label for alias matching.
+
+    Lowercase, then collapse the separator family ``/  -  _  +`` and any run of
+    whitespace to a single space, and strip — so ``"Hypervisors / Virtualization"``,
+    ``"ip-range"`` and ``"AI/LLM"`` land on stable keys.
+    """
+    return re.sub(r"[\s/_+-]+", " ", s.strip().lower()).strip()
+
+
+# ponytail: human asset-type/category labels (e.g. an Intigriti scope line) ->
+# a canonical AssetType name from asset_types.yaml. Keys are pre-normalized with
+# `_normalize_label`; classify_asset checks these BEFORE the heuristic regexes so
+# a bare category word routes deterministically.
+_LABEL_ALIASES: dict[str, str] = {
+    "url": "url",
+    "wildcard": "wildcard",
+    "android": "android-apk",
+    "ios": "ios-ipa",
+    "ip range": "cidr",
+    "ip address": "cidr",
+    "device": "iot-device",
+    "source code": "source-code",
+    "source code review": "source-code",
+    "ai model": "ai-model",
+    "ai llm": "llm-endpoint",
+    "llm": "llm-endpoint",
+    "api": "api-rest",
+    "blockchain web3 security": "smart-contract",
+    "blockchain web3": "smart-contract",
+    "blockchain": "smart-contract",
+    "web3": "smart-contract",
+    "cloud hacking": "cloud-resource",
+    "cloud": "cloud-resource",
+    "hardware iot firmware": "firmware",
+    "iot": "firmware",
+    "firmware": "firmware",
+    "hardware": "firmware",
+    "hypervisors virtualization": "hypervisor",
+    "hypervisor": "hypervisor",
+    "virtualization": "hypervisor",
+    "mobile hacking": "mobile-application",
+    "mobile": "mobile-application",
+    "network infrastructure": "ip-address",
+    "network": "ip-address",
+    "infrastructure": "ip-address",
+    "reverse engineering binary exploitation": "elf-binary",
+    "reverse engineering": "elf-binary",
+    "binary exploitation": "elf-binary",
+    "scada ics": "modbus",
+    "scada": "modbus",
+    "ics": "modbus",
+    "supply chain": "npm-package",
+    "videogame hacking": "game-application",
+    "videogame": "game-application",
+    "game hacking": "game-application",
+    "game": "game-application",
+    "web hacking": "url",
+    "web": "url",
+    "others": "other-asset",
+    "other": "other-asset",
+}
+
+# ponytail: phases with no dedicated _PHASE_FOR_ROLE owner route to the nearest
+# capable agent (harmless once a sibling lands an owning role — results dedupe).
+_PHASE_ROLE_FALLBACK: dict[str, list[str]] = {
+    "ai-security": ["ai_red_teamer"],
+    "lateral-movement": ["postexploit"],
+    "discovery": ["recon"],
+}
+
+# ponytail: phase-less category parents (and the "Others" catch-all) carry no
+# ENGAGED_VIA edge of their own; route the broad label to the specialist its
+# concrete subtypes engage so a coarse scope line is never dropped.
+_ASSET_ROLE_FALLBACK: dict[str, list[str]] = {
+    "mobile-application": ["mobile_operator"],
+    "cloud-resource": ["cloud_hunter"],
+    "iot-device": ["iot_operator"],
+    "other-asset": ["analyst"],
+}
 
 
 def classify_asset(asset: str) -> str:
@@ -97,6 +181,12 @@ def classify_asset(asset: str) -> str:
     s = asset.strip().lower()
     if not s:
         return "other-asset"
+
+    # Exact human-label match (Intigriti-style asset-type / category words) wins
+    # before any heuristic so a bare category word routes deterministically.
+    alias = _LABEL_ALIASES.get(_normalize_label(asset))
+    if alias is not None:
+        return alias
 
     # Blockchain contract address (very distinctive).
     if _CONTRACT_RE.match(s):
@@ -145,6 +235,18 @@ def classify_asset(asset: str) -> str:
     if any(h in s for h in _FIRMWARE_HINTS):
         return "firmware"
 
+    # Virtualization / hypervisor targets.
+    if any(h in s for h in _HYPERVISOR_HINTS):
+        return "hypervisor"
+
+    # Videogame / anti-cheat targets.
+    if any(h in s for h in _GAME_HINTS):
+        return "game-application"
+
+    # Embedded devices ("smart-device", "*-device", bare "device").
+    if s == "device" or s.endswith("-device"):
+        return "iot-device"
+
     # A scheme-bearing target that matched no more-specific type is a generic
     # web URL (routes to web-exploitation).
     if had_scheme:
@@ -183,23 +285,33 @@ def roles_for_asset_type(
     """Resolve ``(phases, specialist_roles)`` for an AssetType name.
 
     ``asset_types`` may be injected (name -> seed) for testing; otherwise it is
-    built from ``load_asset_types()``. An AssetType with no wired phases yields
-    ``((), ())``.
+    built from ``load_asset_types()``. Phases come from the AssetType's
+    ``ENGAGED_VIA`` edges; each phase resolves to its owning role(s) via the
+    inverted ``_PHASE_FOR_ROLE`` map, with ``_PHASE_ROLE_FALLBACK`` covering
+    phases that have no dedicated owner. An AssetType with no wired phases (a
+    broad category parent or the catch-all) resolves via ``_ASSET_ROLE_FALLBACK``.
     """
     if asset_types is None:
         asset_types = {at.name: at for at in load_asset_types()}
 
     seed = asset_types.get(asset_type)
-    if seed is None or not seed.phases:
-        return (), ()
+    phases: tuple[str, ...] = tuple(seed.phases) if seed and seed.phases else ()
 
     phase_to_roles = _phase_to_roles()
     roles: list[str] = []
-    for phase in seed.phases:
-        for role in phase_to_roles.get(phase, ()):
+    for phase in phases:
+        for role in phase_to_roles.get(phase) or _PHASE_ROLE_FALLBACK.get(phase, ()):
             if role not in roles:
                 roles.append(role)
-    return seed.phases, tuple(roles)
+
+    # Phase-less AssetTypes (and any phase whose owner is still unresolved) fall
+    # back to the specialist their concrete subtypes engage.
+    if not roles:
+        for role in _ASSET_ROLE_FALLBACK.get(asset_type, ()):
+            if role not in roles:
+                roles.append(role)
+
+    return phases, tuple(roles)
 
 
 def plan_coverage(assets: list[str]) -> CoverageReport:
@@ -215,7 +327,15 @@ def plan_coverage(assets: list[str]) -> CoverageReport:
         phases, specialists = roles_for_asset_type(asset_type, asset_types)
         covered = bool(specialists)
         if covered:
-            note = f"route to {', '.join(specialists)} via phase(s) {', '.join(phases)}"
+            if asset_type == "other-asset":
+                note = "generalist triage — analyst to sub-classify"
+            elif phases:
+                note = (
+                    f"route to {', '.join(specialists)} "
+                    f"via phase(s) {', '.join(phases)}"
+                )
+            else:
+                note = f"route to {', '.join(specialists)} (broad-category triage)"
             engaged.update(specialists)
         else:
             uncovered.append(asset)
@@ -264,6 +384,41 @@ if __name__ == "__main__":
     assert _crypto == "cryptographic-library", _crypto
     assert _c_specs == ("analyst", "reverser", "bounty_hunter"), _c_specs
 
+    # New Intigriti-style vocabulary: aliases + the two new asset types.
+    _ai = classify_asset("AI Model")
+    _ai_phases, _ai_specs = roles_for_asset_type(_ai)
+    assert _ai == "ai-model", _ai
+    assert "ai_red_teamer" in _ai_specs, _ai_specs
+
+    _hv = classify_asset("Hypervisors / Virtualization")
+    _hv_phases, _hv_specs = roles_for_asset_type(_hv)
+    assert _hv == "hypervisor", _hv
+    assert _hv_specs, _hv_specs
+
+    _game = classify_asset("Videogame Hacking")
+    assert _game == "game-application", _game
+
+    _net = classify_asset("Network / Infrastructure")
+    _net_phases, _net_specs = roles_for_asset_type(_net)
+    assert _net_specs, _net_specs
+
+    _other = classify_asset("Others")
+    _o_phases, _o_specs = roles_for_asset_type(_other)
+    assert _other == "other-asset", _other
+    assert _o_specs == ("analyst",), _o_specs
+
+    # Full user-facing label vocabulary must leave NOTHING uncovered.
+    _vocab = [
+        "URL", "Wildcard", "Android", "iOS", "IP Range", "Device",
+        "Source Code", "AI Model", "Others", "AI/LLM", "API",
+        "Blockchain/Web3", "Cloud", "Hardware/IoT/Firmware",
+        "Hypervisors/Virtualization", "Mobile", "Network/Infrastructure",
+        "Reverse Engineering/Binary Exploitation", "SCADA/ICS",
+        "Source Code Review", "Supply Chain", "Videogame Hacking", "Web",
+    ]
+    _vocab_report = plan_coverage(_vocab)
+    assert _vocab_report.uncovered == (), _vocab_report.uncovered
+
     _report = plan_coverage(
         [
             "*.example.com",
@@ -281,8 +436,16 @@ if __name__ == "__main__":
     print(f"  graphql   -> {_api}: {_a_specs}")
     print(f"  ipa       -> {_ipa}: {_i_specs}")
     print(f"  mbedtls   -> {_crypto}: {_c_specs}")
+    print(f"  ai-model  -> {_ai}: {_ai_specs}")
+    print(f"  hypervisor-> {_hv}: {_hv_specs}")
+    print(f"  videogame -> {_game}")
+    print(f"  others    -> {_other}: {_o_specs}")
     print(
         f"  report: {_report.covered_count}/{len(_report.assets)} covered, "
         f"uncovered={list(_report.uncovered)}, "
         f"engaged={list(_report.specialists_engaged)}"
+    )
+    print(
+        f"  full-vocab: {_vocab_report.covered_count}/{len(_vocab_report.assets)} "
+        f"covered, uncovered={list(_vocab_report.uncovered)}"
     )

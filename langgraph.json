@@ -13,6 +13,7 @@
     "ad_operator": "./packages/decepticon/decepticon/agents/standard/ad_operator.py:graph",
     "blue_cell": "./packages/decepticon/decepticon/agents/standard/blue_cell.py:graph",
     "bounty_hunter": "./packages/decepticon/decepticon/agents/standard/bounty_hunter.py:graph",
+    "ai_red_teamer": "./packages/decepticon/decepticon/agents/standard/ai_red_teamer.py:graph",
     "phisher": "./packages/decepticon/decepticon/agents/standard/phisher.py:graph",
     "mobile_operator": "./packages/decepticon/decepticon/agents/standard/mobile_operator.py:graph",
     "wireless_operator": "./packages/decepticon/decepticon/agents/standard/wireless_operator.py:graph",
