@@ -72,6 +72,13 @@ dependencies = [
     "xxhash>=3.0.0",
     # Security
     "defusedxml>=0.7.0",
+    # Transitive-dependency security floors (pip-audit gate). Not imported
+    # directly — pinned up to clear advisories the resolver would otherwise
+    # leave on older versions:
+    #   cryptography — GHSA-537c-gmf6-5ccf (fixed 48.0.1)
+    #   starlette    — CVE-2026-48818 / -48817 / -54283 / -54282 (fixed ≤1.3.1)
+    "cryptography>=48.0.1",
+    "starlette>=1.3.1",
 ]
 
 [project.optional-dependencies]
