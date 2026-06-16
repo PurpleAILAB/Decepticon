@@ -1,14 +1,17 @@
-# 0010. Skillogy find_skill uses LightRAG-style hybrid retrieval over the existing graph
+# 0011. Skillogy find_skill uses LightRAG-style hybrid retrieval over the existing graph
 
 - **Status:** Proposed
-- **Date:** 2026-06-15
+- **Date:** 2026-06-15 (revised 2026-06-16 after a code-review pass — embeddings
+  moved from the checked-in dump to boot-ingest, MoC dropped from the embedding
+  text, skillogy↔litellm coupling made explicit; deltas marked inline)
 - **Deciders:** @PurpleCHOIms
 - **Related:** ADR-0008 (skillogy hard ACL), `docs/design/skillogy-brain-redesign.md`, `docs/design/2026-06-12-skillogy-load-skill-by-name-pollution.md` (#670 load_skill exact-match), `packages/decepticon/decepticon/skillogy/server/neo4j_backend.py::find_skill`, `packages/decepticon/decepticon/skillogy/builder/` (ingest)
 
 ## Context
 
-`find_skill` is the agent's entry point into the skill corpus (285 `:Skill`
-nodes as of 2026-06-15). Today its keyword path is a **literal substring
+`find_skill` is the agent's entry point into the skill corpus (278 `:Skill`
+nodes as of 2026-06-16, per `skills/.graph/skills.cypher`). Today its keyword
+path is a **literal substring
 match** on the whole query string:
 
 ```cypher
@@ -62,7 +65,7 @@ backend retrieval changes.
 | Ingest | "chunk → LLM-extract → embed" (non-deterministic, costly) | keeps the deterministic `builder` ingest; only ADDS an embedding step |
 | ACL (ADR-0008) | per-role path-prefix scoping not native; must post-filter or patch internals | ACL stays exactly where it is, applied in the same Cypher |
 | API contract | find_skill/load_skill/traverse would bend to LightRAG's API | 3-tool contract preserved |
-| open-core footprint | heavy dep (networkx, nano-vectordb, its own storage abstraction) into OSS | only `neo4j` driver + a litellm embedding call |
+| open-core footprint | heavy dep (networkx, nano-vectordb, its own storage abstraction) into OSS | only the `neo4j` driver + a litellm embedding call (see §"Skillogy↔litellm coupling") |
 | Net effect | rebuild skillogy *around* LightRAG | add dual-level retrieval *onto* skillogy |
 
 Our problem is retrieval over a curated KG; the library is optimized for
@@ -71,16 +74,49 @@ is what we want.
 
 ### Architecture (dual-level hybrid, mapped to our graph)
 
-**Ingest (extend `builder` + boot ingest — additive):**
-- For each `:Skill`, compute one embedding over `name + description +
-  when_to_use + MoC summary`, stored as `s.embedding` (float[]).
-- Emit it in `skills.cypher` (the embedding is deterministic given the model,
-  so the checked-in dump stays reproducible; regenerated in CI).
-- Create a Neo4j **native vector index** on `:Skill(embedding)` (Neo4j
-  5.24.2 supports this — confirmed) plus keep the existing facet edges.
+**Ingest — embeddings computed at boot, NOT baked into the dump (revised
+2026-06-16 after code review):**
+- Embedding text per `:Skill` = `name + description + when_to_use` (the fields
+  that actually exist on the node, confirmed `builder/skills.py:136-152`).
+  **Note:** the original draft said "+ MoC summary", but there is **no
+  `moc_summary` property on `:Skill`** — MoC is a separate per-phase `:MoC`
+  node (`(:MoC)-[:BELONGS_TO_PHASE]->(:Phase)`, `neo4j_backend.py:300`). If we
+  want MoC context in the vector, ingest must resolve `Skill→IN_PHASE→Phase←
+  BELONGS_TO_PHASE←MoC` and concatenate; given the marginal recall benefit and
+  the join cost, **MoC is dropped from the embedding text** for v1 (`subdomain`
+  is already in `name`/`description` context).
+- **Do NOT emit embeddings into the checked-in `skills.cypher`.** That dump is
+  already git-tracked at 3.85 MB / ~12k lines; adding 278 × `EMBED_DIM` floats
+  would bloat it several-fold on every rebuild, make the dump depend on a
+  (potentially non-deterministic, version-drifting) embedding provider, and
+  force CI to carry embedding-model credentials. Instead, compute embeddings
+  **at boot-ingest**: after the skillogy service bulk-loads `skills.cypher`
+  into Neo4j, it embeds each `:Skill` once and writes `s.embedding` directly to
+  the graph (one ~278-vector pass, cached by content hash so restarts are
+  free). The git dump stays embedding-free and reproducible without any
+  embedding creds.
+- Create a Neo4j **native vector index** on `:Skill(embedding)` after the embed
+  pass. Deployed Neo4j is **`neo4j:5.26-community`** (`docker-compose.yml:117`),
+  which supports native vector indexes.
 - Embeddings via the **litellm gateway** (a cloud embedding model, e.g.
   `voyage-3` / `text-embedding-3-large` — same endpoint used at query time so
-  ingest and query share a vector space). 285 skills → trivial one-time cost.
+  ingest and query share a vector space). 278 skills → trivial one-time cost.
+
+**Skillogy↔litellm coupling (new dependency — confirmed gap):**
+- The skillogy service is currently **isolated from the LLM proxy**: its
+  container env carries only `SKILLOGY_NEO4J_*` (`docker-compose.yml` skillogy
+  service), and no skillogy code imports litellm or any embedding API. Only the
+  `langgraph` service gets `DECEPTICON_LLM__PROXY_URL` /
+  `DECEPTICON_LLM__PROXY_API_KEY` (`docker-compose.yml:375-376`).
+- This ADR therefore **adds a runtime dependency**: the skillogy container must
+  be given the proxy URL + key so both boot-ingest and query-time `find_skill`
+  can embed. Thread `DECEPTICON_LLM__PROXY_URL` + `DECEPTICON_LLM__PROXY_API_KEY`
+  (or a dedicated `DECEPTICON_SKILLOGY_EMBED_*`) into the skillogy service.
+- **OSS / no-credentials posture:** when no embedding model is reachable, both
+  boot-ingest embedding and query embedding are skipped and `find_skill`
+  **runs the existing substring path** (the documented fallback below). Semantic
+  search is an opt-in upgrade that activates only when an embedding model is
+  wired; the default OSS experience is unchanged, not broken.
 
 **Query (`find_skill` keyword path becomes hybrid):**
 1. **local** — embed the query, `db.index.vector.queryNodes` top-k `:Skill`
@@ -94,7 +130,13 @@ is what we want.
    like a CVE id or tool name, a keyword signal) via reciprocal-rank fusion;
    rank by fused score. Replaces `ORDER BY name`.
 4. **ACL** — the existing `allowed_path_prefixes` filter (ADR-0008) applies to
-   the fused candidate set, unchanged.
+   the fused candidate set. **Reposition note:** today the ACL is one
+   `WHERE … ANY(p IN $allowed_path_prefixes …)` clause appended before
+   `ORDER BY name` (`neo4j_backend.py:270`). In the hybrid path the candidates
+   come from `db.index.vector.queryNodes` + graph expansion, so the same
+   path-prefix predicate must be re-applied over the fused set (e.g. a `WHERE`
+   after the vector `YIELD`, or a post-fetch Python filter) — semantically
+   unchanged, but it moves.
 
 Facet filters (`subdomain`, `mitre_id`, `tag`, `tactic_id`) keep their exact
 behaviour and continue to AND with the keyword path.
@@ -117,8 +159,14 @@ behaviour and continue to AND with the keyword path.
   open-core boundary).
 
 **Negative / costs**
-- Ingest now depends on a litellm embedding model; `skills.cypher` grows by
-  the embedding vectors (285 × dims). CI rebuild must run embeddings.
+- **New service dependency:** the skillogy container must now reach the litellm
+  proxy (it currently cannot — see §"Skillogy↔litellm coupling"). Without it,
+  `find_skill` silently runs the legacy substring path.
+- Embeddings are computed **at boot-ingest into Neo4j**, not baked into
+  `skills.cypher` (revised — see Ingest). This keeps the 3.85 MB git dump
+  embedding-free (no bloat, no provider non-determinism in version control, no
+  embedding creds in CI), at the cost of a one-time ~278-vector embed pass on
+  first boot (cached by content hash; restarts are free).
 - We own the retrieval/rerank code and must track RAG advances ourselves
   (the tradeoff accepted for control + zero schema conflict).
 - A query-time embedding call is added to the `find_skill` hot path
@@ -137,25 +185,28 @@ Touch points, in dependency order. Each step is independently testable.
   repeated queries don't re-spend. Used by BOTH ingest (Step 2) and query (Step 4).
 - Returns the embedding dimension via a `EMBED_DIM` constant (drives the index DDL).
 
-### Step 2 — ingest: embed each skill (builder)
-- `builder/skills.py::emit_skill_records` (where the `:Skill` `Node` is built): add an
-  `embedding` property = `embed_text(name + "\n" + description + "\n" + when_to_use
-  + "\n" + moc_summary)`. Keep the field deterministic given the model (cache by
-  content hash) so the checked-in `skills.cypher` stays reproducible.
-- `emit.py::cypher_literal` already emits float lists via `repr`; confirm a
-  `list[float]` round-trips (add a test). No emitter API change expected.
-- The MERGE statement then carries `n.embedding = [...]` like any other property.
+### Step 2 — boot-ingest: embed each skill into Neo4j (NOT into the dump)
+- Do this in the **service boot path** (`skillogy/__main__.py`, after
+  `_maybe_ingest` bulk-loads `skills.cypher`), not in `builder/skills.py`. The
+  builder/`skills.cypher` stays embedding-free.
+- After load: for each `:Skill` missing `s.embedding`, compute
+  `embed_text(name + "\n" + description + "\n" + when_to_use)` and `SET
+  s.embedding`. (No `moc_summary` — that field does not exist on `:Skill`;
+  see Ingest note.) Cache by content hash so restarts don't re-embed.
+- No `emit.py` / `builder/skills.py` change needed for embeddings. (`emit.py::
+  cypher_literal` *does* already handle `list[float]` via `repr`, confirmed —
+  only relevant if a future revision decides to bake them in.)
 
 ### Step 3 — vector index DDL (boot ingest)
-- `skillogy/__main__.py::_maybe_ingest` (or a sibling `_ensure_indexes`): after the
-  bulk cypher load, run
+- In the same boot path (a sibling `_ensure_indexes`): after the embed pass, run
   `CREATE VECTOR INDEX skill_embedding IF NOT EXISTS FOR (s:Skill) ON s.embedding
    OPTIONS {indexConfig: {`vector.dimensions`: EMBED_DIM, `vector.similarity_function`: 'cosine'}}`.
-  Idempotent; Neo4j 5.24.2 supports native vector indexes (confirmed).
+  Idempotent; the deployed `neo4j:5.26-community` supports native vector indexes.
 
 ### Step 4 — find_skill hybrid retrieval (backend)
 `server/neo4j_backend.py::find_skill` — replace ONLY the keyword Path E
-(lines ~252-258 today) and the `ORDER BY name`:
+(the `query` CONTAINS block, `neo4j_backend.py:255-263` today) and the
+`ORDER BY name` (line 282):
 1. **local**: if `query`, `qvec = embed_text(query)`, then
    `CALL db.index.vector.queryNodes('skill_embedding', $k, $qvec) YIELD node AS s, score`
    for the top-k seeds (k ≈ 20).
@@ -180,9 +231,14 @@ Touch points, in dependency order. Each step is independently testable.
 - A `respx`/stub embedding so unit tests don't hit the network; one integration
   test (marked) against a live Neo4j + embedding for the real vector path.
 
-### Step 6 — CI / image
-- The `skills.cypher` build (CI) now needs the embedding model creds; cache by
-  content hash so only changed skills re-embed. Document the env in the builder.
+### Step 6 — container env / image (NOT CI)
+- Because embeddings are computed at boot (not in `skills.cypher`), **CI needs
+  no embedding creds** and the builder is unchanged.
+- Thread the proxy env into the **skillogy service** in `docker-compose.yml`
+  (it currently has only `SKILLOGY_NEO4J_*`): add `DECEPTICON_LLM__PROXY_URL`
+  + `DECEPTICON_LLM__PROXY_API_KEY` (mirroring the `langgraph` service,
+  `docker-compose.yml:375-376`) and the SaaS overlay. Absent → substring
+  fallback (no failure).
 
 ## Open questions
 
