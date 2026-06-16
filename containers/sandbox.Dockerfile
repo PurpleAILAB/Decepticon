@@ -77,7 +77,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
 # GitHub-release pull (no apt package) or a pip install:
 #   chisel       (GitHub release: jpillora/chisel)
 #   ligolo-ng    (GitHub release: nicocha30/ligolo-ng)
-#   afl++ / aflplusplus / honggfuzz (apt names + dep weight uncertain)
 #   plaso        (pip: ``plaso``; pulls in pyparsing + heavy deps)
 #   volatility3  (pip: ``volatility3``; same as operator's host install)
 # Operators who need these today can ``pip install volatility3 plaso``
@@ -180,6 +179,27 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
 ENV GHIDRA_INSTALL_DIR=/opt/ghidra \
     GHIDRA_MCP_URL=http://ghidra-mcp:8089 \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+
+# ── Fuzzing: AFL++ + honggfuzz + clang sanitizers (opt-in) ──
+#
+# Gated by a build ARG so the default sandbox image stays lean.
+# Enable with:
+#   docker build --build-arg INSTALL_FUZZING=true ...
+ARG INSTALL_FUZZING=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=sandbox-apt-lists \
+    if [ "$INSTALL_FUZZING" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends --no-install-suggests \
+            afl++ \
+            honggfuzz \
+            clang \
+            llvm \
+            compiler-rt && \
+        echo "Fuzzing tools installed: afl-fuzz, honggfuzz, clang" ; \
+    else \
+        echo "INSTALL_FUZZING=false — skipping AFL++ + honggfuzz + clang" ; \
+    fi
 
 # Ship only the modules the daemon actually imports:
 #   - decepticon/__init__.py     — package marker (light-weight, just reads __version__)

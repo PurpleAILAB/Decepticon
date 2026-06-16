@@ -10,6 +10,7 @@ from decepticon.agents.plugins.vulnresearch import create_vulnresearch_agent
 from decepticon.agents.standard.ad_operator import create_ad_operator_agent
 from decepticon.agents.standard.analyst import create_analyst_agent
 from decepticon.agents.standard.blue_cell import create_blue_cell_agent
+from decepticon.agents.standard.bounty_hunter import create_bounty_hunter_agent
 from decepticon.agents.standard.cloud_hunter import create_cloud_hunter_agent
 from decepticon.agents.standard.contract_auditor import create_contract_auditor_agent
 from decepticon.agents.standard.decepticon import create_decepticon_agent
@@ -36,6 +37,7 @@ __all__ = [
     "create_decepticon_agent",
     "create_reverser_agent",
     "create_contract_auditor_agent",
+    "create_bounty_hunter_agent",
     "create_cloud_hunter_agent",
     "create_ad_operator_agent",
     "create_phisher_agent",
