@@ -6,7 +6,3 @@
 #
 # Empty file = nothing ignored. Keep it that way whenever possible: prefer
 # upgrading the locked dependency (uv lock -P <pkg>==<fixed>) over ignoring.
-# cryptography 46.0.7 → fix at ≥48.0.1 (GHSA-537c-gmf6-5ccf).
-# langgraph-api 0.8.7 constrains cryptography<47 so uv cannot resolve ≥48.
-# Remove when langgraph-api ships a release that lifts the cap.
-GHSA-537c-gmf6-5ccf
