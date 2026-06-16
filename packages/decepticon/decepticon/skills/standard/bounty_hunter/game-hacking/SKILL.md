@@ -6,7 +6,7 @@ metadata:
   subdomain: reverse-engineering
   when_to_use: "videogame, game hacking, anti-cheat, anticheat, memory hacking, cheat, trainer, aimbot, wallhack, ESP, speedhack, netcode, game protocol, packet replay, server authority, server-side validation, game economy, item dupe, currency exploit, save manipulation, save tampering, Unity, IL2CPP, Mono, Unreal, GNames, Frida"
   tags: game, anti-cheat, memory, netcode, reverse-engineering, protocol
-  mitre_attack:
+  mitre_attack: T1574, T1055
 ---
 
 # Videogame Security Research (Game Hacking)

@@ -6,7 +6,7 @@ metadata:
   subdomain: reverse-engineering
   when_to_use: "bug bounty, program scope, rules of engagement, RoE, in-scope, out-of-scope, CVSS, severity, duplicate, PoC, proof of concept, responsible disclosure, intigriti, asset coverage, bounty report"
   tags: bug-bounty, scope, roe, cvss, dedup, poc, methodology
-  mitre_attack:
+  mitre_attack: T1595, T1592
 ---
 
 # Bug-Bounty Operating Discipline (any program, any asset type)

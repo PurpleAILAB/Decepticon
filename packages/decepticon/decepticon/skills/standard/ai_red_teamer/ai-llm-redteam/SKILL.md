@@ -6,7 +6,7 @@ metadata:
   subdomain: ai-security
   when_to_use: "AI model, LLM, GPT, chatbot, conversational AI, prompt injection, jailbreak, system prompt extraction, RAG, retrieval augmented generation, embedding, vector store, model extraction, model theft, training data extraction, membership inference, agentic, function calling, tool use, OWASP LLM, guardrail, safety classifier, content filter, hallucination, insecure output handling, excessive agency, AI/ML endpoint, inference API"
   tags: ai, llm, prompt-injection, jailbreak, rag, owasp-llm, model-extraction
-  mitre_attack:
+  mitre_attack: T1059.006, T1190
 ---
 
 # LLM / AI Red Teaming Knowledge Base
