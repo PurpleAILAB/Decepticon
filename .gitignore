@@ -125,6 +125,7 @@ benchmark/results/XBEN-*-24/run-loop*.log
 
 # Git worktrees
 .worktrees/
+worktrees
 
 # Internal design docs (specs/plans) — local only, not part of OSS distribution
 docs/superpowers/
