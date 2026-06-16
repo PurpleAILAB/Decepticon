@@ -20,6 +20,13 @@ from decepticon.tools.reversing.rop import filter_gadgets_by_pattern, find_rop_g
 from decepticon.tools.reversing.scripts import ghidra_recon_script, r2_recon_script
 from decepticon.tools.reversing.strings import extract_strings, group_by_category
 from decepticon.tools.reversing.symbols import summarize_symbols
+from decepticon.tools.reversing.hexbe import (
+    hexbe_analyze_binary,
+    hexbe_available,
+    hexbe_decompile,
+    hexbe_find_functions,
+    hexbe_search_bytes,
+)
 
 
 def _json(data: Any) -> str:
@@ -164,7 +171,65 @@ def ghidra_status() -> str:
 @tool
 def re_status() -> str:
     """Report which reverse engineering backends are available."""
-    return _json({"ghidra": ghidra_available()})
+    return _json({"ghidra": ghidra_available(), "hexbe": hexbe_available()})
+
+
+# ---------------------------------------------------------------------------
+# Commercial RE backend (advanced disassembler + decompiler)
+# ---------------------------------------------------------------------------
+
+
+@tool
+def hex_analyze(binary: str) -> str:
+    """Deep binary analysis via the commercial RE backend — functions, imports, exports.
+
+    Produces richer results than Ghidra for C++/RTTI/Go/Rust/Swift/ObjC
+    targets and handles VMProtect-packed sections through the built-in
+    unpacker.  Falls back gracefully when the backend is unavailable.
+    """
+    result = hexbe_analyze_binary(binary)
+    return _json(result.to_dict())
+
+
+@tool
+def hex_decompile(binary: str, function: str) -> str:
+    """Decompile *function* from *binary* using the advanced commercial decompiler.
+
+    *function* can be a name or a hex address (e.g. ``0x4015a0``).
+    Produces high-quality C pseudocode with advanced decompiler output
+    for x86-64, ARM, MIPS, PPC, RISC-V, V850, and ARC targets.
+    """
+    result = hexbe_decompile(binary, function)
+    return _json(result.to_dict())
+
+
+@tool
+def hex_find_functions(binary: str, pattern: str = "", limit: int = 200) -> str:
+    """List functions in *binary*, optionally filtered by name *pattern*.
+
+    Useful for locating VM dispatcher loops, handler tables, and integrity-
+    check routines by name fragment (e.g. ``'handler'``, ``'check'``).
+    """
+    funcs = hexbe_find_functions(binary, pattern=pattern, limit=limit)
+    return _json({"count": len(funcs), "functions": [f.to_dict() for f in funcs]})
+
+
+@tool
+def hex_search_bytes(binary: str, pattern: str) -> str:
+    """Search for a byte pattern inside a binary (e.g. ``'55 8B EC'``).
+
+    Returns all addresses (up to 100) where the pattern matches.  Useful
+    for locating VM enter/exit stubs, known instruction sequences, and
+    integrity-check code.
+    """
+    matches = hexbe_search_bytes(binary, pattern)
+    return _json({"count": len(matches), "matches": matches})
+
+
+@tool
+def hex_status() -> str:
+    """Check whether the commercial RE backend is available and licensed."""
+    return _json(hexbe_available())
 
 
 REVERSING_TOOLS = [
@@ -182,6 +247,12 @@ REVERSING_TOOLS = [
     ghidra_decompile,
     ghidra_xrefs,
     ghidra_status,
-    # Availability probe
+    # Commercial RE backend
+    hex_analyze,
+    hex_decompile,
+    hex_find_functions,
+    hex_search_bytes,
+    hex_status,
+    # Availability probe (all backends)
     re_status,
 ]

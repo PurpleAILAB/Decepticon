@@ -7,8 +7,8 @@ Pure-Python implementations that run without Ghidra / radare2 installed:
 - ``packer``  — entropy-based packer detection (UPX, ASPack, Themida hints)
 - ``rop``     — ROP gadget finder operating on raw bytes via a tiny x86 disassembler
 - ``symbols`` — import/export table walker + sanitizer-symbol detection
-- ``scripts`` — Ghidra + r2 script generators the agent can drop on disk and run
 - ``ghidra``  — Ghidra headless + MCP bridge integration (decompile, xrefs, analysis)
+- ``hexbe``   — commercial RE backend integration (deep decompile, function listing, byte search)
 
 The agent can escalate to a real disassembler via bash (radare2,
 ghidra_headless, objdump) — this package is the fast first pass.
@@ -27,6 +27,16 @@ from decepticon.tools.reversing.ghidra import (
     ghidra_decompile_function,
     ghidra_get_xrefs,
 )
+from decepticon.tools.reversing.hexbe import (
+    HexbeAnalysis,
+    HexbeDecompilation,
+    HexbeFunction,
+    hexbe_analyze_binary,
+    hexbe_available,
+    hexbe_decompile,
+    hexbe_find_functions,
+    hexbe_search_bytes,
+)
 from decepticon.tools.reversing.packer import PackerVerdict, detect_packer
 from decepticon.tools.reversing.rop import RopGadget, find_rop_gadgets
 from decepticon.tools.reversing.scripts import ghidra_recon_script, r2_recon_script
@@ -40,6 +50,9 @@ __all__ = [
     "GhidraDecompilation",
     "GhidraFunction",
     "GhidraXref",
+    "HexbeAnalysis",
+    "HexbeDecompilation",
+    "HexbeFunction",
     "PackerVerdict",
     "RopGadget",
     "SymbolReport",
@@ -51,6 +64,11 @@ __all__ = [
     "ghidra_decompile_function",
     "ghidra_get_xrefs",
     "ghidra_recon_script",
+    "hexbe_analyze_binary",
+    "hexbe_available",
+    "hexbe_decompile",
+    "hexbe_find_functions",
+    "hexbe_search_bytes",
     "identify_binary",
     "r2_recon_script",
     "summarize_symbols",

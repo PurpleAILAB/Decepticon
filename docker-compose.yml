@@ -200,6 +200,12 @@ services:
     build:
       context: .
       dockerfile: containers/sandbox.Dockerfile
+      # To build with the commercial RE backend (set DECEPTICON_HEXBE_PATH in .env first):
+      #   INSTALL_HEXBE=true docker compose build --build-context hexbe-install=$DECEPTICON_HEXBE_PATH
+      additional_contexts:
+        hexbe-install: ${DECEPTICON_HEXBE_PATH:-/dev/null}
+      args:
+        INSTALL_HEXBE: ${INSTALL_HEXBE:-false}
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-sandbox
     networks:
       - sandbox-net
@@ -253,6 +259,9 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
       - GHIDRA_INSTALL_DIR=/opt/ghidra
       - GHIDRA_MCP_URL=http://ghidra-mcp:8089
+      # Commercial RE backend — advanced disassembler.  Set DECEPTICON_HEXBE_PATH
+      # in .env to the host installation directory and rebuild with INSTALL_HEXBE=true.
+      - DECEPTICON_HEXBE_PATH=/opt/hexbe
     volumes:
       # Bind is engagement-scoped. The launcher sets DECEPTICON_ENGAGEMENT_WORKSPACE
       # to <home>/workspace/<slug> after the engagement picker, so the agent only
@@ -260,11 +269,10 @@ services:
       # play (raw `make dev`, benchmark harness, dev workflows), the fallback is
       # the whole tree under <home>/workspace.
       - ${DECEPTICON_ENGAGEMENT_WORKSPACE:-${DECEPTICON_HOME:-~/.decepticon}/workspace}:/workspace
-      # Skills are no longer baked into this image — they live at
-      # ``/app/skills/`` in the LANGGRAPH container (see
-      # ``containers/langgraph.Dockerfile``) and are read in-process by
-      # ``FilesystemBackend`` via ``CompositeBackend``. The sandbox only
-      # owns ``/workspace/`` from here on.
+      # Commercial RE backend — bind-mount the host installation read-only.
+      # Set DECEPTICON_HEXBE_PATH to the host path in .env.
+      # No-ops when unset; the backend auto-reports unavailable.
+      - ${DECEPTICON_HEXBE_PATH:-/dev/null}:/opt/hexbe:ro
     pids_limit: 4096
     # Run an init process (tini) as PID 1 inside the container. The
     # daemon spawns tmux servers and bash shells; when a tmux server
