@@ -77,8 +77,10 @@ dependencies = [
     # leave on older versions:
     #   cryptography — GHSA-537c-gmf6-5ccf (fixed 48.0.1)
     #   starlette    — CVE-2026-48818 / -48817 / -54283 / -54282 (fixed ≤1.3.1)
+    #   langchain    — GHSA-gr75-jv2w-4656 (fixed 1.3.9)
     "cryptography>=48.0.1",
     "starlette>=1.3.1",
+    "langchain>=1.3.9",
 ]
 
 [project.optional-dependencies]
@@ -93,11 +95,18 @@ telemetry = [
     "opentelemetry-sdk>=1.27",
     "opentelemetry-exporter-otlp>=1.27",
 ]
-all = ["decepticon[neo4j,telemetry]"]
+# MCP server — exposes Decepticon engagement control over the Model
+# Context Protocol so external agents (OpenClaw, Hermes, or any MCP
+# client) can drive engagements. Provides the ``decepticon-mcp`` script.
+# pyjwt[crypto] backs the JWT (OAuth 2.1 resource-server) auth mode on the
+# streamable-http transport; shared-secret + stdio modes never import it.
+mcp = ["mcp>=1.9.0", "pyjwt[crypto]>=2.10"]
+all = ["decepticon[neo4j,telemetry,mcp]"]
 
 [project.scripts]
 decepticon-cli = "decepticon.cli.__main__:main"
 decepticon-kg-health = "decepticon.tools.research.health:main"
+decepticon-mcp = "decepticon.mcp_server.__main__:main"
 
 # Plugin entry-point groups consumed by ``decepticon.plugin_loader``.
 # External packages (SaaS or community plugins) declare their
