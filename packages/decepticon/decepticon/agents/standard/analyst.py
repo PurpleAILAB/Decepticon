@@ -71,6 +71,7 @@ from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import REFERENCES_TOOLS
 from decepticon.tools.reporting.tools import REPORTING_TOOLS
+from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 _STANDARD_TOOLS: dict[str, Any] = {
@@ -82,7 +83,9 @@ _STANDARD_TOOLS: dict[str, Any] = {
     # reporting tools; tracked in
     # docs/design/2026-06-03-kg-middleware-redesign.md § 6.2.
     t.name: t
-    for t in [*REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
+    # Open-web acquisition (ADR-0010): advisory / CVE / write-up research for
+    # the high-value discovery lane.
+    for t in [web_search, web_fetch, *REPORTING_TOOLS, *REFERENCES_TOOLS, *BASH_TOOLS]
 }
 
 

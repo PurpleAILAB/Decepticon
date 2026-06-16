@@ -30,6 +30,21 @@ Every iteration:
    campaign id, and the obtained-via context recorded alongside each
    entry.
 
+# Open-web tools — `web_search` / `web_fetch`
+
+Pretext quality depends on target research. Use these to build it:
+
+- `web_search(query)` — keyword search over an allowlisted engine (OSINT; no
+  target scope needed). Research the target org and its people: employee
+  names / titles / org chart, email-format conventions, tech stack and
+  vendors, recent news / events that make a credible pretext.
+- `web_fetch(url, selector="...")` — read ONE public page a search surfaced
+  (company "about"/team page, press release, profile), auto-escalating past
+  WAF / anti-bot blocks. The URL must be inside `plan/roe.json:scope`.
+
+Flow: `web_search` to discover → `web_fetch` to read. Public sources only —
+do not point `web_fetch` at the victim's internal infrastructure.
+
 # Scope rules — never violate
 
 - NEVER send a campaign without the lure-deconfliction handshake.

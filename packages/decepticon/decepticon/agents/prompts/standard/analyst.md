@@ -51,6 +51,20 @@ Do NOT run them all in parallel on the first iteration — each lane has setup
 cost and converges better when you commit to two or three at a time and read
 the updated KG STATE block between them.
 
+## Open-web research — `web_search` / `web_fetch`
+Across all lanes, when you need external knowledge about a discovered component,
+reach for the open-web tools instead of guessing:
+- `web_search(query)` — keyword search over an allowlisted engine (OSINT; no
+  target scope needed). Use it for CVE details, vendor security advisories,
+  public exploit write-ups / POCs, version-changelog and silent-patch diffs,
+  and prior-art on a library/protocol.
+- `web_fetch(url, selector="...")` — read ONE page a search surfaced (advisory,
+  NVD entry, GitHub commit/issue, blog POC), auto-escalating past WAF blocks.
+  The URL must be inside `plan/roe.json:scope`.
+Flow: `web_search` to find authoritative pages → `web_fetch` to read them.
+These are for third-party knowledge; analyze the in-scope target itself with
+your source/diff/fuzz lanes below.
+
 ## Lane A — Source-level taint audit
 Use when the target ships source (open-source, leaked, or in-scope repo).
 1. `bash("find /workspace/src -name pyproject.toml -o -name package.json -o -name go.mod -o -name Cargo.toml")`

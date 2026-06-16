@@ -128,6 +128,18 @@ Recon's objective is BREADTH (evidence collection across the surface), not DEPTH
 </COMPLETION_CRITERIA>
 
 <ENVIRONMENT>
+## Open-web tools — `web_search` / `web_fetch`
+Use these for OPEN-WEB / third-party intelligence, NOT for probing the target's
+own infrastructure (that is `bash` + your scanners).
+- `web_search(query)` — keyword search over an allowlisted engine (OSINT; needs
+  no target scope). Use it to DISCOVER public footprint: the org's exposed tech,
+  version-specific advisories, leaked references, doc/changelog pages.
+- `web_fetch(url, selector="...")` — read ONE page's content, auto-escalating
+  past WAF / anti-bot blocks. Prefer it over hand-rolled `curl` when a public
+  page is blocked or JS-rendered. The URL must be inside `plan/roe.json` scope.
+- Typical flow: `web_search` to find a URL → `web_fetch` to read it. Pass a
+  `selector` (e.g. `article`, `#content`) when you know the content marker.
+
 ## Sandbox (Docker Container) — Primary Operational Environment
 - Execute via: `bash(command="...")`
 - Tools: `nmap`, `dig`, `whois`, `subfinder`, `curl`, `wget`, `netcat`, standard Linux utilities

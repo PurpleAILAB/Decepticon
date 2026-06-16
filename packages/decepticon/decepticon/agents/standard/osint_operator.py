@@ -43,7 +43,7 @@ from decepticon.tools.research.tools import (
     kg_query,
     kg_stats,
 )
-from decepticon.tools.web.open_web import web_fetch, web_search
+from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 _STANDARD_TOOLS: dict[str, Any] = {
