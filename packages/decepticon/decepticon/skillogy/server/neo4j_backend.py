@@ -140,6 +140,71 @@ class Neo4jBackend:
                 session.run(stmt.rstrip(";").rstrip())
         return len(statements)
 
+    # ---- vector index + embedding backfill (hybrid retrieval, ADR-0011) ----
+
+    # Native Neo4j vector index over the per-skill embedding. Created
+    # idempotently at boot AFTER the cypher dump loads; embeddings are
+    # then backfilled through the litellm proxy (the dump stays embedding-
+    # free so a model swap is a re-embed, not a rebuild). The query side
+    # (find_skill) uses this index for the semantic-local leg of the
+    # hybrid score, and silently skips it when no embeddings exist.
+    VECTOR_INDEX_NAME = "skill_embedding"
+
+    def ensure_vector_index(self, dim: int) -> None:
+        """Create the ``:Skill(embedding)`` vector index if absent (idempotent).
+
+        ``dim`` is inlined as a literal — Neo4j does not accept a query
+        parameter for ``vector.dimensions`` in index DDL. It is coerced to
+        ``int`` first so the f-string cannot carry an injection.
+        """
+        dim_literal = int(dim)
+        cypher = (
+            f"CREATE VECTOR INDEX {self.VECTOR_INDEX_NAME} IF NOT EXISTS "
+            "FOR (s:Skill) ON (s.embedding) "
+            "OPTIONS {indexConfig: {"
+            f"`vector.dimensions`: {dim_literal}, "
+            "`vector.similarity_function`: 'cosine'}}"
+        )
+        with self._driver.session(database=self._database) as session:
+            session.run(cypher)
+
+    def fetch_skills_for_embedding(self) -> list[dict[str, Any]]:
+        """Return the text fields each skill is embedded from, plus the sha of
+        the input that produced its current embedding (``None`` if never
+        embedded). The caller re-embeds only rows whose recomputed input sha
+        differs — so a content edit re-embeds, an unchanged corpus is a no-op.
+        """
+        cypher = (
+            "MATCH (s:Skill) "
+            "RETURN s.path AS path, s.name AS name, "
+            "       coalesce(s.description, '') AS description, "
+            "       coalesce(s.when_to_use, '') AS when_to_use, "
+            "       s.embedding_input_sha256 AS embedding_input_sha256"
+        )
+        with self._driver.session(database=self._database, default_access_mode="READ") as session:
+            return [dict(record) for record in session.run(cypher)]
+
+    def write_embeddings(self, rows: list[dict[str, Any]]) -> int:
+        """Persist embeddings onto their ``:Skill`` nodes.
+
+        Each row is ``{"path": str, "vector": list[float], "sha": str}``.
+        Uses ``db.create.setNodeVectorProperty`` (the supported way to store a
+        vector so the index picks it up) and records the input sha so the next
+        boot can skip unchanged skills. Returns the number of nodes written.
+        """
+        if not rows:
+            return 0
+        cypher = (
+            "UNWIND $rows AS row "
+            "MATCH (s:Skill {path: row.path}) "
+            "CALL db.create.setNodeVectorProperty(s, 'embedding', row.vector) "
+            "SET s.embedding_input_sha256 = row.sha "
+            "RETURN count(s) AS written"
+        )
+        with self._driver.session(database=self._database) as session:
+            result = session.run(cypher, rows=rows).single()
+        return 0 if result is None else int(result["written"])
+
     # ---- skill ops ----
 
     def load_skill(

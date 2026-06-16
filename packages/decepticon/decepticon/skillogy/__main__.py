@@ -78,6 +78,15 @@ def _maybe_ingest(backend: Neo4jBackend) -> None:
     n = backend.bulk_ingest_cypher(cypher_text)
     log.info("ingested %d Cypher statements from %s", n, cypher_path)
 
+    # Hybrid retrieval (ADR-0011): once the corpus is loaded, create the
+    # vector index and embed each skill through the litellm proxy. The dump
+    # is deliberately embedding-free, so this is what makes semantic
+    # find_skill possible. It degrades to a no-op when the proxy env is
+    # absent — the substring path keeps working either way.
+    from decepticon.skillogy.embed_ingest import ingest_embeddings  # noqa: PLC0415
+
+    ingest_embeddings(backend)
+
 
 def _start_rest(backend: Neo4jBackend, port: int, started_at: float) -> None:
     try:
