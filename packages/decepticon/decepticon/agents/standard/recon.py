@@ -52,7 +52,7 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import killchain_lookup, oneliner_search
-from decepticon.tools.web.open_web import web_fetch, web_search
+from decepticon.tools.web.search import web_fetch, web_search
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
 # Name-keyed registry so plugin overrides can target specific tools.

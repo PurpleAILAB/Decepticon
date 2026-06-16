@@ -10,7 +10,7 @@ import pytest
 
 from decepticon.middleware.roe import GATED_TOOL_NAMES, NETWORK_TARGET_EXTRACTORS
 from decepticon.middleware.untrusted_output import UNTRUSTED_TOOL_NAMES
-from decepticon.tools.web import open_web
+from decepticon.tools.web import search
 
 
 @dataclass
@@ -32,8 +32,8 @@ class _FakeSandbox:
 
 def _patch_sandbox(monkeypatch: pytest.MonkeyPatch, output: str) -> _FakeSandbox:
     fake = _FakeSandbox(output)
-    monkeypatch.setattr(open_web, "get_sandbox", lambda: fake)
-    monkeypatch.setattr(open_web, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
+    monkeypatch.setattr(search, "get_sandbox", lambda: fake)
+    monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
     return fake
 
 
@@ -41,16 +41,16 @@ def _patch_sandbox(monkeypatch: pytest.MonkeyPatch, output: str) -> _FakeSandbox
 
 
 def test_extract_json_clean() -> None:
-    assert open_web._extract_json('{"ok": true}') == {"ok": True}
+    assert search._extract_json('{"ok": true}') == {"ok": True}
 
 
 def test_extract_json_last_line_amid_noise() -> None:
     noisy = 'INFO factory: blah\nWARNING something\n{"ok": false, "verdict": "challenge"}'
-    assert open_web._extract_json(noisy) == {"ok": False, "verdict": "challenge"}
+    assert search._extract_json(noisy) == {"ok": False, "verdict": "challenge"}
 
 
 def test_extract_json_none_when_absent() -> None:
-    assert open_web._extract_json("just logs, no json") is None
+    assert search._extract_json("just logs, no json") is None
 
 
 # --- web_fetch ---------------------------------------------------------------
@@ -68,7 +68,7 @@ async def test_web_fetch_ok(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
     fake = _patch_sandbox(monkeypatch, "noise\n" + payload)
-    out = await open_web.web_fetch.ainvoke({"url": "https://x.test/a", "selector": "h1"})
+    out = await search.web_fetch.ainvoke({"url": "https://x.test/a", "selector": "h1"})
     assert "web_fetch OK" in out
     assert "strong_ok" in out
     assert "<h1>hi</h1>" in out
@@ -85,15 +85,15 @@ async def test_web_fetch_ok(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_web_fetch_failure_verdict(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = json.dumps({"ok": False, "verdict": "challenge", "summary": "all blocked"})
     _patch_sandbox(monkeypatch, payload)
-    out = await open_web.web_fetch.ainvoke({"url": "https://x.test/a"})
+    out = await search.web_fetch.ainvoke({"url": "https://x.test/a"})
     assert "web_fetch FAILED" in out
     assert "challenge" in out
 
 
 async def test_web_fetch_no_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(open_web, "get_sandbox", lambda: None)
-    monkeypatch.setattr(open_web, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
-    out = await open_web.web_fetch.ainvoke({"url": "https://x.test/a"})
+    monkeypatch.setattr(search, "get_sandbox", lambda: None)
+    monkeypatch.setattr(search, "_workspace_path_from_config", lambda _c: "/workspace/eng1")
+    out = await search.web_fetch.ainvoke({"url": "https://x.test/a"})
     assert "no sandbox" in out
 
 
@@ -113,7 +113,7 @@ async def test_web_search_hits(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
     fake = _patch_sandbox(monkeypatch, payload)
-    out = await open_web.web_search.ainvoke({"query": "q"})
+    out = await search.web_search.ainvoke({"query": "q"})
     assert "2 results" in out
     # Exact-equality match per line (== is complete sanitization — avoids
     # CodeQL's incomplete-url-substring-sanitization query, which fires on
@@ -129,7 +129,7 @@ async def test_web_search_provider_error(monkeypatch: pytest.MonkeyPatch) -> Non
         {"provider": "google", "query": "q", "hits": [], "error": "not in allowlist"}
     )
     _patch_sandbox(monkeypatch, payload)
-    out = await open_web.web_search.ainvoke({"query": "q", "provider": "google"})
+    out = await search.web_search.ainvoke({"query": "q", "provider": "google"})
     assert "web_search FAILED" in out
     assert "allowlist" in out
 

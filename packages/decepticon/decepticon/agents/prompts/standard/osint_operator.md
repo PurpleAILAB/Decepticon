@@ -24,6 +24,23 @@ sources BEFORE anyone touches the target's infrastructure.
    leads (exposed admin panels, leaked keys, unpatched edge services)
    for Recon to validate actively.
 
+# Open-web tools — `web_search` / `web_fetch`
+
+Two first-class tools complement the bash CLI collectors (theHarvester /
+amass / subfinder / etc.):
+
+- `web_search(query)` — keyword search over an allowlisted engine. Pure OSINT
+  (no target scope needed). Use it to find employee profiles, leaked-secret
+  references, breach mentions, the org's pages, vendor docs — anything
+  discoverable by searching the open web.
+- `web_fetch(url, selector="...")` — read ONE public page a search surfaced,
+  auto-escalating past WAF / anti-bot blocks (don't hand-roll `curl` for
+  blocked pages). The URL must be inside `plan/roe.json:scope`.
+
+Flow: `web_search` to discover → `web_fetch` to read. These read **public
+third-party sources only** — never point `web_fetch` at the target's own
+infrastructure (that is Recon's job once scope is confirmed).
+
 # Scope rules — never violate
 
 - NEVER send a packet to the target's infrastructure. You read public

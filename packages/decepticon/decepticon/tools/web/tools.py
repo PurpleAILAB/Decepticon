@@ -243,7 +243,7 @@ def http_history(query: str = "", last_n: int = 10) -> str:
     return _json(entries[-last_n:])
 
 
-from decepticon.tools.web.open_web import web_fetch, web_search  # noqa: E402
+from decepticon.tools.web.search import web_fetch, web_search  # noqa: E402
 
 WEB_TOOLS = [
     jwt_parse,

@@ -111,11 +111,26 @@ func WriteEnv(templatePath, outputPath string, values map[string]string) error {
 
 func writeEnvFromString(tmpl string, outputPath string, values map[string]string) error {
 	lines := strings.Split(tmpl, "\n")
+	consumed := make(map[string]bool) // track which values were written
 	var out []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		// Skip commented lines — keep as-is
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if trimmed == "" {
+			out = append(out, line)
+			continue
+		}
+		// Try to match commented-out env lines: "# KEY=value" or "#KEY=value"
+		if strings.HasPrefix(trimmed, "#") {
+			uncommented := strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+			key, _, ok := parseEnvLine(uncommented)
+			if ok {
+				if newVal, exists := values[key]; exists {
+					out = append(out, key+"="+newVal)
+					consumed[key] = true
+					continue
+				}
+			}
+			// Plain comment or no matching value — keep as-is
 			out = append(out, line)
 			continue
 		}
@@ -126,10 +141,18 @@ func writeEnvFromString(tmpl string, outputPath string, values map[string]string
 		}
 		if newVal, exists := values[key]; exists {
 			out = append(out, key+"="+newVal)
+			consumed[key] = true
 		} else {
 			out = append(out, line)
 		}
 	}
+	// Append any values that didn't match a template line (e.g. AWS_REGION_NAME)
+	for key, val := range values {
+		if !consumed[key] {
+			out = append(out, key+"="+val)
+		}
+	}
+
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)

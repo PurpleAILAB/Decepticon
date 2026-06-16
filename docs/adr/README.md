@@ -72,5 +72,6 @@ Use [`template.md`](template.md) as the starting point.
 | [0008](0008-skillogy-hard-acl-phase1a.md) | Skillogy hard path-prefix ACL (Phase 1a) | Accepted |
 | [0009](0009-hitl-langgraph-native-migration.md) | Migrate HITL to LangGraph-native `interrupt()` + explicit-policy sets | Proposed |
 | [0010](0010-open-web-acquisition.md) | Acquire open-web content with a sandbox-side, RoE-gated fetch engine | Proposed |
+| [0011](0011-skillogy-lightrag-hybrid-retrieval.md) | Skillogy find_skill uses LightRAG-style hybrid retrieval over the existing graph | Proposed |
 
 Keep this index in sync when you land a new ADR.
