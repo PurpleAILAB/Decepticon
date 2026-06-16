@@ -201,6 +201,47 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache
         echo "INSTALL_FUZZING=false — skipping AFL++ + honggfuzz + clang" ; \
     fi
 
+# ── Remote / live RE: Frida + remote GDB + device bridges (opt-in) ──
+#
+# Dynamic instrumentation & remote debugging of LIVE targets — remote PCs,
+# phones, and embedded devices — over network or USB transports.
+#   - frida-tools / objection  : cross-platform dynamic instrumentation (pip)
+#   - gdb-multiarch + gdbserver : remote / cross-arch debugging
+#   - libimobiledevice + usbmuxd + libusbmuxd-tools (iproxy) : iOS bridge
+#   - openocd                  : JTAG / SWD for hardware / IoT
+#   - minicom / picocom / socat: serial consoles + transport plumbing
+#   (adb + apktool for Android are already installed in the base image.)
+#
+# NETWORK transports (frida-server TCP `frida -H`, gdbserver `target remote`,
+# `adb connect <ip>`, iOS debugserver) work whenever the sandbox has a route
+# to the target. USB transports (ADB-over-USB, usbmuxd/iproxy, JTAG adapters)
+# require the operator to pass the host device into the container
+# (`docker run --device /dev/bus/usb ...` / `--privileged`, host usbmuxd).
+#
+# Enable with:  docker build --build-arg INSTALL_REMOTE_RE=true ...
+ARG INSTALL_REMOTE_RE=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=sandbox-apt-cache \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked,id=sandbox-apt-lists \
+    if [ "$INSTALL_REMOTE_RE" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends --no-install-suggests \
+            gdb-multiarch \
+            gdbserver \
+            libimobiledevice-utils \
+            ideviceinstaller \
+            usbmuxd \
+            libusbmuxd-tools \
+            openocd \
+            minicom \
+            picocom \
+            socat \
+            usbutils && \
+        pip install --no-cache-dir --break-system-packages frida-tools objection && \
+        echo "Remote RE tools installed: frida, gdb-multiarch, gdbserver, iproxy, openocd" ; \
+    else \
+        echo "INSTALL_REMOTE_RE=false — skipping Frida + remote-debug + device bridges" ; \
+    fi
+
 # Ship only the modules the daemon actually imports:
 #   - decepticon/__init__.py     — package marker (light-weight, just reads __version__)
 #   - decepticon/sandbox_kernel/ — shared sandbox primitives: TmuxSessionManager,
