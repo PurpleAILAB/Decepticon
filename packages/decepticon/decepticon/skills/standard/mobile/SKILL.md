@@ -74,7 +74,7 @@ shared Frida tooling for runtime work.
 
 - adb + emulator / physical device.
 - jadx, apktool, dex2jar, jd-gui.
-- class-dump, Hopper Disassembler, IDA Free (host-side).
+- class-dump, Hopper Disassembler, Ghidra (host-side).
 - Frida-server (per device), frida (host), objection.
 - mitmproxy / Burp Suite Community / Caido (PR #304 lands the LangChain
   Caido tool bundle).

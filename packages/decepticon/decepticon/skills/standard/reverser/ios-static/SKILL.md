@@ -1,6 +1,6 @@
 ---
 name: reverser-ios-static
-description: "iOS IPA static analysis — class-dump-z / class-dump-ng, Hopper / IDA / Ghidra for Mach-O ARM64, Objective-C runtime introspection, Swift demangling, App Transport Security check, plist analysis, embedded provisioning profile parse. For dynamic Frida/Objection see mobile/SKILL.md."
+description: "iOS IPA static analysis — class-dump-z / class-dump-ng, Hopper / Ghidra for Mach-O ARM64, Objective-C runtime introspection, Swift demangling, App Transport Security check, plist analysis, embedded provisioning profile parse. For dynamic Frida/Objection see mobile/SKILL.md."
 allowed-tools: Bash Read Write
 metadata:
   when_to_use: "ios ipa ios app mach-o arm64 class-dump objective-c swift hopper ghidra plist provisioning profile entitlements"
@@ -88,7 +88,7 @@ Headers tell you:
 
 ```bash
 # Hopper Disassembler — UI-focused, decent Obj-C support
-# IDA Pro — best Objective-C / Swift but $$$
+# Commercial RE — best Objective-C / Swift support, but requires a license
 # Ghidra — free, growing iOS support
 # rizin / radare2 — CLI:
 r2 -A app/Payload/Foo.app/Foo

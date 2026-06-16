@@ -114,7 +114,7 @@ Approach:
 VMProtect translates code into bytecode for a custom VM. No simple
 "unpack" — you must either:
 - Devirtualize (extract VM handlers + write a translator). Tools:
-  `VTIL` (Vladimir's tools), `vmpfix`, manual w/ IDA + bytecode trace
+  `VTIL` (Vladimir's tools), `vmpfix`, manual w/ disassembler + bytecode trace
 - Trace + symbolic execute via `Triton` or `angr`
 - Skip RE and treat as black-box (fuzz the interfaces)
 
@@ -146,7 +146,7 @@ For any packer:
 | Timing checks (`rdtsc` measure) | x64dbg "timing" plugin or patch |
 | INT3 detection (BP byte scan) | hardware BPs only |
 | Self-checksum | identify check loop, patch comparison |
-| TLS callbacks (run before main entry) | BP in TLS callback list (IDA: View → Open Subviews → TLS) |
+| TLS callbacks (run before main entry) | BP in TLS callback list (disassembler → TLS callbacks subview) |
 | Anti-VM (CPUID hypervisor bit) | Run on bare metal or KVM w/ CPUID masking |
 
 ## 7. Promote

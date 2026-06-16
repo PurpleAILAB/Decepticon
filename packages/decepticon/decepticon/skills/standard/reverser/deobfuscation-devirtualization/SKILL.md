@@ -111,10 +111,17 @@ Recover with symbolic/IR tooling that solves the state transitions:
 - **miasm** — `miasm` symbolic execution over the IR resolves the next
   state value per block; reconnect blocks to rebuild the original CFG.
   (Canonical CEA/SSTIC tutorials cover OLLVM unflattening with miasm.)
-- **D810** — open-source IDA Hex-Rays plugin that unflattens OLLVM and
+- **D810-ng** (github.com/w00tzenheimer/d810-ng) — the maintained,
+  refactored successor to D810 for commercial RE v9 (Python 3.10+); published on
+  the Plugin Repository (Oct 2025). Unflattens OLLVM and
   simplifies MBA at decompile time.
+- **OBPO Plugin** (github.com/obpo-project/obpo-plugin) — OLLVM control-flow-
+  flattening deobfuscation plugin (~618★, active Nov 2025). Workflow: mark
+  the dispatch block manually, then it runs automated CFF analysis to
+  reconnect the original CFG. Widely used on OLLVM-protected Android/Windows
+  binaries.
 - **HexRaysDeob** (Rolf Rolles/FLARE) — older but the reference for
-  control-flow deflattening + opaque-predicate removal in Hex-Rays.
+  control-flow deflattening + opaque-predicate removal in commercial RE.
 - **Binary Ninja** MLIL + dataflow: the state var is a constant per block;
   constant-propagate it and the `switch` resolves.
 
@@ -140,18 +147,29 @@ purpose-built tools (all open-source, runnable in the sandbox):
 
 | Tool | Approach | Note |
 |---|---|---|
-| **SiMBA** (DenuvoSoftwareSolutions) | algebraic simplification of linear MBA | fast, deterministic; start here |
+| **gooMBA** (built into commercial RE suite v9.1+, shipped Nov 2025) | guided/optimized MBA simplification at decompile time | NOT a standalone tool anymore — right-click in the pseudocode view → **Run gooMBA Optimizer**. v9.1 also added **nonlinear MBA** support. ~400× faster than alternatives; the definitive MBA tool for advanced RE users. |
+| **SiMBA** (DenuvoSoftwareSolutions) | algebraic simplification of linear MBA | fast, deterministic; good CLI start point |
 | **GAMBA** (DenuvoSoftwareSolutions) | general MBA (linear + polynomial/non-linear) | successor scope to SiMBA |
-| **msynth** (mrphrazer) | oracle-guided program synthesis + Z3 | recovers semantics of unknown handler blobs |
-| **Syntia** (Blazytko et al.) | MCTS program synthesis from I/O behavior | classic for synthesizing VM handler semantics |
-| **Arybo** (Quarkslab) | bit-level symbolic boolean/arith canonicalization | exact, good for verification |
+| **msynth** (mrphrazer) | oracle-guided program synthesis + Z3; now integrates **Smir** (Search Modulo Inference Rules, CCS 2025) | handles constants, masks, shifts, rotations, affine expressions; recovers semantics of unknown handler blobs. Active (Jul 2025). |
 | **Triton** AST simplification | rewrites simplification passes over its AST | inline in a lift pipeline |
+| **Arybo** (Quarkslab) | bit-level symbolic boolean/arith canonicalization | exact for *verification*; see warning below — unreliable as a general simplifier |
+| **Syntia** (Blazytko et al.) | MCTS program synthesis from I/O behavior | classic, but see warning below — unreliable for general MBAs |
+
+> **Reliability warning.** **Syntia** and **Arybo** are confirmed
+> *unreliable for general MBA simplification* — Syntia's MCTS synthesis is
+> non-deterministic and frequently fails to converge on real handler
+> expressions, and Arybo canonicalization blows up on non-trivial bit
+> widths. Use them only for narrow verification, not as your primary
+> simplifier. Reach for **gooMBA (commercial RE v9.1+)**, **SiMBA/GAMBA**, or
+> **msynth+Smir** first.
 
 ```bash
 # SiMBA on an extracted expression
 python3 simba.py --expr "(x ^ y) + 2*(x & y)"        # -> x + y
-# Syntia / msynth synthesize a closed form from sampled I/O of a handler
+# msynth (+Smir) synthesizes a closed form from sampled I/O of a handler
 python3 -m msynth simplify --expr-file handler_42.txt
+# In commercial RE v9.1+: decompile the routine, right-click the MBA-laden
+# pseudocode → "Run gooMBA Optimizer" (built-in; no plugin install).
 ```
 
 ### 2.4 Junk / dead code & instruction substitution
@@ -230,12 +248,25 @@ consequence: handler *byte* signatures don't survive — you must classify by
 more work) and selectable VM complexity tiers (the FISH / PUMA / TIGER /
 SHARK / DOLPHIN family) with optional **nested VMs** — a handler can itself
 be virtualized by a second, different VM. Also heavy macro/anti-debug. Much
-harder than VMProtect; expect multiple interpreter layers.
+harder than VMProtect; expect multiple interpreter layers. The 3.x line
+also ships **mutation-based** (non-VM) obfuscation that is now statically
+removable with `themida-unmutate` (§5).
 
-**Custom anti-cheat VMs (EAC/BattlEye/Vanguard).** Per-build randomized
-handler semantics, mutation, and re-keying so nothing transfers between
-game patches; the VM protects only the security-critical routines
-(integrity checks, detection logic). Treated in §7.
+**VMProtect 3.7/3.8 architectural shift.** Recon 2024's *"Architecture
+Analysis of VMProtect 3.8"* (Holger Unterbrink, Cisco Talos) documents that
+3.7+ introduces **multiple VM stubs / multiple dispatchers** within one
+protected binary rather than a single interpreter, raising the cost of
+signature- or single-table-based lifters. Generic IR lifters (§5, Gen 3)
+are the response.
+
+**Anti-cheat VMs are mostly commodity VMProtect, not bespoke.** The popular
+belief that EAC/BattlEye run a hand-rolled VM is **wrong** (§7): Easy
+Anti-Cheat and BattlEye both virtualize their critical routines with a
+**heavily customized VMProtect (enterprise) build** — stripped watermarks,
+renamed sections — and Riot **Vanguard** instead relies on a proprietary
+**"Packman"** packer plus a boot-time kernel driver. Per-build re-protection
+still randomizes the handler table, so you re-derive semantics each patch.
+Treated in §7.
 
 ---
 
@@ -315,7 +346,8 @@ execution gives you the closed form.
 - **angr** — VEX-based symbolic execution; good for solving operand
   encodings and path constraints.
 - For handlers whose semantics resist symbolic solving (heavy MBA),
-  **synthesize** them from I/O with **Syntia / msynth** (§2.3).
+  **synthesize** them from I/O with **msynth (+Smir)** (§2.3) — prefer it
+  over Syntia, which is unreliable for general MBAs.
 
 ```python
 # Triton: recover a handler's effect symbolically
@@ -332,11 +364,24 @@ print(ctx.simplify(ast, True))   # simplified effect, e.g. (bvadd VR0 VR1)
 
 ### (e) Build an IR of the bytecode program
 Map the ordered handler micro-ops into a real intermediate language so you
-can optimize across the whole stream. **VTIL — Virtual-machine Translation
-Intermediate Language** (vtil-core, by Can Bölük) is the canonical IR for
-exactly this: it models a virtual register file + stack and an optimizer
-designed to collapse VM-protected code. miasm IR and Binary Ninja MLIL are
-viable alternatives.
+can optimize across the whole stream. Two IR lineages exist:
+
+- **VTIL — Virtual-machine Translation Intermediate Language** (vtil-core,
+  by Can Bölük) is the *classic* IR for this: a virtual register file +
+  stack with an optimizer designed to collapse VM-protected code.
+  **Caveat: VTIL-Core is frozen** — no functional development since ~2022,
+  only CI maintenance (ARM64 aliases). The NoVmp pipeline that sits on it is
+  equally stale (§g). **VTIL2** (github.com/pop-rip/vtil2, 2025) is a
+  ground-up **C# reimagination** with full functional compatibility with
+  the original (it won the 2025 "VTIL Award").
+- **LLVM IR (the 2024-2026 frontier).** Modern lifters skip a bespoke VM IR
+  entirely and lift handler semantics straight into **LLVM bitcode**, then
+  reuse LLVM's industrial optimizer. **remill** (Trail of Bits) does the
+  x86/x64/AArch64 → LLVM bitcode translation that underpins this approach;
+  Mergen and Dna (§g) are built on it. The key realization (NaC-L, Jan
+  2025): *commercial VM obfuscation is essentially control-flow flattening*,
+  so treating VIP/VSP as ordinary data flow and running general LLVM passes
+  devirtualizes it. miasm IR and Binary Ninja MLIL remain viable too.
 
 ### (f) Optimize / simplify the IR
 This is where VM overhead dissolves back toward original logic. Run, to
@@ -352,13 +397,33 @@ Translate the optimized IR back to native-ish instructions or readable
 pseudocode / a recovered CFG, then drop it into a decompiler for a final
 high-level read.
 
-- **NoVmp** (Can Bölük) — VTIL-based **VMProtect 2/3 devirtualizer**:
-  lifts VMProtect'd routines to VTIL, optimizes, and emits devirtualized
-  output. The reference open-source implementation of this whole pipeline.
-- **VTIL-NativeLifters** + **vtil-core** — the IR + optimizer + x86 lifter
-  underneath it; reusable for custom VMs.
-- **vmpattack** (Binary Ninja plugin, Can Bölük) — VMProtect lifting inside
-  Binja's MLIL.
+The tool you pick depends on the target. The field has split into
+generations (see §5 for the full landscape and maintenance status):
+
+- **Gen 1 — VTIL/VMProtect-specific, now stale.** **NoVmp** (Can Bölük) is
+  the historical reference: VTIL-based, lifts VMProtect routines, optimizes,
+  emits devirtualized output. But it **only covers VMProtect x64 3.0–3.5**
+  (last release Aug 2020) and does **not** work on any recent EAC/BattlEye
+  build. **vmpattack** (Binja MLIL plugin) is equally stale (2020). Use only
+  against old VMProtect ≤3.5.
+- **Gen 3 — generic LLVM-IR lifters, active 2024-2026.** Prefer these for
+  anything modern (VMProtect 3.6+/3.8, Themida):
+  - **Mergen** (github.com/NaC-L/Mergen, Jan 2025) — lifts to LLVM-IR with
+    **no VM-specific handler table**; tested on VMProtect 3.4.0–3.6.0 **and
+    3.8.1 (ultra virtualization)**, also targets Themida. Treats VIP/VSP as
+    ordinary flow and applies general LLVM optimizations. **Active.**
+  - **Dna** (github.com/Colton1skees/Dna, C#) — LLVM 17 + remill +
+    Souper/z3; ships a VMProtect devirt plugin in
+    `Dna.BinaryTranslator/VMProtect`; iterative CFG reconstruction
+    (SATURN-inspired); Windows x64 / VS2022. Last commit **May 2026 —
+    active.**
+  - **devmp** (github.com/heruix/devmp) — dynamic handler partitioning +
+    symbolic extraction; Internetware 2025 paper reports **+28.49%** handler
+    recognition vs the VMP Analysis Plugin.
+- **Gen 2 — symbolic handler-matching (Triton-level), partial.** **Titan**
+  (github.com/gavz/titan_vmprotect) matches handlers at the Triton AST level
+  by symbolizing VIP/VSP; works for **VMProtect < 3.8** and "produces less
+  than ideal output" on newer versions.
 
 ---
 
@@ -370,22 +435,48 @@ Symbolic / IR / lifting:
 - **angr** — VEX-based symbolic execution + CFG recovery. OSS.
 - **Unicorn** — QEMU-derived CPU emulator, scripted from Python. OSS.
 - **VTIL / vtil-core** — VM-translation IR + optimizer. OSS (C++).
+  **Frozen since ~2022** (CI maintenance only). **VTIL2** (pop-rip/vtil2,
+  C#, 2025) is the maintained reimagination.
+- **remill** (Trail of Bits) — x86/x64/AArch64 → LLVM bitcode static
+  translator; foundation for Dna and Thalium's devirt work. OSS, **active**.
 
-VMProtect-specific public research/tools:
-- **NoVmp** — VTIL-based VMProtect 2/3 devirtualizer. OSS.
-- **vmpattack** — Binary Ninja VMProtect lifter. OSS.
-- Triton-driven VMProtect lifting writeups; **Mandiant/FLARE** VMProtect
-  analysis blog posts (handler classification + deobfuscation method).
+VMProtect devirtualizers — read the **maintenance status**, it decides
+whether a tool works on your target:
 
-Themida/WinLicense:
-- **Magicmida** — automatic unpacker for older Themida/WinLicense (loader
-  layer, not the VM). OSS. Newer versions: manual + the §3–4 VM workflow.
+| Tool | Coverage | Status |
+|---|---|---|
+| **Mergen** (NaC-L) | LLVM-IR lift, no handler table; VMProtect 3.4.0–3.6.0 **and 3.8.1**, also Themida | **Active (2025)** |
+| **Dna** (Colton1skees, C#) | LLVM 17 + remill + Souper/z3; VMProtect devirt plugin; iterative CFG recon | **Active (May 2026)** |
+| **devmp** (heruix) | dynamic handler partitioning + symbolic extraction (+28.49% recognition) | Active (Internetware 2025) |
+| **Titan** (gavz/titan_vmprotect) | Triton AST handler matching by symbolizing VIP/VSP | VMProtect **< 3.8** only; weaker output on newer |
+| **NoVmp** (Can Bölük) | VTIL-based; VMProtect x64 **3.0–3.5** only | **Stale (last release Aug 2020)** |
+| **vmpattack** (Binja MLIL) | VMProtect lifter | **Stale (2020)** |
+
+Also: Triton-driven VMProtect lifting writeups; **Mandiant/FLARE** VMProtect
+analysis blog posts (handler classification + deobfuscation method).
+
+Themida / WinLicense / Code Virtualizer (Oreans) — unpack + de-mutate first,
+then VM workflow:
+- **unlicense** (ergrelet/unlicense) — **primary go-to**: dynamic unpacker +
+  import fixer for Themida/WinLicense **2.x and 3.x**. OSS.
+- **themida-unmutate** (ergrelet/themida-unmutate) — **static** deobfuscation
+  of Themida/WinLicense/Code Virtualizer **3.x mutation-based** obfuscation;
+  tested up to **v3.1.9**; also ships a **Binary Ninja** plugin. OSS.
+- **Magicmida** (Hendi48/Magicmida) — automatic 32/64-bit unpacker; supports
+  **ScyllaHide** injection. OSS. Loader layer, not the VM.
+- Static **devirt** frontier: back.engineering (May 9 2026) demonstrates
+  static devirtualization of Themida via IR lifting — methodology only, **no
+  released tool** yet. For full VM tiers (FISH→DOLPHIN), the §3–4 workflow.
 - Oreans-unpacking communities (tuts4you/unpac.me) for per-version notes.
 
 MBA / synthesis:
-- **SiMBA**, **GAMBA** (Denuvo) — MBA simplifiers. OSS.
-- **msynth**, **Syntia** (Blazytko) — synthesis-based handler recovery. OSS.
-- **Arybo** (Quarkslab) — bit-level boolean/arith canonicalizer. OSS.
+- **gooMBA** — **built into commercial RE suite v9.1+** (Nov 2025), right-click
+  pseudocode → "Run gooMBA Optimizer"; nonlinear MBA support; ~400× faster.
+- **SiMBA**, **GAMBA** (Denuvo) — MBA simplifiers. OSS, sandbox.
+- **msynth** (mrphrazer, +Smir / CCS 2025) — synthesis-based handler
+  recovery. OSS, **active**.
+- **Syntia** (Blazytko), **Arybo** (Quarkslab) — OSS, but **unreliable for
+  general MBA** (§2.3); narrow verification only.
 
 Tracing / DBI:
 - **Intel Pin**, **DynamoRIO**, **qemu** (TCG plugins), **TinyTracer**.
@@ -395,10 +486,13 @@ Disassembly / decompile:
 - **Ghidra** — decompiler + scripting; wired here via the **Ghidra MCP
   bridge** (launch the GUI on :8080 for the bridge). OSS.
 - **radare2** — static + r2dbg. OSS, sandbox-runnable.
-- **IDA Pro** + Hex-Rays (D810, HexRaysDeob unflatten/MBA plugins) —
-  commercial, GUI.
-- **Binary Ninja** — MLIL/HLIL, SSA dataflow, vmpattack devirt plugin —
-  commercial, GUI.
+- **Commercial RE suite v9.1+** — **gooMBA built-in** (Nov 2025) + **D810-ng**
+  (w00tzenheimer/d810-ng, Python 3.10+) and **HexRaysDeob** for
+  unflatten/MBA. Commercial, GUI.
+- **Binary Ninja** — MLIL/HLIL, SSA dataflow; `themida-unmutate` plugin;
+  legacy vmpattack devirt plugin. Commercial, GUI.
+- **OBPO Plugin** (obpo-project/obpo-plugin) — CFF deobfuscation plugin for
+  commercial RE (~618★, active Nov 2025); mark dispatch block, then auto-CFF.
 
 Dynamic (Windows host / GUI):
 - **x64dbg + ScyllaHide** (anti-anti-debug; see `anti-debug-bypass`),
@@ -407,11 +501,31 @@ Dynamic (Windows host / GUI):
 
 Triage: **Detect-It-Easy** (`diec`/`die`) — protector/version ID. OSS.
 
-> Sandbox note: Triton, miasm, angr, Unicorn, VTIL/NoVmp, Syntia/msynth/
-> SiMBA/GAMBA, Pin/DynamoRIO/qemu, Ghidra, radare2, Frida are open-source
-> and run in the Kali sandbox via bash. x64dbg/ScyllaHide/Scylla, IDA,
+> Sandbox note: Triton, miasm, angr, Unicorn, VTIL2/remill, Mergen, Dna,
+> devmp, unlicense/themida-unmutate, SiMBA/GAMBA/msynth, Pin/DynamoRIO/qemu,
+> Ghidra, radare2, Frida are open-source and run in the Kali sandbox via
+> bash (Dna and VTIL2 are C#/.NET; Dna's plugin builds for Windows x64 /
+> VS2022). x64dbg/ScyllaHide/Scylla/Magicmida, gooMBA/D810-ng/OBPO,
 > Binary Ninja, and WinDbg kernel debugging are Windows-host/GUI and run in
 > a dedicated analysis VM.
+
+**Key public research (2024-2026):**
+- **NaC-L** (Jan 25 2025) — *"Lifting Binaries Part 0: Devirtualizing
+  VMProtect and Themida — It's Just Flattening?"* (the Mergen thesis).
+- **hackyboiz** (Sep 2025) — *"LLVM based VMProtect Devirtualization Part
+  1"*; (Dec 2025) *Part 2* — VMP3 → native binary via disassembler + Triton.
+- **back.engineering** (May 9 2026) — *Static Devirtualization of Themida*
+  via IR lifting (methodology, no released tool).
+- **Recon 2024** — *"Architecture Analysis of VMProtect 3.8"* (Holger
+  Unterbrink, Cisco Talos): multiple stubs in 3.7+.
+- **ARES 2024** (arXiv:2408.00500) — confirms all kernel ACs use
+  virtualization; **BattlEye = VMProtect**, **EAC = "proprietary obfuscator"
+  (VMP2 enterprise build)**.
+- **PUSHAN** (arXiv:2603.18355, Mar 2026) — trace-free devirt;
+  VPC-sensitive constraint-free symbolic emulation; **first C-pseudocode
+  output**; tested on 1000+ binaries incl. VMProtect and Themida.
+- **`backengineering/vmhook`** — hooks VMProtect 2 READQ/READDW/READB
+  handlers inside EAC's interpreter (the proof EAC's VM is VMP2; §7).
 
 ---
 
@@ -427,7 +541,7 @@ specific ones you will hit while lifting:
 | Hypervisor/VM detection | `CPUID` leaf `0x40000000` hypervisor bit, VMware backdoor `0x564D5868`, RDTSC variance | KVM `-cpu host,-hypervisor`, mask CPUID, bare-metal, or pure emulation |
 | Integrity / self-checksum | hashes its own `.text`; any BP byte (0xCC) or patch trips it | hardware BPs only; emulate; or locate + neutralize the check loop |
 | Exception-based control flow | SEH/VEH used as obfuscated `jmp` (deliberate `INT 3`/`#DE`/`#AC`) | register handlers in the debugger; in emulation, model the exception path explicitly |
-| TLS-callback tricks | code runs before the entry point | enumerate TLS callbacks (`rabin2 -H`, IDA TLS subview) and breakpoint each |
+| TLS-callback tricks | code runs before the entry point | enumerate TLS callbacks (`rabin2 -H`, disassembler TLS subview) and breakpoint each |
 
 Emulation (Unicorn/qemu) is the strongest counter to most of these because
 there is no real debugger, no real timing, and a synthetic CPUID — the VM
@@ -446,14 +560,36 @@ NEVER analyze a kernel anti-cheat on a host you care about.
 
 The user's motivating example and the hardest realistic target.
 
-**What you face.** Modern Easy Anti-Cheat heavily virtualizes its critical
-routines — integrity verification and detection logic — with a **custom,
-mutated VM**. BattlEye does the same with its own obfuscation; Riot
-**Vanguard** adds a kernel driver (`vgk.sys`) loaded at boot plus TPM/secure-
-boot attestation. Crucially, the VM uses **per-build handler randomization**:
-opcode→semantics mapping, handler byte forms, and keys differ between game
-patches, so static handler signatures from one build are worthless on the
-next. You re-derive semantics each build.
+**What you face — it is VMProtect, not a hand-rolled VM.** The common claim
+that EAC ships a "custom VM" is **wrong**. Multiple independent sources
+confirm **Easy Anti-Cheat virtualizes its critical routines with VMProtect
+2 (enterprise build)**, merely configured with custom section names and
+stripped watermarks:
+- **`backengineering/vmhook`** successfully hooks VMProtect 2's
+  **READQ / READDW / READB** virtual-instruction handlers *inside EAC's
+  interpreter* — only possible if the underlying VM is VMP2.
+- The EAC **`.eac0`** section is VMP2 bytecode. EAC computes **SHA1 over
+  `.text + .eac0`**, but the SHA1 routine itself is **not** inside the VM —
+  only the integrity-check **comparison/dispatch** runs through VMP2
+  handlers.
+- Handler indexes are **version-specific**: each EAC re-vmprotect changes
+  the handler table, so your tooling needs per-build updates.
+- ARES 2024 (arXiv:2408.00500) labels EAC a "proprietary obfuscator" — i.e.
+  a customized VMProtect enterprise build, not a bespoke ISA.
+
+**BattlEye** (`BEDaisy.sys`) likewise uses **VMProtect**: the **`.be0`**
+section is ~7.4 MB of VMP bytecode, with a heavily customized build hiding
+section names. **Riot Vanguard** is the outlier — it uses a proprietary
+**"Packman"** packer (NOT VMProtect): binary encryption with launch-time
+decryption that effectively blocks static analysis, with **no public devirt
+tooling**, plus a boot-time kernel driver (`vgk.sys`) and TPM/secure-boot
+attestation.
+
+Because these are real VMProtect, the §3–4 workflow and the **Gen 3 LLVM-IR
+lifters** (Mergen, Dna — §4g/§5) apply directly. Per-build re-protection
+still randomizes the handler table between game patches, so static handler
+signatures from one build are worthless on the next — you re-derive
+semantics each build via dynamic tracing.
 
 **Practical approach (scoped, realistic).**
 1. **Isolated kernel-debug setup.** Two-machine **WinDbg** over a named
@@ -465,10 +601,11 @@ next. You re-derive semantics each build.
    change the thing it's supposed to catch and watch which code reacts.
 3. **Capture handler traces dynamically** for *that routine only* (§4c) on
    a concrete input. Per-build randomization means dynamic trace > static
-   signatures — always.
-4. **Lift the handler chain** with Triton/VTIL (§4d–f), scoped to the
-   handlers reached by the target behavior. Synthesize stubborn handlers
-   with Syntia/msynth.
+   signatures — always. For EAC/BattlEye, a VMP2-aware hook (vmhook-style)
+   on the READQ/READDW/READB handlers reads the virtual operands directly.
+4. **Lift the handler chain** with Triton + a Gen 3 LLVM-IR lifter
+   (Mergen/Dna, §4g), scoped to the handlers reached by the target
+   behavior. Synthesize stubborn MBA handlers with msynth (§2.3).
 5. **Read the recovered logic** and find the **flaw**: a detection that can
    be evaded (a check with a gap, a TOCTOU window, a signature that misses
    an equivalent technique), an integrity check that doesn't cover a region,
@@ -495,7 +632,8 @@ mere fact of devirtualization. Acceptable outcomes:
 - **recovered key/secret/algorithm** with a working reproduction.
 
 Document in `findings/FIND-NNN.md`:
-- **Protector + version** (e.g. VMProtect 3.x / Themida FISH / EAC build N),
+- **Protector + version** (e.g. VMProtect 3.8 / Themida 3.1.x DOLPHIN /
+  EAC build N (VMP2) / BattlEye `.be0`),
 - **Target routine** (address, what it does),
 - **Method** — trace tool + lift tool + IR/optimizer used, scope of the
   handler chain,
@@ -519,23 +657,31 @@ findings/FIND-NNN.md   ← one finding per file, evidence + repro inline
 | **miasm** | IR, symbolic exec, OLLVM unflatten, re-emit | OSS, sandbox, Python |
 | **angr** | VEX symbolic exec, CFG recovery, constraint solve | OSS, sandbox, Python |
 | **Unicorn** | scripted CPU emulation, handler trace/exec | OSS, sandbox, Python |
-| **VTIL / vtil-core** | VM-translation IR + optimizer | OSS, sandbox, C++ |
-| **NoVmp** | VMProtect 2/3 devirtualizer (VTIL-based) | OSS, sandbox/build |
-| **vmpattack** | VMProtect lifter (Binary Ninja) | OSS plugin, Binja GUI |
+| **remill** | x86/x64/AArch64 → LLVM bitcode static translator | OSS, **active**; base for Dna |
+| **Mergen** | LLVM-IR devirt, no handler table; VMP 3.4–3.8.1, Themida | OSS, **active (2025)** |
+| **Dna** | LLVM17 + remill + z3/Souper; VMProtect devirt plugin | OSS C#, **active (May 2026)**, Win x64/VS2022 |
+| **devmp** | dynamic handler partitioning + symbolic extraction | OSS, Internetware 2025 |
+| **Titan** (titan_vmprotect) | Triton AST handler matching (VIP/VSP) | OSS; VMProtect **< 3.8** only |
+| **VTIL2** | C# reimagination of VTIL IR + optimizer | OSS, 2025 (orig VTIL-core frozen) |
+| **NoVmp** | VMProtect devirtualizer (VTIL-based) | OSS; **stale**, VMProtect x64 **≤3.5** |
+| **vmpattack** | VMProtect lifter (Binary Ninja) | OSS plugin; **stale (2020)** |
+| **unlicense** | dynamic unpacker + import fix, Themida/WinLicense 2.x/3.x | OSS, sandbox, Python — Themida go-to |
+| **themida-unmutate** | static de-mutate Themida/WinLicense/CV 3.x (≤3.1.9) | OSS, sandbox + Binary Ninja plugin |
+| **Magicmida** | auto-unpacker 32/64-bit, ScyllaHide inject | OSS, Windows GUI |
+| **gooMBA** | guided/nonlinear MBA simplify | **built into commercial RE v9.1+** (right-click → Run gooMBA) |
 | **SiMBA / GAMBA** | MBA simplification (Denuvo) | OSS, sandbox, Python |
-| **msynth / Syntia** | synthesis-based handler semantic recovery | OSS, sandbox, Python |
-| **Arybo** | bit-level boolean/arith canonicalization | OSS, sandbox, Python |
+| **msynth** (+Smir) | synthesis-based handler semantic recovery | OSS, sandbox, Python, **active** |
+| **Syntia / Arybo** | synthesis / bit-level canonicalize | OSS; **unreliable for general MBA** — verify only |
 | **Intel Pin / DynamoRIO** | DBI handler/transition tracing | free/OSS, sandbox (Linux side) |
 | **qemu** (TCG plugins) / **TinyTracer** | emulation / Pin-based transition trace | OSS, sandbox |
 | **Ghidra** (+ MCP bridge) | decompile + scripting | OSS; GUI on :8080 for MCP |
 | **radare2** | static analysis + r2dbg | OSS, sandbox: `r2 -A` |
 | **flare-floss** | auto-decode obfuscated strings | OSS, sandbox: `floss /tmp/sample` |
-| **D810 / HexRaysDeob** | Hex-Rays unflatten + MBA simplify | OSS plugins, IDA GUI |
+| **D810-ng / OBPO / HexRaysDeob** | unflatten + CFF + MBA deobfuscation | OSS plugins, commercial RE v9 GUI |
+| **vmhook** (backengineering) | hook VMP2 READQ/READDW/READB in EAC | OSS; EAC/BattlEye VMP2 tracing |
 | **x64dbg + ScyllaHide** | dynamic + anti-anti-debug | Windows-host/GUI |
 | **Frida** | runtime hooking, resolve API hashes | OSS, cross-platform |
 | **WinDbg** (`kd`) | user + **kernel** debugging (anti-cheat) | Windows; two-machine / VM only |
-
----
 
 ## Cross-links
 - `packer-unpacking` — classify + unpack the loader before you reach the VM.
@@ -543,9 +689,16 @@ findings/FIND-NNN.md   ← one finding per file, evidence + repro inline
 
 ## Known exemplars
 - **VMProtect** — commodity malware loaders, banking trojans, commercial
-  DRM; NoVmp/vmpattack are the public devirtualizers.
-- **Themida/WinLicense** — DRM, games, malware; nested VMs, FISH→DOLPHIN tiers.
+  DRM, **and EAC/BattlEye anti-cheat**; modern public devirtualizers are
+  Mergen and Dna (NoVmp/vmpattack only handle ≤3.5).
+- **Themida/WinLicense** — DRM, games, malware; nested VMs, FISH→DOLPHIN
+  tiers; unlicense (unpack) + themida-unmutate (de-mutate) are the tools.
 - **Denuvo Anti-Tamper** — game DRM; VM + heavy MBA (SiMBA/GAMBA origin).
-- **Easy Anti-Cheat / BattlEye** — virtualized detection + integrity routines,
-  per-build randomized handlers, kernel driver.
-- **Riot Vanguard** — kernel driver + boot-time/TPM attestation + obfuscation.
+- **Easy Anti-Cheat** — virtualizes detection/integrity routines with
+  **VMProtect 2** (`.eac0` bytecode; SHA1 over `.text+.eac0`); per-build
+  handler-table randomization; `backengineering/vmhook` proves the VMP2 VM.
+- **BattlEye** — `BEDaisy.sys` uses **VMProtect**; `.be0` is ~7.4 MB of VMP
+  bytecode with stripped section names; kernel driver.
+- **Riot Vanguard** — proprietary **"Packman"** packer (NOT VMProtect) +
+  boot-time kernel driver (`vgk.sys`) + TPM/secure-boot attestation; no
+  public devirt tooling.

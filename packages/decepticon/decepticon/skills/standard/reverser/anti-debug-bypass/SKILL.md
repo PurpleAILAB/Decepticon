@@ -53,7 +53,7 @@ bin_anti_debug_scan("/tmp/sample")
 | `INT 2D / INT 3` exception handling | normal flow if no debugger | Set exception handler in debugger |
 | `Hardware breakpoint detection` (GetThreadContext check) | reads DR0-3, fails if BPs set | Use software BPs, or zero DRs before check |
 
-ScyllaHide (x64dbg/x32dbg/IDA plugin) handles essentially all of these
+ScyllaHide (x64dbg/x32dbg plugin) handles essentially all of these
 automatically.
 
 ### Linux checks
@@ -119,9 +119,9 @@ LD_PRELOAD=./bypass.so gdb /tmp/sample
 3. Open the binary, set BP at entry → continue
 4. ScyllaHide neutralizes most checks transparently
 
-### IDA Pro
-- Built-in remote debugger + IDAStealth plugin
-- For step-tracing through anti-debug: `Debugger options → Suspend on library load/unload = no`
+### Commercial RE debugger
+- Built-in remote debugger; IDAStealth plugin available
+- For step-tracing through anti-debug: disable library load/unload suspend in debugger options
 
 ### radare2 / r2dbg
 ```bash
@@ -181,7 +181,7 @@ kg_add_edge(src=<sample>, dst=<observation>, kind="exhibits")
 
 | Tool | Use for |
 |---|---|
-| ScyllaHide | x64dbg/IDA plugin, neutralizes Windows checks |
+| ScyllaHide | x64dbg/commercial RE plugin, neutralizes Windows checks |
 | HideDebugger | Older but still useful x32dbg plugin |
 | Phant0m | OllyDbg-era plugin |
 | `gdb-peda` / `pwndbg` / `gef` | gdb plugins w/ anti-debug awareness |

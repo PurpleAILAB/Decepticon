@@ -92,7 +92,7 @@ rule Suspicious_ProcessInjection {
 }
 ```
 
-This catches every injector regardless of family. False-positive: legitimate tools (Procmon, IDA, debuggers). Reduce via additional conditions (unsigned, in temp dir, etc.).
+This catches every injector regardless of family. False-positive: legitimate tools (Procmon, disassemblers, debuggers). Reduce via additional conditions (unsigned, in temp dir, etc.).
 
 ### Anti-analysis fingerprinting
 ```yara
