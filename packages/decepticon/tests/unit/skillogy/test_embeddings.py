@@ -44,7 +44,7 @@ def test_available_with_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_embed_dim_defaults_and_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert embeddings.embed_model() == "text-embedding-3-small"
+    assert embeddings.embed_model() == "openai/text-embedding-3-small"
     assert embeddings.embed_dim() == 1536
     monkeypatch.setenv("DECEPTICON_SKILLOGY_EMBED_MODEL", "text-embedding-3-large")
     assert embeddings.embed_dim() == 3072

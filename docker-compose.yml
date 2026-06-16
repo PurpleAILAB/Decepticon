@@ -593,6 +593,11 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+      # Boot-time embedding backfill (ADR-0011) calls the litellm proxy.
+      # Wait for it to be healthy so the first ingest can embed the corpus;
+      # if it were absent the ingest degrades to substring-only retrieval.
+      litellm:
+        condition: service_healthy
     ports:
       - "127.0.0.1:${SKILLOGY_REST_PORT:-9100}:9100"
     environment:
@@ -601,6 +606,12 @@ services:
       - SKILLOGY_NEO4J_USER=neo4j
       - SKILLOGY_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
       - SKILLOGY_AUTO_INGEST=${SKILLOGY_AUTO_INGEST:-1}
+      # Hybrid retrieval embeds skills + queries through the same litellm
+      # proxy the agents use (ADR-0011 §"Skillogy↔litellm coupling").
+      # Unset → find_skill falls back to substring search.
+      - DECEPTICON_LLM__PROXY_URL=http://litellm:4000
+      - DECEPTICON_LLM__PROXY_API_KEY=${LITELLM_MASTER_KEY:-sk-decepticon-master}
+      - DECEPTICON_SKILLOGY_EMBED_MODEL=${DECEPTICON_SKILLOGY_EMBED_MODEL:-openai/text-embedding-3-small}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/v1/health')"]
       interval: 10s

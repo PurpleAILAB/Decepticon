@@ -28,8 +28,10 @@ log = logging.getLogger(__name__)
 # OSS default mirrors the KG layer's default (see kg_internal migration V002:
 # "OpenAI text-embedding-3-small (1536) as the OSS default"). Override with
 # DECEPTICON_SKILLOGY_EMBED_MODEL; set the matching dim if the model differs.
-DEFAULT_EMBED_MODEL = "text-embedding-3-small"
+DEFAULT_EMBED_MODEL = "openai/text-embedding-3-small"
 _KNOWN_DIMS: dict[str, int] = {
+    "openai/text-embedding-3-small": 1536,
+    "openai/text-embedding-3-large": 3072,
     "text-embedding-3-small": 1536,
     "text-embedding-3-large": 3072,
     "voyage-3": 1024,

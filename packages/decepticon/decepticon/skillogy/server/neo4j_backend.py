@@ -273,47 +273,106 @@ class Neo4jBackend:
         limit: int = 20,
         allowed_path_prefixes: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Relationship-aware skill discovery.
+        """Relationship-aware skill discovery — hybrid retrieval (ADR-0011).
 
-        Composable filters combined with AND semantics. Each filter
-        prunes the candidate set via a different edge:
+        The structured filters are hard AND constraints; each prunes the
+        candidate set via a different edge:
 
-        - ``query``: substring match on name / description / when_to_use.
-          Cheap signal for when the agent has a keyword like "kerberoast"
-          but not a path.
         - ``subdomain``: ``(s:Skill)-[:IN_PHASE]->(:Phase {name: $sub})``.
         - ``mitre_id``: ``(s:Skill)-[:IMPLEMENTS]->(:Technique {id: $id})``
           where ``$id`` can be a top-level T1xxx or a sub-T1xxx.yyy.
         - ``tag``: ``(s:Skill)-[:TAGGED]->(:Tag {name: $tag})``.
         - ``tactic_id``: anchors on a Tactic, follows ``HAS_TECHNIQUE`` to
-          its techniques, then back to skills via ``IMPLEMENTS``. Lets
-          the agent ask "show me skills covering Initial Access".
+          its techniques, then back to skills via ``IMPLEMENTS``.
+
+        ``query`` (free text) drives **ranking** via two legs fused with
+        reciprocal-rank fusion:
+
+        - *lexical* — substring match on name / description / when_to_use
+          (the legacy signal; exact for keywords like "kerberoast").
+        - *semantic* — cosine k-NN over the per-skill embedding vector
+          index, so a paraphrase ("steal kerberos tickets") finds the skill
+          even with no shared substring.
+
+        The semantic leg is **opt-in**: when no embeddings exist (the
+        litellm proxy is unconfigured, or the corpus was never embedded),
+        ``find_skill`` returns the pure lexical result, name-ordered —
+        byte-for-byte the pre-ADR-0011 behaviour. The structured-only path
+        (no ``query``) is likewise unchanged.
 
         Returns each match's ``name``, ``path``, ``subdomain``,
         ``description`` and the matched dimensions (``matched_mitre``,
         ``matched_tags``) so the agent can see *why* a skill came back.
         """
-        wheres: list[str] = []
-        params: dict[str, Any] = {"limit": int(min(max(limit, 1), 100))}
-        # Path A: subdomain-anchored
+        from decepticon.skillogy import embeddings  # noqa: PLC0415
+
+        limit = int(min(max(limit, 1), 100))
+        # Over-fetch from each leg so reciprocal-rank fusion has signal to
+        # work with before the final top-``limit`` cut.
+        cand_n = min(max(limit * 3, 30), 100)
+
+        # Structured (edge) filters — shared verbatim by both legs.
+        structured: list[str] = []
+        shared: dict[str, Any] = {}
         if subdomain:
-            wheres.append("(s)-[:IN_PHASE]->(:Phase {name: $subdomain})")
-            params["subdomain"] = subdomain
-        # Path B: tag-anchored
+            structured.append("(s)-[:IN_PHASE]->(:Phase {name: $subdomain})")
+            shared["subdomain"] = subdomain
         if tag:
-            wheres.append("(s)-[:TAGGED]->(:Tag {name: $tag})")
-            params["tag"] = tag
-        # Path C: technique-anchored (direct)
+            structured.append("(s)-[:TAGGED]->(:Tag {name: $tag})")
+            shared["tag"] = tag
         if mitre_id:
-            wheres.append("(s)-[:IMPLEMENTS]->(:Technique {id: $mitre_id})")
-            params["mitre_id"] = mitre_id
-        # Path D: tactic-anchored (one hop via Technique)
+            structured.append("(s)-[:IMPLEMENTS]->(:Technique {id: $mitre_id})")
+            shared["mitre_id"] = mitre_id
         if tactic_id:
-            wheres.append(
+            structured.append(
                 "(s)-[:IMPLEMENTS]->(:Technique)<-[:HAS_TECHNIQUE]-(:Tactic {id: $tactic_id})"
             )
-            params["tactic_id"] = tactic_id
-        # Path E: keyword search across name / description / triggers.
+            shared["tactic_id"] = tactic_id
+        # Per-role path-prefix ACL (ADR-0008) — applied identically to both
+        # legs. Empty/missing leaves both unrestricted (CLI / pytest / lib).
+        acl_clause: str | None = None
+        if allowed_path_prefixes:
+            acl_clause = "ANY(p IN $allowed_path_prefixes WHERE s.path STARTS WITH p)"
+            shared["allowed_path_prefixes"] = list(allowed_path_prefixes)
+
+        if not query and not structured:
+            raise ValueError(
+                "find_skill requires at least one of: query, subdomain, mitre_id, tag, tactic_id"
+            )
+
+        lexical = self._find_lexical(query, structured, acl_clause, shared, cand_n)
+
+        # Semantic leg only when there is free text AND it can be embedded.
+        query_vec = embeddings.embed_text(query) if query else None
+        if query_vec is None:
+            return lexical[:limit]
+
+        semantic = self._find_semantic(query_vec, structured, acl_clause, shared, cand_n)
+        return self._rrf_fuse(lexical, semantic, limit)
+
+    # Shared RETURN tail so the lexical and semantic legs yield identical row
+    # shapes (``score`` is appended by the semantic leg only and stripped at
+    # fusion time).
+    _ENRICH_TAIL = (
+        "OPTIONAL MATCH (s)-[:IMPLEMENTS]->(t:Technique) OPTIONAL MATCH (s)-[:TAGGED]->(tg:Tag) "
+    )
+    _RETURN_FIELDS = (
+        "s.name AS name, s.path AS path, s.subdomain AS subdomain, "
+        "s.description AS description, matched_mitre, matched_tags"
+    )
+
+    def _find_lexical(
+        self,
+        query: str | None,
+        structured: list[str],
+        acl_clause: str | None,
+        shared: dict[str, Any],
+        cand_n: int,
+    ) -> list[dict[str, Any]]:
+        """Substring + structured leg. Name-ordered (stable, legacy order)."""
+        wheres = list(structured)
+        params = dict(shared)
+        params["cand_n"] = cand_n
         if query:
             wheres.append(
                 "(toLower(s.name) CONTAINS toLower($query) "
@@ -321,34 +380,86 @@ class Neo4jBackend:
                 "OR toLower(s.when_to_use) CONTAINS toLower($query))"
             )
             params["query"] = query
-        if not wheres:
-            raise ValueError(
-                "find_skill requires at least one of: query, subdomain, mitre_id, tag, tactic_id"
-            )
-        # Per ADR-0008 — narrow the candidate set to the per-role
-        # path-prefix allowlist when the caller (agent middleware)
-        # supplied one. When the parameter is missing/empty we leave the
-        # query unrestricted so the standalone CLI, pytest, and the
-        # library entrypoint keep their existing behaviour.
-        if allowed_path_prefixes:
-            wheres.append("ANY(p IN $allowed_path_prefixes WHERE s.path STARTS WITH p)")
-            params["allowed_path_prefixes"] = list(allowed_path_prefixes)
-        match_clauses = " AND ".join(wheres)
+        if acl_clause:
+            wheres.append(acl_clause)
         cypher = (
             "MATCH (s:Skill) "
-            f"WHERE {match_clauses} "
-            "OPTIONAL MATCH (s)-[:IMPLEMENTS]->(t:Technique) "
-            "OPTIONAL MATCH (s)-[:TAGGED]->(tag:Tag) "
+            f"WHERE {' AND '.join(wheres)} "
+            f"{self._ENRICH_TAIL}"
             "WITH s, collect(DISTINCT t.id) AS matched_mitre, "
-            "     collect(DISTINCT tag.name) AS matched_tags "
-            "RETURN s.name AS name, s.path AS path, s.subdomain AS subdomain, "
-            "       s.description AS description, "
-            "       matched_mitre, matched_tags "
+            "     collect(DISTINCT tg.name) AS matched_tags "
+            f"RETURN {self._RETURN_FIELDS} "
             "ORDER BY name "
-            "LIMIT $limit"
+            "LIMIT $cand_n"
         )
         with self._driver.session(database=self._database, default_access_mode="READ") as session:
             return [dict(record) for record in session.run(cypher, parameters=params)]
+
+    def _find_semantic(
+        self,
+        query_vec: list[float],
+        structured: list[str],
+        acl_clause: str | None,
+        shared: dict[str, Any],
+        cand_n: int,
+    ) -> list[dict[str, Any]]:
+        """Vector k-NN leg over the ``:Skill(embedding)`` index, score-ordered.
+
+        ``db.index.vector.queryNodes`` cannot pre-apply the structured /
+        ACL predicates, so we over-fetch ``k`` neighbours and filter after —
+        ``k`` is widened when filters are present since many neighbours will
+        be dropped.
+        """
+        post_filters = list(structured)
+        if acl_clause:
+            post_filters.append(acl_clause)
+        k = min(cand_n * 5, 500) if post_filters else cand_n
+        params = dict(shared)
+        params.update(
+            {"index_name": self.VECTOR_INDEX_NAME, "k": k, "qvec": query_vec, "cand_n": cand_n}
+        )
+        where = f"WHERE {' AND '.join(post_filters)} " if post_filters else ""
+        cypher = (
+            "CALL db.index.vector.queryNodes($index_name, $k, $qvec) "
+            "YIELD node AS s, score "
+            f"{where}"
+            f"{self._ENRICH_TAIL}"
+            "WITH s, score, collect(DISTINCT t.id) AS matched_mitre, "
+            "     collect(DISTINCT tg.name) AS matched_tags "
+            f"RETURN {self._RETURN_FIELDS}, score "
+            "ORDER BY score DESC "
+            "LIMIT $cand_n"
+        )
+        with self._driver.session(database=self._database, default_access_mode="READ") as session:
+            return [dict(record) for record in session.run(cypher, parameters=params)]
+
+    @staticmethod
+    def _rrf_fuse(
+        lexical: list[dict[str, Any]],
+        semantic: list[dict[str, Any]],
+        limit: int,
+        *,
+        rrf_k: int = 60,
+    ) -> list[dict[str, Any]]:
+        """Reciprocal-rank fusion of the two ranked legs, keyed by skill path.
+
+        Each leg contributes ``1 / (rrf_k + rank)`` to a skill's score; a
+        skill found by both legs ranks above one found by either alone. Ties
+        break on name for deterministic output. ``rrf_k`` is the standard
+        rank-smoothing constant (60).
+        """
+        scores: dict[str, float] = {}
+        record_by_path: dict[str, dict[str, Any]] = {}
+        for leg in (lexical, semantic):
+            for rank, rec in enumerate(leg):
+                path = rec["path"]
+                record_by_path.setdefault(path, rec)
+                scores[path] = scores.get(path, 0.0) + 1.0 / (rrf_k + rank + 1)
+        ordered = sorted(
+            record_by_path.values(),
+            key=lambda r: (-scores[r["path"]], r.get("name") or ""),
+        )
+        return [{k: v for k, v in r.items() if k != "score"} for r in ordered[:limit]]
 
     # ---- per-phase MoC summary (used by SkillogyMiddleware system prompt) ----
 

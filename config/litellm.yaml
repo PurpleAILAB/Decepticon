@@ -122,6 +122,19 @@ model_list:
       input_cost_per_token: 0.00000175
       output_cost_per_token: 0.000014
 
+  # ── Embeddings ─────────────────────────────────────────────────────────
+  # Skillogy hybrid retrieval (ADR-0011) embeds each skill at boot and each
+  # find_skill query at runtime through this route. text-embedding-3-small
+  # (1536 dims) is the OSS default — same model the KG layer pins as its
+  # OSS default (kg_internal migration V002). $0.02 / 1M input tokens.
+  - model_name: openai/text-embedding-3-small
+    litellm_params:
+      model: openai/text-embedding-3-small
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      mode: embedding
+      input_cost_per_token: 0.00000002
+
   # ── Google ───────────────────────────────────────────────────────────
   # Per-1M USD as of 2026-05-14 (Gemini Developer API, ≤200K context):
   #   2.5-pro        $1.25 / $10.00
