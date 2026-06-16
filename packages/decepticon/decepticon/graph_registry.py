@@ -49,6 +49,8 @@ STANDARD_GRAPHS: dict[str, str] = {
     "ics_operator": "./decepticon/agents/standard/ics_operator.py:graph",
     "forensicator": "./decepticon/agents/standard/forensicator.py:graph",
     "supply_chain_operator": "./decepticon/agents/standard/supply_chain_operator.py:graph",
+    "bounty_hunter": "./decepticon/agents/standard/bounty_hunter.py:graph",
+    "ai_red_teamer": "./decepticon/agents/standard/ai_red_teamer.py:graph",
 }
 
 # Plugins bundle — vulnresearch family (community-plugin shape demonstrated

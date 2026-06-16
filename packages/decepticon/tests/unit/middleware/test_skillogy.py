@@ -120,6 +120,8 @@ class TestPhaseForRoleMapping:
             "blue_cell",
             "soundwave",
             "decepticon",
+            "bounty_hunter",
+            "ai_red_teamer",
         }
         assert set(_PHASE_FOR_ROLE) == expected, (
             "OSS standard roles drifted from phase mapping — "
