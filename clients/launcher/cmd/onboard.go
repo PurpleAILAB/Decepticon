@@ -201,6 +201,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	var (
 		methods                []string
 		anthropicKey           string
+		claudeOAuthToken       string
 		openaiKey              string
 		geminiKey              string
 		minimaxKey             string
@@ -327,6 +328,27 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				}),
 		).Title("1 / 5  ·  Credentials").
 			Description("Select all that apply"),
+
+		// Step 2-claude-oauth: Claude Code subscription long-lived token.
+		// Run `claude setup-token` once (any machine, interactive browser
+		// OAuth) → paste the 1-year token here. It is honored via the
+		// ANTHROPIC_OAUTH_TOKEN env override, which carries expiresAt=0 so it
+		// is never auto-refreshed — headless-safe for 24/7 / cloud, with no
+		// live Claude Code session and no ~/.claude/.credentials.json mount.
+		// Optional: leave blank to fall back to the rotating on-disk
+		// credentials from an interactive `claude` login.
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Claude Code Subscription (long-lived token)").
+				Description("Run `claude setup-token` (browser OAuth, needs a\nPro/Max/Team/Enterprise plan) → paste the 1-year\ntoken below. Headless-safe: never refreshed, no live\nClaude Code session needed. Or leave blank to use a\nrotating ~/.claude/.credentials.json from `claude` login."),
+			huh.NewInput().
+				Title("ANTHROPIC_OAUTH_TOKEN").
+				Placeholder("sk-ant-oat01-...   (leave blank to use credentials file)").
+				EchoMode(huh.EchoModePassword).
+				Value(&claudeOAuthToken).
+				Validate(optionalClaudeOAuthToken),
+		).Title("2 / 5  ·  Claude Code Subscription").
+			WithHideFunc(func() bool { return !contains(methods, methodAnthropicOAuth) }),
 
 		// Step 2a: Anthropic API key
 		huh.NewGroup(
@@ -847,6 +869,12 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if anthropicKey != "" {
 		values["ANTHROPIC_API_KEY"] = anthropicKey
 	}
+	if claudeOAuthToken != "" {
+		// Long-lived `claude setup-token`. The claude_code handler reads this
+		// as a synthetic credential (expiresAt=0 → never refreshed); no
+		// credentials-file mount or live CC session needed.
+		values["ANTHROPIC_OAUTH_TOKEN"] = strings.TrimSpace(claudeOAuthToken)
+	}
 	if openaiKey != "" {
 		values["OPENAI_API_KEY"] = openaiKey
 	}
@@ -1008,6 +1036,21 @@ func contains(haystack []string, needle string) bool {
 func nonEmpty(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return fmt.Errorf("value is required")
+	}
+	return nil
+}
+
+// optionalClaudeOAuthToken accepts an empty value (the user falls back to the
+// on-disk credentials file) but, when provided, requires the Claude OAuth
+// token shape (`sk-ant-oat01-…`) so a mistyped API key or stray paste is
+// caught at the prompt rather than failing silently at runtime.
+func optionalClaudeOAuthToken(s string) error {
+	t := strings.TrimSpace(s)
+	if t == "" {
+		return nil
+	}
+	if !strings.HasPrefix(t, "sk-ant-oat01-") {
+		return fmt.Errorf("expected a `claude setup-token` token starting with sk-ant-oat01- (leave blank to use the credentials file)")
 	}
 	return nil
 }
