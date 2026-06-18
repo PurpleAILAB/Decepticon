@@ -34,6 +34,10 @@ func init() {
 	rootCmd.AddCommand(onboardCmd)
 }
 
+// claudeSetupTokenDocsURL is the official Claude Code page covering
+// `claude setup-token` (mint a long-lived 1-year OAuth token for headless use).
+const claudeSetupTokenDocsURL = "https://code.claude.com/docs/en/authentication"
+
 // AuthMethod identifiers — must match decepticon/llm/models.py::AuthMethod.
 const (
 	methodAnthropicOAuth  = "anthropic_oauth"
@@ -339,8 +343,20 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		// credentials from an interactive `claude` login.
 		huh.NewGroup(
 			huh.NewNote().
-				Title("Claude Code Subscription (long-lived token)").
-				Description("Run `claude setup-token` (browser OAuth, needs a\nPro/Max/Team/Enterprise plan) → paste the 1-year\ntoken below. Headless-safe: never refreshed, no live\nClaude Code session needed. Or leave blank to use a\nrotating ~/.claude/.credentials.json from `claude` login."),
+				Title("Claude Code Subscription — 1-year token").
+				Description(
+					"Two steps:\n\n"+
+						"1) Generate a 1-year token — run:\n"+
+						"      claude setup-token\n"+
+						"   (opens browser OAuth; needs a Pro / Max / Team /\n"+
+						"   Enterprise plan). Docs / issue link:\n"+
+						"   "+claudeSetupTokenDocsURL+"\n\n"+
+						"2) Paste the sk-ant-oat01-… token it prints into the\n"+
+						"   field below.\n\n"+
+						"Headless-safe: never refreshed, no live Claude Code\n"+
+						"session. Leave blank to use a rotating\n"+
+						"~/.claude/.credentials.json from a `claude` login.",
+				),
 			huh.NewInput().
 				Title("ANTHROPIC_OAUTH_TOKEN").
 				Placeholder("sk-ant-oat01-...   (leave blank to use credentials file)").
