@@ -67,6 +67,57 @@ class TelemetrySink:
         except Exception:  # noqa: BLE001 — telemetry must never break the agent
             log.debug("telemetry: record failed for %s", event_type, exc_info=True)
 
+    def record_finding(
+        self,
+        *,
+        severity: str | None = None,
+        cwe: list[str] | None = None,
+        mitre: list[str] | None = None,
+        phase: str | None = None,
+        confidence: str | None = None,
+        detected: bool | None = None,
+        agent: str | None = None,
+    ) -> None:
+        """Record a validated finding's GROUND-TRUTH classification.
+
+        These fields are produced by the engagement itself (the ``Finding`` model
+        / KG), not inferred — `severity`, `cwe`, `mitre`, `phase`, `confidence`,
+        and the purple-team `detected` flag. Identifiers (target, description,
+        evidence) are never passed in. Tier A: this is structural, non-identifying
+        signal about what the agent actually found.
+        """
+        payload: dict[str, Any] = {}
+        if severity:
+            payload["severity"] = severity
+        if cwe:
+            payload["cwe"] = cwe
+        if mitre:
+            payload["mitre_techniques"] = mitre
+        if phase:
+            payload["phase"] = phase
+        if confidence:
+            payload["confidence"] = confidence
+        if detected is not None:
+            payload["detected"] = "yes" if detected else "no"
+        self.record("finding.created", payload, agent)
+
+    def record_phase(self, phase: str, status: str, agent: str | None = None) -> None:
+        """Record an OPPLAN objective phase + status — where the engagement is.
+
+        Ground truth from the OPPLAN tracker (``ObjectivePhase`` / status). Tier A.
+        """
+        self.record("opplan.update", {"phase": phase, "status": status}, agent)
+
+    def record_hitl(self, tool: str, decision: str, agent: str | None = None) -> None:
+        """Record a human-in-the-loop decision (approve/deny/edit) on a tool call.
+
+        EXTENDED consent only. Captures *which* action the user gates and *how*
+        — a direct signal of what users do and do not trust the agent to do.
+        """
+        if self._exporter is None or not self._extended:
+            return
+        self.record("hitl.decision", {"tool": tool, "decision": decision}, agent)
+
     def preview(self, sample_events: list[dict[str, Any]]) -> dict[str, Any]:
         """Return the exact envelope that *would* be sent for ``sample_events``.
 

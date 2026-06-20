@@ -48,4 +48,22 @@ describe("TelemetryBatch schema", () => {
     const bad = { ...VALID, events: [{ type: "tool.result", ts: 1, output_bucket: "huge" }] };
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
+
+  it("accepts ground-truth finding / opplan / hitl events", () => {
+    const batch = {
+      ...VALID,
+      tier: "B",
+      events: [
+        { type: "finding.created", ts: 1, agent: "exploit", severity: "high", confidence: "verified", detected: "no", phase: "initial-access", cwe: ["CWE-89"], mitre_techniques: ["T1190"] },
+        { type: "opplan.update", ts: 2, phase: "recon", status_objective: "pending" },
+        { type: "hitl.decision", ts: 3, agent: "exploit", tool: "bash", decision: "deny" },
+      ],
+    };
+    expect(TelemetryBatch.safeParse(batch).success).toBe(true);
+  });
+
+  it("rejects an unknown event type (prompt-intent removed)", () => {
+    const bad = { ...VALID, events: [{ type: "user.input", ts: 1, intent_class: "x" }] };
+    expect(TelemetryBatch.safeParse(bad).success).toBe(false);
+  });
 });

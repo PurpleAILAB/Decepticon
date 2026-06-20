@@ -390,6 +390,15 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
         objectives = list(state.get("objectives", []))
         objectives.append(obj_dict)
 
+        # Ground-truth telemetry: which kill-chain phase the engagement is
+        # working — no objective text/target. No-op unless telemetry is on.
+        try:
+            from decepticon.telemetry.sink import get_sink
+
+            get_sink().record_phase(getattr(phase, "value", str(phase)), "pending")
+        except Exception:  # noqa: BLE001 — telemetry must never break the tool
+            pass
+
         # Build state update — always include objectives + counter
         update: dict[str, Any] = {
             "objectives": objectives,

@@ -35,8 +35,13 @@ _KNOWN_TYPES = frozenset(
         "llm.response",
         "finding.created",
         "opplan.update",
+        "hitl.decision",
     }
 )
+
+# A user HITL decision is a behavioral choice (Tier B), forwarded only under
+# EXTENDED consent. Everything else here is structural ground truth (Tier A).
+_EXTENDED_ONLY = frozenset({"hitl.decision"})
 
 _STATUS_MAP = {"success": "ok", "error": "error"}  # "command" → dropped
 
@@ -89,6 +94,8 @@ def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str,
     etype = record.get("type")
     if etype not in _KNOWN_TYPES:
         return None
+    if etype in _EXTENDED_ONLY and not extended:
+        return None  # behavioral signal requires extended consent
     ts = record.get("ts")
     if not isinstance(ts, (int, float)):
         return None
@@ -102,10 +109,26 @@ def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str,
     if not isinstance(p, dict):
         p = {}
 
-    if etype in ("tool.call", "finding.created"):
+    if etype == "tool.call":
         tool = _slug(p.get("tool"))
         if tool:
             ev["tool"] = tool
+    elif etype == "finding.created":
+        # Ground-truth finding classification from the Finding model / KG.
+        for key in ("tool", "severity", "phase", "confidence", "detected"):
+            slug = _slug(p.get(key))
+            if slug:
+                ev[key] = slug
+        # cwe / mitre_techniques come from the shared id-list block below.
+    elif etype == "opplan.update":
+        phase = _slug(p.get("phase"))
+        if phase:
+            ev["phase"] = phase
+        # OPPLAN status uses a different vocabulary than tool-result `status`
+        # (pending/blocked/… vs ok/error), so it maps to its own field.
+        status_obj = _slug(p.get("status"))
+        if status_obj:
+            ev["status_objective"] = status_obj
     elif etype == "tool.result":
         tool = _slug(p.get("tool"))
         if tool:
@@ -129,6 +152,13 @@ def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str,
             total = usage.get("total_tokens") or usage.get("total")
             if isinstance(total, int):
                 ev["tokens"] = total
+    elif etype == "hitl.decision":
+        tool = _slug(p.get("tool"))
+        if tool:
+            ev["tool"] = tool
+        decision = _slug(p.get("decision"))
+        if decision:
+            ev["decision"] = decision
 
     # MITRE / CWE / CVE pass-through — forwarded only when the source payload
     # already carries them (agent-side tagging is a separate follow-up).

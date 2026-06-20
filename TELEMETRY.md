@@ -27,11 +27,31 @@ tool output are never transmitted.**
 
 Two consent tiers map to the data tiers in the design doc:
 
-- **`basic` → Tier A (structural, always safe):** event type, agent name, tool
-  name (e.g. `nmap`), normalized status, bucketed sizes, token counts, model id,
-  and any MITRE/CWE/CVE ids the run already produced.
-- **`extended` → Tier A + B (sanitized semantic):** additionally a coarse
-  request/finding **classification enum** and attack phase. Still no free text.
+- **`basic` → Tier A (structural ground truth, always safe):** event type, agent
+  name, tool name (e.g. `nmap`), normalized status, bucketed sizes, token counts,
+  model id — **plus the classification the engagement itself produces**, derived
+  from the `Finding` model and OPPLAN tracker (not inferred from your prompt):
+
+  | Event | Fields collected | Never collected |
+  |---|---|---|
+  | `finding.created` | `severity`, `cwe`, `mitre_techniques`, `phase`, `confidence`, `detected` (purple-team), `agent` | finding title/description, `affected_target`, evidence, PoC |
+  | `opplan.update` | `phase` (recon→…→exfiltration), `status_objective` (pending/blocked/…) | objective title/notes |
+  | `tool.result` | `tool`, `status`, `output_bucket` | tool output |
+
+  This is how maintainers learn **what the tool actually finds and where
+  engagements stall** (e.g. CWE/severity distribution = what it detects; `blocked`
+  clusters at a phase = where it fails) — entirely from the agent's structured
+  artifacts, never from prompt text.
+
+- **`extended` → Tier A + B:** additionally your **HITL decisions** —
+  `hitl.decision` `{tool, decision: approve/deny/edit, agent}` — which actions you
+  do and don't let the agent take. Enable with
+  `decepticon-cli telemetry enable extended` (it prints the disclosure first).
+
+  **Consent boundary:** findings/phases describe what the *agent* did and are
+  non-identifying. The *target's* data — IPs, hosts, domains, credentials,
+  finding descriptions — is never sent, because a third party's data is not yours
+  to consent away.
 
 Every batch carries a non-identifying envelope: a random `install_id` (a UUID
 minted on first use — never machine- or IP-derived), the Decepticon version, and

@@ -327,6 +327,20 @@ def format_bounty_report(
         log.warning("Could not write bounty report: %s", e)
         wrote = False
 
+    # Ground-truth telemetry: forward the finding's structured classification
+    # (severity / cwe / mitre) — never the target, file path, or PoC. No-op
+    # unless the user opted into telemetry.
+    try:
+        from decepticon.telemetry.sink import get_sink
+
+        get_sink().record_finding(
+            severity=str(severity).lower() if severity and severity != "Unknown" else None,
+            cwe=[c for c in cwe_list if isinstance(c, str)] if isinstance(cwe_list, list) else None,
+            mitre=[m for m in vuln_props.get("mitre", []) if isinstance(m, str)] or None,
+        )
+    except Exception:  # noqa: BLE001 — telemetry must never break the tool
+        pass
+
     return _json(
         {
             "title": title,

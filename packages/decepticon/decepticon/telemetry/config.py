@@ -76,6 +76,41 @@ def set_opted_out(opted_out: bool, env: dict[str, str] | None = None) -> None:
         marker.unlink()
 
 
+def _mode_file(env: dict[str, str]) -> Path:
+    return _home(env) / "telemetry" / "mode"
+
+
+def persisted_mode(env: dict[str, str] | None = None) -> TelemetryMode | None:
+    """Read the persisted opt-in mode (``telemetry enable …``), if any."""
+    e = env if env is not None else dict(os.environ)
+    try:
+        raw = _mode_file(e).read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    try:
+        return TelemetryMode(raw)
+    except ValueError:
+        return None
+
+
+def set_persisted_mode(mode: TelemetryMode, env: dict[str, str] | None = None) -> None:
+    """Persist an explicit consent choice from ``telemetry enable``/``off``.
+
+    ``OFF`` writes the opt-out marker (and clears any mode); ``basic``/
+    ``extended`` write the mode and clear the opt-out marker.
+    """
+    e = env if env is not None else dict(os.environ)
+    mfile = _mode_file(e)
+    if mode is TelemetryMode.OFF:
+        set_opted_out(True, e)
+        if mfile.exists():
+            mfile.unlink()
+        return
+    set_opted_out(False, e)
+    mfile.parent.mkdir(parents=True, exist_ok=True)
+    mfile.write_text(mode.value, encoding="utf-8")
+
+
 def install_id(env: dict[str, str] | None = None) -> str:
     """Return the persistent anonymous install id, minting one on first use.
 
@@ -119,8 +154,14 @@ def resolve_config(env: dict[str, str] | None = None) -> TelemetryConfig:
     import platform
 
     e = env if env is not None else dict(os.environ)
-    # A persistent opt-out (``telemetry off``) overrides any env mode.
-    mode = TelemetryMode.OFF if is_opted_out(e) else resolve_mode(e)
+    # Precedence: DO_NOT_TRACK / opt-out force off; then an env override; then
+    # the persisted opt-in choice; else off.
+    if _truthy(e.get("DO_NOT_TRACK")) or is_opted_out(e):
+        mode = TelemetryMode.OFF
+    elif (e.get("DECEPTICON_TELEMETRY") or "").strip():
+        mode = resolve_mode(e)
+    else:
+        mode = persisted_mode(e) or TelemetryMode.OFF
     endpoint = (e.get("DECEPTICON_TELEMETRY_ENDPOINT") or "").strip() or None
     # Only mint/read an install id when telemetry is actually on — keeps OFF
     # purely side-effect-free.

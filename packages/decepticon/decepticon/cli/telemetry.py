@@ -2,11 +2,13 @@
 
 Subcommands:
 
-* ``status``   show the resolved consent mode, endpoint, and anonymous id
-* ``preview``  print the EXACT payload that would be sent for a sample run
-               (transparency before any data leaves the machine)
-* ``off``      persistently opt out (writes a marker honored by every run)
-* ``on``       remove the opt-out marker (telemetry still needs the env opt-in)
+* ``status``          show the resolved consent mode, endpoint, and anonymous id
+* ``preview``         print the EXACT payload that would be sent for a sample run
+                      (transparency before any data leaves the machine)
+* ``enable <mode>``   give explicit consent (``basic`` or ``extended``); prints
+                      the full disclosure and persists the choice
+* ``off``             persistently opt out (honored by every run)
+* ``on``              alias for ``enable basic``
 """
 
 from __future__ import annotations
@@ -19,36 +21,78 @@ from decepticon.telemetry.config import (
     TelemetryMode,
     is_opted_out,
     resolve_config,
-    set_opted_out,
+    set_persisted_mode,
 )
 from decepticon.telemetry.sink import TelemetrySink
 
+# Plain-language disclosure shown on `enable` — the OSS consent contract.
+_CONSENT_NOTICE = """\
+Decepticon usage telemetry — what you are consenting to share:
+
+  basic     Anonymous STRUCTURAL ground truth the engagement itself produces:
+            event type, agent name, tool name (e.g. nmap), status, bucketed
+            sizes, model id, OS, version, and the validated FINDING's own
+            classification — severity, CWE/MITRE ids, kill-chain phase,
+            confidence, purple-team detected flag — plus OPPLAN phase progress.
+
+  extended  basic, PLUS your HITL approve/deny decisions on tool calls (which
+            actions you let the agent take).
+
+NEVER sent, at any tier: raw prompts, target IPs/domains/hosts, credentials,
+file contents, tool output, finding descriptions, or client/org names. This is
+derived from the agent's structured artifacts (Finding model / OPPLAN), not from
+your prompt text. Your IP is dropped at the gateway.
+
+Run `decepticon-cli telemetry preview` to see the exact payload before sending.
+DO_NOT_TRACK=1 or `telemetry off` disables everything.
+"""
+
 # A representative slice of a real run, used by `preview` so the user sees the
-# concrete field set that would be transmitted.
+# concrete field set that would be transmitted (includes extended behavioral
+# events so the richer tier is fully visible).
 _SAMPLE_EVENTS = [
     {
-        "type": "llm.call",
+        "type": "opplan.update",
         "ts": 1.0,
+        "agent": "decepticon",
+        "payload": {"phase": "recon", "status": "pending"},
+    },
+    {
+        "type": "llm.call",
+        "ts": 2.0,
         "agent": "recon",
         "payload": {"messages": 12, "model": "claude-opus-4-8"},
     },
     {
         "type": "tool.call",
-        "ts": 2.0,
+        "ts": 3.0,
         "agent": "recon",
         "payload": {"tool": "bash", "args": {"command": "<str:23>"}},
     },
     {
         "type": "tool.result",
-        "ts": 3.0,
+        "ts": 4.0,
         "agent": "recon",
         "payload": {"tool": "bash", "status": "success", "output_chars": 2048},
     },
     {
-        "type": "finding.created",
-        "ts": 4.0,
+        "type": "hitl.decision",
+        "ts": 5.0,
         "agent": "exploit",
-        "payload": {"tool": "validate_finding", "cwe": ["CWE-89"], "mitre_techniques": ["T1190"]},
+        "payload": {"tool": "bash", "decision": "deny"},
+    },
+    {
+        "type": "finding.created",
+        "ts": 6.0,
+        "agent": "exploit",
+        "payload": {
+            "severity": "high",
+            "phase": "initial-access",
+            "confidence": "verified",
+            "detected": "no",
+            "cwe": ["CWE-89"],
+            "mitre_techniques": ["T1190"],
+        },
     },
 ]
 
@@ -67,8 +111,9 @@ def _status(cfg: TelemetryConfig) -> int:
 
 def _preview(cfg: TelemetryConfig) -> int:
     # Force at least BASIC + a placeholder endpoint so the mapping runs even when
-    # telemetry is currently off — preview shows what *would* be sent.
-    mode = cfg.mode if cfg.mode is not TelemetryMode.OFF else TelemetryMode.BASIC
+    # telemetry is currently off — preview shows what *would* be sent. Use the
+    # configured tier (extended shows the behavioral events too).
+    mode = cfg.mode if cfg.mode is not TelemetryMode.OFF else TelemetryMode.EXTENDED
     preview_cfg = TelemetryConfig(
         mode=mode,
         endpoint=cfg.endpoint or "https://<your-endpoint>",
@@ -77,36 +122,55 @@ def _preview(cfg: TelemetryConfig) -> int:
         os_name=cfg.os_name,
     )
     sink = TelemetrySink(preview_cfg, transport=lambda _u, _b: None)
-    print("# Exact payload that would be sent (sample run):", file=sys.stderr)
+    print(f"# Exact payload that would be sent (tier {mode.value}):", file=sys.stderr)
     print(json.dumps(sink.preview(_SAMPLE_EVENTS), indent=2))
+    return 0
+
+
+def _enable(arg: str | None) -> int:
+    raw = (arg or "basic").strip().lower()
+    try:
+        mode = TelemetryMode(raw)
+    except ValueError:
+        print(f"unknown mode: {raw} (use basic|extended)", file=sys.stderr)
+        return 2
+    if mode is TelemetryMode.OFF:
+        return _off()
+    print(_CONSENT_NOTICE, file=sys.stderr)
+    set_persisted_mode(mode)
+    print(
+        f"Telemetry enabled at '{mode.value}'. Set DECEPTICON_TELEMETRY_ENDPOINT to start sending.",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _off() -> int:
+    set_persisted_mode(TelemetryMode.OFF)
+    print("Telemetry disabled (persistent opt-out written).", file=sys.stderr)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
     sub = args[0] if args else "status"
-    cfg = resolve_config()
 
     if sub in {"-h", "--help"}:
         print(__doc__, file=sys.stderr)
         return 0
     if sub == "status":
-        return _status(cfg)
+        return _status(resolve_config())
     if sub == "preview":
-        return _preview(cfg)
-    if sub == "off":
-        set_opted_out(True)
-        print("Telemetry disabled (persistent opt-out written).", file=sys.stderr)
-        return 0
+        return _preview(resolve_config())
+    if sub == "enable":
+        return _enable(args[1] if len(args) > 1 else None)
     if sub == "on":
-        set_opted_out(False)
-        print(
-            "Opt-out removed. Telemetry still requires DECEPTICON_TELEMETRY=basic|extended "
-            "and an endpoint to actually send.",
-            file=sys.stderr,
-        )
-        return 0
-    print(f"unknown telemetry subcommand: {sub} (use status|preview|off|on)", file=sys.stderr)
+        return _enable("basic")
+    if sub == "off":
+        return _off()
+    print(
+        f"unknown telemetry subcommand: {sub} (use status|preview|enable|off|on)", file=sys.stderr
+    )
     return 2
 
 

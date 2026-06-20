@@ -26,6 +26,8 @@ export const EVENT_TYPES = [
   "llm.response",
   "finding.created",
   "opplan.update",
+  // HITL decision (extended consent): a user's approve/deny on a tool call.
+  "hitl.decision",
 ] as const;
 
 /** Short, low-cardinality identifiers only — no free text, no dots, no spaces. */
@@ -70,6 +72,19 @@ export const TelemetryEvent = z
     msgs_bucket: z.enum(["1-5", "5-10", "10-50", "50+"]).optional(),
     /** Bucketed prompt length (e.g. "50-100") — never the prompt itself. */
     prompt_len_bucket: Slug.optional(),
+    // ── ground-truth engagement classification (from the Finding model / OPPLAN) ──
+    /** Finding severity: critical/high/medium/low/informational. */
+    severity: Slug.optional(),
+    /** Finding confidence: verified/probable/unverified. */
+    confidence: Slug.optional(),
+    /** Purple-team detection flag: yes / no. */
+    detected: Slug.optional(),
+    /** Kill-chain phase: recon/initial-access/post-exploit/c2/exfiltration. */
+    phase: Slug.optional(),
+    /** OPPLAN objective status: pending/in-progress/completed/blocked/cancelled. */
+    status_objective: Slug.optional(),
+    /** HITL decision on a tool call: approve / deny / edit. */
+    decision: Slug.optional(),
     mitre_tactics: z.array(MitreTactic).max(16).optional(),
     mitre_techniques: z.array(MitreTechnique).max(32).optional(),
     cwe: z.array(Cwe).max(16).optional(),
