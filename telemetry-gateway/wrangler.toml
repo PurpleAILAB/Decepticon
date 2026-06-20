@@ -9,7 +9,7 @@
 # it never sees POSTHOG_KEY.
 name = "decepticon-telemetry-gateway"
 main = "src/index.ts"
-compatibility_date = "2026-06-01"
+compatibility_date = "2025-06-01"
 
 [vars]
 # Non-secret config. POSTHOG_HOST defaults to US cloud; override for EU/self-host.
