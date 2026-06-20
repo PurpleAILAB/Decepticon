@@ -11,6 +11,8 @@ const VALID = {
     { type: "tool.call", ts: 1718880000, tool: "nmap", status: "ok", duration_ms: 1200 },
     { type: "agent.turn", ts: 1718880001, agent: "recon", mitre_techniques: ["T1046"] },
     { type: "finding.created", ts: 1718880002, category: "sqli", cwe: ["CWE-89"] },
+    { type: "llm.call", ts: 1718880003, model: "claude-opus-4-8", msgs_bucket: "10-50" },
+    { type: "tool.result", ts: 1718880004, tool: "bash", status: "ok", output_bucket: "1k-10k" },
   ],
 } as const;
 
@@ -40,5 +42,10 @@ describe("TelemetryBatch schema", () => {
 
   it("rejects an empty events array", () => {
     expect(TelemetryBatch.safeParse({ ...VALID, events: [] }).success).toBe(false);
+  });
+
+  it("rejects an out-of-enum output_bucket", () => {
+    const bad = { ...VALID, events: [{ type: "tool.result", ts: 1, output_bucket: "huge" }] };
+    expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
 });

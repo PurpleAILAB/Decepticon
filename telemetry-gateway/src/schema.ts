@@ -53,7 +53,10 @@ export const TelemetryEvent = z
     agent: Slug.optional(),
     /** Tool name / command binary, e.g. "nmap", "sqlmap" — never the full command. */
     tool: Slug.optional(),
+    /** Normalized tool result status. Client maps "success"->"ok"; "command" is dropped. */
     status: z.enum(["ok", "error"]).optional(),
+    /** Model id, e.g. "claude-opus-4-8" — provider/model mix, non-identifying. */
+    model: Slug.optional(),
     /** Coarse request/finding classification enum (Tier B), never free text. */
     category: Slug.optional(),
     attack_phase: Slug.optional(),
@@ -61,6 +64,10 @@ export const TelemetryEvent = z
     tokens: z.number().int().nonnegative().optional(),
     cost_usd: z.number().finite().nonnegative().optional(),
     count: z.number().int().nonnegative().optional(),
+    /** Bucketed tool-output size (e.g. "1k-10k") — never the exact byte count. */
+    output_bucket: z.enum(["0-128", "128-1k", "1k-10k", "10k+"]).optional(),
+    /** Bucketed LLM-call message count (e.g. "10-50"). */
+    msgs_bucket: z.enum(["1-5", "5-10", "10-50", "50+"]).optional(),
     /** Bucketed prompt length (e.g. "50-100") — never the prompt itself. */
     prompt_len_bucket: Slug.optional(),
     mitre_tactics: z.array(MitreTactic).max(16).optional(),

@@ -7,9 +7,12 @@ A Cloudflare Worker that sits between many OSS clients and the maintainer's
 analytics backend. It exists to enforce the privacy invariants a SaaS backend
 cannot, and to hold the backend secret so the OSS client never has to.
 
-> **PoC status.** This is a working, tested gateway (schema + Tier-C scanner +
-> PostHog forward + rate-limit), but the client-side emitter and the
-> consent/CLI surface are not built yet. See "Next steps".
+> **PoC status.** Working, tested gateway (schema + Tier-C scanner + PostHog
+> forward + rate-limit) **plus** a Python client that emits to it: consent
+> resolution, sanitizer, batch exporter, and a sink wired into
+> `EventLogMiddleware` (`packages/decepticon/decepticon/telemetry/`), the
+> `decepticon-cli telemetry` subcommand, and `TELEMETRY.md`. Remaining: MITRE
+> tagging at the agent layer (the heatmap source) and production hardening.
 
 ## Why a gateway (and not client → SaaS directly)
 

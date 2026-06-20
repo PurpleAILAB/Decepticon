@@ -45,6 +45,7 @@ from langchain_core.messages import ToolMessage
 from typing_extensions import override
 
 from decepticon.runtime.event_log import EventLog, EventType
+from decepticon.telemetry.sink import get_sink
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +139,9 @@ class EventLogMiddleware(AgentMiddleware):
         # Cache one EventLog per (workspace_root, engagement_id) so we don't
         # rebuild (and re-mkdir) on every model/tool call.
         self._logs: dict[tuple[str, str], EventLog] = {}
+        # Consent-gated maintainer telemetry. Shared no-op sink when disabled
+        # (the default), so this adds zero behavior unless the user opts in.
+        self._telemetry = get_sink()
 
     # ── scope + log resolution ────────────────────────────────────────────
 
@@ -199,6 +203,10 @@ class EventLogMiddleware(AgentMiddleware):
                 getattr(event_type, "value", event_type),
                 exc_info=True,
             )
+        # Mirror the same redacted event to the consent-gated telemetry sink.
+        # `record` is itself fail-closed and never raises, so disk logging and
+        # telemetry stay independent — one failing never affects the other.
+        self._telemetry.record(getattr(event_type, "value", str(event_type)), payload, agent)
 
     # ── payload builders ──────────────────────────────────────────────────
 
