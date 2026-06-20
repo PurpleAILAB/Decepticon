@@ -27,7 +27,10 @@ export async function forwardToPostHog(
   env: PostHogEnv,
   fetchImpl: FetchLike = fetch,
 ): Promise<Response> {
-  const host = (env.POSTHOG_HOST ?? DEFAULT_HOST).replace(/\/+$/, "");
+  // Strip trailing slashes without a regex (avoids the ReDoS surface CodeQL
+  // flags on env-derived input).
+  let host = env.POSTHOG_HOST ?? DEFAULT_HOST;
+  while (host.endsWith("/")) host = host.slice(0, -1);
 
   const phBatch = batch.events.map((ev) => {
     const { type, ts, ...props } = ev;
