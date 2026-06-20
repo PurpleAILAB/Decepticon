@@ -48,6 +48,18 @@ def test_known_targets_masked_with_certainty() -> None:
     assert "dc01" not in out and "fileserver" not in out
 
 
+def test_add_known_closes_the_detector_gap() -> None:
+    # Without a known list, a bare NetBIOS-style host LEAKS (no detector catches it).
+    leaky = Redactor()
+    assert "WIN-A8F3K2" in leaky.redact("pivot to WIN-A8F3K2")
+    # Feeding the RoE target masks it with certainty.
+    r = Redactor()
+    r.add_known(["WIN-A8F3K2", "dc01"])
+    out = r.redact("pivot to WIN-A8F3K2, then dc01")
+    assert "WIN-A8F3K2" not in out and "dc01" not in out
+    assert "<HOST_1>" in out and "<HOST_2>" in out
+
+
 def test_does_not_over_mask_harmless_text() -> None:
     r = Redactor()
     keep = "connect web:8080 set mode:fast decepticon v1.2.3 x86_64 ran T1190 CWE-89 step 7"

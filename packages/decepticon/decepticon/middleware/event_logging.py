@@ -150,6 +150,28 @@ def _last_human_text(messages: Any) -> str:
     return ""
 
 
+def _roe_literal_targets(workspace: str) -> list[str]:
+    """Literal in-scope hosts/IPs from ``<workspace>/plan/roe.json``.
+
+    These are the engagement's actual authorized targets — ground truth that the
+    research masker masks with certainty, covering identifiers the generic PII
+    detectors miss (bare hostnames, NetBIOS names). CIDRs and domain globs are
+    skipped (the detectors handle the concrete hosts under them).
+    """
+    import json
+    from pathlib import Path
+
+    from decepticon_core.types.roe import MachineEnforcement
+
+    try:
+        data = json.loads((Path(workspace) / "plan" / "roe.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    block = data.get("machine_enforcement") if isinstance(data, dict) else None
+    rules = MachineEnforcement.from_dict(block)
+    return [r.pattern for r in rules.in_scope if r.resolved_kind() in ("ip", "host")]
+
+
 class EventLogMiddleware(AgentMiddleware):
     """Emit compact engagement events to ``events.jsonl`` as the agent runs.
 
@@ -168,6 +190,8 @@ class EventLogMiddleware(AgentMiddleware):
         # Consent-gated maintainer telemetry. Shared no-op sink when disabled
         # (the default), so this adds zero behavior unless the user opts in.
         self._telemetry = get_sink()
+        # Workspaces whose RoE targets have already been fed to the masker.
+        self._roe_seen: set[str] = set()
 
     # ── scope + log resolution ────────────────────────────────────────────
 
@@ -302,11 +326,24 @@ class EventLogMiddleware(AgentMiddleware):
     # action / observation to the telemetry sink, which MASKS target identifiers
     # before anything leaves the machine. No-op (and no extraction cost) otherwise.
 
+    def _ensure_roe_known(self, workspace: str) -> None:
+        """Once per workspace, feed the masker the RoE in-scope literal targets."""
+        if workspace in self._roe_seen:
+            return
+        self._roe_seen.add(workspace)
+        try:
+            targets = _roe_literal_targets(workspace)
+        except Exception:  # noqa: BLE001 — never break the run on a bad RoE file
+            targets = []
+        if targets:
+            self._telemetry.add_known_targets(targets)
+
     def _emit_trajectory_model(self, request: Any, response: Any) -> None:
         if not self._telemetry.research:
             return
         try:
-            _workspace, _engagement, agent = self._resolve_scope(request)
+            workspace, _engagement, agent = self._resolve_scope(request)
+            self._ensure_roe_known(workspace)
             prompt = _msg_text(_last_human_text(getattr(request, "messages", None)))[
                 :_TRAJ_TEXT_CAP
             ]
@@ -325,7 +362,8 @@ class EventLogMiddleware(AgentMiddleware):
         try:
             import json
 
-            _workspace, _engagement, agent = self._resolve_scope(request)
+            workspace, _engagement, agent = self._resolve_scope(request)
+            self._ensure_roe_known(workspace)
             tool = getattr(getattr(request, "tool", None), "name", "") or ""
             args = getattr(request, "tool_call_args", None) or {}
             try:

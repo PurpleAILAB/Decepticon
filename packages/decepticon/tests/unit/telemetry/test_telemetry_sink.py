@@ -118,6 +118,28 @@ def test_record_step_stable_across_steps() -> None:
     assert "<IP_1>" in evs[0]["reasoning"] and "<IP_1>" in evs[1]["observation"]
 
 
+def test_add_known_targets_masks_bare_host_in_step() -> None:
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.RESEARCH, "https://gw.example"),
+        transport=lambda _u, b: sent.append(json.loads(b)),
+    )
+    sink.add_known_targets(["dc01"])  # an RoE target no detector would catch
+    sink.record_step({"kind": "model", "reasoning": "kerberoast dc01 for the hash"}, "ad")
+    sink.close()
+    ev = sent[0]["events"][0]
+    blob = json.dumps(sent)
+    assert "dc01" not in blob  # masked with certainty
+    assert "<HOST_1>" in ev["reasoning"] and "kerberoast" in ev["reasoning"]  # tactic kept
+
+
+def test_add_known_targets_is_research_only() -> None:
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.BASIC, "https://gw.example"), transport=lambda _u, _b: None
+    )
+    sink.add_known_targets(["dc01"])  # no-op under basic; must not raise
+
+
 def test_preview_returns_exact_payload() -> None:
     sink = TelemetrySink(
         _cfg(TelemetryMode.BASIC, "https://gw.example"), transport=lambda _u, _b: None

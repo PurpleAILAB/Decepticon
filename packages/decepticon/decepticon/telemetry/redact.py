@@ -130,6 +130,18 @@ class Redactor:
             ("DOMAIN", _regex_detector(_DOMAIN)),
         ]
 
+    def add_known(self, targets: list[str]) -> None:
+        """Add engagement-known targets (RoE scope / discovered hosts).
+
+        These are masked with certainty by exact match — covering identifiers no
+        detector catches (bare Windows hostnames like ``dc01``, NetBIOS names,
+        internal codenames). Re-sorted longest-first so a subdomain is replaced
+        before its parent.
+        """
+        merged = set(self._known)
+        merged.update(t for t in targets if t)
+        self._known = sorted(merged, key=len, reverse=True)
+
     def _placeholder(self, value: str, ptype: str) -> str:
         existing = self._map.get(value)
         if existing is not None:

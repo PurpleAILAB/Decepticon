@@ -118,6 +118,16 @@ class TelemetrySink:
     # text fields a trajectory step may carry — masked in place, never bucketed.
     _STEP_TEXT_FIELDS = ("prompt", "reasoning", "observation", "args_text")
 
+    def add_known_targets(self, targets: list[str]) -> None:
+        """Feed the session masker the engagement's known targets (RoE scope).
+
+        Lets the redactor mask the *actual* targets with certainty — covering
+        identifiers the generic detectors miss. No-op unless research is active.
+        """
+        if self._exporter is None or not self._research or not targets:
+            return
+        self._redactor.add_known(targets)
+
     def record_step(self, step: dict[str, Any], agent: str | None = None) -> None:
         """Record an identifier-MASKED reasoning/trajectory step (RESEARCH only).
 
