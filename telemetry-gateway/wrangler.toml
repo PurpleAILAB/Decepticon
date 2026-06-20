@@ -1,0 +1,28 @@
+# Decepticon telemetry gateway — Cloudflare Worker config.
+#
+# Deploy (maintainer-side):
+#   npm install
+#   npx wrangler secret put POSTHOG_KEY      # PostHog project API key (server-only)
+#   npx wrangler deploy
+#
+# The OSS client only ever learns the public Worker URL (DECEPTICON_TELEMETRY_ENDPOINT);
+# it never sees POSTHOG_KEY.
+name = "decepticon-telemetry-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+
+[vars]
+# Non-secret config. POSTHOG_HOST defaults to US cloud; override for EU/self-host.
+POSTHOG_HOST = "https://us.i.posthog.com"
+TELEMETRY_PATH = "/v1/telemetry"
+MAX_BODY_BYTES = "262144"
+
+# Per-install rate limit on the public ingest endpoint (Cloudflare native
+# rate-limiting binding). 600 requests / 60s per install_id+IP key.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 600, period = 60 }
+
+# POSTHOG_KEY is a secret, set via `wrangler secret put POSTHOG_KEY` — never in this file.

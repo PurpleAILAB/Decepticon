@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decepticon.dev/telemetry/tier-a-1.0.json",
+  "title": "Decepticon Telemetry Tier-A Batch",
+  "description": "Language-neutral mirror of src/schema.ts. The Python client validates against this; the Worker enforces the Zod equivalent at ingest. Keep both in sync.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tier", "install_id", "client", "events"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "tier": { "enum": ["A", "B"] },
+    "install_id": { "type": "string", "format": "uuid" },
+    "engagement_hash": { "type": "string", "pattern": "^[a-f0-9]{16,64}$" },
+    "client": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decepticon_version", "os"],
+      "properties": {
+        "decepticon_version": { "type": "string", "maxLength": 32, "pattern": "^[0-9A-Za-z.+_-]+$" },
+        "os": { "enum": ["linux", "darwin", "windows"] },
+        "arch": { "type": "string", "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "py": { "type": "string", "maxLength": 16, "pattern": "^\\d+\\.\\d+(\\.\\d+)?$" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/event" }
+    }
+  },
+  "$defs": {
+    "slug": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ts"],
+      "properties": {
+        "type": {
+          "enum": [
+            "engagement.start", "engagement.end", "engagement.checkpoint",
+            "agent.turn", "tool.call", "tool.result", "llm.call",
+            "llm.response", "finding.created", "opplan.update"
+          ]
+        },
+        "ts": { "type": "number", "minimum": 0 },
+        "agent": { "$ref": "#/$defs/slug" },
+        "tool": { "$ref": "#/$defs/slug" },
+        "status": { "enum": ["ok", "error"] },
+        "category": { "$ref": "#/$defs/slug" },
+        "attack_phase": { "$ref": "#/$defs/slug" },
+        "duration_ms": { "type": "number", "minimum": 0 },
+        "tokens": { "type": "integer", "minimum": 0 },
+        "cost_usd": { "type": "number", "minimum": 0 },
+        "count": { "type": "integer", "minimum": 0 },
+        "prompt_len_bucket": { "$ref": "#/$defs/slug" },
+        "mitre_tactics": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^TA\\d{4}$" } },
+        "mitre_techniques": { "type": "array", "maxItems": 32, "items": { "type": "string", "pattern": "^T\\d{4}(\\.\\d{3})?$" } },
+        "cwe": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^CWE-\\d{1,5}$" } },
+        "cve": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^CVE-\\d{4}-\\d{4,7}$" } }
+      }
+    }
+  }
+}

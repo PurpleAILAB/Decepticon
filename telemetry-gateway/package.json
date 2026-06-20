@@ -1,0 +1,23 @@
+{
+  "name": "decepticon-telemetry-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Public ingest gateway for Decepticon OSS maintainer telemetry (Cloudflare Worker)",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240117.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^3.80.0"
+  }
+}
