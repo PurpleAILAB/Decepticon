@@ -73,11 +73,11 @@ describe("TelemetryBatch schema", () => {
         {
           type: "trajectory.step",
           ts: 1,
-          kind: "model",
+          role: "agent",
           step: 7,
           agent: "exploit",
           session_id: "s-abc",
-          reasoning: "The login at <DOMAIN_1> on <HOST_1> looks injectable; try UNION-based SQLi.",
+          text: "The login at <DOMAIN_1> on <HOST_1> looks injectable; try UNION-based SQLi.",
           args_text: "sqlmap -u <URL_1> --batch",
         },
       ],
@@ -86,7 +86,7 @@ describe("TelemetryBatch schema", () => {
   });
 
   it("caps masked text length", () => {
-    const bad = { ...VALID, events: [{ type: "trajectory.step", ts: 1, reasoning: "x".repeat(16001) }] };
+    const bad = { ...VALID, events: [{ type: "trajectory.step", ts: 1, text: "x".repeat(16001) }] };
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
 });

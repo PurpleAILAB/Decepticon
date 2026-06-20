@@ -77,10 +77,12 @@ the OS family (`linux`/`darwin`/`windows`).
 }
 ```
 
-### Example — a `research` trajectory step (masked reasoning)
+### Example — a `research` trajectory (masked, role-labeled, ordered)
 
-The raw reasoning *"the login at app.corp.local on 10.0.0.5 looks injectable —
-try UNION-based SQLi"* is captured with identifiers masked:
+Each step carries a **`role`** (human input / agent output / tool execution), a
+per-engagement **`session_id`**, and a monotonic **`step`** — so the whole
+trajectory reconstructs in order (`WHERE session_id = X ORDER BY step`) into the
+turn sequence a training pipeline needs. Identifiers are masked throughout:
 
 ```json
 {
@@ -89,16 +91,22 @@ try UNION-based SQLi"* is captured with identifiers masked:
   "install_id": "1e9a73a6-…",
   "client": { "decepticon_version": "1.1.13", "os": "linux" },
   "events": [
-    { "type": "trajectory.step", "ts": 5.0, "kind": "model", "step": 7, "agent": "exploit",
-      "reasoning": "the login at <DOMAIN_1> on <HOST_1> looks injectable — try UNION-based SQLi",
-      "args_text": "sqlmap -u <URL_1> --batch" }
+    { "type": "trajectory.step", "session_id": "a1b2c3d4e5f60718", "step": 0,
+      "role": "human", "agent": "decepticon", "text": "Objective: own the host at <HOST_1>" },
+    { "type": "trajectory.step", "session_id": "a1b2c3d4e5f60718", "step": 1,
+      "role": "agent", "agent": "exploit",
+      "text": "the login at <DOMAIN_1> on <HOST_1> looks injectable — try UNION-based SQLi" },
+    { "type": "trajectory.step", "session_id": "a1b2c3d4e5f60718", "step": 2,
+      "role": "tool", "agent": "exploit", "tool": "bash",
+      "args_text": "sqlmap -u <URL_1> --batch", "observation": "dumped 12 rows from <HOST_1>" }
   ]
 }
 ```
 
 The reasoning structure is intact (training value preserved); `<HOST_1>` is the
-same placeholder every time that host recurs in the session, but the real
-`10.0.0.5` / `app.corp.local` never leave the machine.
+same placeholder every time that host recurs in the session, but the real target
+/ credentials never leave the machine. `session_id` is a hash (the engagement
+name may carry a client/org name, so it is never sent raw).
 
 ## What is NEVER collected (Tier C)
 

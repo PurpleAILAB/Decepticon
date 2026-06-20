@@ -5,11 +5,35 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from decepticon.telemetry import exporter as exporter_mod
 from decepticon.telemetry.exporter import BatchExporter
 
 
 def _envelope(events: list[dict[str, Any]]) -> dict[str, Any]:
     return {"schema_version": "1.0", "events": events}
+
+
+def test_default_transport_sets_user_agent(monkeypatch) -> None:
+    # The stdlib default UA is 403'd by Cloudflare in front of the gateway — the
+    # request must carry a named User-Agent or every batch is silently dropped.
+    captured: dict[str, Any] = {}
+
+    class _Resp:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout=0):
+        captured["ua"] = req.get_header("User-agent")
+        return _Resp()
+
+    monkeypatch.setattr(exporter_mod.urllib.request, "urlopen", fake_urlopen)
+    exporter_mod._http_post("https://gw.example", b"{}")
+    assert captured["ua"] and "python-urllib" not in captured["ua"].lower()
 
 
 def test_flushes_when_batch_full() -> None:

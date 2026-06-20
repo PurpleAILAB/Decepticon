@@ -78,7 +78,7 @@ def test_record_step_is_research_only() -> None:
     sink = TelemetrySink(
         _cfg(TelemetryMode.BASIC, "https://gw.example"), transport=lambda _u, b: sent.append(b)
     )
-    sink.record_step({"kind": "model", "reasoning": "try SQLi on <HOST_1>"}, "exploit")
+    sink.record_step({"role": "agent", "text": "try SQLi on <HOST_1>"}, "exploit")
     sink.close()
     assert sent == []  # trajectory capture requires research consent
 
@@ -91,17 +91,24 @@ def test_record_step_masks_identifiers_and_forwards() -> None:
     )
     # raw reasoning with a target IP + creds — must be masked, not dropped/leaked
     sink.record_step(
-        {"kind": "model", "step": 1, "reasoning": "exploit 10.0.0.5 with creds admin:P@ss!2024"},
+        {
+            "role": "agent",
+            "session_id": "s1",
+            "step": 1,
+            "text": "exploit 10.0.0.5 with creds admin:P@ss!2024",
+        },
         "exploit",
     )
     sink.close()
     env = sent[0]
     assert env["tier"] == "R"
     ev = env["events"][0]
-    assert ev["type"] == "trajectory.step" and ev["kind"] == "model"
+    assert ev["type"] == "trajectory.step" and ev["role"] == "agent" and ev["session_id"] == "s1"
     blob = json.dumps(env)
     assert "10.0.0.5" not in blob and "P@ss!2024" not in blob  # masked
-    assert "<IP_1>" in ev["reasoning"] and "SQLi" not in blob  # structure kept, identifiers gone
+    assert (
+        "<IP_1>" in ev["text"] and "exploit" in ev["text"]
+    )  # structure/tactic kept, identifiers gone
 
 
 def test_record_step_stable_across_steps() -> None:
@@ -110,12 +117,17 @@ def test_record_step_stable_across_steps() -> None:
         _cfg(TelemetryMode.RESEARCH, "https://gw.example"),
         transport=lambda _u, b: sent.append(json.loads(b)),
     )
-    sink.record_step({"kind": "model", "reasoning": "recon 10.0.0.5"}, "recon")
-    sink.record_step({"kind": "tool", "observation": "10.0.0.5 port 445 open"}, "recon")
+    sink.record_step(
+        {"role": "agent", "session_id": "s", "step": 0, "text": "recon 10.0.0.5"}, "recon"
+    )
+    sink.record_step(
+        {"role": "tool", "session_id": "s", "step": 1, "observation": "10.0.0.5 port 445 open"},
+        "recon",
+    )
     sink.close()
     evs = [e for env in sent for e in env["events"]]
     # same IP → same placeholder across two separate steps (coherent trajectory)
-    assert "<IP_1>" in evs[0]["reasoning"] and "<IP_1>" in evs[1]["observation"]
+    assert "<IP_1>" in evs[0]["text"] and "<IP_1>" in evs[1]["observation"]
 
 
 def test_add_known_targets_masks_bare_host_in_step() -> None:
@@ -125,12 +137,15 @@ def test_add_known_targets_masks_bare_host_in_step() -> None:
         transport=lambda _u, b: sent.append(json.loads(b)),
     )
     sink.add_known_targets(["dc01"])  # an RoE target no detector would catch
-    sink.record_step({"kind": "model", "reasoning": "kerberoast dc01 for the hash"}, "ad")
+    sink.record_step(
+        {"role": "agent", "session_id": "s", "step": 0, "text": "kerberoast dc01 for the hash"},
+        "ad",
+    )
     sink.close()
     ev = sent[0]["events"][0]
     blob = json.dumps(sent)
     assert "dc01" not in blob  # masked with certainty
-    assert "<HOST_1>" in ev["reasoning"] and "kerberoast" in ev["reasoning"]  # tactic kept
+    assert "<HOST_1>" in ev["text"] and "kerberoast" in ev["text"]  # tactic kept
 
 
 def test_add_known_targets_is_research_only() -> None:

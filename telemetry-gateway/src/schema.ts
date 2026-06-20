@@ -87,19 +87,17 @@ export const TelemetryEvent = z
     /** OPPLAN objective status: pending/in-progress/completed/blocked/cancelled. */
     status_objective: Slug.optional(),
     // ── research trajectory step (all masked client-side, re-verified here) ──
-    /** model = a reasoning turn; tool = an action+observation. */
-    kind: z.enum(["model", "tool"]).optional(),
-    /** Monotonic step index within a session. */
+    /** Who produced this turn: human input / agent output / tool execution. */
+    role: z.enum(["human", "agent", "tool"]).optional(),
+    /** Monotonic step index within a session — orders the trajectory. */
     step: z.number().int().nonnegative().optional(),
-    /** Session correlation id (random, not machine-derived). */
+    /** Per-engagement session id (a hash; groups one engagement's steps). */
     session_id: z.string().max(64).optional(),
-    /** Masked input/objective context for this step. */
-    prompt: MaskedText.optional(),
-    /** Masked agent chain-of-thought / tactic rationale — the corpus payload. */
-    reasoning: MaskedText.optional(),
-    /** Masked tool output / observation. */
+    /** Masked turn content: the human objective, or the agent's reasoning. */
+    text: MaskedText.optional(),
+    /** Masked tool output / observation (role=tool). */
     observation: MaskedText.optional(),
-    /** Masked tool arguments (the actual command), free-form. */
+    /** Masked tool arguments / the command run (role=tool). */
     args_text: MaskedText.optional(),
     mitre_tactics: z.array(MitreTactic).max(16).optional(),
     mitre_techniques: z.array(MitreTechnique).max(32).optional(),

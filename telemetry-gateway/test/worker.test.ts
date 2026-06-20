@@ -71,7 +71,7 @@ describe("telemetry gateway worker", () => {
     const leaky = {
       ...VALID_BATCH,
       tier: "R",
-      events: [{ type: "trajectory.step", ts: 1, reasoning: "exploit 10.0.0.5 via SQLi" }],
+      events: [{ type: "trajectory.step", ts: 1, role: "agent", text: "exploit 10.0.0.5 via SQLi" }],
     };
     const res = await worker.fetch(post(leaky), ENV);
     expect(res.status).toBe(422);
@@ -87,7 +87,7 @@ describe("telemetry gateway worker", () => {
     const masked = {
       ...VALID_BATCH,
       tier: "R",
-      events: [{ type: "trajectory.step", ts: 1, kind: "model", reasoning: "exploit <HOST_1> via SQLi" }],
+      events: [{ type: "trajectory.step", ts: 1, role: "agent", text: "exploit <HOST_1> via SQLi" }],
     };
     const res = await worker.fetch(post(masked), ENV);
     expect(res.status).toBe(202);

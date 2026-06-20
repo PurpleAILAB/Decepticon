@@ -115,9 +115,6 @@ class TelemetrySink:
         """
         self.record("opplan.update", {"phase": phase, "status": status}, agent)
 
-    # text fields a trajectory step may carry — masked in place, never bucketed.
-    _STEP_TEXT_FIELDS = ("prompt", "reasoning", "observation", "args_text")
-
     def add_known_targets(self, targets: list[str]) -> None:
         """Feed the session masker the engagement's known targets (RoE scope).
 
@@ -131,8 +128,9 @@ class TelemetrySink:
     def record_step(self, step: dict[str, Any], agent: str | None = None) -> None:
         """Record an identifier-MASKED reasoning/trajectory step (RESEARCH only).
 
-        ``step`` carries the raw reasoning as-is (prompt / reasoning / tool / args
-        / observation). Every string is masked by the session Redactor — target
+        ``step`` carries the raw turn as-is (role, session_id, step, and the text
+        — human objective / agent reasoning / tool args+observation). Every string
+        is masked by the session Redactor — target
         identifiers become stable placeholders, the reasoning structure is kept —
         then the masked step is fail-closed re-scanned; if any identifier slipped
         through, the WHOLE step is dropped rather than shipped. No-op unless

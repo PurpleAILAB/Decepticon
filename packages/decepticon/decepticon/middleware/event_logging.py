@@ -150,6 +150,14 @@ def _last_human_text(messages: Any) -> str:
     return ""
 
 
+def _session_id(engagement: str | None) -> str:
+    """A stable per-engagement session id (hashed — the engagement name may carry
+    a client/org name, so it is never sent raw). Groups one engagement's steps."""
+    import hashlib
+
+    return hashlib.sha256((engagement or "").encode("utf-8")).hexdigest()[:16]
+
+
 def _roe_literal_targets(workspace: str) -> list[str]:
     """Literal in-scope hosts/IPs from ``<workspace>/plan/roe.json``.
 
@@ -192,6 +200,10 @@ class EventLogMiddleware(AgentMiddleware):
         self._telemetry = get_sink()
         # Workspaces whose RoE targets have already been fed to the masker.
         self._roe_seen: set[str] = set()
+        # Per-session trajectory state: monotonic step counter + last human-input
+        # hash (so the repeated objective in an agent loop is emitted once).
+        self._steps: dict[str, int] = {}
+        self._last_prompt: dict[str, str] = {}
 
     # ── scope + log resolution ────────────────────────────────────────────
 
@@ -338,21 +350,50 @@ class EventLogMiddleware(AgentMiddleware):
         if targets:
             self._telemetry.add_known_targets(targets)
 
+    def _next_step(self, session_id: str) -> int:
+        n = self._steps.get(session_id, 0)
+        self._steps[session_id] = n + 1
+        return n
+
     def _emit_trajectory_model(self, request: Any, response: Any) -> None:
         if not self._telemetry.research:
             return
         try:
-            workspace, _engagement, agent = self._resolve_scope(request)
+            import hashlib
+
+            workspace, engagement, agent = self._resolve_scope(request)
             self._ensure_roe_known(workspace)
+            sid = _session_id(engagement)
             prompt = _msg_text(_last_human_text(getattr(request, "messages", None)))[
                 :_TRAJ_TEXT_CAP
             ]
             reasoning = _msg_text(getattr(response, "content", ""))[:_TRAJ_TEXT_CAP]
-            if not prompt and not reasoning:
-                return
-            self._telemetry.record_step(
-                {"kind": "model", "prompt": prompt, "reasoning": reasoning}, agent
-            )
+            # Human input — emit only when it changes (the objective repeats every
+            # model call inside the agent loop; we want one human turn, not N).
+            if prompt:
+                ph = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+                if self._last_prompt.get(sid) != ph:
+                    self._last_prompt[sid] = ph
+                    self._telemetry.record_step(
+                        {
+                            "role": "human",
+                            "session_id": sid,
+                            "step": self._next_step(sid),
+                            "text": prompt,
+                        },
+                        agent,
+                    )
+            # Agent output — the reasoning / chain-of-thought.
+            if reasoning:
+                self._telemetry.record_step(
+                    {
+                        "role": "agent",
+                        "session_id": sid,
+                        "step": self._next_step(sid),
+                        "text": reasoning,
+                    },
+                    agent,
+                )
         except Exception:  # noqa: BLE001 — telemetry must never break the run
             log.debug("trajectory model capture failed", exc_info=True)
 
@@ -362,8 +403,9 @@ class EventLogMiddleware(AgentMiddleware):
         try:
             import json
 
-            workspace, _engagement, agent = self._resolve_scope(request)
+            workspace, engagement, agent = self._resolve_scope(request)
             self._ensure_roe_known(workspace)
+            sid = _session_id(engagement)
             tool = getattr(getattr(request, "tool", None), "name", "") or ""
             args = getattr(request, "tool_call_args", None) or {}
             try:
@@ -374,7 +416,9 @@ class EventLogMiddleware(AgentMiddleware):
             if isinstance(response, ToolMessage):
                 observation = _msg_text(getattr(response, "content", ""))[:_TRAJ_TEXT_CAP]
             step: dict[str, Any] = {
-                "kind": "tool",
+                "role": "tool",
+                "session_id": sid,
+                "step": self._next_step(sid),
                 "args_text": args_text,
                 "observation": observation,
             }
