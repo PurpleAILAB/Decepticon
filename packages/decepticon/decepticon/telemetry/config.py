@@ -24,11 +24,15 @@ _TRUTHY = {"1", "true", "yes", "on"}
 
 
 class TelemetryMode(str, Enum):
-    """How much the user consented to share."""
+    """How much the user consented to share.
+
+    ``research`` adds identifier-masked reasoning/trajectory capture on top of
+    the anonymous structural ``basic`` tier (see ``telemetry.trajectory``).
+    """
 
     OFF = "off"
-    BASIC = "basic"  # Tier A only — structural, non-identifying
-    EXTENDED = "extended"  # Tier A + B — adds sanitized semantic classification
+    BASIC = "basic"  # anonymous structural artifacts only
+    RESEARCH = "research"  # basic + identifier-masked reasoning/trajectory corpus
 
 
 def _truthy(raw: str | None) -> bool:

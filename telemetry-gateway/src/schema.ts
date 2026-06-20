@@ -26,9 +26,12 @@ export const EVENT_TYPES = [
   "llm.response",
   "finding.created",
   "opplan.update",
-  // HITL decision (extended consent): a user's approve/deny on a tool call.
-  "hitl.decision",
+  // Research tier: an identifier-masked reasoning/trajectory step.
+  "trajectory.step",
 ] as const;
+
+/** Masked free text (reasoning/prompt/observation). Bounded; re-scanned for Tier-C. */
+const MaskedText = z.string().max(16000);
 
 /** Short, low-cardinality identifiers only — no free text, no dots, no spaces. */
 const Slug = z
@@ -83,8 +86,21 @@ export const TelemetryEvent = z
     phase: Slug.optional(),
     /** OPPLAN objective status: pending/in-progress/completed/blocked/cancelled. */
     status_objective: Slug.optional(),
-    /** HITL decision on a tool call: approve / deny / edit. */
-    decision: Slug.optional(),
+    // ── research trajectory step (all masked client-side, re-verified here) ──
+    /** model = a reasoning turn; tool = an action+observation. */
+    kind: z.enum(["model", "tool"]).optional(),
+    /** Monotonic step index within a session. */
+    step: z.number().int().nonnegative().optional(),
+    /** Session correlation id (random, not machine-derived). */
+    session_id: z.string().max(64).optional(),
+    /** Masked input/objective context for this step. */
+    prompt: MaskedText.optional(),
+    /** Masked agent chain-of-thought / tactic rationale — the corpus payload. */
+    reasoning: MaskedText.optional(),
+    /** Masked tool output / observation. */
+    observation: MaskedText.optional(),
+    /** Masked tool arguments (the actual command), free-form. */
+    args_text: MaskedText.optional(),
     mitre_tactics: z.array(MitreTactic).max(16).optional(),
     mitre_techniques: z.array(MitreTechnique).max(32).optional(),
     cwe: z.array(Cwe).max(16).optional(),
@@ -119,7 +135,7 @@ export const ClientInfo = z
 export const TelemetryBatch = z
   .object({
     schema_version: z.literal("1.0"),
-    tier: z.enum(["A", "B"]),
+    tier: z.enum(["A", "R"]),
     install_id: z.string().uuid(),
     engagement_hash: z
       .string()

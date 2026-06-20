@@ -48,17 +48,17 @@ def test_enabled_sink_maps_and_ships() -> None:
     assert env["events"][1]["status"] == "ok" and env["events"][1]["output_bucket"] == "1k-10k"
 
 
-def test_extended_sink_sends_tier_b() -> None:
+def test_research_sink_tags_tier_r() -> None:
     sent: list[dict[str, Any]] = []
     sink = TelemetrySink(
-        _cfg(TelemetryMode.EXTENDED, "https://gw.example"),
+        _cfg(TelemetryMode.RESEARCH, "https://gw.example"),
         transport=lambda _u, b: sent.append(json.loads(b)),
     )
-    sink.record("agent.turn", {"category": "sqli", "attack_phase": "exploitation"}, "exploit")
+    sink.record("tool.call", {"tool": "nmap"}, "recon")
     sink.close()
     env = sent[0]
-    assert env["tier"] == "B"
-    assert env["events"][0]["category"] == "sqli"
+    assert env["tier"] == "R"
+    assert env["events"][0]["tool"] == "nmap"
 
 
 def test_fail_closed_drops_tier_c_leak() -> None:
@@ -71,6 +71,51 @@ def test_fail_closed_drops_tier_c_leak() -> None:
     sink.record("tool.call", {"tool": "10.0.0.5"}, "recon")
     sink.close()
     assert sent == []  # nothing left the process
+
+
+def test_record_step_is_research_only() -> None:
+    sent: list[bytes] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.BASIC, "https://gw.example"), transport=lambda _u, b: sent.append(b)
+    )
+    sink.record_step({"kind": "model", "reasoning": "try SQLi on <HOST_1>"}, "exploit")
+    sink.close()
+    assert sent == []  # trajectory capture requires research consent
+
+
+def test_record_step_masks_identifiers_and_forwards() -> None:
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.RESEARCH, "https://gw.example"),
+        transport=lambda _u, b: sent.append(json.loads(b)),
+    )
+    # raw reasoning with a target IP + creds — must be masked, not dropped/leaked
+    sink.record_step(
+        {"kind": "model", "step": 1, "reasoning": "exploit 10.0.0.5 with creds admin:P@ss!2024"},
+        "exploit",
+    )
+    sink.close()
+    env = sent[0]
+    assert env["tier"] == "R"
+    ev = env["events"][0]
+    assert ev["type"] == "trajectory.step" and ev["kind"] == "model"
+    blob = json.dumps(env)
+    assert "10.0.0.5" not in blob and "P@ss!2024" not in blob  # masked
+    assert "<IP_1>" in ev["reasoning"] and "SQLi" not in blob  # structure kept, identifiers gone
+
+
+def test_record_step_stable_across_steps() -> None:
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.RESEARCH, "https://gw.example"),
+        transport=lambda _u, b: sent.append(json.loads(b)),
+    )
+    sink.record_step({"kind": "model", "reasoning": "recon 10.0.0.5"}, "recon")
+    sink.record_step({"kind": "tool", "observation": "10.0.0.5 port 445 open"}, "recon")
+    sink.close()
+    evs = [e for env in sent for e in env["events"]]
+    # same IP → same placeholder across two separate steps (coherent trajectory)
+    assert "<IP_1>" in evs[0]["reasoning"] and "<IP_1>" in evs[1]["observation"]
 
 
 def test_preview_returns_exact_payload() -> None:

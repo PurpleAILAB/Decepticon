@@ -80,17 +80,6 @@ def test_unknown_event_type_dropped() -> None:
     assert event_to_tier_a({"type": "mystery.event", "ts": 1.0, "payload": {}}) is None
 
 
-def test_extended_admits_tier_b_fields() -> None:
-    rec = {
-        "type": "agent.turn",
-        "ts": 1.0,
-        "payload": {"category": "sqli", "attack_phase": "exploitation"},
-    }
-    assert "category" not in (event_to_tier_a(rec, extended=False) or {})
-    ext = event_to_tier_a(rec, extended=True)
-    assert ext is not None and ext["category"] == "sqli" and ext["attack_phase"] == "exploitation"
-
-
 # ── Tier-C no-leak gate (mirrors the gateway corpus) ─────────────────────────
 
 FORBIDDEN = [

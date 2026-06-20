@@ -35,13 +35,8 @@ _KNOWN_TYPES = frozenset(
         "llm.response",
         "finding.created",
         "opplan.update",
-        "hitl.decision",
     }
 )
-
-# A user HITL decision is a behavioral choice (Tier B), forwarded only under
-# EXTENDED consent. Everything else here is structural ground truth (Tier A).
-_EXTENDED_ONLY = frozenset({"hitl.decision"})
 
 _STATUS_MAP = {"success": "ok", "error": "error"}  # "command" → dropped
 
@@ -84,18 +79,15 @@ def _id_list(value: Any, pattern: re.Pattern[str], limit: int) -> list[str]:
     return out[:limit]
 
 
-def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str, Any] | None:
+def event_to_tier_a(record: dict[str, Any]) -> dict[str, Any] | None:
     """Map one event-log record to a Tier-A event, or ``None`` if not forwardable.
 
     ``record`` is the on-disk shape ``{ts, type, agent?, payload}``. Only the
     fields named in the Tier-A schema survive; everything else is dropped.
-    ``extended`` admits the Tier-B semantic fields (category / attack_phase).
     """
     etype = record.get("type")
     if etype not in _KNOWN_TYPES:
         return None
-    if etype in _EXTENDED_ONLY and not extended:
-        return None  # behavioral signal requires extended consent
     ts = record.get("ts")
     if not isinstance(ts, (int, float)):
         return None
@@ -152,16 +144,8 @@ def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str,
             total = usage.get("total_tokens") or usage.get("total")
             if isinstance(total, int):
                 ev["tokens"] = total
-    elif etype == "hitl.decision":
-        tool = _slug(p.get("tool"))
-        if tool:
-            ev["tool"] = tool
-        decision = _slug(p.get("decision"))
-        if decision:
-            ev["decision"] = decision
-
     # MITRE / CWE / CVE pass-through — forwarded only when the source payload
-    # already carries them (agent-side tagging is a separate follow-up).
+    # already carries them.
     for key, pat, limit in (
         ("mitre_tactics", _MITRE_TACTIC, 16),
         ("mitre_techniques", _MITRE_TECHNIQUE, 32),
@@ -171,12 +155,6 @@ def event_to_tier_a(record: dict[str, Any], extended: bool = False) -> dict[str,
         ids = _id_list(p.get(key), pat, limit)
         if ids:
             ev[key] = ids
-
-    if extended:
-        for key in ("category", "attack_phase"):
-            slug = _slug(p.get(key))
-            if slug:
-                ev[key] = slug
 
     return ev
 

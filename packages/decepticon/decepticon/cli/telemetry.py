@@ -5,7 +5,7 @@ Subcommands:
 * ``status``          show the resolved consent mode, endpoint, and anonymous id
 * ``preview``         print the EXACT payload that would be sent for a sample run
                       (transparency before any data leaves the machine)
-* ``enable <mode>``   give explicit consent (``basic`` or ``extended``); prints
+* ``enable <mode>``   give explicit consent (``basic`` or ``research``); prints
                       the full disclosure and persists the choice
 * ``off``             persistently opt out (honored by every run)
 * ``on``              alias for ``enable basic``
@@ -29,27 +29,29 @@ from decepticon.telemetry.sink import TelemetrySink
 _CONSENT_NOTICE = """\
 Decepticon usage telemetry — what you are consenting to share:
 
-  basic     Anonymous STRUCTURAL ground truth the engagement itself produces:
-            event type, agent name, tool name (e.g. nmap), status, bucketed
-            sizes, model id, OS, version, and the validated FINDING's own
-            classification — severity, CWE/MITRE ids, kill-chain phase,
-            confidence, purple-team detected flag — plus OPPLAN phase progress.
+  basic     Anonymous STRUCTURAL ground truth the engagement produces: event
+            type, agent name, tool name (e.g. nmap), status, bucketed sizes,
+            model id, OS, version, and the validated FINDING's own classification
+            (severity, CWE/MITRE, phase, confidence, detected) + OPPLAN progress.
+            No prompt text. No targets.
 
-  extended  basic, PLUS your HITL approve/deny decisions on tool calls (which
-            actions you let the agent take).
+  research  basic, PLUS the red-team REASONING corpus: your objectives, the
+            agent's chain-of-thought and tactic rationale, the commands it runs,
+            and the observations — captured as-is so the attacker reasoning is
+            preserved for training future autonomous red-team agents. Target
+            IDENTIFIERS are MASKED (10.0.0.5 -> <HOST_1>, creds -> <CRED_1>) so
+            the reasoning stays intact but no real target/credential is shared.
 
-NEVER sent, at any tier: raw prompts, target IPs/domains/hosts, credentials,
-file contents, tool output, finding descriptions, or client/org names. This is
-derived from the agent's structured artifacts (Finding model / OPPLAN), not from
-your prompt text. Your IP is dropped at the gateway.
+NEVER sent, at any tier: real target IPs/domains/hosts, credentials, client/org
+names (masked in research), and your IP (dropped at the gateway). You can share
+the agent's reasoning, which is yours — never a target's data.
 
 Run `decepticon-cli telemetry preview` to see the exact payload before sending.
 DO_NOT_TRACK=1 or `telemetry off` disables everything.
 """
 
 # A representative slice of a real run, used by `preview` so the user sees the
-# concrete field set that would be transmitted (includes extended behavioral
-# events so the richer tier is fully visible).
+# concrete field set that would be transmitted.
 _SAMPLE_EVENTS = [
     {
         "type": "opplan.update",
@@ -76,14 +78,8 @@ _SAMPLE_EVENTS = [
         "payload": {"tool": "bash", "status": "success", "output_chars": 2048},
     },
     {
-        "type": "hitl.decision",
-        "ts": 5.0,
-        "agent": "exploit",
-        "payload": {"tool": "bash", "decision": "deny"},
-    },
-    {
         "type": "finding.created",
-        "ts": 6.0,
+        "ts": 5.0,
         "agent": "exploit",
         "payload": {
             "severity": "high",
@@ -111,9 +107,8 @@ def _status(cfg: TelemetryConfig) -> int:
 
 def _preview(cfg: TelemetryConfig) -> int:
     # Force at least BASIC + a placeholder endpoint so the mapping runs even when
-    # telemetry is currently off — preview shows what *would* be sent. Use the
-    # configured tier (extended shows the behavioral events too).
-    mode = cfg.mode if cfg.mode is not TelemetryMode.OFF else TelemetryMode.EXTENDED
+    # telemetry is currently off — preview shows what *would* be sent.
+    mode = cfg.mode if cfg.mode is not TelemetryMode.OFF else TelemetryMode.BASIC
     preview_cfg = TelemetryConfig(
         mode=mode,
         endpoint=cfg.endpoint or "https://<your-endpoint>",
@@ -132,7 +127,7 @@ def _enable(arg: str | None) -> int:
     try:
         mode = TelemetryMode(raw)
     except ValueError:
-        print(f"unknown mode: {raw} (use basic|extended)", file=sys.stderr)
+        print(f"unknown mode: {raw} (use basic|research)", file=sys.stderr)
         return 2
     if mode is TelemetryMode.OFF:
         return _off()

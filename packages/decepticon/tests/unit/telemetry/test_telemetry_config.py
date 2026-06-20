@@ -16,12 +16,12 @@ def test_default_is_off_opt_in() -> None:
 
 def test_explicit_modes() -> None:
     assert resolve_mode({"DECEPTICON_TELEMETRY": "basic"}) is TelemetryMode.BASIC
-    assert resolve_mode({"DECEPTICON_TELEMETRY": "extended"}) is TelemetryMode.EXTENDED
+    assert resolve_mode({"DECEPTICON_TELEMETRY": "research"}) is TelemetryMode.RESEARCH
     assert resolve_mode({"DECEPTICON_TELEMETRY": "off"}) is TelemetryMode.OFF
 
 
 def test_do_not_track_forces_off() -> None:
-    env = {"DECEPTICON_TELEMETRY": "extended", "DO_NOT_TRACK": "1"}
+    env = {"DECEPTICON_TELEMETRY": "research", "DO_NOT_TRACK": "1"}
     assert resolve_mode(env) is TelemetryMode.OFF
 
 

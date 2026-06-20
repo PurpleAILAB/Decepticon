@@ -65,6 +65,34 @@ describe("telemetry gateway worker", () => {
     expect(fetchMock).not.toHaveBeenCalled(); // never forwarded
   });
 
+  it("rejects a trajectory step whose reasoning still leaks a raw IP (422)", async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const leaky = {
+      ...VALID_BATCH,
+      tier: "R",
+      events: [{ type: "trajectory.step", ts: 1, reasoning: "exploit 10.0.0.5 via SQLi" }],
+    };
+    const res = await worker.fetch(post(leaky), ENV);
+    expect(res.status).toBe(422);
+    const b = await body(res);
+    expect(b.klass).toBe("ipv4");
+    expect(JSON.stringify(b)).not.toContain("10.0.0.5");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards a properly masked trajectory step (202)", async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const masked = {
+      ...VALID_BATCH,
+      tier: "R",
+      events: [{ type: "trajectory.step", ts: 1, kind: "model", reasoning: "exploit <HOST_1> via SQLi" }],
+    };
+    const res = await worker.fetch(post(masked), ENV);
+    expect(res.status).toBe(202);
+  });
+
   it("rejects an off-contract field with 400 (schema)", async () => {
     const fetchMock = okFetch();
     vi.stubGlobal("fetch", fetchMock);

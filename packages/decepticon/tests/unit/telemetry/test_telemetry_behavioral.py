@@ -88,41 +88,21 @@ def test_record_phase_maps_to_opplan_update() -> None:
     assert "status" not in ev
 
 
-# ── HITL (behavioral, Tier B / extended only) ────────────────────────────────
-
-
-def test_record_hitl_extended_only() -> None:
-    basic: list[bytes] = []
-    TelemetrySink(_cfg(TelemetryMode.BASIC), transport=lambda _u, b: basic.append(b)).record_hitl(
-        "bash", "deny", "exploit"
-    )
-    assert basic == []
-
-    sent: list[dict[str, Any]] = []
-    sink = TelemetrySink(
-        _cfg(TelemetryMode.EXTENDED), transport=lambda _u, b: sent.append(json.loads(b))
-    )
-    sink.record_hitl("bash", "deny", "exploit")
-    sink.close()
-    ev = _events(sent)[0]
-    assert ev["type"] == "hitl.decision" and ev["tool"] == "bash" and ev["decision"] == "deny"
-
-
 # ── persistent consent ───────────────────────────────────────────────────────
 
 
 def test_persisted_mode_roundtrip(tmp_path) -> None:
     env = {"DECEPTICON_HOME": str(tmp_path)}
     assert persisted_mode(env) is None
-    set_persisted_mode(TelemetryMode.EXTENDED, env)
-    assert persisted_mode(env) is TelemetryMode.EXTENDED
+    set_persisted_mode(TelemetryMode.RESEARCH, env)
+    assert persisted_mode(env) is TelemetryMode.RESEARCH
     cfg = resolve_config({**env, "DECEPTICON_TELEMETRY_ENDPOINT": "https://gw"})
-    assert cfg.mode is TelemetryMode.EXTENDED and cfg.enabled is True
+    assert cfg.mode is TelemetryMode.RESEARCH and cfg.enabled is True
 
 
 def test_off_overrides_persisted_mode(tmp_path) -> None:
     env = {"DECEPTICON_HOME": str(tmp_path)}
-    set_persisted_mode(TelemetryMode.EXTENDED, env)
+    set_persisted_mode(TelemetryMode.RESEARCH, env)
     set_persisted_mode(TelemetryMode.OFF, env)
     assert (
         resolve_config({**env, "DECEPTICON_TELEMETRY_ENDPOINT": "https://gw"}).mode
@@ -132,7 +112,7 @@ def test_off_overrides_persisted_mode(tmp_path) -> None:
 
 def test_env_overrides_persisted_mode(tmp_path) -> None:
     env = {"DECEPTICON_HOME": str(tmp_path), "DECEPTICON_TELEMETRY": "basic"}
-    set_persisted_mode(TelemetryMode.EXTENDED, env)
+    set_persisted_mode(TelemetryMode.RESEARCH, env)
     assert (
         resolve_config({**env, "DECEPTICON_TELEMETRY_ENDPOINT": "https://gw"}).mode
         is TelemetryMode.BASIC

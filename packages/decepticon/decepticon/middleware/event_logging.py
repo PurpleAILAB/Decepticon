@@ -124,6 +124,32 @@ def _content_length(content: Any) -> int:
     return len(str(content))
 
 
+_TRAJ_TEXT_CAP = 12000
+
+
+def _msg_text(content: Any) -> str:
+    """Flatten a message's content (str or content-block list) to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text", "")))
+        return " ".join(p for p in parts if p)
+    return str(content) if content is not None else ""
+
+
+def _last_human_text(messages: Any) -> str:
+    """The most recent human-message text — the objective/instruction context."""
+    for msg in reversed(list(messages or [])):
+        if getattr(msg, "type", "") == "human":
+            return _msg_text(getattr(msg, "content", ""))
+    return ""
+
+
 class EventLogMiddleware(AgentMiddleware):
     """Emit compact engagement events to ``events.jsonl`` as the agent runs.
 
@@ -271,6 +297,55 @@ class EventLogMiddleware(AgentMiddleware):
             payload = {"tool": tool_name, "status": "command"}
             self._safe_append(event_log, EventType.TOOL_RESULT, payload, agent)
 
+    # ── research trajectory capture (reasoning corpus) ────────────────────
+    # Only runs under research consent. Emits the raw prompt / agent reasoning /
+    # action / observation to the telemetry sink, which MASKS target identifiers
+    # before anything leaves the machine. No-op (and no extraction cost) otherwise.
+
+    def _emit_trajectory_model(self, request: Any, response: Any) -> None:
+        if not self._telemetry.research:
+            return
+        try:
+            _workspace, _engagement, agent = self._resolve_scope(request)
+            prompt = _msg_text(_last_human_text(getattr(request, "messages", None)))[
+                :_TRAJ_TEXT_CAP
+            ]
+            reasoning = _msg_text(getattr(response, "content", ""))[:_TRAJ_TEXT_CAP]
+            if not prompt and not reasoning:
+                return
+            self._telemetry.record_step(
+                {"kind": "model", "prompt": prompt, "reasoning": reasoning}, agent
+            )
+        except Exception:  # noqa: BLE001 — telemetry must never break the run
+            log.debug("trajectory model capture failed", exc_info=True)
+
+    def _emit_trajectory_tool(self, request: Any, response: Any) -> None:
+        if not self._telemetry.research:
+            return
+        try:
+            import json
+
+            _workspace, _engagement, agent = self._resolve_scope(request)
+            tool = getattr(getattr(request, "tool", None), "name", "") or ""
+            args = getattr(request, "tool_call_args", None) or {}
+            try:
+                args_text = json.dumps(args, default=str)[:_TRAJ_TEXT_CAP]
+            except (TypeError, ValueError):
+                args_text = str(args)[:_TRAJ_TEXT_CAP]
+            observation = ""
+            if isinstance(response, ToolMessage):
+                observation = _msg_text(getattr(response, "content", ""))[:_TRAJ_TEXT_CAP]
+            step: dict[str, Any] = {
+                "kind": "tool",
+                "args_text": args_text,
+                "observation": observation,
+            }
+            if tool:  # omit empty tool — the gateway rejects an empty slug
+                step["tool"] = tool
+            self._telemetry.record_step(step, agent)
+        except Exception:  # noqa: BLE001 — telemetry must never break the run
+            log.debug("trajectory tool capture failed", exc_info=True)
+
     # ── middleware hooks ──────────────────────────────────────────────────
 
     @override
@@ -278,6 +353,7 @@ class EventLogMiddleware(AgentMiddleware):
         self._emit_llm_call(request)
         response = handler(request)
         self._emit_llm_response(request, response)
+        self._emit_trajectory_model(request, response)
         return response
 
     @override
@@ -285,6 +361,7 @@ class EventLogMiddleware(AgentMiddleware):
         self._emit_llm_call(request)
         response = await handler(request)
         self._emit_llm_response(request, response)
+        self._emit_trajectory_model(request, response)
         return response
 
     @override
@@ -292,6 +369,7 @@ class EventLogMiddleware(AgentMiddleware):
         self._emit_tool_call(request)
         response = handler(request)
         self._emit_tool_result(request, response)
+        self._emit_trajectory_tool(request, response)
         return response
 
     @override
@@ -299,4 +377,5 @@ class EventLogMiddleware(AgentMiddleware):
         self._emit_tool_call(request)
         response = await handler(request)
         self._emit_tool_result(request, response)
+        self._emit_trajectory_tool(request, response)
         return response

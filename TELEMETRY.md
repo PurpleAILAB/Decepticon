@@ -8,7 +8,7 @@ tool output are never transmitted.**
 ## TL;DR
 
 - **Off by default.** Nothing is sent unless you set `DECEPTICON_TELEMETRY=basic`
-  (or `extended`) **and** a `DECEPTICON_TELEMETRY_ENDPOINT`.
+  (or `research`) **and** a `DECEPTICON_TELEMETRY_ENDPOINT`.
 - **`DO_NOT_TRACK=1`** (or `decepticon-cli telemetry off`) forces it off forever.
 - **See exactly what would be sent:** `decepticon-cli telemetry preview`.
 
@@ -16,7 +16,7 @@ tool output are never transmitted.**
 
 | Variable / command | Effect |
 |---|---|
-| `DECEPTICON_TELEMETRY=off\|basic\|extended` | consent mode (default `off`) |
+| `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (default `off`) |
 | `DO_NOT_TRACK=1` | standard kill switch — forces `off` |
 | `DECEPTICON_TELEMETRY_ENDPOINT=<url>` | gateway URL; unset ⇒ nothing is sent |
 | `decepticon-cli telemetry status` | show resolved mode / endpoint / anonymous id |
@@ -43,15 +43,17 @@ Two consent tiers map to the data tiers in the design doc:
   clusters at a phase = where it fails) — entirely from the agent's structured
   artifacts, never from prompt text.
 
-- **`extended` → Tier A + B:** additionally your **HITL decisions** —
-  `hitl.decision` `{tool, decision: approve/deny/edit, agent}` — which actions you
-  do and don't let the agent take. Enable with
-  `decepticon-cli telemetry enable extended` (it prints the disclosure first).
+- **`research` → the reasoning corpus:** additionally the red-team **reasoning**
+  — your objectives, the agent's chain-of-thought / tactic rationale, the commands
+  it runs, and the observations — captured **as-is** so the attacker reasoning is
+  preserved for training future autonomous red-team agents. **Target identifiers
+  are MASKED** (`10.0.0.5` → `<HOST_1>`, creds → `<CRED_1>`) so the reasoning stays
+  intact but no real target/credential is shared. Enable with
+  `decepticon-cli telemetry enable research` (it prints the disclosure first).
 
-  **Consent boundary:** findings/phases describe what the *agent* did and are
-  non-identifying. The *target's* data — IPs, hosts, domains, credentials,
-  finding descriptions — is never sent, because a third party's data is not yours
-  to consent away.
+  **Consent boundary:** the agent's reasoning is yours to share. The *target's*
+  data — IPs, hosts, domains, credentials, client/org names — is masked even here,
+  because a third party's data is not yours to consent away.
 
 Every batch carries a non-identifying envelope: a random `install_id` (a UUID
 minted on first use — never machine- or IP-derived), the Decepticon version, and
@@ -74,6 +76,29 @@ the OS family (`linux`/`darwin`/`windows`).
   ]
 }
 ```
+
+### Example — a `research` trajectory step (masked reasoning)
+
+The raw reasoning *"the login at app.corp.local on 10.0.0.5 looks injectable —
+try UNION-based SQLi"* is captured with identifiers masked:
+
+```json
+{
+  "schema_version": "1.0",
+  "tier": "R",
+  "install_id": "1e9a73a6-…",
+  "client": { "decepticon_version": "1.1.13", "os": "linux" },
+  "events": [
+    { "type": "trajectory.step", "ts": 5.0, "kind": "model", "step": 7, "agent": "exploit",
+      "reasoning": "the login at <DOMAIN_1> on <HOST_1> looks injectable — try UNION-based SQLi",
+      "args_text": "sqlmap -u <URL_1> --batch" }
+  ]
+}
+```
+
+The reasoning structure is intact (training value preserved); `<HOST_1>` is the
+same placeholder every time that host recurs in the session, but the real
+`10.0.0.5` / `app.corp.local` never leave the machine.
 
 ## What is NEVER collected (Tier C)
 

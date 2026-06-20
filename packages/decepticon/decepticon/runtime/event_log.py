@@ -97,9 +97,6 @@ class EventType(str, Enum):
     LLM_RESPONSE = "llm.response"
     FINDING_CREATED = "finding.created"
     OPPLAN_UPDATE = "opplan.update"
-    # A human-in-the-loop decision (approve/deny/edit) on a tool call — a
-    # behavioral signal forwarded to telemetry under EXTENDED consent only.
-    HITL_DECISION = "hitl.decision"
 
 
 @dataclass(frozen=True, slots=True)

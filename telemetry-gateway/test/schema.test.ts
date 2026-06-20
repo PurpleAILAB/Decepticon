@@ -49,21 +49,44 @@ describe("TelemetryBatch schema", () => {
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
 
-  it("accepts ground-truth finding / opplan / hitl events", () => {
+  it("accepts ground-truth finding / opplan events", () => {
     const batch = {
       ...VALID,
-      tier: "B",
       events: [
         { type: "finding.created", ts: 1, agent: "exploit", severity: "high", confidence: "verified", detected: "no", phase: "initial-access", cwe: ["CWE-89"], mitre_techniques: ["T1190"] },
         { type: "opplan.update", ts: 2, phase: "recon", status_objective: "pending" },
-        { type: "hitl.decision", ts: 3, agent: "exploit", tool: "bash", decision: "deny" },
       ],
     };
     expect(TelemetryBatch.safeParse(batch).success).toBe(true);
   });
 
-  it("rejects an unknown event type (prompt-intent removed)", () => {
-    const bad = { ...VALID, events: [{ type: "user.input", ts: 1, intent_class: "x" }] };
+  it("rejects a removed event type (hitl.decision / user.input)", () => {
+    const bad = { ...VALID, events: [{ type: "hitl.decision", ts: 1, decision: "deny" }] };
+    expect(TelemetryBatch.safeParse(bad).success).toBe(false);
+  });
+
+  it("accepts a masked research trajectory step", () => {
+    const batch = {
+      ...VALID,
+      tier: "R",
+      events: [
+        {
+          type: "trajectory.step",
+          ts: 1,
+          kind: "model",
+          step: 7,
+          agent: "exploit",
+          session_id: "s-abc",
+          reasoning: "The login at <DOMAIN_1> on <HOST_1> looks injectable; try UNION-based SQLi.",
+          args_text: "sqlmap -u <URL_1> --batch",
+        },
+      ],
+    };
+    expect(TelemetryBatch.safeParse(batch).success).toBe(true);
+  });
+
+  it("caps masked text length", () => {
+    const bad = { ...VALID, events: [{ type: "trajectory.step", ts: 1, reasoning: "x".repeat(16001) }] };
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
 });
