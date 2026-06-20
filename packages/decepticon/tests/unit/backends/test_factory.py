@@ -158,3 +158,41 @@ def test_build_sandbox_backend_routes_per_run_config(
 
     assert a is not b
     assert a._base_url != b._base_url
+
+
+# ── end-to-end: routing inside a real LangGraph run ───────────────────────
+
+
+def test_build_sandbox_backend_reads_configurable_inside_a_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inside an ACTUAL langgraph run, build_sandbox_backend() must pick up the
+    run's configurable.sandbox_url/token via get_config().
+
+    This is the integration link the unit tests stub: it proves a SHARED
+    langgraph process routes each run to its own sandbox purely from the
+    per-invocation config, with env present but overridden.
+    """
+    from langgraph.graph import END, START, StateGraph
+
+    # Env points elsewhere; the run config must win.
+    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://env-sandbox:9999")
+    monkeypatch.setenv("SAAS_SANDBOX_TOKEN", "env-token")
+
+    seen: dict[str, str | None] = {}
+
+    def node(state: dict) -> dict:
+        sb = build_sandbox_backend()
+        seen["url"] = sb._base_url
+        seen["token"] = sb._token
+        return {}
+
+    graph = StateGraph(dict).add_node("n", node).add_edge(START, "n").add_edge("n", END).compile()
+
+    graph.invoke(
+        {},
+        {"configurable": {"sandbox_url": "http://eng-99:9999", "sandbox_token": "tok-99"}},
+    )
+
+    assert seen["url"] == "http://eng-99:9999"
+    assert seen["token"] == "tok-99"
