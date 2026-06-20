@@ -391,6 +391,25 @@ DECEPTICON_MODEL_PROFILE=eco
 	}
 }
 
+func TestTelemetryConsentWritesEnv(t *testing.T) {
+	// The onboard wizard writes the telemetry consent choice via the embedded
+	// env.example. Verify the key is in the template and the choice lands.
+	out := filepath.Join(t.TempDir(), ".env")
+	if err := WriteEnvFromEmbed(out, map[string]string{"DECEPTICON_TELEMETRY": "research"}); err != nil {
+		t.Fatalf("WriteEnvFromEmbed() error: %v", err)
+	}
+	env, err := LoadEnv(out)
+	if err != nil {
+		t.Fatalf("LoadEnv() error: %v", err)
+	}
+	if env["DECEPTICON_TELEMETRY"] != "research" {
+		t.Errorf("DECEPTICON_TELEMETRY = %q, want %q", env["DECEPTICON_TELEMETRY"], "research")
+	}
+	if _, ok := env["DECEPTICON_TELEMETRY_ENDPOINT"]; !ok {
+		t.Error("DECEPTICON_TELEMETRY_ENDPOINT missing from embedded template")
+	}
+}
+
 func TestWriteEnv_CommentedOutLines(t *testing.T) {
 	dir := t.TempDir()
 	tmplPath := filepath.Join(dir, ".env.example")

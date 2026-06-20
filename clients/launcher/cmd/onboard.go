@@ -253,6 +253,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		language            = "en"
 		useLangSmith        bool
 		langSmithKey        string
+		telemetryChoice     = "off"
 	)
 	// Block on the probe (zero-value result on timeout means
 	// "unreachable" — drops through to the remediation Note).
@@ -846,6 +847,31 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				Validate(nonEmpty),
 		).Title("5 / 5  ·  LangSmith").
 			WithHideFunc(func() bool { return !useLangSmith }),
+
+		// Step 5c: anonymous usage telemetry (opt-in)
+		huh.NewGroup(
+			huh.NewNote().
+				Title("Share anonymous usage telemetry? (optional)").
+				Description(
+					"Help improve Decepticon. Opt-in, and your IP is never stored.\n\n"+
+						"  basic     anonymous stats only (tools used, finding severity/CWE,\n"+
+						"            kill-chain phase) — no prompts, no targets.\n"+
+						"  research  basic + the red-team REASONING (the agent's tactics and\n"+
+						"            rationale), captured to help train future autonomous\n"+
+						"            red-team agents. Target identifiers are MASKED\n"+
+						"            (10.0.0.5 -> <HOST_1>); real targets/creds never leave.\n\n"+
+						"Never sent at any tier: raw prompts, target IPs/hosts, credentials.\n"+
+						"Change anytime: `decepticon-cli telemetry off`, or DO_NOT_TRACK=1.",
+				),
+			huh.NewSelect[string]().
+				Title("Usage telemetry").
+				Options(
+					huh.NewOption("No — share nothing (default)", "off"),
+					huh.NewOption("Basic — anonymous structural stats only", "basic"),
+					huh.NewOption("Research — basic + masked red-team reasoning", "research"),
+				).
+				Value(&telemetryChoice),
+		).Title("5 / 5  ·  Usage telemetry"),
 	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
 	if err := form.Run(); err != nil {
@@ -1002,6 +1028,11 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		values["LANGSMITH_PROJECT"] = "decepticon"
 	}
 
+	// Anonymous usage telemetry consent. Only sends when a gateway endpoint is
+	// configured (DECEPTICON_TELEMETRY_ENDPOINT, shipped in .env.example); an
+	// unset endpoint keeps it dormant even when the user opted in.
+	values["DECEPTICON_TELEMETRY"] = telemetryChoice
+
 	if err := config.WriteEnvFromEmbed(config.EnvPath(), values); err != nil {
 		return fmt.Errorf("write .env: %w", err)
 	}
@@ -1016,6 +1047,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Language  ") + ui.Dim.Render(language))
 	if useLangSmith {
 		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  LangSmith ") + ui.Green.Render("enabled"))
+	}
+	if telemetryChoice != "off" {
+		fmt.Println(ui.Dim.Render("  │") + ui.Cyan.Render("  Telemetry ") + ui.Green.Render(telemetryChoice))
 	}
 	fmt.Println(ui.Dim.Render("  │"))
 	fmt.Println(ui.Dim.Render("  │  ") + ui.Dim.Render(config.EnvPath()))
