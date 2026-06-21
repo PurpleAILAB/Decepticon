@@ -393,9 +393,10 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
         # Ground-truth telemetry: which kill-chain phase the engagement is
         # working — no objective text/target. No-op unless telemetry is on.
         try:
-            from decepticon.telemetry.sink import get_sink
+            from decepticon.telemetry.sink import get_sink, session_id_for
 
-            get_sink().record_phase(getattr(phase, "value", str(phase)), "pending")
+            sid = session_id_for(engagement_name or state.get("engagement_name", ""))
+            get_sink().record_phase(getattr(phase, "value", str(phase)), "pending", session_id=sid)
         except Exception:  # noqa: BLE001 — telemetry must never break the tool
             pass
 

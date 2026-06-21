@@ -61,6 +61,45 @@ def test_research_sink_tags_tier_r() -> None:
     assert env["events"][0]["tool"] == "nmap"
 
 
+def test_session_id_stamped_on_every_event_type() -> None:
+    """The engagement grouping key lands on ALL events (tool/finding/opplan),
+    not only research trajectory steps — so analytics can group by engagement."""
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.BASIC, "https://gw.example"),
+        transport=lambda _u, b: sent.append(json.loads(b)),
+    )
+    sid = "319acd0f8933b872"
+    sink.record("tool.call", {"tool": "nmap"}, "recon", session_id=sid)
+    sink.record_finding(severity="high", cwe=["CWE-89"], agent="exploit", session_id=sid)
+    sink.record_phase("recon", "pending", "decepticon", session_id=sid)
+    sink.close()
+
+    events = [e for env in sent for e in env["events"]]
+    assert {e["type"] for e in events} == {"tool.call", "finding.created", "opplan.update"}
+    assert all(e.get("session_id") == sid for e in events), events
+
+
+def test_session_id_omitted_when_not_provided() -> None:
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.BASIC, "https://gw.example"),
+        transport=lambda _u, b: sent.append(json.loads(b)),
+    )
+    sink.record("tool.call", {"tool": "nmap"}, "recon")  # no session_id
+    sink.close()
+    assert "session_id" not in sent[0]["events"][0]
+
+
+def test_session_id_for_is_stable_non_reversible_hash() -> None:
+    from decepticon.telemetry.sink import session_id_for
+
+    a = session_id_for("acme-corp-pentest")
+    assert a == session_id_for("acme-corp-pentest")  # stable
+    assert len(a) == 16 and a != session_id_for("other-engagement")  # distinct
+    assert "acme" not in a  # never the raw engagement name
+
+
 def test_fail_closed_drops_tier_c_leak() -> None:
     sent: list[bytes] = []
     sink = TelemetrySink(

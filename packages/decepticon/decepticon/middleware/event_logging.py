@@ -45,7 +45,7 @@ from langchain_core.messages import ToolMessage
 from typing_extensions import override
 
 from decepticon.runtime.event_log import EventLog, EventType
-from decepticon.telemetry.sink import get_sink
+from decepticon.telemetry.sink import get_sink, session_id_for
 
 log = logging.getLogger(__name__)
 
@@ -151,11 +151,10 @@ def _last_human_text(messages: Any) -> str:
 
 
 def _session_id(engagement: str | None) -> str:
-    """A stable per-engagement session id (hashed — the engagement name may carry
-    a client/org name, so it is never sent raw). Groups one engagement's steps."""
-    import hashlib
-
-    return hashlib.sha256((engagement or "").encode("utf-8")).hexdigest()[:16]
+    """A stable per-engagement session id. Delegates to the telemetry canonical
+    :func:`session_id_for` so the middleware, OPPLAN, and finding tools all hash
+    the engagement name identically (the grouping key must agree everywhere)."""
+    return session_id_for(engagement)
 
 
 def _roe_literal_targets(workspace: str) -> list[str]:
@@ -228,13 +227,19 @@ class EventLogMiddleware(AgentMiddleware):
             agent_name = getattr(runtime, "agent_name", "") or ""
         return str(workspace), str(engagement), (agent_name or None)
 
-    def _context(self, request: Any) -> tuple[EventLog | None, str | None]:
-        """Resolve (and lazily build/cache) the EventLog plus the agent name."""
+    def _context(self, request: Any) -> tuple[EventLog | None, str | None, str]:
+        """Resolve the EventLog, agent name, and per-engagement session id.
+
+        ``session_id`` is hashed from the engagement so every telemetry event —
+        not only research trajectory steps — carries the engagement grouping key
+        (enables per-engagement analytics: kill-chain depth, tools/engagement).
+        """
         workspace, engagement, agent = self._resolve_scope(request)
+        sid = _session_id(engagement)
         key = (workspace, engagement)
         cached = self._logs.get(key)
         if cached is not None:
-            return cached, agent
+            return cached, agent, sid
         try:
             event_log = EventLog.for_workspace(workspace, engagement)
         except Exception:  # noqa: BLE001 — never break the agent on a bad path
@@ -245,9 +250,9 @@ class EventLogMiddleware(AgentMiddleware):
                 engagement,
                 exc_info=True,
             )
-            return None, agent
+            return None, agent, sid
         self._logs[key] = event_log
-        return event_log, agent
+        return event_log, agent, sid
 
     def _safe_append(
         self,
@@ -255,6 +260,7 @@ class EventLogMiddleware(AgentMiddleware):
         event_type: EventType,
         payload: dict[str, Any],
         agent: str | None,
+        session_id: str | None = None,
     ) -> None:
         """Append one event, swallowing any I/O failure with a warning."""
         try:
@@ -268,12 +274,14 @@ class EventLogMiddleware(AgentMiddleware):
         # Mirror the same redacted event to the consent-gated telemetry sink.
         # `record` is itself fail-closed and never raises, so disk logging and
         # telemetry stay independent — one failing never affects the other.
-        self._telemetry.record(getattr(event_type, "value", str(event_type)), payload, agent)
+        self._telemetry.record(
+            getattr(event_type, "value", str(event_type)), payload, agent, session_id=session_id
+        )
 
     # ── payload builders ──────────────────────────────────────────────────
 
     def _emit_llm_call(self, request: Any) -> None:
-        event_log, agent = self._context(request)
+        event_log, agent, sid = self._context(request)
         if event_log is None:
             return
         messages = getattr(request, "messages", None) or []
@@ -281,10 +289,10 @@ class EventLogMiddleware(AgentMiddleware):
         payload: dict[str, Any] = {"messages": len(messages)}
         if model_name:
             payload["model"] = model_name
-        self._safe_append(event_log, EventType.LLM_CALL, payload, agent)
+        self._safe_append(event_log, EventType.LLM_CALL, payload, agent, sid)
 
     def _emit_llm_response(self, request: Any, response: Any) -> None:
-        event_log, agent = self._context(request)
+        event_log, agent, sid = self._context(request)
         if event_log is None:
             return
         payload: dict[str, Any] = {}
@@ -296,20 +304,20 @@ class EventLogMiddleware(AgentMiddleware):
             stop = metadata.get("finish_reason") or metadata.get("stop_reason")
             if stop:
                 payload["stop"] = stop
-        self._safe_append(event_log, EventType.LLM_RESPONSE, payload, agent)
+        self._safe_append(event_log, EventType.LLM_RESPONSE, payload, agent, sid)
 
     def _emit_tool_call(self, request: Any) -> None:
-        event_log, agent = self._context(request)
+        event_log, agent, sid = self._context(request)
         if event_log is None:
             return
         tool = getattr(request, "tool", None)
         tool_name = getattr(tool, "name", "") if tool else ""
         args = getattr(request, "tool_call_args", None) or {}
         payload = {"tool": tool_name, "args": _redact_args(args)}
-        self._safe_append(event_log, EventType.TOOL_CALL, payload, agent)
+        self._safe_append(event_log, EventType.TOOL_CALL, payload, agent, sid)
 
     def _emit_tool_result(self, request: Any, response: Any) -> None:
-        event_log, agent = self._context(request)
+        event_log, agent, sid = self._context(request)
         if event_log is None:
             return
         tool = getattr(request, "tool", None)
@@ -321,17 +329,19 @@ class EventLogMiddleware(AgentMiddleware):
                 "status": status,
                 "output_chars": _content_length(getattr(response, "content", "")),
             }
-            self._safe_append(event_log, EventType.TOOL_RESULT, payload, agent)
+            self._safe_append(event_log, EventType.TOOL_RESULT, payload, agent, sid)
             # Emit the finding only after a *successful* finding-tool result, so
             # a failed validate_finding (status='error') never births a phantom
             # finding.created. Order stays tool.call -> tool.result -> finding.
             if status not in {"error"} and _is_finding_tool(tool_name):
-                self._safe_append(event_log, EventType.FINDING_CREATED, {"tool": tool_name}, agent)
+                self._safe_append(
+                    event_log, EventType.FINDING_CREATED, {"tool": tool_name}, agent, sid
+                )
         else:
             # A Command (graph control-flow) carries no tool output to size, and
             # is not a tool *result*, so it never emits a finding.
             payload = {"tool": tool_name, "status": "command"}
-            self._safe_append(event_log, EventType.TOOL_RESULT, payload, agent)
+            self._safe_append(event_log, EventType.TOOL_RESULT, payload, agent, sid)
 
     # ── research trajectory capture (reasoning corpus) ────────────────────
     # Only runs under research consent. Emits the raw prompt / agent reasoning /

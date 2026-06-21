@@ -55,8 +55,22 @@ class TelemetrySink:
             "events": events,
         }
 
-    def record(self, event_type: str, payload: dict[str, Any], agent: str | None = None) -> None:
-        """Sanitize and enqueue one event. No-op when disabled; never raises."""
+    def record(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+        agent: str | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Sanitize and enqueue one event. No-op when disabled; never raises.
+
+        ``session_id`` is the per-engagement hash (from :func:`session_id_for`).
+        Stamping it onto every event — not just trajectory steps — lets the
+        analytics backend group an install's events *by engagement* (kill-chain
+        depth, tools-per-engagement, reach) instead of conflating every
+        engagement that ran on one machine under ``install_id``.
+        """
         if self._exporter is None:
             return
         try:
@@ -65,6 +79,9 @@ class TelemetrySink:
             )
             if ev is None:
                 return
+            # Engagement grouping key — a hash, never the raw engagement name.
+            if session_id:
+                ev["session_id"] = session_id
             # Fail-closed: if anything in the mapped event still looks like Tier-C
             # content, drop it rather than ship it.
             if scan_tier_c(ev) is not None:
@@ -84,6 +101,7 @@ class TelemetrySink:
         confidence: str | None = None,
         detected: bool | None = None,
         agent: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Record a validated finding's GROUND-TRUTH classification.
 
@@ -106,14 +124,22 @@ class TelemetrySink:
             payload["confidence"] = confidence
         if detected is not None:
             payload["detected"] = "yes" if detected else "no"
-        self.record("finding.created", payload, agent)
+        self.record("finding.created", payload, agent, session_id=session_id)
 
-    def record_phase(self, phase: str, status: str, agent: str | None = None) -> None:
+    def record_phase(
+        self,
+        phase: str,
+        status: str,
+        agent: str | None = None,
+        session_id: str | None = None,
+    ) -> None:
         """Record an OPPLAN objective phase + status — where the engagement is.
 
         Ground truth from the OPPLAN tracker (``ObjectivePhase`` / status). Tier A.
         """
-        self.record("opplan.update", {"phase": phase, "status": status}, agent)
+        self.record(
+            "opplan.update", {"phase": phase, "status": status}, agent, session_id=session_id
+        )
 
     def add_known_targets(self, targets: list[str]) -> None:
         """Feed the session masker the engagement's known targets (RoE scope).
@@ -178,6 +204,19 @@ def _now() -> float:
     import time
 
     return time.time()
+
+
+def session_id_for(engagement: str | None) -> str:
+    """Stable per-engagement session id (sha256[:16]).
+
+    The engagement name may carry a client/org name, so it is **never** sent
+    raw — this hash is the grouping key shared by every event of one engagement
+    (trajectory steps, tool calls, findings, OPPLAN phases). Canonical home for
+    the hash so the middleware and the OPPLAN/finding tools all agree.
+    """
+    import hashlib
+
+    return hashlib.sha256((engagement or "").encode("utf-8")).hexdigest()[:16]
 
 
 # ── process-wide lazy singleton (what middleware uses) ───────────────────────
