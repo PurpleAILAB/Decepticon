@@ -29,7 +29,14 @@ import os
 from decepticon.backends.http_sandbox import HTTPSandbox
 
 
-@functools.lru_cache(maxsize=8)
+# Sized for the multi-tenant case: a single SHARED langgraph process can serve
+# many concurrent engagements, each routed (via the bash tool's per-run
+# ``configurable.sandbox_url`` — see ``tools/bash/bash.py:_sandbox_from_config``)
+# to its OWN per-engagement sandbox. Each must keep its own client so the
+# ``SandboxNotificationMiddleware._jobs`` view stays consistent within a run;
+# under-sizing would evict a live engagement's client mid-flight. 128 covers
+# realistic per-process concurrency with headroom.
+@functools.lru_cache(maxsize=128)
 def _shared_sandbox(base_url: str, token: str | None) -> HTTPSandbox:
     return HTTPSandbox(base_url=base_url, token=token)
 

@@ -254,16 +254,50 @@ def set_sandbox(sandbox: HTTPSandbox) -> contextvars.Token:
     return _sandbox_var.set(sandbox)
 
 
-def get_sandbox() -> HTTPSandbox | None:
-    """Return the current HTTPSandbox instance.
+def _sandbox_from_config(config: RunnableConfig | None) -> HTTPSandbox | None:
+    """Resolve a per-engagement sandbox from the run's injected config.
 
-    Resolution order: the per-context ``_sandbox_var`` (so a
-    request-scoped override takes precedence), then the module-level
-    ``_sandbox_default`` for callers running outside that context —
-    typically tool nodes the LangGraph runtime dispatched in a worker
-    thread, where contextvars from the build-time context are not
-    inherited.
+    In a SHARED langgraph process serving many engagements concurrently, each
+    run carries its own ``configurable.sandbox_url`` / ``sandbox_token`` — the
+    endpoint of *that engagement's* isolated sandbox (VM/container). Resolving
+    the sandbox from the per-call config — exactly how
+    ``_workspace_path_from_config`` already resolves the workspace — routes
+    every command to its OWN engagement sandbox, so one tenant's bash can never
+    execute against another tenant's sandbox. The ``(url, token)``-keyed
+    ``_shared_sandbox`` cache gives each engagement a stable client.
+
+    Returns ``None`` when the config carries no sandbox endpoint (single-tenant
+    / dev / OSS self-host), so the caller falls back to the process default.
     """
+    configurable = (config or {}).get("configurable", {})
+    if not isinstance(configurable, dict):
+        return None
+    url = configurable.get("sandbox_url")
+    if not isinstance(url, str) or not url:
+        return None
+    token = configurable.get("sandbox_token")
+    from decepticon.backends.factory import _shared_sandbox
+
+    return _shared_sandbox(url, token if isinstance(token, str) and token else None)
+
+
+def get_sandbox(config: RunnableConfig | None = None) -> HTTPSandbox | None:
+    """Return the HTTPSandbox for this call.
+
+    Resolution order:
+      1. the run's per-engagement config (``configurable.sandbox_url``) — so a
+         SHARED process fans out to per-engagement sandboxes with no
+         cross-tenant bleed;
+      2. the per-context ``_sandbox_var`` (a request-scoped override);
+      3. the module-level ``_sandbox_default`` for callers running outside that
+         context — typically tool nodes the LangGraph runtime dispatched in a
+         worker thread, where contextvars from the build-time context are not
+         inherited. This is the single-tenant / dev path set by
+         ``set_sandbox`` at agent construction.
+    """
+    from_config = _sandbox_from_config(config)
+    if from_config is not None:
+        return from_config
     sandbox = _sandbox_var.get()
     if sandbox is not None:
         return sandbox
@@ -310,14 +344,19 @@ def bash_workspace(workspace_path: str):
         _current_workspace_path.reset(token)
 
 
-async def _prune_old_scratch(workspace_path: str = "/workspace") -> None:
+async def _prune_old_scratch(
+    workspace_path: str = "/workspace", sandbox: HTTPSandbox | None = None
+) -> None:
     """Drop scratch files older than SCRATCH_TTL_MINUTES.
 
     Throttled to SCRATCH_PRUNE_INTERVAL between attempts so the bash() hot
     path pays for cleanup at most every ~10 minutes per process. Best-effort:
-    a failure here must never block the agent's command.
+    a failure here must never block the agent's command. ``sandbox`` is the
+    already-resolved per-engagement client from the caller, so this never
+    re-resolves to the process default (which would target the wrong tenant).
     """
-    sandbox = get_sandbox()
+    if sandbox is None:
+        sandbox = get_sandbox()
     if sandbox is None or workspace_path == "/workspace":
         return
 
@@ -341,6 +380,7 @@ async def _offload_large_output(
     command: str,
     session: str,
     workspace_path: str = "/workspace",
+    sandbox: HTTPSandbox | None = None,
 ) -> str:
     """Save large output to scratch file in sandbox, return compact reference.
 
@@ -348,8 +388,12 @@ async def _offload_large_output(
     - Write full output to <engagement>/.scratch/ for later retrieval
     - Return preview (head 2K + tail 1K) + file path reference
     - Agent can use read_file or grep to access specific parts later
+
+    ``sandbox`` is the already-resolved per-engagement client from the caller,
+    so the offload writes into the right tenant's sandbox.
     """
-    sandbox = get_sandbox()
+    if sandbox is None:
+        sandbox = get_sandbox()
     if sandbox is None:
         raise RuntimeError("bash tool invoked without a sandbox set in the contextvar")
 
@@ -416,14 +460,14 @@ async def bash(
             session name (not "main"). Check results later with bash_output.
         description: Short label for UI display.
     """
-    _sandbox = get_sandbox()
+    _sandbox = get_sandbox(config)
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized. Call set_sandbox() first.")
 
     workspace_path = _workspace_path_from_config(config)
     # Best-effort TTL prune of <engagement>/.scratch/ (throttled internally)
 
-    await _prune_old_scratch(workspace_path)
+    await _prune_old_scratch(workspace_path, _sandbox)
 
     # Strip leading/trailing newlines before sending to the sandbox.
     # LLM agents frequently wrap commands in block-form like
@@ -482,7 +526,7 @@ async def bash(
     # Tier 2 (>15K): offload to file, return preview + file reference
     # Tier 3 (>5M): handled by size watchdog in sandbox_kernel/tmux.py (command killed)
     if len(result) > INLINE_LIMIT and not result.startswith(_STATUS_PREFIXES):
-        return await _offload_large_output(result, command, session, workspace_path)
+        return await _offload_large_output(result, command, session, workspace_path, _sandbox)
 
     return result
 
@@ -505,7 +549,7 @@ async def bash_output(session: str = "main", config: RunnableConfig | None = Non
     Args:
         session: Session name passed to bash(..., background=True).
     """
-    _sandbox = get_sandbox()
+    _sandbox = get_sandbox(config)
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
@@ -566,7 +610,7 @@ async def bash_kill(session: str, config: RunnableConfig | None = None) -> str:
     Args:
         session: Session name to terminate.
     """
-    _sandbox = get_sandbox()
+    _sandbox = get_sandbox(config)
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
@@ -592,7 +636,7 @@ async def bash_status(config: RunnableConfig | None = None) -> str:
     Use before launching a new background job to spot conflicts, or to
     detect stale sessions for cleanup.
     """
-    _sandbox = get_sandbox()
+    _sandbox = get_sandbox(config)
     if _sandbox is None:
         raise RuntimeError("HTTPSandbox not initialized.")
 
