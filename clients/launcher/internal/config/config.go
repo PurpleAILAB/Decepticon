@@ -623,6 +623,116 @@ func AppendEnvLine(path, key, value string) error {
 	return err
 }
 
+// BackfillEnvFromEmbed appends any ACTIVE key present in the embedded
+// env.example template but missing from the user's .env, using the
+// template's default value. It is the general "a new release added a
+// config key, get it to already-onboarded users" primitive: those users
+// never re-run the onboard wizard (cmd/start.go only runs it when .env is
+// absent), so without this a key added to the template after their
+// install would never reach their container (telemetry vars, for one,
+// flow into langgraph purely via env_file:.env).
+//
+// Guarantees:
+//   - Existing keys and their values are NEVER modified (only additions).
+//   - Commented / optional template lines (e.g. "# LANGGRAPH_PORT=2024")
+//     are ignored — only active defaults are backfilled.
+//   - A one-time ".env.bak" snapshot is written before the first append.
+//   - Idempotent: a second call with no new template keys is a no-op.
+//
+// Returns the list of keys added (nil when nothing changed).
+func BackfillEnvFromEmbed(envPath string) ([]string, error) {
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	present := make(map[string]bool)
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, _, ok := parseEnvLine(trimmed); ok {
+			present[k] = true
+		}
+	}
+
+	var added []string
+	var toAppend []string
+	seen := make(map[string]bool)
+	for _, line := range strings.Split(EnvTemplate, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		k, _, ok := parseEnvLine(trimmed)
+		if !ok || present[k] || seen[k] {
+			continue
+		}
+		seen[k] = true
+		added = append(added, k)
+		toAppend = append(toAppend, trimmed)
+	}
+	if len(toAppend) == 0 {
+		return nil, nil
+	}
+
+	backupPath := envPath + ".bak"
+	if _, statErr := os.Stat(backupPath); os.IsNotExist(statErr) {
+		if err := os.WriteFile(backupPath, data, 0o600); err != nil {
+			return nil, fmt.Errorf("write backup %s: %w", backupPath, err)
+		}
+	}
+
+	var b strings.Builder
+	b.Write(data)
+	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
+		b.WriteByte('\n')
+	}
+	b.WriteString("\n# --- Backfilled by `decepticon start` (new keys from this release) ---\n")
+	for _, line := range toAppend {
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	if err := os.WriteFile(envPath, []byte(b.String()), 0o600); err != nil {
+		return nil, err
+	}
+	return added, nil
+}
+
+// SetEnvKey sets KEY=value in the .env at path, replacing the first active
+// occurrence in place (preserving surrounding lines and comments) or
+// appending the line when the key is absent. Unlike AppendEnvLine it
+// overwrites an existing value, so it is the right primitive for a
+// migration that must change a setting (e.g. flipping DECEPTICON_TELEMETRY
+// after a re-consent prompt).
+func SetEnvKey(path, key, value string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(data), "\n")
+	replaced := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if k, _, ok := parseEnvLine(trimmed); ok && k == key {
+			lines[i] = key + "=" + value
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines, key+"="+value)
+	}
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600)
+}
+
 // Get returns a config value with a fallback default.
 func Get(env map[string]string, key, fallback string) string {
 	if val, ok := env[key]; ok && val != "" {

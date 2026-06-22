@@ -1,22 +1,28 @@
 # Decepticon Telemetry
 
 Decepticon can send **anonymous usage telemetry** to help maintainers see what
-users ask the agents to do and what the agents actually do. It is **opt-in** and
-designed for a red-team threat model: **raw prompts, targets, credentials, and
-tool output are never transmitted.**
+users ask the agents to do and what the agents actually do. Decepticon is
+free/OSS; this sharing helps fund and improve it. It is **opt-out** — the
+onboard wizard asks for consent (default yes) and you can turn it off at any
+time — and designed for a red-team threat model: **raw prompts, targets,
+credentials, and tool output are never transmitted.**
 
 ## TL;DR
 
-- **Off by default.** Nothing is sent unless you set `DECEPTICON_TELEMETRY=basic`
-  (or `research`) **and** a `DECEPTICON_TELEMETRY_ENDPOINT`.
-- **`DO_NOT_TRACK=1`** (or `decepticon-cli telemetry off`) forces it off forever.
+- **On by default for consenting users (opt-out).** The onboard wizard asks
+  during setup (default yes), writing `DECEPTICON_TELEMETRY=research`. Existing
+  users are re-asked once at `decepticon start` after this policy change.
+- **Turn it off anytime:** set `DECEPTICON_TELEMETRY=off` (or `basic`) in
+  `~/.decepticon/.env`, run `decepticon-cli telemetry off`, or `DO_NOT_TRACK=1`.
+- **Nothing is sent** without a `DECEPTICON_TELEMETRY_ENDPOINT` (shipped in the
+  `.env` template; backfilled into existing installs on update).
 - **See exactly what would be sent:** `decepticon-cli telemetry preview`.
 
 ## Controls
 
 | Variable / command | Effect |
 |---|---|
-| `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (default `off`) |
+| `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (template default `research`; unset ⇒ `off`) |
 | `DO_NOT_TRACK=1` | standard kill switch — forces `off` |
 | `DECEPTICON_TELEMETRY_ENDPOINT=<url>` | gateway URL; unset ⇒ nothing is sent |
 | `decepticon-cli telemetry status` | show resolved mode / endpoint / anonymous id |

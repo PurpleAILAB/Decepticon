@@ -1,13 +1,18 @@
 """Telemetry consent + configuration resolution.
 
-Opt-in by design (decision §0.4): telemetry is OFF unless the user explicitly
-enables it, and ``DO_NOT_TRACK`` always forces it off. Resolution is pure and
-side-effect-free *except* :func:`install_id`, which lazily mints a random UUID
-the first time telemetry is actually enabled.
+The PRODUCT default is opt-out: the launcher's onboard wizard asks for consent
+(default yes) and the shipped ``.env`` template defaults ``DECEPTICON_TELEMETRY``
+to ``research``, so consenting users collect by default while ``DO_NOT_TRACK`` and
+``decepticon-cli telemetry off`` always force it off. This module is the
+fail-SAFE floor: when ``DECEPTICON_TELEMETRY`` is unset (e.g. standalone library
+use, never onboarded), it resolves to ``off`` — the value, not the absence,
+turns telemetry on. Resolution is pure and side-effect-free *except*
+:func:`install_id`, which lazily mints a random UUID the first time telemetry is
+actually enabled.
 
 Environment surface (documented in ``TELEMETRY.md``):
 
-* ``DECEPTICON_TELEMETRY``          ``off`` | ``basic`` | ``extended``  (default ``off``)
+* ``DECEPTICON_TELEMETRY``          ``off`` | ``basic`` | ``research`` (template default ``research``; unset → ``off``)
 * ``DO_NOT_TRACK``                  truthy → forces ``off`` (standard)
 * ``DECEPTICON_TELEMETRY_ENDPOINT`` gateway URL; unset → effectively ``off``
 """

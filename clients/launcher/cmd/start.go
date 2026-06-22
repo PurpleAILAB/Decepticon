@@ -17,6 +17,7 @@ import (
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/engagement"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/health"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/migrate"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
@@ -134,6 +135,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+
+	// 2.1. Apply idempotent config/policy migrations for already-onboarded
+	// users. They never re-run the onboard wizard (step 1 only fires when
+	// .env is absent), so this is how a new release's env keys and policy
+	// changes reach them: env-key backfill (every start) + one-time
+	// interactive re-consent prompts (deferred on non-TTY). New steps plug
+	// into internal/migrate.Registry — no wiring needed here.
+	migrate.RunAll(env)
+
 	if err := config.ValidateAuth(env); err != nil {
 		return err
 	}

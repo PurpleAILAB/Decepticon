@@ -9,6 +9,7 @@ import (
 	"charm.land/huh/v2"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/cmd/opscontrol"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/migrate"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/platform"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/starprompt"
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
@@ -253,7 +254,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		language            = "en"
 		useLangSmith        bool
 		langSmithKey        string
-		telemetryChoice     = "off"
+		telemetryConsent    = true // opt-out: default to sharing (masked)
 	)
 	// Block on the probe (zero-value result on timeout means
 	// "unreachable" — drops through to the remediation Note).
@@ -848,34 +849,37 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("5 / 5  ·  LangSmith").
 			WithHideFunc(func() bool { return !useLangSmith }),
 
-		// Step 5c: anonymous usage telemetry (opt-in)
+		// Step 5c: usage telemetry consent (opt-out — default yes)
 		huh.NewGroup(
-			huh.NewNote().
-				Title("Share anonymous usage telemetry? (optional)").
+			huh.NewConfirm().
+				Title("Share anonymous + masked red-team telemetry?").
 				Description(
-					"Help improve Decepticon. Opt-in, and your IP is never stored.\n\n"+
-						"  basic     anonymous stats only (tools used, finding severity/CWE,\n"+
-						"            kill-chain phase) — no prompts, no targets.\n"+
-						"  research  basic + the red-team REASONING (the agent's tactics and\n"+
-						"            rationale), captured to help train future autonomous\n"+
-						"            red-team agents. Target identifiers are MASKED\n"+
-						"            (10.0.0.5 -> <HOST_1>); real targets/creds never leave.\n\n"+
-						"Never sent at any tier: raw prompts, target IPs/hosts, credentials.\n"+
-						"Change anytime: `decepticon-cli telemetry off`, or DO_NOT_TRACK=1.",
-				),
-			huh.NewSelect[string]().
-				Title("Usage telemetry").
-				Options(
-					huh.NewOption("No — share nothing (default)", "off"),
-					huh.NewOption("Basic — anonymous structural stats only", "basic"),
-					huh.NewOption("Research — basic + masked red-team reasoning", "research"),
+					"Decepticon is free/OSS — sharing usage helps fund and improve it,\n"+
+						"and contributes masked red-team reasoning to train future open\n"+
+						"offensive-security agents.\n\n"+
+						"  • anonymous structural stats (tools used, finding severity/CWE,\n"+
+						"    kill-chain phase)\n"+
+						"  • the agent's red-team REASONING, with target identifiers MASKED\n"+
+						"    (10.0.0.5 -> <HOST_1>, acme.com -> <DOMAIN_1>)\n\n"+
+						"Never sent: raw prompts, real target IPs/hosts, credentials. Your\n"+
+						"IP is dropped at the gateway. Change anytime: DECEPTICON_TELEMETRY=off\n"+
+						"(or basic) in .env, `decepticon-cli telemetry off`, or DO_NOT_TRACK=1.",
 				).
-				Value(&telemetryChoice),
+				Affirmative("Yes, share (recommended)").
+				Negative("No, keep it off").
+				Value(&telemetryConsent),
 		).Title("5 / 5  ·  Usage telemetry"),
 	).WithTheme(huh.ThemeFunc(ui.DecepticonTheme))
 
 	if err := form.Run(); err != nil {
 		return fmt.Errorf("setup cancelled: %w", err)
+	}
+
+	// Opt-out telemetry: consent maps to the research tier (masked
+	// reasoning corpus); declining writes an explicit off.
+	telemetryChoice := "research"
+	if !telemetryConsent {
+		telemetryChoice = "off"
 	}
 
 	// Strict-mode gate: refuse to write .env when the user picked
@@ -1035,6 +1039,13 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	if err := config.WriteEnvFromEmbed(config.EnvPath(), values); err != nil {
 		return fmt.Errorf("write .env: %w", err)
+	}
+
+	// Record the telemetry policy as acknowledged: this fresh install just
+	// answered the same consent question the start-time re-consent migration
+	// would ask, so it must never be re-prompted.
+	if err := migrate.MarkAcked(config.DecepticonHome(), migrate.TelemetryPolicyID); err != nil {
+		ui.Warning("Could not record telemetry consent ack: " + err.Error())
 	}
 
 	// Summary

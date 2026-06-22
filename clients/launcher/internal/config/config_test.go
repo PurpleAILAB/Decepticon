@@ -410,6 +410,81 @@ func TestTelemetryConsentWritesEnv(t *testing.T) {
 	}
 }
 
+func TestBackfillEnvFromEmbed(t *testing.T) {
+	out := filepath.Join(t.TempDir(), ".env")
+	// Simulate a pre-#706 .env: has telemetry mode but NOT the endpoint,
+	// plus a real user value that must be preserved untouched.
+	seed := "DECEPTICON_TELEMETRY=off\nANTHROPIC_API_KEY=sk-real-user-key\n"
+	if err := os.WriteFile(out, []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed .env: %v", err)
+	}
+
+	added, err := BackfillEnvFromEmbed(out)
+	if err != nil {
+		t.Fatalf("BackfillEnvFromEmbed() error: %v", err)
+	}
+	if !strings.Contains(strings.Join(added, ","), "DECEPTICON_TELEMETRY_ENDPOINT") {
+		t.Errorf("expected DECEPTICON_TELEMETRY_ENDPOINT in added keys, got %v", added)
+	}
+
+	env, err := LoadEnv(out)
+	if err != nil {
+		t.Fatalf("LoadEnv() error: %v", err)
+	}
+	// New key backfilled from the template default.
+	if env["DECEPTICON_TELEMETRY_ENDPOINT"] == "" {
+		t.Error("DECEPTICON_TELEMETRY_ENDPOINT not backfilled")
+	}
+	// Existing values preserved exactly (never overwritten).
+	if env["DECEPTICON_TELEMETRY"] != "off" {
+		t.Errorf("DECEPTICON_TELEMETRY = %q, want preserved %q", env["DECEPTICON_TELEMETRY"], "off")
+	}
+	if env["ANTHROPIC_API_KEY"] != "sk-real-user-key" {
+		t.Errorf("ANTHROPIC_API_KEY = %q, want preserved real key", env["ANTHROPIC_API_KEY"])
+	}
+	// .bak snapshot of the pre-migration file.
+	if _, err := os.Stat(out + ".bak"); err != nil {
+		t.Errorf("expected .env.bak backup: %v", err)
+	}
+
+	// Idempotent: a second run adds nothing.
+	added2, err := BackfillEnvFromEmbed(out)
+	if err != nil {
+		t.Fatalf("second BackfillEnvFromEmbed() error: %v", err)
+	}
+	if len(added2) != 0 {
+		t.Errorf("second backfill should be a no-op, added %v", added2)
+	}
+}
+
+func TestSetEnvKey(t *testing.T) {
+	out := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(out, []byte("DECEPTICON_TELEMETRY=off\n# a comment\nFOO=bar\n"), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// Replace an existing key.
+	if err := SetEnvKey(out, "DECEPTICON_TELEMETRY", "research"); err != nil {
+		t.Fatalf("SetEnvKey replace: %v", err)
+	}
+	// Append a missing key.
+	if err := SetEnvKey(out, "NEW_KEY", "val"); err != nil {
+		t.Fatalf("SetEnvKey append: %v", err)
+	}
+	env, err := LoadEnv(out)
+	if err != nil {
+		t.Fatalf("LoadEnv: %v", err)
+	}
+	if env["DECEPTICON_TELEMETRY"] != "research" {
+		t.Errorf("DECEPTICON_TELEMETRY = %q, want research", env["DECEPTICON_TELEMETRY"])
+	}
+	if env["NEW_KEY"] != "val" {
+		t.Errorf("NEW_KEY = %q, want val", env["NEW_KEY"])
+	}
+	if env["FOO"] != "bar" {
+		t.Errorf("FOO = %q, want preserved bar", env["FOO"])
+	}
+}
+
 func TestWriteEnv_CommentedOutLines(t *testing.T) {
 	dir := t.TempDir()
 	tmplPath := filepath.Join(dir, ".env.example")
