@@ -50,6 +50,7 @@ from typing_extensions import override
 from decepticon.middleware._injection_detector import (
     InjectionVerdict,
     detect_injection,
+    neutralize_special_tokens,
 )
 
 log = logging.getLogger(__name__)
@@ -144,9 +145,11 @@ def _format_envelope(
     body: str,
 ) -> str:
     cats_attr = f' categories="{",".join(categories)}"' if categories else ""
-    # Neutralize any envelope marker embedded in attacker-controlled tool
+    # Defang chat-template special tokens (e.g. <|im_start|>) so a self-hosted
+    # tokenizer cannot parse attacker bytes into a forged role boundary
+    # (GHSA-g5f9-3xfg-p9mf), then neutralize any envelope marker embedded in the
     # output so it cannot forge or close the quarantine boundary and break out.
-    safe_body = _MARKER_RE.sub("UNTRUSTED_TOOL\u200bOUTPUT", body)
+    safe_body = _MARKER_RE.sub("UNTRUSTED_TOOL\u200bOUTPUT", neutralize_special_tokens(body))
     return (
         f'<UNTRUSTED_TOOL_OUTPUT origin="{origin}" '
         f'tool_call_id="{tool_call_id}" risk="{risk}"{cats_attr}>\n'

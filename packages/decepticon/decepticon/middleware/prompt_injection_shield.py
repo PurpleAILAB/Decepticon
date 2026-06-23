@@ -57,6 +57,8 @@ from langchain_core.messages import SystemMessage, ToolMessage
 from langgraph.types import Command
 from typing_extensions import override
 
+from decepticon.middleware._injection_detector import neutralize_special_tokens
+
 log = logging.getLogger(__name__)
 
 
@@ -205,10 +207,15 @@ def _build_warning_banner(detections: list[tuple[str, str, str]]) -> str:
 
 def _wrap_untrusted(content: str, banner: str | None) -> str:
     """Wrap content in ``<untrusted_tool_output>…</untrusted_tool_output>`` markers."""
-    # Neutralize any marker embedded in attacker-controlled tool output so it
-    # cannot forge or close the quarantine boundary and break out of the wrap.
+    # Defang chat-template special tokens (e.g. <|im_start|>) so a self-hosted
+    # tokenizer cannot parse attacker bytes into a forged role boundary
+    # (GHSA-g5f9-3xfg-p9mf), then neutralize any wrap marker embedded in the
+    # output so it cannot forge or close the quarantine boundary and break out.
     safe = re.sub(
-        r"untrusted_tool_output", "untrusted_tool\u200boutput", content, flags=re.IGNORECASE
+        r"untrusted_tool_output",
+        "untrusted_tool\u200boutput",
+        neutralize_special_tokens(content),
+        flags=re.IGNORECASE,
     )
     body = f"<untrusted_tool_output>\n{safe}\n</untrusted_tool_output>"
     if banner:

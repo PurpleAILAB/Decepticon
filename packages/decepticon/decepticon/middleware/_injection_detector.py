@@ -265,6 +265,67 @@ _PATTERNS: tuple[tuple[InjectionCategory, str, re.Pattern[str]], ...] = (
 _EXCERPT_WINDOW = 80
 
 
+# ── special-token literal neutralization (GHSA-g5f9-3xfg-p9mf) ────────────────
+#
+# Detection (above) annotates risk; it does NOT change the bytes. That is not
+# enough for chat-template special tokens. Under BYOK with a self-hosted /
+# OpenAI-compatible backend (vLLM, SGLang, TGI, Ollama, LM Studio, …) whose
+# tokenizer preserves special-token IDs, a literal like ``<|im_start|>`` planted
+# in attacker-controlled tool output is parsed into a *structural* role-delimiter
+# token, forging an operator/system turn the model treats as authoritative and
+# bypassing the quarantine envelope. Hosted vendors (OpenAI/Anthropic) strip
+# these server-side, but that is vendor-side luck, not an architectural control.
+#
+# The durable fix is application-layer: defang the literal before it is composed
+# into an LLM message. We insert a zero-width space (U+200B) immediately after
+# the opening bracket so the exact-match special-token vocab entry can no longer
+# fire, while the text stays visually identical for the model and the operator
+# audit trail. This mirrors the envelope-marker neutralization already done by
+# the two quarantine middlewares.
+_ZWSP = "\u200b"
+
+# Token families to cover (advisory §Remediation):
+#   ChatML / Qwen / DeepSeek : <|im_start|> <|im_end|> <|endoftext|>
+#   Llama-3.x                : <|begin_of_text|> <|end_of_text|>
+#                              <|start_header_id|> <|end_header_id|> <|eot_id|>
+#   Gemma 2/3                : <start_of_turn> <end_of_turn>
+#   Mistral / Mixtral        : [INST] [/INST] <<SYS>> <</SYS>>
+#   Unicode bypass           : <｜…｜> (U+FF5C fullwidth vertical bar, DeepSeek)
+# The vertical-bar arm accepts BOTH ASCII ``|`` and fullwidth ``｜`` on each end,
+# independently, so half/full-width mixing cannot slip past.
+_SPECIAL_TOKEN_RE = re.compile(
+    r"""
+      (?P<vbar> < [|\uff5c] [A-Za-z0-9_]{1,48} [|\uff5c] > )   # <|im_start|>, <|eot_id|>, <｜…｜>
+    | (?P<gemma> < /? (?:start|end)_of_turn > )                # <start_of_turn>, <end_of_turn>
+    | (?P<inst> \[ /? INST \] )                                # [INST], [/INST]
+    | (?P<sys> << /? SYS >> )                                  # <<SYS>>, <</SYS>>
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def _defang(match: re.Match[str]) -> str:
+    tok = match.group(0)
+    # ZWSP right after the leading bracket char breaks the contiguous special-
+    # token literal without removing any visible character.
+    return f"{tok[0]}{_ZWSP}{tok[1:]}"
+
+
+def neutralize_special_tokens(text: str) -> str:
+    """Defang chat-template special-token literals in untrusted content.
+
+    Returns ``text`` with every recognized role-delimiter special token
+    (``<|im_start|>``, ``<|eot_id|>``, ``<start_of_turn>``, ``[INST]``,
+    ``<<SYS>>``, and their fullwidth-vertical-bar variants) rendered inert by a
+    zero-width-space insertion, so a self-hosted tokenizer can no longer parse
+    them into structural role boundaries. No-op for content with no candidate
+    bracket. See GHSA-g5f9-3xfg-p9mf.
+    """
+    if not text or ("<" not in text and "[" not in text):
+        return text
+    return _SPECIAL_TOKEN_RE.sub(_defang, text)
+
+
 def detect_injection(text: str) -> InjectionVerdict:
     """Scan ``text`` for prompt-injection signals.
 
