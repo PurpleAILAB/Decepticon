@@ -20,6 +20,7 @@ Environment surface (documented in ``TELEMETRY.md``):
 from __future__ import annotations
 
 import os
+import platform
 import uuid
 from dataclasses import dataclass
 from enum import Enum
@@ -151,6 +152,10 @@ class TelemetryConfig:
     install_id: str
     version: str
     os_name: str
+    # Non-identifying runtime dims (the gateway already forwards these). Defaults
+    # keep existing constructors / the disabled no-op sink working unchanged.
+    arch: str = ""
+    py_version: str = ""
 
     @property
     def enabled(self) -> bool:
@@ -160,8 +165,6 @@ class TelemetryConfig:
 
 def resolve_config(env: dict[str, str] | None = None) -> TelemetryConfig:
     """Resolve consent, endpoint, and identity into one config object."""
-    import platform
-
     e = env if env is not None else dict(os.environ)
     # Precedence: DO_NOT_TRACK / opt-out force off; then an env override; then
     # the persisted opt-in choice; else off.
@@ -186,7 +189,22 @@ def resolve_config(env: dict[str, str] | None = None) -> TelemetryConfig:
         install_id=iid,
         version=e.get("DECEPTICON_VERSION") or _detect_version(),
         os_name=sys_map.get(platform.system(), "linux"),
+        arch=_arch(),
+        py_version=platform.python_version(),
     )
+
+
+def _arch() -> str:
+    """CPU architecture as a gateway-safe slug (e.g. ``x86_64``, ``arm64``).
+
+    Returned verbatim only if it matches the gateway's ``arch`` slug pattern;
+    otherwise empty so a surprising ``platform.machine()`` value can never fail
+    the gateway's strict schema and drop the whole batch.
+    """
+    import re
+
+    raw = (platform.machine() or "").lower()
+    return raw if re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", raw) else ""
 
 
 def _detect_version() -> str:

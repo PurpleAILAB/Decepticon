@@ -117,3 +117,55 @@ def test_env_overrides_persisted_mode(tmp_path) -> None:
         resolve_config({**env, "DECEPTICON_TELEMETRY_ENDPOINT": "https://gw"}).mode
         is TelemetryMode.BASIC
     )
+
+
+# ── client runtime dims (arch / py) ──────────────────────────────────────────
+
+
+def test_envelope_includes_arch_and_py_when_set() -> None:
+    sent: list[dict[str, Any]] = []
+    cfg = TelemetryConfig(
+        mode=TelemetryMode.BASIC,
+        endpoint="https://gw.example",
+        install_id="1e9a73a6-c8bd-4e1e-be02-78f4b11de4e1",
+        version="1.1.13",
+        os_name="linux",
+        arch="x86_64",
+        py_version="3.13.1",
+    )
+    sink = TelemetrySink(cfg, transport=lambda _u, b: sent.append(json.loads(b)))
+    sink.record_finding(severity="high")
+    sink.close()
+    client = sent[0]["client"]
+    assert client["arch"] == "x86_64"
+    assert client["py"] == "3.13.1"
+
+
+def test_envelope_omits_arch_and_py_when_unset() -> None:
+    # Defaults are empty → keys must be absent so the gateway's strict schema
+    # never sees an empty value.
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.BASIC), transport=lambda _u, b: sent.append(json.loads(b))
+    )
+    sink.record_finding(severity="high")
+    sink.close()
+    client = sent[0]["client"]
+    assert "arch" not in client
+    assert "py" not in client
+
+
+def test_resolve_config_populates_arch_and_py(tmp_path) -> None:
+    cfg = resolve_config(
+        {
+            "DECEPTICON_HOME": str(tmp_path),
+            "DECEPTICON_TELEMETRY": "basic",
+            "DECEPTICON_TELEMETRY_ENDPOINT": "https://gw",
+        }
+    )
+    # py_version is always the running interpreter's version; arch is the slug or
+    # empty (never a schema-violating value).
+    assert cfg.py_version.count(".") >= 1
+    import re
+
+    assert cfg.arch == "" or re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", cfg.arch)

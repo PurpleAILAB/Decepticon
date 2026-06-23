@@ -10,7 +10,6 @@
     "schema_version": { "const": "1.0" },
     "tier": { "enum": ["A", "R"] },
     "install_id": { "type": "string", "format": "uuid" },
-    "engagement_hash": { "type": "string", "pattern": "^[a-f0-9]{16,64}$" },
     "client": {
       "type": "object",
       "additionalProperties": false,

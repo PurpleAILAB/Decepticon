@@ -127,18 +127,14 @@ export const ClientInfo = z
 
 /**
  * The batch envelope. `install_id` is a random UUID minted on first run (never
- * machine/IP derived); `engagement_hash` is a non-reversible hash. Neither is
- * personally identifying.
+ * machine/IP derived) — not personally identifying. Per-engagement grouping is
+ * carried by each event's `session_id`, not a batch-level field.
  */
 export const TelemetryBatch = z
   .object({
     schema_version: z.literal("1.0"),
     tier: z.enum(["A", "R"]),
     install_id: z.string().uuid(),
-    engagement_hash: z
-      .string()
-      .regex(/^[a-f0-9]{16,64}$/)
-      .optional(),
     client: ClientInfo,
     events: z.array(TelemetryEvent).min(1).max(500),
   })

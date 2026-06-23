@@ -46,7 +46,6 @@ export async function forwardToPostHog(
         arch: batch.client.arch,
         py: batch.client.py,
         tier: batch.tier,
-        engagement_hash: batch.engagement_hash,
         // Privacy hardening — no IP, no geo enrichment.
         $geoip_disable: true,
         $process_person_profile: false,

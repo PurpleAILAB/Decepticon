@@ -47,11 +47,21 @@ class TelemetrySink:
         return self._exporter is not None and self._research
 
     def _envelope(self, events: list[dict[str, Any]]) -> dict[str, Any]:
+        client: dict[str, Any] = {
+            "decepticon_version": self._config.version,
+            "os": self._config.os_name,
+        }
+        # Optional non-identifying runtime dims; omitted when unset so the
+        # gateway's strict schema never sees an empty/invalid value.
+        if self._config.arch:
+            client["arch"] = self._config.arch
+        if self._config.py_version:
+            client["py"] = self._config.py_version
         return {
             "schema_version": SCHEMA_VERSION,
             "tier": "R" if self._research else "A",
             "install_id": self._config.install_id,
-            "client": {"decepticon_version": self._config.version, "os": self._config.os_name},
+            "client": client,
             "events": events,
         }
 
