@@ -28,6 +28,8 @@ import os
 
 from decepticon.backends.http_sandbox import HTTPSandbox
 
+_DEFAULT_SANDBOX_URL = "http://localhost:9999"
+
 
 # Sized for the multi-tenant case: a single SHARED langgraph process can serve
 # many concurrent engagements, each routed (via the bash tool's per-run
@@ -41,6 +43,41 @@ def _shared_sandbox(base_url: str, token: str | None) -> HTTPSandbox:
     return HTTPSandbox(base_url=base_url, token=token)
 
 
+def _resolve_endpoint() -> tuple[str, str | None]:
+    """Resolve the sandbox ``(base_url, token)``, preferring per-run config.
+
+    A shared langgraph process serving many engagements cannot reach a
+    per-engagement sandbox through one process-wide env var. So we first consult
+    the current run's LangGraph config — ``configurable.sandbox_url`` /
+    ``configurable.sandbox_token``, set by the caller per invocation — then fall
+    back to ``SANDBOX_URL`` / ``SANDBOX_TOKEN``. The env path still covers
+    single-tenant, sidecar, local-docker, and import-time construction where
+    there is no active run context.
+    """
+    url: str | None = None
+    token: str | None = None
+    try:
+        # get_config() exposes the current run's RunnableConfig via contextvars
+        # while a graph node executes. It raises RuntimeError outside a runnable
+        # context (for example, import-time agent construction), so fall back to
+        # env in that case.
+        from langgraph.config import get_config
+
+        configurable = (get_config() or {}).get("configurable") or {}
+        raw_url = configurable.get("sandbox_url")
+        raw_token = configurable.get("sandbox_token")
+        url = raw_url if isinstance(raw_url, str) and raw_url else None
+        token = raw_token if isinstance(raw_token, str) and raw_token else None
+    except Exception:
+        pass
+
+    if url is None:
+        url = os.environ.get("SANDBOX_URL", _DEFAULT_SANDBOX_URL)
+    if token is None:
+        token = os.environ.get("SANDBOX_TOKEN") or None
+    return url, token
+
+
 def build_sandbox_backend() -> HTTPSandbox:
     """Build the HTTP-transport sandbox backend.
 
@@ -52,8 +89,12 @@ def build_sandbox_backend() -> HTTPSandbox:
     graph sees a different ``_jobs`` view than the bash tool actually
     registers against — completion notifications never reach the agent.
     Keying by ``(base_url, token)`` keeps tests that monkeypatch the env
-    isolated and supports multi-tenant deployments where pools target
-    distinct daemons.
+    isolated and supports multi-tenant deployments where a shared process routes
+    each run to a distinct per-engagement daemon.
+
+    Endpoint resolution (see ``_resolve_endpoint``): the current run's
+    LangGraph ``configurable.sandbox_url`` / ``sandbox_token`` win when
+    present; otherwise ``SANDBOX_URL`` / ``SANDBOX_TOKEN`` apply.
 
     Returns:
         An ``HTTPSandbox`` instance pointed at the daemon URL.
@@ -67,6 +108,5 @@ def build_sandbox_backend() -> HTTPSandbox:
             Optional bearer token for daemon auth — recommended even on
             loopback as defence-in-depth.
     """
-    base_url = os.environ.get("SANDBOX_URL", "http://localhost:9999")
-    token = os.environ.get("SANDBOX_TOKEN") or None
+    base_url, token = _resolve_endpoint()
     return _shared_sandbox(base_url, token)
