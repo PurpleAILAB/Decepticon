@@ -237,7 +237,7 @@ Touch points, in dependency order. Each step is independently testable.
 - Thread the proxy env into the **skillogy service** in `docker-compose.yml`
   (it currently has only `SKILLOGY_NEO4J_*`): add `DECEPTICON_LLM__PROXY_URL`
   + `DECEPTICON_LLM__PROXY_API_KEY` (mirroring the `langgraph` service,
-  `docker-compose.yml:375-376`) and the SaaS overlay. Absent → substring
+  `docker-compose.yml:375-376`) and the downstream overlay. Absent → substring
   fallback (no failure).
 
 ## Open questions

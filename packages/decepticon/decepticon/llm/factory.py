@@ -1518,7 +1518,7 @@ class LLMFactory:
              ``llm_role_fallback`` registered against ``role``
           3. otherwise None (router will raise if it can't resolve)
 
-        Closes spec §8 gap #5 — plugin-shipped roles (e.g. SaaS
+        Closes spec §8 gap #5 — plugin-shipped roles (e.g. a downstream
         ``apt``) no longer need every call site to thread
         ``default_role`` through manually; the registration spec
         carries it.
@@ -1540,7 +1540,7 @@ class LLMFactory:
         When the caller leaves ``default_role`` unset, the factory consults
         ``decepticon_core.registry.RoleRegistry`` for the role's registered
         ``llm_role_fallback`` and uses that. This is how plugin-shipped
-        roles such as the SaaS ``apt`` orchestrator stop needing every call
+        roles such as a downstream ``apt`` orchestrator stop needing every call
         site to thread ``default_role="decepticon"`` through manually
         (closes spec §8 gap #5).
         """

@@ -109,7 +109,7 @@ decepticon-kg-health = "decepticon.tools.research.health:main"
 decepticon-mcp = "decepticon.mcp_server.__main__:main"
 
 # Plugin entry-point groups consumed by ``decepticon.plugin_loader``.
-# External packages (SaaS or community plugins) declare their
+# External packages (downstream or community plugins) declare their
 # contributions under these groups. See ``decepticon/plugin_loader.py``
 # for the loader contract (shapes, factory kwargs, error isolation).
 #
@@ -137,7 +137,7 @@ decepticon-mcp = "decepticon.mcp_server.__main__:main"
 # registration with no main-agent edits required.
 #
 # Bundle activation — controlled by a 4-tier hierarchy (highest wins):
-#   1. DECEPTICON_PLUGINS env var (e.g. "standard,plugins,saas" or "*")
+#   1. DECEPTICON_PLUGINS env var (e.g. "standard,plugins,vendor" or "*")
 #   2. .decepticon.toml: [plugins] enabled = [...]
 #   3. pyproject.toml: [tool.decepticon.plugins] enabled = [...]
 #   4. Default: ["standard"]
@@ -148,8 +148,8 @@ decepticon-mcp = "decepticon.mcp_server.__main__:main"
 # native dev workflow (e.g. ``make benchmark``, ``langgraph dev``)
 # automatically activates both bundles instead of forcing every
 # developer to remember the env var. End-user OSS installs that DON'T
-# clone this repo see the hardcoded ``["standard"]`` default; SaaS
-# images override via ``ENV DECEPTICON_PLUGINS=standard,saas``.
+# clone this repo see the hardcoded ``["standard"]`` default; downstream
+# images override via ``ENV DECEPTICON_PLUGINS=standard,vendor``.
 
 [tool.decepticon.plugins]
 enabled = ["standard", "plugins"]

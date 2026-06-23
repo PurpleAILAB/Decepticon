@@ -113,8 +113,8 @@ The OSS repo itself ships with both bundles enabled via the project-level
 `pyproject.toml` (so `make dev` / `make benchmark` work out of the box).
 End-user installs that just `pip install decepticon` get the lean
 `standard`-only default (neo4j and other heavy features are opt-in extras,
-e.g. `decepticon[neo4j]`). SaaS Docker images override via
-`ENV DECEPTICON_PLUGINS=standard,saas` to activate their own bundle.
+e.g. `decepticon[neo4j]`). Downstream Docker images override via
+`ENV DECEPTICON_PLUGINS=standard,vendor` to activate their own bundle.
 
 The OSS-shipped `langgraph.json` matches the lean default — it only
 lists the 10 `standard` graphs. To expose plugin graphs to LangGraph

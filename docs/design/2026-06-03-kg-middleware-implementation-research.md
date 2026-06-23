@@ -65,7 +65,7 @@ What does Neo4j enable that files don't?
 | Per-finding markdown report for operator | ✓ | ✗ (would render from graph) |
 | `grep -r "SSRF" findings/` to recall | ✓ | Cypher MATCH (more powerful but more setup) |
 | Multi-hop attack-path planning (`entrypoint → cred → admin`) | ✗ | ✓ (APOC dijkstra) |
-| Cross-engagement correlation in SaaS dashboard | ✗ | ✓ (already wired in `clients/web/`) |
+| Cross-engagement correlation in a dashboard | ✗ | ✓ (already wired in `clients/web/`) |
 | Deduplication of `Host` by IP across multiple agents | ✗ | ✓ (MERGE-on-key) |
 | Vector search over finding descriptions | ✗ | ✓ (Neo4j 5.13+ vector index) |
 
@@ -510,7 +510,7 @@ before_agent(state, runtime):
         # Implemented as: MATCH (n {engagement: $eng}) WHERE n.lastupdated < $cutoff DETACH DELETE n
 ```
 
-Default `KG_STALE_TTL_HOURS=0` → off. SaaS deployments set it; OSS opt-in.
+Default `KG_STALE_TTL_HOURS=0` → off. Downstream deployments set it; OSS opt-in.
 
 ### 10.6 Defense against `InjectedState` override bug
 

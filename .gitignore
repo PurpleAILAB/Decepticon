@@ -87,6 +87,7 @@ skills/_corpus/
 
 .langgraph_api/
 .omc/
+.omo/
 .ouroboros/
 .gstack/
 .claude/

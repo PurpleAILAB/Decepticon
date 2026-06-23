@@ -40,8 +40,8 @@ decepticon-sdk = { workspace = true }
 # ``make benchmark``) automatically activates both OSS bundles
 # without forcing every contributor to remember the env var.
 # OSS end-user installs that don't clone this repo fall back to the
-# hardcoded ``["standard"]`` default; SaaS Docker images override via
-# ``ENV DECEPTICON_PLUGINS=standard,saas``.
+# hardcoded ``["standard"]`` default; downstream Docker images override via
+# ``ENV DECEPTICON_PLUGINS=standard,vendor``.
 
 [tool.decepticon.plugins]
 enabled = ["standard", "plugins"]

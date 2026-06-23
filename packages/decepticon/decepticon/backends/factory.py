@@ -7,9 +7,9 @@ every deployment target Decepticon supports today:
 
   - Dev / local-docker: sandbox container exposes the FastAPI daemon
     on ``http://sandbox:9999`` over the shared ``sandbox-net`` network.
-  - GCE Spot VMs (SaaS silo plane): sandbox sibling container on the VM,
-    daemon reachable on loopback.
-  - Cloud Run (SaaS pool plane): sandbox runs as a sidecar in the same
+  - Per-VM silo plane: sandbox sibling container on the VM, daemon
+    reachable on loopback.
+  - Cloud Run pool plane: sandbox runs as a sidecar in the same
     Cloud Run revision, reachable on ``localhost:9999`` via the shared
     network namespace.
 
@@ -52,21 +52,21 @@ def build_sandbox_backend() -> HTTPSandbox:
     graph sees a different ``_jobs`` view than the bash tool actually
     registers against — completion notifications never reach the agent.
     Keying by ``(base_url, token)`` keeps tests that monkeypatch the env
-    isolated and supports multi-tenant SaaS deployments where pools
-    target distinct daemons.
+    isolated and supports multi-tenant deployments where pools target
+    distinct daemons.
 
     Returns:
         An ``HTTPSandbox`` instance pointed at the daemon URL.
 
     Env:
-        SAAS_SANDBOX_URL
+        SANDBOX_URL
             Base URL of the sandbox daemon. Default
             ``http://localhost:9999`` (sibling-container / sidecar
             loopback). Compose sets this to ``http://sandbox:9999``.
-        SAAS_SANDBOX_TOKEN
+        SANDBOX_TOKEN
             Optional bearer token for daemon auth — recommended even on
             loopback as defence-in-depth.
     """
-    base_url = os.environ.get("SAAS_SANDBOX_URL", "http://localhost:9999")
-    token = os.environ.get("SAAS_SANDBOX_TOKEN") or None
+    base_url = os.environ.get("SANDBOX_URL", "http://localhost:9999")
+    token = os.environ.get("SANDBOX_TOKEN") or None
     return _shared_sandbox(base_url, token)

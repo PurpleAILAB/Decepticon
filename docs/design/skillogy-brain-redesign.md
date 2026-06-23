@@ -22,7 +22,7 @@ Three changes vs. the v0.1 draft:
 Three changes vs. the **current REST skillogy implementation** (`packages/decepticon/decepticon/skillogy/`):
 
 1. **The skillogy service stays standalone — the in-memory dict registry is replaced by a Neo4j backend.** The service container keeps speaking REST + gRPC; its server-side now owns the Neo4j driver, loads the CI-emitted `skills.cypher` on startup, and serves agents over the wire. This is a rebuild, not a deletion of the package.
-2. **Agents do not connect to Neo4j directly.** `SkillogyMiddleware` is a thin REST (default) / gRPC client that calls the skillogy service container. This preserves the "skill-as-a-service" intent of the original package, enables multi-tenant SaaS and OSS distribution (each operator runs their own skillogy container with their own SKILL.md tree), and lets future non-Python runtimes (Go, Rust, TypeScript) consume the same skill catalog via the wire protocol.
+2. **Agents do not connect to Neo4j directly.** `SkillogyMiddleware` is a thin REST (default) / gRPC client that calls the skillogy service container. This preserves the "skill-as-a-service" intent of the original package, enables multi-tenant and OSS distribution (each operator runs their own skillogy container with their own SKILL.md tree), and lets future non-Python runtimes (Go, Rust, TypeScript) consume the same skill catalog via the wire protocol.
 3. **The langgraph (agent) container image drops the `skills/` directory at the end of Phase 1a.** The skillogy service container is the only image that carries the catalog; the agent image just carries the thin client. SKILL.md authoring continues in git; the build pipeline ships them into the skillogy image, not into langgraph.
 
 A **Phase 0 corpus cleanup** precedes Phase 1a: 251 `SKILL.md` files are normalized against a canonical schema, MITRE mappings are filled in and validated, subdomain aliases are collapsed. This is a pre-condition for a clean graph — building a graph on dirty input data produces a dirty graph.
@@ -319,7 +319,7 @@ metadata:
 **Fields removed by Phase 0 cleanup** (audit-confirmed dead in production — see §1.3):
 - `allowed-tools` — never read by Decepticon middleware; tool dispatch is not skill-gated.
 - `metadata.kind` — only 4 occurrences; offensive vs reporting is inferred from path.
-- `metadata.safety_critical`, `metadata.gated_by_conops` — 1 occurrence each; SaaS-gating placeholders not in production.
+- `metadata.safety_critical`, `metadata.gated_by_conops` — 1 occurrence each; gating placeholders not in production.
 
 The validator rejects:
 - Missing `name`, `description`, `subdomain`, `when_to_use`.
@@ -401,7 +401,7 @@ The schema is slim by design. Every field listed is either (a) used by the curre
 **Explicitly NOT included** (vestigial in production):
 - `allowed_tools` — `deepagents.middleware.skills.SkillsMiddleware` parses it, but the Decepticon override replaces the base system prompt entirely without using it, and no tool dispatch logic enforces it. 138 frontmatter occurrences but 0 production code paths consume them.
 - `kind` — only 4 of 251 files declare it; no production code branches on it. Whether a skill is offensive vs reporting is inferred from path (`/skills/*/reporting/` and `/skills/*/analyst/` are non-offensive). The R3 validation rule (§5.9) uses path inference, not the `kind` field.
-- `safety_critical`, `gated_by_conops` — 1 file each, aspirational SaaS-gating placeholders from the 2026-05-28 v0.1 spec. Re-introduce only when SaaS gating is a concrete shippable requirement.
+- `safety_critical`, `gated_by_conops` — 1 file each, aspirational gating placeholders from the 2026-05-28 v0.1 spec. Re-introduce only when gating is a concrete shippable requirement.
 
 ### 5.3 `:Technique` node — matrix-aware
 
@@ -702,7 +702,7 @@ The injected system prompt (~300 tokens) carries:
 - **Server-side**: every Cypher query executed by the skillogy service is OpenTelemetry-traced (existing exporter). Span attributes: `skillogy.rpc` (load_skill/traverse/cypher_read/moc_summary), `skillogy.tenant`, `skillogy.engagement`, query text hash, row count.
 - **Client-side** (middleware in the langgraph image): each tool call is a LangSmith span with `skill.tool`, `skill.name`, `skill.matched_phase`, `skill.traversal_depth`, plus the wire latency. The middleware does not log Cypher; only the service does.
 - **Trace correlation**: the middleware emits a `traceparent` header on every REST/gRPC call so the agent-side LangSmith span and the service-side OTel span share a trace.
-- **Per-engagement metrics**: count of skill loads, hit rate of `run_cypher_read` vs `load_skill`, distribution of which MITRE matrices were touched. Aggregated at the service so SaaS dashboards do not depend on every agent runtime forwarding metrics.
+- **Per-engagement metrics**: count of skill loads, hit rate of `run_cypher_read` vs `load_skill`, distribution of which MITRE matrices were touched. Aggregated at the service so downstream dashboards do not depend on every agent runtime forwarding metrics.
 
 ### 5.13 Testing strategy (Phase 1a)
 
@@ -733,7 +733,7 @@ This is what makes the system "brain-like" in the associative sense: a vague que
 ### 6.2 Embedding pipeline
 
 - Embedding text per skill: `name + "\n" + description + "\n" + body`. Truncated at model max.
-- Model: configurable via LiteLLM. Default `text-embedding-3-small` (1536). Local fallback `bge-small-en` (384) for offline / SaaS-isolated cases.
+- Model: configurable via LiteLLM. Default `text-embedding-3-small` (1536). Local fallback `bge-small-en` (384) for offline / network-isolated cases.
 - Embeddings are produced at CI build time (deterministic with `temperature=0`, fixed model version pin) and embedded into `skills.cypher` as vector literals. The dump remains the single artifact; no separate embedding store.
 
 ### 6.3 `recall` tool semantics
@@ -793,9 +793,9 @@ Out of scope for this design doc; tracked here only to confirm that the Phase 1a
 | OQ-2 | Controlled vocabulary for `tags` — when does it become required? | Defer to Phase 1b or later. Free-form until embedding-based semantic clustering shows value. |
 | OQ-3 | Per-agent graph slicing (16 specialists each see only their region)? | **Revised 2026-06-06 — see [ADR-0008](../../adr/0008-skillogy-hard-acl-phase1a.md).** Phase 1a now enforces a *path-prefix ACL* on `find_skill`/`load_skill`/`traverse` (legacy `FilesystemBackend` contract: `/skills/standard/{role}/` + `/skills/shared/`). The single-graph Neo4j model is preserved; per-tenant graph slicing is still a Phase 2 hardening — but the deterministic per-role visibility boundary lands now, not later. |
 | OQ-4 | Should `aatmf_tactic` get promoted to a `:Framework` node + edges in Phase 1b? | Re-evaluate after AATMF v3 schema stabilizes. Currently preserved as raw frontmatter. |
-| OQ-5 | Hot-swap via runtime `ingest_skill` endpoint? | Not in Phase 1a (rebuild + redeploy). Reintroduce if SaaS shows real need. Phase 2 candidate. |
+| OQ-5 | Hot-swap via runtime `ingest_skill` endpoint? | Not in Phase 1a (rebuild + redeploy). Reintroduce if downstream shows real need. Phase 2 candidate. |
 | OQ-6 | Existing attack-graph schema shares Neo4j — what label collisions are possible? | `:Tactic`/`:Technique` are unique to skill graph; `:Skill` is unique. `:Phase` is shared (already used by OPPLAN middleware?). Verify against [docs/design/attack-graph-schema.md](../../design/attack-graph-schema.md) during Phase 0. |
-| OQ-7 | If SaaS gating becomes a concrete requirement (today: `safety_critical`/`gated_by_conops` are 1-file aspirational fields, dropped — see §1.4), where should the gating signal live: re-added frontmatter, runtime engagement state, or a separate `:Gating` node? | Defer until SaaS gating is a shippable feature. Prefer engagement-runtime over frontmatter when the time comes — gating that depends on the engagement's authorized scope is naturally runtime, not author-time. |
+| OQ-7 | If gating becomes a concrete requirement (today: `safety_critical`/`gated_by_conops` are 1-file aspirational fields, dropped — see §1.4), where should the gating signal live: re-added frontmatter, runtime engagement state, or a separate `:Gating` node? | Defer until gating is a shippable feature. Prefer engagement-runtime over frontmatter when the time comes — gating that depends on the engagement's authorized scope is naturally runtime, not author-time. |
 
 ---
 
@@ -863,7 +863,7 @@ Total Phase 0 + 1a + 1b: **~14–17 weeks** to land the full "brain v1." Compare
 
 - **2026-06-03 (v0.2.1, amendment)** — Service-architecture pivot. The original v0.2 plan retired the existing `decepticon.skillogy.*` REST/proto package and had `SkillogyMiddleware` open a Bolt connection directly to Neo4j from the langgraph process. After implementing Phase 0, the user reframed the intent: **skillogy should remain a standalone communication service**, not a library-style middleware. The amendment:
   1. **Rebuilds the existing REST/proto/client package on a Neo4j backend** instead of deleting it. Wire surface preserved; storage swapped; `Traverse`, `CypherRead`, `MocSummary`, `Schema` RPCs added.
-  2. **Reframes `SkillogyMiddleware` as a thin REST/gRPC client** of the service. The middleware imports nothing from `neo4j`. Multi-tenant SaaS, hot-swap, and non-Python agent runtimes (Go, Rust, TypeScript) are now first-class concerns of the service container.
+  2. **Reframes `SkillogyMiddleware` as a thin REST/gRPC client** of the service. The middleware imports nothing from `neo4j`. Multi-tenant operation, hot-swap, and non-Python agent runtimes (Go, Rust, TypeScript) are now first-class concerns of the service container.
   3. **Trims `containers/langgraph.Dockerfile` at the final Phase 1a cutover** — drops the `COPY packages/decepticon/decepticon/skills` line. The skillogy container becomes the sole owner of the catalog at runtime; the agent image becomes catalog-free, removing a stale-catalog footgun and shrinking the image.
   4. Renames `DECEPTICON_USE_SKILLOGY` to `DECEPTICON_SKILL_BACKEND ∈ {skills, skillogy_brain}` with a one-cycle compat shim.
   Phase 0 deliverables (validator + cleanup + docs) are marked DONE (PR #519, merged 2026-06-03). Architecture diagram (§3.1), components table (§3.2), middleware example (§5.10), migration plan (§5.11 + §10.1), and file table (§11) are updated. No change to the graph schema (§5.1–§5.4) or the agent-facing tool semantics — those decisions stay.

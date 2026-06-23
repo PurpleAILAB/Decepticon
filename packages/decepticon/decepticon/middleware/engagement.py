@@ -55,7 +55,7 @@ class EngagementContextState(AgentState):
     # Per-run language override. When set via config.configurable.language,
     # the middleware appends a LANGUAGE_POLICY SystemMessage that supersedes
     # the prompt-time DECEPTICON_LANGUAGE env policy. Multi-tenant launchers
-    # (SaaS) need different orgs to receive different language outputs from
+    # (multi-tenant) need different orgs to receive different language outputs from
     # the same container, which the env-based path cannot deliver.
     # All launcher-/harness-set channels below carry a reducer so an
     # orchestrator that fans out to several subagents in one turn does not
@@ -178,7 +178,7 @@ def _resolve_workspace_path(state: Any) -> str:
 def _build_engagement_injection(slug: str, workspace: str) -> str:
     # ``workspace`` is the live engagement root resolved from state/config by
     # ``_resolve_workspace_path``. It is ``/workspace`` for the default
-    # single-tenant launcher, but multi-tenant / SaaS launchers mount each
+    # single-tenant launcher, but multi-tenant launchers mount each
     # engagement under a distinct root — so the injection must reflect the
     # resolved path, not a hardcoded ``/workspace`` (which would point the
     # agent at the wrong directory). Trailing slashes are trimmed so the
@@ -390,7 +390,7 @@ class EngagementContextMiddleware(AgentMiddleware):
                 )
             )
 
-        # Per-run language override. Multi-tenant launchers (SaaS web) inject
+        # Per-run language override. Multi-tenant launchers (web) inject
         # the org's selected language via config.configurable.language; we
         # append the same LANGUAGE_POLICY block the prompt builder would have
         # produced if DECEPTICON_LANGUAGE were set, but per-run rather than

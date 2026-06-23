@@ -152,7 +152,7 @@ realistic damage.
 [docs/security/sandbox-isolation.md](./sandbox-isolation.md) documents
 the per-engagement-container design (named
 `decepticon-sandbox-<slug>`, per-engagement Docker network,
-per-acquire SAAS_SANDBOX_TOKEN rotation, archive-on-release lifecycle)
+per-acquire SANDBOX_TOKEN rotation, archive-on-release lifecycle)
 with a working Go skeleton for `clients/launcher/internal/sandbox.Lifecycle`.
 
 ### Tier 5 — Three new specialist agents (commit 8)

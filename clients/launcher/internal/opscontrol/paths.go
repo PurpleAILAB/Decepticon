@@ -105,7 +105,7 @@ func ServiceUnitName() string {
 // ComposeProjectEnv is the explicit override env var. Setting it pins
 // both the launcher's and the daemon's compose project so dynamic
 // workloads spawn INTO that project alongside any services the user
-// already manages there (saas-dev compose stack, plugin-managed
+// already manages there (vendor-dev compose stack, plugin-managed
 // projects, etc.) rather than into a separate "decepticon" project.
 const ComposeProjectEnv = "DECEPTICON_COMPOSE_PROJECT"
 
@@ -116,8 +116,8 @@ const ComposeProjectEnv = "DECEPTICON_COMPOSE_PROJECT"
 //
 //  1. DECEPTICON_COMPOSE_PROJECT env — explicit user override. Use
 //     this to target an existing compose project (e.g. set
-//     DECEPTICON_COMPOSE_PROJECT=decepticon-saas-dev so ops_start("ad")
-//     adds bhce to the running saas-dev stack rather than spinning
+//     DECEPTICON_COMPOSE_PROJECT=decepticon-vendor-dev so ops_start("ad")
+//     adds bhce to the running vendor-dev stack rather than spinning
 //     up its own decepticon-* containers).
 //  2. Stack-name fallback — "decepticon[-${DECEPTICON_STACK_NAME}]".
 //     Stable, deterministic, never hardcoded into the binary.

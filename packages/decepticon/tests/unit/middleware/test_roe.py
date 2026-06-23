@@ -991,7 +991,7 @@ class TestSlotRegistration:
     def test_legacy_names_alias_to_guardrail(self) -> None:
         """Compat shim (removed at 2.0.0): the pre-rename slot member and
         class name must still resolve to the renamed canonicals so
-        downstream plugins / SaaS subagents keep importing them."""
+        downstream plugins / downstream subagents keep importing them."""
         from decepticon.middleware import (
             RoEEnforcementMiddleware,
             RoEGuardrailMiddleware,

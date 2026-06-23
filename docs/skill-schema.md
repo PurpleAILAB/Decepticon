@@ -77,7 +77,7 @@ The v0.1 design proposed these fields. They are dropped:
   on it. "Offensive" vs "non-offensive" is inferred from path
   (`/skills/*/reporting/` and `/skills/*/analyst/` are non-offensive).
 - `metadata.safety_critical` — ASPIRATIONAL. 1 file. Re-introduce only
-  when SaaS gating is a concrete requirement.
+  when gating is a concrete requirement.
 - `metadata.gated_by_conops` — ASPIRATIONAL. 1 file. Same disposition.
 
 If a SKILL.md still has any of these fields, the cleanup batch removes

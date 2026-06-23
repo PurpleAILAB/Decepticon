@@ -3,8 +3,8 @@
 LLM model assignments are defined in decepticon_core.types.llm (LLMModelMapping).
 This config handles infrastructure settings: proxy connection.
 
-Sandbox transport is HTTP-only and configured via SAAS_SANDBOX_URL /
-SAAS_SANDBOX_TOKEN env vars consumed directly by
+Sandbox transport is HTTP-only and configured via SANDBOX_URL /
+SANDBOX_TOKEN env vars consumed directly by
 ``decepticon.backends.factory.build_sandbox_backend`` — no schema field needed.
 
 Credentials (which provider keys are present, in what priority) are detected

@@ -27,8 +27,8 @@
 >   refuses out-of-scope `ping`/`nc`/`traceroute` with `[ROE_REFUSED]`
 >   before the handler runs. The live run also caught + fixed the
 >   missing-`ip`-binary management-discovery gap.
-> Author note: discovered while live-verifying the bugclaw `bugclaw_recon`
-> subagent (SaaS PR #107), which reuses the OSS `recon` role whole —
+> Author note: discovered while live-verifying a downstream `recon`-derived
+> subagent, which reuses the OSS `recon` role whole —
 > including the `ROE_ENFORCEMENT` slot — as its scope backstop.
 
 ## TL;DR
@@ -94,7 +94,7 @@ argument to any other command is invisible to the extractor.
 ## Evidence (measured 2026-06-12)
 
 Seeded a realistic HackerOne scope through the **production path** —
-bugclaw's real `_machine_enforcement_from_scopes` adapter + the sidecar
+a downstream plugin's real `_machine_enforcement_from_scopes` adapter + the sidecar
 `{target,type}` serializer → `plan/roe.json` (`mode: enforce`) — and
 drove the real `RoEEnforcementMiddleware.wrap_tool_call`. The `handler`
 (sandbox stand-in) was instrumented to prove it never runs on a refusal.
@@ -257,7 +257,7 @@ class name, `MiddlewareSlot.ROE_ENFORCEMENT` →
 
 1. **Layer 1 first** — independent, low-risk, unit-tested; immediately
    removes the obvious fail-open class. Ships via the normal OSS release,
-   bugclaw / SaaS pick it up on the next version pin bump.
+   downstream plugins pick it up on the next version pin bump.
 2. **Layer 2 + rename** — larger, sandbox-infra; the rename rides along
    so the name changes exactly when the posture does.
 
@@ -277,7 +277,7 @@ class name, `MiddlewareSlot.ROE_ENFORCEMENT` →
 ## Reproducer
 
 The measured matrix above came from driving the real middleware with a
-bugclaw-serialized `plan/roe.json`. To re-derive: build a
+downstream-serialized `plan/roe.json`. To re-derive: build a
 `MachineEnforcement(mode=enforce, in_scope=…)`, write it to
 `<ws>/plan/roe.json` in the `{target,type}` rule shape, then call
 `RoEEnforcementMiddleware().wrap_tool_call(request, handler)` with a

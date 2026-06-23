@@ -153,7 +153,7 @@ for *maintainer collection from OSS users*:
 | Criterion | LangSmith as collection channel |
 |---|---|
 | Default capture | ❌ captures full prompts + tool I/O by default = targets, creds, client data (Tier C). `hide_inputs/outputs` is a fragile send-then-mask blocklist — same anti-pattern as the Sentry incident. |
-| Self-hosting | ❌ self-host is Enterprise-only, closed source. Routing OSS users' pentest data to a third-party SaaS breaks the Apache-2.0 / self-hosted posture. |
+| Self-hosting | ❌ self-host is Enterprise-only, closed source. Routing OSS users' pentest data to a third-party analytics service breaks the Apache-2.0 / self-hosted posture. |
 | Collection model | ❌ designed for one org tracing its own agents; many-users→one-maintainer would require a shared API key shipped in the OSS (key-leak problem), and gives users no control. |
 | Data shape | ❌ trace debugging, not aggregate product analytics (funnels, distributions). |
 

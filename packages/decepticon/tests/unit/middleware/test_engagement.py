@@ -259,7 +259,7 @@ def test_engagement_only_injection(middleware: EngagementContextMiddleware) -> N
 def test_engagement_injection_honors_custom_workspace(
     middleware: EngagementContextMiddleware,
 ) -> None:
-    """Multi-tenant / SaaS launchers mount engagements under a non-default
+    """Multi-tenant launchers mount engagements under a non-default
     root; the injection must name the resolved workspace, not a hardcoded
     ``/workspace`` (regression: the path was previously hardcoded)."""
     req = _FakeRequest(
@@ -650,7 +650,7 @@ def test_benchmark_with_missing_optional_fields(
 def test_hydrate_pulls_language_from_configurable_when_state_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """SaaS launcher path: config.configurable.language flows into state."""
+    """Multi-tenant launcher path: config.configurable.language flows into state."""
     monkeypatch.setattr(
         "decepticon.middleware.engagement._configurable_from_runnable_config",
         lambda: {"language": "ko"},

@@ -1,7 +1,7 @@
 # Library Consumer Guide
 
 Audience: a commercial product or downstream framework that embeds
-Decepticon — e.g., a SaaS dashboard, a B2B API service, or a research
+Decepticon — e.g., a dashboard, a B2B API service, or a research
 toolkit. Library consumers compose agents, override middleware, and
 ship custom plugins layered on top of the OSS stack.
 
@@ -92,10 +92,10 @@ stack), use a `PluginBundle`:
 from decepticon_sdk import PluginBundle
 
 
-SAAS_OVERLAY = PluginBundle(
-    name="saas-overlay",
-    activation_label="saas",
-    # Drop OSS prompt caching; ship a SaaS-aware one in its place
+VENDOR_OVERLAY = PluginBundle(
+    name="vendor-overlay",
+    activation_label="vendor",
+    # Drop OSS prompt caching; ship a vendor-aware one in its place
     middleware=...,  # MiddlewareContribution
 )
 ```
@@ -105,7 +105,7 @@ framework's `build_middleware` picks it up.
 
 ## 5. Mount per-tenant assets — `make_agent_backend(extra_routes=)`
 
-For multi-tenant SaaS or B2B Enterprise deployments, mount your own
+For multi-tenant or B2B Enterprise deployments, mount your own
 asset trees onto the agent's filesystem:
 
 ```python

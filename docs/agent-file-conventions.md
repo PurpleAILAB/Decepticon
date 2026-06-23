@@ -474,7 +474,7 @@ The host-mounted workspace tree is what the clients render.
 
 ## 14. Writing a plugin agent that fits the contract
 
-A community/SaaS plugin agent (registered under the `decepticon.subagents`
+A community/downstream plugin agent (registered under the `decepticon.subagents`
 entry-point group, declaring `parent_agents=("decepticon",)`) inherits the
 file contract for free if it:
 

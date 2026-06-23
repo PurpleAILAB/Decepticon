@@ -152,7 +152,7 @@ DECEPTICON_SKIP_BOOT=1 decepticon-mcp --transport streamable-http \
 
 Clients send `Authorization: Bearer <token>`.
 
-**JWT (OAuth 2.1 resource server — SaaS / shared deployments).** Validates the
+**JWT (OAuth 2.1 resource server — multi-tenant / shared deployments).** Validates the
 bearer JWT's signature, `iss`, and `aud` against your identity provider's JWKS
 (or a static public key via `--auth-public-key`). This is the posture the MCP
 June-2025 spec prescribes for remote servers:

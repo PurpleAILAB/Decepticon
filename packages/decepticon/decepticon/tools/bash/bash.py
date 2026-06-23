@@ -43,7 +43,7 @@ log = logging.getLogger("decepticon.tools.bash.bash")
 
 # Sandbox lookup is a two-level chain:
 #   1. ``_sandbox_var`` — per-context override. Honoured first so a
-#      request-scoped middleware (multi-tenant SaaS) can pin a
+#      request-scoped middleware (multi-tenant) can pin a
 #      different HTTPSandbox for the lifetime of a request without
 #      touching the module-level default.
 #   2. ``_sandbox_default`` — module-level fallback. Required because

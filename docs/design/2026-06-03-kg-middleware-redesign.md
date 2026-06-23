@@ -60,7 +60,7 @@ Cited so the redesign decisions are traceable:
 1. **`graph_transaction()` round-trip** — every `kg_*` tool call does `load_graph` (two MATCH queries returning all nodes + all edges) → in-memory mutate → `batch_upsert_nodes + batch_upsert_edges` over the entire loaded graph. O(graph_size) per call.
 2. **`_GRAPH_LOCK` global serialization** — Python-level `threading.Lock` serializes all KG traffic across 16 designed-to-be-concurrent agents. Neo4j MVCC + driver's `execute_write` retry already handles concurrent MERGE; the Python lock just adds latency.
 3. **No engagement-scoped indexes** — Every engagement-scoped read does a full label scan. `(engagement, explored)` / `(engagement, severity)` / `(engagement, status)` composite range indexes are missing.
-4. **`query_custom()` is unscoped** — Documented as "caller owns the Cypher." Multi-tenant SaaS data leak risk.
+4. **`query_custom()` is unscoped** — Documented as "caller owns the Cypher." Multi-tenant data leak risk.
 5. **`promote_chain()` not atomic** — Issues `1 + N_steps` separate `query_custom()` calls outside any transaction. Partial failure orphans the AttackPath node.
 
 ### 2.3 What the narrow already gave us
@@ -93,7 +93,7 @@ The redesign now starts from a smaller, well-understood blast radius (3 KG-using
 ### Non-goals (explicit)
 
 - **NG1 — Vector index integration**: Research note §4 establishes that Neo4j 5.13+ vector index could absorb skillogy's separate store, but skillogy phase 1b is paused and that consolidation is a follow-up spec.
-- **NG2 — Multi-database multi-tenancy** (Neo4j Enterprise): Keep label-property scoping. Reassess when SaaS deployment requires it.
+- **NG2 — Multi-database multi-tenancy** (Neo4j Enterprise): Keep label-property scoping. Reassess when a multi-tenant deployment requires it.
 - **NG3 — Migrating AD_TOOLS / CONTRACT_TOOLS internals**: `bh_ingest_zip`, `slither_ingest`, etc. still call the broken shim. They will be migrated in a follow-up PR after KGMiddleware lands; this spec covers only the generic KG surface that analyst uses.
 - **NG4 — `auto`-ingestion from SUMMARY.md / findings**: Agents continue to call `kg_*` tools explicitly. The middleware does NOT silently parse workspace files. (Confirmed direction — see `project_kg_middleware_design.md` in user memory.)
 - **NG5 — Memgraph / Kuzu migration**: Research note §13 concludes the bottleneck is `graph_transaction()`, not Neo4j. Re-profile post-refactor; defer the database swap.
@@ -395,7 +395,7 @@ class MiddlewareSlot(StrEnum):
     # ...existing slots
 ```
 
-Plugin bundles can replace the slot (e.g. a SaaS plugin providing `EnterpriseKGMiddleware` with vector search) or disable it (an OSS-only agent with no Neo4j).
+Plugin bundles can replace the slot (e.g. a downstream plugin providing `EnterpriseKGMiddleware` with vector search) or disable it (an OSS-only agent with no Neo4j).
 
 `SLOTS_PER_ROLE` updates:
 - `analyst` gains `KG` (in the same position as `OPPLAN` for orchestrators).
@@ -466,11 +466,11 @@ Acceptance: `analyst` end-to-end via `make benchmark ARGS="--ids XBEN-095-24"` p
 - New tests under `tests/unit/middleware/test_kg_middleware.py` cover: state hydration, summary injection, write-revision invalidation, engagement-scope enforcement (rejecting writes when `kg_engagement` is unset), and the `kg_ingest` adapter registry.
 - New integration tests under `tests/integration/kg_middleware/` exercise the middleware against a compose-managed Neo4j (test fixture spins up the service or uses an existing one).
 
-### 6.4 SaaS-side coordination
+### 6.4 Downstream coordination
 
-`/home/catow/GIT/decepticon-saas/` may import from `decepticon.tools.research`. A follow-up PR in that repo:
-1. Replaces direct `kg_*` imports with `KGMiddleware`-mediated access (or whatever the SaaS-side agents do).
-2. Adds any SaaS-specific KG ingesters via the `decepticon.kg.ingesters` entry-point.
+A downstream plugin package may import from `decepticon.tools.research`. A follow-up change there:
+1. Replaces direct `kg_*` imports with `KGMiddleware`-mediated access (or whatever the downstream agents do).
+2. Adds any downstream-specific KG ingesters via the `decepticon.kg.ingesters` entry-point.
 
 Coordinated with this spec, not gated on it.
 
@@ -528,7 +528,7 @@ For each PR:
 | Composite index creation collides with existing data (engagement property missing on legacy nodes) | Low | Medium | The existing `_LEGACY_ENGAGEMENT_LABEL` migration helper in `_engagement_scope.py` covers this. Run it before V002 migration. |
 | Web dashboard query shape changes break the graph view | Low | High (visible to user) | Web route reads via direct `neo4j-driver`; it queries by label + engagement property. We preserve that contract. No web changes in this spec. |
 | Plugin authors get broken imports during the deprecation window | Medium | Low | `DeprecationWarning` with explicit migration mapping in `decepticon.compat`. One minor cycle window. |
-| `query_custom` removal breaks the SaaS plugin | Medium | Medium | Coordinated migration PR in `decepticon-saas`. |
+| `query_custom` removal breaks a downstream plugin | Medium | Medium | Coordinated migration in the downstream plugin package. |
 
 ---
 
@@ -652,4 +652,4 @@ def _nmap_adapter(path: Path, store: KGStore, engagement: str) -> dict:
 - [ ] Confirm `Neo4j 5.24 community` supports the composite range index syntax used in §4.8.
 - [ ] Decide the `tools/research/_state.py` removal timing (PR-D vs as soon as no caller is left).
 - [ ] Decide the `KGStore` wrap-vs-replace question (§11 #3).
-- [ ] Coordinate with the SaaS-side team on §6.4.
+- [ ] Coordinate downstream on §6.4.

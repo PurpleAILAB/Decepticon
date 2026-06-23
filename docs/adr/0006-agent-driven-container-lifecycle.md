@@ -216,7 +216,7 @@ data, not decisions.  Extension steps for an OSS workload:
 4. Add the specialist binding to the orchestrator's system prompt so
    it knows to call `ops_start(<name>)` before delegating.
 
-SaaS / community workloads — `KubernetesBackend` namespaces,
+Downstream / community workloads — `KubernetesBackend` namespaces,
 `CloudRunBackend` services, etc. — extend the catalog through the
 `decepticon.workload_backends` entry-point group (§5') rather than by
 amending this ADR.
@@ -234,13 +234,13 @@ amending this ADR.
 
    - `DockerComposeBackend` — sprint 1 only implementation, shells
      out to host `docker compose` CLI.  Covers OSS self-hosted and
-     SaaS per-engagement Spot VM tiers (the VM runs the OSS compose
+     downstream per-engagement Spot VM tiers (the VM runs the OSS compose
      stack and the daemon manages it from the VM host context).
    - `KubernetesBackend` — sprint 5+, applies namespace-scoped CRDs
      through admission-validated Sigstore policy-controller.  Covers
      managed-cluster deployments (EKS / GKE / AKS / OpenShift).
    - `CloudRunBackend` / `FargateBackend` / `NomadBackend` —
-     community / SaaS plug-ins via the `decepticon.workload_backends`
+     downstream / community plugins via the `decepticon.workload_backends`
      entry-point group.  Not shipped in OSS.
 
    The HTTP API and the `(workload, lifecycle_op)` tuple are

@@ -986,8 +986,8 @@ post-index — O(all nodes of that label) instead of O(results).
 ### 4. Enforce engagement scoping in `query_custom()` (High)
 
 `query_custom()` is explicitly documented as "NOT engagement-scoped: the
-caller owns the Cypher." This is a multi-tenant data-leak risk for any SaaS
-deployment. Audit all callers and add engagement parameter injection, or
+caller owns the Cypher." This is a multi-tenant data-leak risk for any
+multi-tenant deployment. Audit all callers and add engagement parameter injection, or
 create `query_custom_read(cypher, params, *, scoped=True)` that automatically
 appends the engagement filter.
 

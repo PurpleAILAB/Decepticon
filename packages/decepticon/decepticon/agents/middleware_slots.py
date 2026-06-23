@@ -4,7 +4,7 @@ Every Decepticon agent factory composes its middleware stack from a
 fixed, canonically-ordered list of named slots. Plugins replace or
 disable slots by name via ``PluginBundle.replaced_middleware`` /
 ``PluginBundle.disabled_middleware`` — no inline middleware construction
-in agent factories, which previously locked SaaS extensions out of the
+in agent factories, which previously locked downstream extensions out of the
 standard stack.
 
 Slot order is the canonical assembly order. The 16 agent factories all

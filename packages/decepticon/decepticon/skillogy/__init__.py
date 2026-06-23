@@ -8,7 +8,7 @@ a network call to a long-lived service that owns the canonical registry.
 
 Why
 ---
-1. Multi-tenant SaaS deployments need per-tenant skill subsets. File-system
+1. Multi-tenant deployments need per-tenant skill subsets. File-system
    skills cannot be sliced per request without remounting volumes.
 2. Hot-swap: dropping a new skill into a running engagement requires
    restarting the langgraph container today; Skillogy makes it an HTTP

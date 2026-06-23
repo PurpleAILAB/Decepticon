@@ -83,8 +83,8 @@ launcher.sandbox_lifecycle.Acquire(engagement_slug)
     │  - if no:  docker run, return SandboxHandle(url, token)
     │
     ▼
-SAAS_SANDBOX_URL=http://decepticon-sandbox-<slug>:9999
-SAAS_SANDBOX_TOKEN=<rotated per acquire>
+SANDBOX_URL=http://decepticon-sandbox-<slug>:9999
+SANDBOX_TOKEN=<rotated per acquire>
     │
     ▼
 launcher.compose.Up(...)
@@ -101,7 +101,7 @@ Per-engagement container properties:
   on the same host.
 - Volume: only `<workspace_root>/<engagement-slug>:/workspace` (no
   fallback to the whole tree).
-- Env: `SAAS_SANDBOX_TOKEN=<urandom>` injected per acquire, so even if
+- Env: `SANDBOX_TOKEN=<urandom>` injected per acquire, so even if
   network isolation fails, the daemon refuses calls without the
   per-acquire token.
 - Lifecycle: container stays up across the launcher's life and is torn
@@ -155,7 +155,7 @@ func (l *Lifecycle) Acquire(slug string) (*Handle, error) {
             "--memory=4g",
             "--pids-limit=1024",
             "-e", "SANDBOX_DAEMON=1",
-            "-e", "SAAS_SANDBOX_TOKEN="+token,
+            "-e", "SANDBOX_TOKEN="+token,
             "-v", filepath.Join(l.workspaceRoot, slug)+":/workspace",
             l.imageRef,
         ).Run()
@@ -182,8 +182,8 @@ func (l *Lifecycle) Release(slug string, archive bool) error {
 ```
 
 Wiring: `clients/launcher/cmd/start.go` consults `Lifecycle.Acquire(slug)`
-before issuing `docker compose up`, sets `SAAS_SANDBOX_URL` and
-`SAAS_SANDBOX_TOKEN` for the agent containers, and calls
+before issuing `docker compose up`, sets `SANDBOX_URL` and
+`SANDBOX_TOKEN` for the agent containers, and calls
 `Lifecycle.Release(slug, archive=true)` from the engagement-close hook.
 
 The existing `sandbox` service in `docker-compose.yml` stays as the
@@ -195,10 +195,10 @@ runs are unchanged.
 
 Firecracker microVMs would replace Docker containers with hardware-
 virtualized VMs (separate kernel per VM, ~125ms boot). That's the right
-architecture for multi-tenant SaaS where a sandbox-kernel-exploit-to-host
+architecture for multi-tenant deployments where a sandbox-kernel-exploit-to-host
 escape is in the threat model. For OSS / single-operator deployments
 the Docker container boundary is sufficient and Firecracker requires
-KVM (no macOS, no Windows desktop). SaaS deployers should run Firecracker.
+KVM (no macOS, no Windows desktop). Multi-tenant deployers should run Firecracker.
 
 gVisor is the middle ground: same Docker UX, intercepts every syscall
 through a user-space kernel. ~20-30% perf cost. Available as a Docker
@@ -229,7 +229,7 @@ docker inspect decepticon-sandbox --format '{{.HostConfig.PidsLimit}}'
 
 1. **Per-engagement spawn (above).** This is the next major change.
 2. **`DECEPTICON_SANDBOX_RUNTIME=runsc`** opt-in for gVisor.
-3. **Firecracker microVM mode** for SaaS pool plane.
+3. **Firecracker microVM mode** for the multi-tenant pool plane.
 4. **Per-engagement Sliver C2** so engagement A's beacons don't share a
    team server with engagement B's. The `c2-sliver` service in compose
    is currently shared; same per-engagement container approach applies.

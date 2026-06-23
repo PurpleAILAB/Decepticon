@@ -21,7 +21,7 @@ SKILLS_LOCAL_PATH = str(importlib.resources.files("decepticon") / "skills")
 # shadowing that would route every request through the caller's backend.
 # Spec §16.4 #5: longest-prefix-wins gives the intended override semantics
 # only when callers mount under a SUB-prefix of OSS defaults, never at or
-# above them. SaaS overlays use ``/skills/tenant/<id>/`` etc.
+# above them. Downstream overlays use ``/skills/tenant/<id>/`` etc.
 _RESERVED_PREFIXES: frozenset[str] = frozenset({"/skills/", "/", ""})
 
 
@@ -79,7 +79,7 @@ def make_agent_backend(
             here.
         extra_routes: optional caller-supplied prefix -> backend mapping
             merged on top of the OSS defaults. Closes gap §8 #1 from
-            the SaaS consumption audit: commercial overlays mount their
+            the downstream consumption audit: downstream overlays mount their
             own asset trees (``/skills/plugins/apt-emulation/``, etc.)
             without forking ``make_agent_backend``. Per spec §16.4 #5,
             routes are sorted by descending prefix length so the longest

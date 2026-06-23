@@ -12,7 +12,7 @@ The Skillogy v0.2 redesign deferred per-agent graph slicing to Phase 2
 
 > "Per-agent graph slicing (16 specialists each see only their region)?
 > Phase 1a uses single graph + per-agent prompt phase filter. Slicing
-> is a Phase 2 hardening when SaaS multi-tenancy lands."
+> is a Phase 2 hardening when multi-tenancy lands."
 
 In practice that means the `find_skill` / `load_skill` / `traverse`
 tools accept any subdomain / path the agent asks for. End-to-end
@@ -31,7 +31,7 @@ simply could not read files outside those prefixes. Migrating to
 Skillogy without carrying that contract forward is a silent regression
 of the OPPLAN role-discipline guarantee the codebase had pre-1.1.7.
 
-The Phase 2 motivation (SaaS multi-tenancy) is real, but it is not
+The Phase 2 motivation (multi-tenancy) is real, but it is not
 the *only* reason to scope per role:
 
 - OPPLAN discipline depends on each phase agent reasoning over its own
@@ -106,7 +106,7 @@ the same contract the codebase had before the Skillogy migration.
 - The two skill backends become interchangeable from an authorization
   perspective — useful for the pytest fixtures + standalone library
   path that still uses `FilesystemBackend`.
-- Phase 2 (SaaS multi-tenancy) work can layer on top of this ACL
+- Phase 2 (multi-tenancy) work can layer on top of this ACL
   rather than introducing a brand-new control mechanism.
 
 **Negative.**

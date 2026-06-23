@@ -1,6 +1,6 @@
 """Plugin loader contract tests.
 
-The plugin loader is the OSS↔SaaS extension surface. These tests pin its
+The plugin loader is the OSS↔downstream extension surface. These tests pin its
 behavior so future refactors don't silently break the contract external
 plugin packages depend on.
 """
@@ -298,9 +298,9 @@ def test_enabled_bundles_default_is_standard_only(monkeypatch, tmp_path):
 
 def test_enabled_bundles_env_overrides_default(monkeypatch, tmp_path):
     """Env var beats hardcoded default."""
-    monkeypatch.setenv(plugin_loader.PLUGINS_ENV_VAR, "standard,plugins,saas")
+    monkeypatch.setenv(plugin_loader.PLUGINS_ENV_VAR, "standard,plugins,vendor")
     monkeypatch.chdir(tmp_path)
-    assert plugin_loader._enabled_bundles() == frozenset({"standard", "plugins", "saas"})
+    assert plugin_loader._enabled_bundles() == frozenset({"standard", "plugins", "vendor"})
 
 
 def test_enabled_bundles_env_wildcard(monkeypatch, tmp_path):
@@ -344,7 +344,7 @@ def test_enabled_bundles_decepticon_toml_beats_pyproject(monkeypatch, tmp_path):
 
 def test_enabled_bundles_env_beats_config_files(monkeypatch, tmp_path):
     """Env var is top of the hierarchy — beats both config files."""
-    monkeypatch.setenv(plugin_loader.PLUGINS_ENV_VAR, "saas")
+    monkeypatch.setenv(plugin_loader.PLUGINS_ENV_VAR, "vendor")
     (tmp_path / "pyproject.toml").write_text(
         '[tool.decepticon.plugins]\nenabled = ["standard", "plugins"]\n',
         encoding="utf-8",
@@ -354,7 +354,7 @@ def test_enabled_bundles_env_beats_config_files(monkeypatch, tmp_path):
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    assert plugin_loader._enabled_bundles() == frozenset({"saas"})
+    assert plugin_loader._enabled_bundles() == frozenset({"vendor"})
 
 
 def test_enabled_bundles_config_wildcard(monkeypatch, tmp_path):
@@ -416,7 +416,7 @@ def test_load_subagents_filters_by_default_bundle(monkeypatch, tmp_path):
     specs = [
         _spec("recon", parents=("decepticon",), bundle="standard", priority=10),
         _spec("scanner", parents=("decepticon",), bundle="plugins", priority=20),
-        _spec("audit", parents=("decepticon",), bundle="saas", priority=30),
+        _spec("audit", parents=("decepticon",), bundle="vendor", priority=30),
     ]
     eps = [_FakeEntryPoint(s.name, f"pkg.{s.name}", s) for s in specs]
     with patch.object(plugin_loader, "entry_points", return_value=eps):
@@ -431,7 +431,7 @@ def test_load_subagents_filter_opts_in_via_env(monkeypatch, tmp_path):
     specs = [
         _spec("recon", parents=("decepticon",), bundle="standard", priority=10),
         _spec("scanner", parents=("decepticon",), bundle="plugins", priority=20),
-        _spec("audit", parents=("decepticon",), bundle="saas", priority=30),
+        _spec("audit", parents=("decepticon",), bundle="vendor", priority=30),
     ]
     eps = [_FakeEntryPoint(s.name, f"pkg.{s.name}", s) for s in specs]
     with patch.object(plugin_loader, "entry_points", return_value=eps):

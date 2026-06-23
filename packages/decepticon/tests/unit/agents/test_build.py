@@ -61,21 +61,21 @@ def test_plugin_bundle_roles_filter():
 
 
 def test_iter_override_bundles_yields_role_scoped_bundles_only():
-    saas_recon = PluginBundle(roles=("recon",))
-    saas_all = PluginBundle()
+    vendor_recon = PluginBundle(roles=("recon",))
+    vendor_all = PluginBundle()
     eps = [
-        _FakeEntryPoint("saas-recon", "saas:recon_bundle", saas_recon),
-        _FakeEntryPoint("saas-all", "saas:all_bundle", saas_all),
+        _FakeEntryPoint("vendor-recon", "vendor:recon_bundle", vendor_recon),
+        _FakeEntryPoint("vendor-all", "vendor:all_bundle", vendor_all),
     ]
     with patch.object(build_module, "entry_points", return_value=eps):
         for_recon = list(build_module._iter_override_bundles("recon"))
         for_exploit = list(build_module._iter_override_bundles("exploit"))
 
-    assert saas_recon in for_recon
-    assert saas_all in for_recon
-    # saas_recon is filtered out for exploit
-    assert saas_all in for_exploit
-    assert saas_recon not in for_exploit
+    assert vendor_recon in for_recon
+    assert vendor_all in for_recon
+    # vendor_recon is filtered out for exploit
+    assert vendor_all in for_exploit
+    assert vendor_recon not in for_exploit
 
 
 def test_iter_override_bundles_skips_non_pluginbundle_loads():
@@ -99,7 +99,7 @@ def test_resolve_overrides_explicit_wins_over_plugin():
     bundle = PluginBundle(
         replaced_tools={"ask_user_question": plugin_tool},
     )
-    eps = [_FakeEntryPoint("saas", "saas:bundle", bundle)]
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
     with patch.object(build_module, "entry_points", return_value=eps):
         resolved = build_module._resolve_overrides(
             role="soundwave",
@@ -114,7 +114,7 @@ def test_resolve_overrides_explicit_wins_over_plugin():
 
 def test_resolve_overrides_merges_disable_from_plugin_and_explicit():
     bundle = PluginBundle(disabled_tools=("plugin_tool",))
-    eps = [_FakeEntryPoint("saas", "saas:bundle", bundle)]
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
     with patch.object(build_module, "entry_points", return_value=eps):
         resolved = build_module._resolve_overrides(
             role="recon",
@@ -253,7 +253,7 @@ def test_build_middleware_applies_plugin_slot_replacement(monkeypatch):
         return sentinel
 
     bundle = PluginBundle(replaced_middleware={"skills": custom_factory})
-    eps = [_FakeEntryPoint("saas", "saas:bundle", bundle)]
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
 
     with patch.object(build_module, "entry_points", return_value=eps):
         with patch.object(plugin_loader, "entry_points", return_value=[]):
@@ -323,7 +323,7 @@ def test_build_tools_plugin_replaces_by_name():
     baseline = {"primary": MagicMock(name="primary")}
     replacement = MagicMock(name="replacement")
     bundle = PluginBundle(replaced_tools={"primary": replacement})
-    eps = [_FakeEntryPoint("saas", "saas:bundle", bundle)]
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
     with patch.object(build_module, "entry_points", return_value=eps):
         with patch.object(plugin_loader, "entry_points", return_value=[]):
             result = build_module.build_tools(role="soundwave", standard_tools=baseline)
@@ -353,12 +353,12 @@ def test_resolve_prompt_overrides_plugin_only():
     """When the explicit override is None, the plugin's prompts
     for that role come through."""
     bundle = PluginBundle(
-        prompts={"soundwave": {"append": "<SAAS>"}},
+        prompts={"soundwave": {"append": "<VENDOR>"}},
     )
-    eps = [_FakeEntryPoint("saas", "saas:bundle", bundle)]
+    eps = [_FakeEntryPoint("vendor", "vendor:bundle", bundle)]
     with patch.object(build_module, "entry_points", return_value=eps):
         merged = build_module.resolve_prompt_overrides("soundwave")
-    assert merged == {"append": "<SAAS>"}
+    assert merged == {"append": "<VENDOR>"}
 
 
 # ── decepticon.skills entry-point group ───────────────────────────────
@@ -370,12 +370,12 @@ def test_skills_sources_appends_plugin_paths():
     discoverable without overriding the whole SKILLS slot."""
     from decepticon.agents.middleware_slots import skills_sources_for
 
-    plugin_paths = ["/skills/saas-pro/recon/", "/skills/saas-shared/"]
+    plugin_paths = ["/skills/vendor-pro/recon/", "/skills/vendor-shared/"]
 
     def plugin_factory(role, **_):
         return plugin_paths if role == "recon" else []
 
-    eps = [_FakeEntryPoint("saas-skills", "saas:get_paths", plugin_factory)]
+    eps = [_FakeEntryPoint("vendor-skills", "vendor:get_paths", plugin_factory)]
     with patch.object(plugin_loader, "entry_points", return_value=eps):
         sources = skills_sources_for("recon")
 
@@ -408,7 +408,7 @@ def test_build_middleware_threads_skill_sources_to_skills_factory():
         captured["sources"] = skill_sources
         return MagicMock(name="SkillsMiddleware")
 
-    custom_paths = ["/skills/saas-pro/sast/", "/skills/saas-shared/"]
+    custom_paths = ["/skills/vendor-pro/sast/", "/skills/vendor-shared/"]
     with patch.object(build_module, "entry_points", return_value=[]):
         with patch.object(plugin_loader, "entry_points", return_value=[]):
             build_module.build_middleware(

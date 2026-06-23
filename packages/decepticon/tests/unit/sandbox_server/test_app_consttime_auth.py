@@ -36,18 +36,18 @@ def _make_backend() -> MagicMock:
 
 @contextlib.contextmanager
 def _client(backend: MagicMock, *, token: str | None) -> Iterator[TestClient]:
-    env: dict[str, str] = {} if token is None else {"SAAS_SANDBOX_TOKEN": token}
-    saved = os.environ.get("SAAS_SANDBOX_TOKEN")
+    env: dict[str, str] = {} if token is None else {"SANDBOX_TOKEN": token}
+    saved = os.environ.get("SANDBOX_TOKEN")
     with patch.object(app_module, "_get_backend", return_value=backend):
-        os.environ.pop("SAAS_SANDBOX_TOKEN", None)
+        os.environ.pop("SANDBOX_TOKEN", None)
         os.environ.update(env)
         try:
             with TestClient(app) as client:
                 yield client
         finally:
-            os.environ.pop("SAAS_SANDBOX_TOKEN", None)
+            os.environ.pop("SANDBOX_TOKEN", None)
             if saved is not None:
-                os.environ["SAAS_SANDBOX_TOKEN"] = saved
+                os.environ["SANDBOX_TOKEN"] = saved
 
 
 def test_verify_token_uses_compare_digest() -> None:

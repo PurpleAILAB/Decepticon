@@ -4,7 +4,7 @@ The public, unauthenticated **ingest gateway** for OSS maintainer telemetry —
 Layer 1 of [`docs/design/2026-06-20-telemetry-data-collection-design.md`](../docs/design/2026-06-20-telemetry-data-collection-design.md).
 
 A Cloudflare Worker that sits between many OSS clients and the maintainer's
-analytics backend. It exists to enforce the privacy invariants a SaaS backend
+analytics backend. It exists to enforce the privacy invariants an analytics backend
 cannot, and to hold the backend secret so the OSS client never has to.
 
 > **PoC status.** Working, tested gateway (schema + Tier-C scanner + PostHog
@@ -14,7 +14,7 @@ cannot, and to hold the backend secret so the OSS client never has to.
 > `decepticon-cli telemetry` subcommand, and `TELEMETRY.md`. Remaining: MITRE
 > tagging at the agent layer (the heatmap source) and production hardening.
 
-## Why a gateway (and not client → SaaS directly)
+## Why a gateway (and not client → a third-party analytics backend directly)
 
 OSS can't ship a write credential — embedding a backend key is a key-leak. The
 gateway is the standard fix: the client learns only the public Worker URL; the

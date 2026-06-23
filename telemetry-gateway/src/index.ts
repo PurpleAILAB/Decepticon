@@ -3,7 +3,7 @@
  *
  * The single public, unauthenticated ingest endpoint for OSS maintainer
  * collection (design doc §4, Layer 1). It holds the PostHog secret so the OSS
- * client never has to, and enforces the privacy invariants the SaaS backend
+ * client never has to, and enforces the privacy invariants an analytics backend
  * cannot:
  *
  *   1. drop the client IP        — never read into the forwarded payload

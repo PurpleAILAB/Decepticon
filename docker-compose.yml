@@ -378,7 +378,7 @@ services:
       # name (resolves via the shared ``sandbox-net`` network below). Port
       # 9999 is the FastAPI daemon baked into the sandbox image (see
       # ``containers/sandbox-entrypoint.sh`` — daemon mode is the default).
-      - SAAS_SANDBOX_URL=http://sandbox:9999
+      - SANDBOX_URL=http://sandbox:9999
       - DECEPTICON_NEO4J_URI=bolt://neo4j:7687
       - DECEPTICON_NEO4J_USER=neo4j
       - DECEPTICON_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
@@ -505,9 +505,9 @@ services:
     # daemon and (b) the on-host compose project directory mounted at a
     # known in-container path so `-f` and `--env-file` resolve.
     #
-    # OSS scope: user == host owner. SaaS bundles never expose the
-    # docker socket to a tenant CLI — those deployments override this
-    # service's volumes via a compose overlay.
+    # OSS scope: user == host owner. Multi-tenant deployments never
+    # expose the docker socket to a tenant CLI — those deployments
+    # override this service's volumes via a compose overlay.
     environment:
       - DECEPTICON_API_URL=http://langgraph:2024
       - TERM=xterm-256color

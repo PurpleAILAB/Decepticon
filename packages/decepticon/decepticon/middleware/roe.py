@@ -637,6 +637,6 @@ def build_default_sink(workspace_path: str | None) -> RoEAuditSink | None:
 # Compat alias (removed at 2.0.0). The class was renamed
 # ``RoEEnforcementMiddleware`` → ``RoEGuardrailMiddleware`` when RoE
 # enforcement became genuinely layered (advisory command-parse here +
-# authoritative sandbox egress). Downstream plugins / SaaS subagents
+# authoritative sandbox egress). Downstream plugins / downstream subagents
 # that import the old name keep working for one minor cycle.
 RoEEnforcementMiddleware = RoEGuardrailMiddleware

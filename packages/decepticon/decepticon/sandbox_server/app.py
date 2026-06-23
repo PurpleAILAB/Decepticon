@@ -29,7 +29,7 @@ layering rationale.
 
 Auth model
 ----------
-`SAAS_SANDBOX_TOKEN` env: when set, every request must carry
+`SANDBOX_TOKEN` env: when set, every request must carry
 ``Authorization: Bearer <token>``. When unset (typical dev), the
 daemon answers any caller. Cloud Run multi-container sibling traffic
 on loopback isn't routable from outside the service, so the token is
@@ -227,7 +227,7 @@ def auth(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global _required_token
-    _required_token = os.environ.get("SAAS_SANDBOX_TOKEN") or None
+    _required_token = os.environ.get("SANDBOX_TOKEN") or None
 
     # Zombie reaping is delegated to the container init process (tini),
     # enabled via ``init: true`` on the sandbox compose service. tini

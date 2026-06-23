@@ -7,7 +7,7 @@ LangGraph Platform expects a graph manifest (``langgraph.json``) or the
 agents by declaring entry-points in the ``decepticon.agents`` group.
 
 This module produces a merged manifest at runtime so external plugins
-(e.g. a SaaS plugin package shipped separately) can extend the available
+(e.g. a downstream plugin package shipped separately) can extend the available
 graphs without editing ``langgraph.json``.
 
 Typical usage in a container startup script:

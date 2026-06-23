@@ -67,9 +67,9 @@ func TestDetectServiceManager_ReturnsCorrectShape(t *testing.T) {
 
 func TestComposeProjectName_EnvOverrideWins(t *testing.T) {
 	t.Setenv("DECEPTICON_STACK_NAME", "stack2")
-	t.Setenv(ComposeProjectEnv, "decepticon-saas-dev")
-	if got := ComposeProjectName(); got != "decepticon-saas-dev" {
-		t.Errorf("ComposeProjectName = %q; want explicit override %q", got, "decepticon-saas-dev")
+	t.Setenv(ComposeProjectEnv, "decepticon-vendor-dev")
+	if got := ComposeProjectName(); got != "decepticon-vendor-dev" {
+		t.Errorf("ComposeProjectName = %q; want explicit override %q", got, "decepticon-vendor-dev")
 	}
 }
 

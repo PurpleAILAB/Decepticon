@@ -11,7 +11,7 @@ Submodules:
     instances are hashable + memoizable on run-id (spec §16.4 #1).
   * ``roles``    — ``RoleRegistry`` pluggable role catalog. Plugins
     register custom roles via ``decepticon.roles`` entry-point group
-    (closes gap §8 #5 — SaaS ``apt`` no longer abuses
+    (closes gap §8 #5 — a vendor ``apt`` no longer abuses
     ``default_role="decepticon"``).
   * ``skills``   — ``SkillSourceRegistry`` validating ``/skills/<.../>``
     paths and warning on collisions (closes gap §8 #12).

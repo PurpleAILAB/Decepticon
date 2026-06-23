@@ -89,7 +89,7 @@ LangGraph, sandbox) keeps the always-on contract.
   The CLI image ships with `docker-ce-cli` + `docker-compose-plugin`;
   the compose entry bind-mounts the host docker socket and the
   operator's `$DECEPTICON_HOME` so the slash command shells out
-  against the operator's compose project. OSS scope only — SaaS
+  against the operator's compose project. OSS scope only — downstream
   bundles override these volumes via a separate compose overlay. (#625)
 - **One-shot upgrade migration** for the stale
   `COMPOSE_PROFILES=c2-sliver` line that pre-ADR-0006 (v1.1.7 and
@@ -140,7 +140,7 @@ LangGraph, sandbox) keeps the always-on contract.
   `build_sandbox_backend()` is now `(base_url, token)`-keyed
   cached so every graph + middleware + tool sees the same
   `BackgroundJobTracker`. Tests that monkeypatch the env keep their
-  isolation; multi-tenant SaaS pools targeting different daemons
+  isolation; multi-tenant pools targeting different daemons
   keep separate clients. (#623)
 - **BHCE PostgreSQL bootstrap on v1.1.6/v1.1.7 → v1.1.8 upgrades.**
   The Postgres `init.d` script only runs on an empty data volume, so
@@ -734,4 +734,4 @@ The following legacy import paths keep working but emit a
   (defended by runtime test at present).
 - PyPI Trusted Publisher OIDC configuration for the three-wheel
   atomic release.
-- Downstream `decepticon_saas` lockstep migration PR.
+- Downstream plugin package lockstep migration.

@@ -3,7 +3,7 @@
 OSS roles are pre-registered at framework boot from
 ``decepticon_core.contracts.slots.SLOTS_PER_ROLE``. Plugins register
 custom roles via the new ``decepticon.roles`` entry-point group;
-this closes gap §8 #5 (SaaS ``apt`` previously had to abuse
+this closes gap §8 #5 (a vendor ``apt`` previously had to abuse
 ``default_role="decepticon"`` in ``LLMFactory``).
 
 Per spec §16.4 #3 ``register()`` is idempotent on identical parameters:

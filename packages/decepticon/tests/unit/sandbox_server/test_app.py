@@ -78,25 +78,25 @@ def _make_backend() -> MagicMock:
 def _client(backend: MagicMock, *, token: str | None = None) -> Iterator[TestClient]:
     """Yield a TestClient with ``_get_backend`` patched to return ``backend``.
 
-    ``token`` controls the ``SAAS_SANDBOX_TOKEN`` env var that ``lifespan``
+    ``token`` controls the ``SANDBOX_TOKEN`` env var that ``lifespan``
     reads into ``_required_token``. The env mutation and ``_get_backend``
     patch are both in place before the ``TestClient`` context is entered, so
     ``lifespan`` (which runs on enter) sees the stub backend and the
     intended token state. ``token=None`` actively removes any inherited
-    ``SAAS_SANDBOX_TOKEN`` so the no-auth path is deterministic.
+    ``SANDBOX_TOKEN`` so the no-auth path is deterministic.
     """
-    env: dict[str, str] = {} if token is None else {"SAAS_SANDBOX_TOKEN": token}
-    saved = os.environ.get("SAAS_SANDBOX_TOKEN")
+    env: dict[str, str] = {} if token is None else {"SANDBOX_TOKEN": token}
+    saved = os.environ.get("SANDBOX_TOKEN")
     with patch.object(app_module, "_get_backend", return_value=backend):
-        os.environ.pop("SAAS_SANDBOX_TOKEN", None)
+        os.environ.pop("SANDBOX_TOKEN", None)
         os.environ.update(env)
         try:
             with TestClient(app) as client:
                 yield client
         finally:
-            os.environ.pop("SAAS_SANDBOX_TOKEN", None)
+            os.environ.pop("SANDBOX_TOKEN", None)
             if saved is not None:
-                os.environ["SAAS_SANDBOX_TOKEN"] = saved
+                os.environ["SANDBOX_TOKEN"] = saved
 
 
 # ── /healthz ─────────────────────────────────────────────────────────────
@@ -364,7 +364,7 @@ def test_session_log_path_returns_path() -> None:
 
 
 def test_no_token_env_allows_unauthenticated_request() -> None:
-    """With SAAS_SANDBOX_TOKEN unset, any caller (no header) is served."""
+    """With SANDBOX_TOKEN unset, any caller (no header) is served."""
     backend = _make_backend()
     with _client(backend, token=None) as client:
         resp = client.post("/execute", json={"command": "echo hi"})

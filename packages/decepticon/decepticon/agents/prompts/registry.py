@@ -12,7 +12,7 @@ from __future__ import annotations
 # Country-code aliases → ISO 639-1 language codes. Users naturally type
 # "dk" (Denmark), "se" (Sweden), "jp" (Japan), "cn" (China) instead of
 # the ISO 639-1 "da", "sv", "ja", "zh". Shared between the env-based
-# prompt-time path (CLI) and the runtime config path (web SaaS).
+# prompt-time path (CLI) and the runtime config path (multi-tenant web).
 _COUNTRY_TO_LANG = {
     "dk": "da",
     "se": "sv",

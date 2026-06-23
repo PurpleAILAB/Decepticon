@@ -4,7 +4,7 @@ Verifies acceptance criterion #11 from
 ``docs/superpowers/specs/2026-05-23-core-framework-sdk-split-design.md``:
 
   ``make_agent_backend(sandbox, extra_routes={"/foo/": some_backend})``
-  is exercised by a test that reads from ``/foo/x.txt`` and the SaaS
+  is exercised by a test that reads from ``/foo/x.txt`` and the vendor
   overlay pattern from the previous PR is a one-liner.
 
 Also verifies the spec §16.4 #5 longest-prefix-wins ordering — a

@@ -8,7 +8,7 @@ Env:
     SANDBOX_DAEMON_PORT   bind port (default 9999)
     SANDBOX_ROOT_DIR      LocalShellBackend root (default /workspace)
     SANDBOX_DEFAULT_TIMEOUT  per-command timeout in seconds (default 120)
-    SAAS_SANDBOX_TOKEN    bearer token required on every request
+    SANDBOX_TOKEN         bearer token required on every request
                           when set (recommended even on loopback)
 """
 

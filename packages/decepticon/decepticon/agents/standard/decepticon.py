@@ -134,7 +134,7 @@ def create_decepticon_agent(
     # itself as a ``SUBAGENT_SPEC`` module constant registered under the
     # ``decepticon.subagents`` entry-point group; this main agent picks
     # up every spec whose ``parent_agents`` includes ``"decepticon"``.
-    # SaaS or community plugin packages can extend this roster without
+    # Community or downstream plugin packages can extend this roster without
     # modifying OSS — see ``decepticon/plugin_loader.py`` for the loader
     # contract and ``pyproject.toml`` for the registered specs.
     #

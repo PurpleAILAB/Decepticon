@@ -8,7 +8,7 @@ override surface plugin authors have access to.
 
 If you only run Decepticon via the bundled Docker stack and never
 touch the Python code, none of this applies — keep using `curl | bash`
-and the CLI launcher. This document is for SaaS / commercial / research
+and the CLI launcher. This document is for commercial / research
 integrators building on top of the agent code.
 
 ---
@@ -43,12 +43,12 @@ from langchain_core.tools import tool
 from decepticon.agents.standard.soundwave import create_soundwave_agent
 
 @tool
-def saas_slack_ask_user(question: str, header: str = "") -> str:
+def vendor_slack_ask_user(question: str, header: str = "") -> str:
     """Send the operator's question to a Slack channel and block until reply."""
     ...
 
 agent = create_soundwave_agent(
-    tools=[saas_slack_ask_user],          # full tool list (replaces baseline)
+    tools=[vendor_slack_ask_user],        # full tool list (replaces baseline)
     system_prompt="<your custom prompt>", # full prompt replace
     recursion_limit=500,                  # tuning
 )
@@ -111,7 +111,7 @@ agent = create_agent(
     tools=[*BASH_TOOLS, kg_query, kg_stats, my_custom_tool],
     middleware=[
         EngagementContextMiddleware(),
-        SkillsMiddleware(backend=backend, sources=["/skills/my-saas/"]),
+        SkillsMiddleware(backend=backend, sources=["/skills/my-vendor/"]),
         FilesystemMiddleware(backend=backend),
         SandboxNotificationMiddleware(sandbox=sandbox),
         ModelFallbackMiddleware(...),
@@ -119,16 +119,16 @@ agent = create_agent(
         AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
         PatchToolCallsMiddleware(),
     ],
-    name="saas-recon-v2",
+    name="vendor-recon-v2",
 )
 ```
 
-This is the canonical path for SaaS / research integrators who want
+This is the canonical path for commercial / research integrators who want
 to ship their own service on top of Decepticon's agent code.
 
 ### 3b. Plugin orchestrator with the OSS slot system (`build_middleware(slots=...)`)
 
-When the commercial product wants to ship a **new orchestrator agent
+When a downstream product wants to ship a **new orchestrator agent
 type** (not one of the OSS 16) but still wants Decepticon's slot
 system, safety gate, and plugin-override pipeline, pass an explicit
 ``slots`` set to ``build_middleware``:
@@ -152,7 +152,7 @@ PRO_SLOTS = frozenset({
 })
 
 PRO_SKILL_SOURCES = [
-    "/skills/saas-pro/orchestrator/",
+    "/skills/vendor-pro/orchestrator/",
     "/skills/shared/",
 ]
 
@@ -196,40 +196,40 @@ Factories discover and apply it automatically — no factory kwargs
 needed.
 
 ```python
-# saas_pkg/bundles.py
+# vendor_pkg/bundles.py
 from decepticon.plugin_loader import PluginBundle
-from saas_pkg.tools import saas_slack_ask
-from saas_pkg.middleware import saas_skills_factory
+from vendor_pkg.tools import vendor_slack_ask
+from vendor_pkg.middleware import vendor_skills_factory
 
-SAAS_BUNDLE = PluginBundle(
-    bundle="saas",
+VENDOR_BUNDLE = PluginBundle(
+    bundle="vendor",
     # Tools
-    replaced_tools={"ask_user_question": saas_slack_ask},
+    replaced_tools={"ask_user_question": vendor_slack_ask},
     disabled_tools=("complete_engagement_planning",),
     # Middleware (slot names = MiddlewareSlot values)
-    replaced_middleware={"skills": saas_skills_factory},
+    replaced_middleware={"skills": vendor_skills_factory},
     disabled_middleware=("prompt-caching",),
     # Prompt patches per role
     prompts={
-        "soundwave": {"append": "<SAAS_AUDIT_POLICY>...</SAAS_AUDIT_POLICY>"},
-        "recon": {"prepend": "<SAAS_HEADER>..."},
+        "soundwave": {"append": "<VENDOR_AUDIT_POLICY>...</VENDOR_AUDIT_POLICY>"},
+        "recon": {"prepend": "<VENDOR_HEADER>..."},
     },
     # Sub-agents
-    replaced_subagents={"recon": saas_pkg.agents.recon.SUBAGENT_SPEC},
+    replaced_subagents={"recon": vendor_pkg.agents.recon.SUBAGENT_SPEC},
     # Optional role scoping (empty tuple = applies to every role)
     roles=("soundwave", "recon"),
 )
 ```
 
 ```toml
-# saas_pkg/pyproject.toml
+# vendor_pkg/pyproject.toml
 [project.entry-points."decepticon.bundles"]
-saas = "saas_pkg.bundles:SAAS_BUNDLE"
+vendor = "vendor_pkg.bundles:VENDOR_BUNDLE"
 ```
 
 Activation also honors the existing `DECEPTICON_PLUGINS` env / config
-allowlist via `bundle="saas"`. Set
-`DECEPTICON_PLUGINS=standard,saas` to opt in.
+allowlist via `bundle="vendor"`. Set
+`DECEPTICON_PLUGINS=standard,vendor` to opt in.
 
 ### Adding skills via entry-points
 
@@ -239,17 +239,17 @@ plugin authors can layer skills onto OSS without overriding the
 SKILLS slot factory.
 
 ```python
-# saas_pkg/skills.py
+# vendor_pkg/skills.py
 def skill_sources(role: str) -> list[str]:
     if role in ("recon", "exploit"):
-        return ["/skills/saas-pro/", "/skills/saas-shared/"]
+        return ["/skills/vendor-pro/", "/skills/vendor-shared/"]
     return []
 ```
 
 ```toml
-# saas_pkg/pyproject.toml
+# vendor_pkg/pyproject.toml
 [project.entry-points."decepticon.skills"]
-saas = "saas_pkg.skills:skill_sources"
+vendor = "vendor_pkg.skills:skill_sources"
 ```
 
 Plugin paths are appended after the OSS baseline returned by
@@ -319,7 +319,7 @@ The schema / contract types live in **`decepticon-core`** (the contracts package
 
 ## Common patterns
 
-### Add a single SaaS tool to the default agent
+### Add a single vendor tool to the default agent
 
 ```python
 from decepticon.agents.standard.recon import create_recon_agent
@@ -342,14 +342,14 @@ custom_llm = ChatAnthropic(model="claude-opus-4-5", temperature=0)
 agent = create_recon_agent(llm=custom_llm, fallback_models=[])
 ```
 
-### Replace `SkillsMiddleware` with a SaaS caching version
+### Replace `SkillsMiddleware` with a vendor caching version
 
 Plugin path (declarative, recommended):
 
 ```python
 PluginBundle(
-    bundle="saas",
-    replaced_middleware={"skills": saas_skills_factory},
+    bundle="vendor",
+    replaced_middleware={"skills": vendor_skills_factory},
 )
 ```
 

@@ -2,7 +2,7 @@
 
 > Decepticon is an autonomous offensive tool. That makes it a high-value
 > target. This document is the STRIDE walk of Decepticon's own attack
-> surface so operators, plugin authors, and SaaS deployers can reason
+> surface so operators, plugin authors, and multi-tenant deployers can reason
 > about compromise paths against the agent itself.
 
 ## Scope
@@ -92,13 +92,13 @@ Per-asset analysis.
 
 | Threat | Vector | Mitigation | Status |
 |--------|--------|-----------|--------|
-| **Spoofing** | Sandbox HTTP daemon has no auth by default | `SAAS_SANDBOX_TOKEN` env enables Bearer auth; loopback-only deploys are fine without | Partial |
+| **Spoofing** | Sandbox HTTP daemon has no auth by default | `SANDBOX_TOKEN` env enables Bearer auth; loopback-only deploys are fine without | Partial |
 | **Tampering** | Agent's command rewritten by hostile banner | UntrustedOutputMiddleware + injection detector | Done ([prompt-injection-defense](./prompt-injection-defense.md)) |
 | **Tampering** | Out-of-scope target reached | RoEEnforcementMiddleware refuses + chained audit log | Done ([RoE schema + middleware](../../packages/decepticon-core/decepticon_core/types/roe.py)) |
 | **Repudiation** | Operator denies engagement actions | HMAC-chained audit ledger (`<workspace>/audit/roe-decisions.jsonl`) | Done |
 | **Information disclosure** | One Kali container shared across engagements | Per-engagement sandbox containers (planned, see Tier 3) | Open |
 | **Denial of service** | Sandbox `pids_limit: 1024` exists; mem unbounded | `mem_limit` per service (planned) | Open |
-| **Elevation of privilege** | Sandbox kernel exploit → host | Firecracker microVM per objective (planned, SaaS-only) | Open |
+| **Elevation of privilege** | Sandbox kernel exploit → host | Firecracker microVM per objective (planned, multi-tenant deployments only) | Open |
 
 ### Asset: LangGraph orchestrator
 
@@ -156,7 +156,7 @@ Tracked in this PR's roadmap, in order of priority:
 2. **Per-engagement sandbox container** (Docker SDK based lifecycle, one container per engagement open). Eliminates the "Engagement A's `.scratch/` is visible to Engagement B" leak. Tier 3 of this PR ships the design + compose hardening; full lifecycle ships in a follow-up.
 3. ~~**Per-engagement budget cap**~~ — **shipped.** `BudgetEnforcementMiddleware` (in `_BASE_SLOTS`) soft-warns at a configurable fraction of the cap and hard-pauses the run at 100%, scoped per-engagement and per-agent. Enable via `DECEPTICON_BUDGET__ENGAGEMENT_USD` / `DECEPTICON_BUDGET__PER_AGENT_USD`; see [security-controls](./security-controls.md). Automatic model-tier downgrade at threshold is not implemented.
 4. **Plugin bundle signature** (PluginBundle ships an Ed25519 signature; operator pins trust set; `pip install` of an unpinned bundle is rejected at boot).
-5. **Firecracker microVM sandbox** (one ~125ms-boot microVM per objective). Kernel boundary instead of namespace boundary. SaaS-only; OSS keeps Docker.
+5. **Firecracker microVM sandbox** (one ~125ms-boot microVM per objective). Kernel boundary instead of namespace boundary. Multi-tenant deployments only; OSS keeps Docker.
 6. **Sigstore-style transparent log** for the RoE audit ledger. Today the ledger lives next to the engagement workspace; the HMAC key is operator-held. For paid engagements, ship the chain hash to a third-party transparency log (Rekor) so even the operator can't rewrite history.
 
 ## Out of scope

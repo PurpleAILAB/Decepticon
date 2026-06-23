@@ -71,7 +71,7 @@ ROLES_GROUP = "decepticon.roles"  # Spec §7.2 Principle 4 — custom agent role
 #
 # External plugin packages always load when pip-installed; their
 # entry-point contributions can wrap output in ``PluginBundle`` to opt
-# into the same allowlist (e.g. ``bundle="saas"`` requires that string
+# into the same allowlist (e.g. ``bundle="vendor"`` requires that string
 # in DECEPTICON_PLUGINS / config file).
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -193,7 +193,7 @@ class PluginBundle:
     that wants to ship a Slack version of ``ask_user_question`` either
     drops the standard one (``disabled_tools=("ask_user_question",)``)
     and adds its own via ``items``, OR uses
-    ``replaced_tools={"ask_user_question": SaaSSlackAskTool}`` which
+    ``replaced_tools={"ask_user_question": VendorSlackAskTool}`` which
     combines the two steps. Middleware slot replacement works the same
     way — slot names match the ``MiddlewareSlot`` enum values in
     ``decepticon.agents.middleware_slots``.
@@ -216,32 +216,32 @@ class PluginBundle:
     Slack version of ask_user_question::
 
         ASK_USER_VIA_SLACK = PluginBundle(
-            bundle="saas",
-            replaced_tools={"ask_user_question": saas_slack_ask_tool},
+            bundle="vendor",
+            replaced_tools={"ask_user_question": vendor_slack_ask_tool},
         )
 
-    Drop OSS prompt caching, ship a SaaS one in its place::
+    Drop OSS prompt caching, ship a vendor one in its place::
 
         PluginBundle(
-            bundle="saas",
+            bundle="vendor",
             disabled_middleware=("prompt-caching",),
-            items=(SaaSCacheMiddleware(),),
+            items=(VendorCacheMiddleware(),),
         )
 
-    Append SaaS audit policy to the soundwave prompt::
+    Append a vendor audit policy to the soundwave prompt::
 
         PluginBundle(
-            bundle="saas",
+            bundle="vendor",
             prompts={
-                "soundwave": {"append": "<SAAS_AUDIT_POLICY>...</SAAS_AUDIT_POLICY>"},
+                "soundwave": {"append": "<VENDOR_AUDIT_POLICY>...</VENDOR_AUDIT_POLICY>"},
             },
         )
 
-    Replace the standard recon sub-agent with a SaaS-licensed version::
+    Replace the standard recon sub-agent with a vendor-licensed version::
 
         PluginBundle(
-            bundle="saas",
-            replaced_subagents={"recon": saas.recon.SUBAGENT_SPEC},
+            bundle="vendor",
+            replaced_subagents={"recon": vendor.recon.SUBAGENT_SPEC},
         )
 
     Fields
@@ -516,7 +516,7 @@ def load_plugin_role_specs() -> list[Any]:
     """Discover custom role specs contributed under ``decepticon.roles``.
 
     Spec §7.2 Principle 4 + §8 gap #5 — plugins declare new agent roles
-    (e.g. SaaS ``apt`` orchestrator) so the framework's middleware
+    (e.g. a vendor ``apt`` orchestrator) so the framework's middleware
     assembler and ``LLMFactory`` see them as first-class. Each
     entry-point returns either a ``RoleSpec`` instance or a zero-arg
     factory.
@@ -636,9 +636,9 @@ def load_subagents_for_parent(parent: str) -> list[SubAgentSpec]:
 
     Default ``DECEPTICON_PLUGINS=standard`` returns only ``bundle="standard"``
     subagents. To activate the OSS ``plugins`` bundle (vulnresearch family),
-    set ``DECEPTICON_PLUGINS=standard,plugins``. SaaS plugin packages set
-    their own bundle (e.g. ``bundle="saas"``) and the SaaS Docker image
-    activates it via ``ENV DECEPTICON_PLUGINS=standard,saas``.
+    set ``DECEPTICON_PLUGINS=standard,plugins``. Downstream plugin packages set
+    their own bundle (e.g. ``bundle="vendor"``) and the downstream Docker image
+    activates it via ``ENV DECEPTICON_PLUGINS=standard,vendor``.
     """
     matched = [
         s

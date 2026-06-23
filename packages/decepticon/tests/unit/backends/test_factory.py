@@ -30,8 +30,8 @@ def test_build_sandbox_backend_returns_shared_instance(
     different ``_jobs`` view than the bash tool actually registers
     against — completion notifications never reach the agent.
     """
-    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://sandbox:9999")
-    monkeypatch.delenv("SAAS_SANDBOX_TOKEN", raising=False)
+    monkeypatch.setenv("SANDBOX_URL", "http://sandbox:9999")
+    monkeypatch.delenv("SANDBOX_TOKEN", raising=False)
 
     a = build_sandbox_backend()
     b = build_sandbox_backend()
@@ -45,14 +45,14 @@ def test_build_sandbox_backend_keys_on_url(
 ) -> None:
     """Distinct base URLs must produce distinct instances.
 
-    Multi-tenant SaaS pools may target different daemons in the same
+    Multi-tenant pools may target different daemons in the same
     process; the cache key must respect that.
     """
-    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://sandbox-a:9999")
-    monkeypatch.delenv("SAAS_SANDBOX_TOKEN", raising=False)
+    monkeypatch.setenv("SANDBOX_URL", "http://sandbox-a:9999")
+    monkeypatch.delenv("SANDBOX_TOKEN", raising=False)
     a = build_sandbox_backend()
 
-    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://sandbox-b:9999")
+    monkeypatch.setenv("SANDBOX_URL", "http://sandbox-b:9999")
     b = build_sandbox_backend()
 
     assert a is not b
@@ -62,12 +62,12 @@ def test_build_sandbox_backend_keys_on_token(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Distinct tokens against the same URL still produce distinct instances."""
-    monkeypatch.setenv("SAAS_SANDBOX_URL", "http://sandbox:9999")
+    monkeypatch.setenv("SANDBOX_URL", "http://sandbox:9999")
 
-    monkeypatch.setenv("SAAS_SANDBOX_TOKEN", "tenant-a")
+    monkeypatch.setenv("SANDBOX_TOKEN", "tenant-a")
     a = build_sandbox_backend()
 
-    monkeypatch.setenv("SAAS_SANDBOX_TOKEN", "tenant-b")
+    monkeypatch.setenv("SANDBOX_TOKEN", "tenant-b")
     b = build_sandbox_backend()
 
     assert a is not b

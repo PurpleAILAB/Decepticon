@@ -369,7 +369,7 @@ def load_prompt(
     # default English policy with a pinned-language directive so every agent
     # replies in the configured locale regardless of input language. The
     # env-based path is the CLI / single-tenant convention; multi-tenant
-    # launchers (SaaS web) override per-run via config.configurable.language
+    # launchers (multi-tenant web) override per-run via config.configurable.language
     # which EngagementContextMiddleware injects as a later SystemMessage.
     pinned_lang = os.environ.get("DECEPTICON_LANGUAGE", "").strip()
     lang_policy = build_language_policy(pinned_lang)
