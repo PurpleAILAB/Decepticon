@@ -600,6 +600,7 @@ def test_middleware_slot_enum_order_is_assembly_order():
         "budget",
         "model-override",
         "model-fallback",
+        "proxy-key-override",
         "summarization",
         "prompt-caching",
         "patch-tool-calls",

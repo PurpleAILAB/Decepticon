@@ -53,6 +53,7 @@ from decepticon.middleware.hitl import (
     HITLApprovalMiddleware,
 )
 from decepticon.middleware.model_override import ModelOverrideMiddleware
+from decepticon.middleware.proxy_key_override import ProxyKeyOverrideMiddleware
 from decepticon.middleware.notifications import SandboxNotificationMiddleware
 from decepticon.middleware.opscontrol_notifications import (
     OpsControlNotificationMiddleware,
@@ -225,6 +226,10 @@ def _make_model_override(**_: Any):
     return ModelOverrideMiddleware()
 
 
+def _make_proxy_key_override(**_: Any):
+    return ProxyKeyOverrideMiddleware()
+
+
 def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
     """Conditional slot — returns None when no fallback chain exists.
 
@@ -365,6 +370,7 @@ DEFAULT_SLOT_FACTORIES: dict[MiddlewareSlot, SlotFactory] = {
     MiddlewareSlot.BUDGET: _make_budget,
     MiddlewareSlot.MODEL_OVERRIDE: _make_model_override,
     MiddlewareSlot.MODEL_FALLBACK: _make_model_fallback,
+    MiddlewareSlot.PROXY_KEY_OVERRIDE: _make_proxy_key_override,
     MiddlewareSlot.SUMMARIZATION: _make_summarization,
     MiddlewareSlot.PROMPT_CACHING: _make_prompt_caching,
     MiddlewareSlot.PATCH_TOOL_CALLS: _make_patch_tool_calls,

@@ -47,6 +47,11 @@ class MiddlewareSlot(StrEnum):
     BUDGET = "budget"
     MODEL_OVERRIDE = "model-override"
     MODEL_FALLBACK = "model-fallback"
+    # Per-run LiteLLM virtual-key swap (multi-tenant cost attribution). Placed
+    # AFTER MODEL_FALLBACK so it is inner-most relative to model selection and
+    # re-keys whatever model is actually called (primary, /model override, or a
+    # fallback model). No-op when no per-run key is threaded (OSS default).
+    PROXY_KEY_OVERRIDE = "proxy-key-override"
     SUMMARIZATION = "summarization"
     PROMPT_CACHING = "prompt-caching"
     PATCH_TOOL_CALLS = "patch-tool-calls"
@@ -126,9 +131,13 @@ plugin can't silently subvert the safety story.
 
 
 # Common slots every agent uses (the "tail" of the middleware stack).
+# PROXY_KEY_OVERRIDE is in the tail so EVERY LLM-calling agent re-keys to the
+# per-run virtual key when one is threaded (multi-tenant cost attribution); it
+# is a no-op otherwise, so OSS / single-tenant runs are unaffected.
 _TAIL_SLOTS: frozenset[MiddlewareSlot] = frozenset(
     {
         MiddlewareSlot.MODEL_FALLBACK,
+        MiddlewareSlot.PROXY_KEY_OVERRIDE,
         MiddlewareSlot.SUMMARIZATION,
         MiddlewareSlot.PROMPT_CACHING,
         MiddlewareSlot.PATCH_TOOL_CALLS,
