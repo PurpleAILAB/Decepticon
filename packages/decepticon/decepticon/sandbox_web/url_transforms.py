@@ -14,6 +14,7 @@ Empirically useful transforms (see observations/):
 Adding new transforms: prove they help on ≥2 unrelated sites first
 (cross-site validation — bias check).
 """
+
 from __future__ import annotations
 
 from typing import Callable, Optional

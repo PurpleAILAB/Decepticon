@@ -21,6 +21,7 @@ v2 changes vs v1 (per multi-AI review 2026-06-21):
   * Size compared in BYTES, not unicode char count.
   * Status codes differentiated (429/401/404/5xx) instead of one BLOCKED.
 """
+
 from __future__ import annotations
 
 import json
@@ -69,21 +70,25 @@ SMALL_BODY_THRESHOLD = 3000
 class Verdict(Enum):
     """Classification of a fetched response."""
 
-    STRONG_OK = "strong_ok"        # positive proof present → terminal success
-    WEAK_OK = "weak_ok"            # clean, no negative signal → terminal success
-    SUSPECT_OK = "suspect_ok"      # ambiguous (abck unresolved / soft) → NON-terminal
-    CHALLENGE = "challenge"        # WAF challenge (negative proof)
-    BLOCKED = "blocked"            # generic non-2xx block
+    STRONG_OK = "strong_ok"  # positive proof present → terminal success
+    WEAK_OK = "weak_ok"  # clean, no negative signal → terminal success
+    SUSPECT_OK = "suspect_ok"  # ambiguous (abck unresolved / soft) → NON-terminal
+    CHALLENGE = "challenge"  # WAF challenge (negative proof)
+    BLOCKED = "blocked"  # generic non-2xx block
     RATE_LIMITED = "rate_limited"  # 429 — back off, do not hammer
     AUTH_REQUIRED = "auth_required"  # 401/407 — terminal, retrying TLS won't help
-    NOT_FOUND = "not_found"        # 404/410 — terminal
-    UNKNOWN = "unknown"            # exception / dependency missing
+    NOT_FOUND = "not_found"  # 404/410 — terminal
+    UNKNOWN = "unknown"  # exception / dependency missing
 
 
 # Verdicts that mean "stop the grid — more TLS attempts cannot help".
-TERMINAL_NONSUCCESS = frozenset({
-    Verdict.AUTH_REQUIRED, Verdict.NOT_FOUND, Verdict.RATE_LIMITED,
-})
+TERMINAL_NONSUCCESS = frozenset(
+    {
+        Verdict.AUTH_REQUIRED,
+        Verdict.NOT_FOUND,
+        Verdict.RATE_LIMITED,
+    }
+)
 
 
 @dataclass
@@ -91,7 +96,7 @@ class ValidationResult:
     verdict: Verdict
     reasons: list[str] = field(default_factory=list)
     matched_selectors: list[str] = field(default_factory=list)
-    body_size: int = 0       # bytes
+    body_size: int = 0  # bytes
     status: int = 0
 
     @property

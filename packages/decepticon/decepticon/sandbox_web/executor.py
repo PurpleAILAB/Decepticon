@@ -16,6 +16,7 @@ Playwright MCP invocation requires caller's tool access; this module
 provides the subprocess path for local JS templates but only stubs the MCP
 path (MCP must be driven from the Claude session itself).
 """
+
 from __future__ import annotations
 
 import json
@@ -26,10 +27,9 @@ import tempfile
 import time
 from typing import Optional
 
+from .fetch_chain import Attempt
 from .validators import Verdict, validate
 from .waf_detector import load_profile
-from .fetch_chain import Attempt
-
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -43,6 +43,7 @@ def _profile_dir_for(url: str, choice: str) -> str:
     """
     import hashlib
     from urllib.parse import urlsplit
+
     host = (urlsplit(url).hostname or "unknown").lower()
     host_hash = hashlib.sha1(host.encode("utf-8", "ignore")).hexdigest()[:16]
     device = "mobile" if "mobile" in choice else "desktop"
@@ -103,6 +104,7 @@ def _run_node_template(template: str, args: dict, timeout: int = 90) -> tuple[in
 
 class _FakeResp:
     """Minimal response shim so validators.validate() works on Playwright HTML."""
+
     def __init__(self, html: str, status: int = 200, final_url: str = ""):
         self.text = html
         self.status_code = status
@@ -115,8 +117,10 @@ class _FakeCookies:
     class _Jar:
         def __iter__(self):
             return iter([])
+
     def __init__(self):
         self.jar = self._Jar()
+
     def __iter__(self):
         return iter([])
 
@@ -230,6 +234,7 @@ def _parse_envelope(stdout: str, url: str):
     """Return (html, final_url, status, cookies, user_agent) from a JSON
     envelope, or treat stdout as raw HTML if it isn't JSON."""
     import json
+
     s = stdout.lstrip()
     if s[:1] == "{":
         try:
@@ -248,7 +253,8 @@ def _parse_envelope(stdout: str, url: str):
 
 def _bridge_cookies_to_pool(url: str, cookies: list, user_agent: Optional[str]) -> None:
     try:
-        from .transport import POOL, pool_enabled, _host_of
+        from .transport import POOL, _host_of, pool_enabled
+
         if not pool_enabled():
             return
         # Browser is real Chrome → seed the "chrome" curl identity for this host.

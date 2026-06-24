@@ -19,11 +19,12 @@ This is a DATA file, never code, so the No-Site-Name Rule (R3) holds: per-site
 knowledge lives in JSON that both the engine and the agent can read, while the
 fetch chain itself stays site-agnostic.
 """
+
 from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlsplit
 
@@ -119,8 +120,9 @@ def save(data: dict, path: Optional[str] = None) -> None:
         pass  # learning is best-effort; never break a fetch on a write error
 
 
-def lookup(url: str, device_class: str, path: Optional[str] = None,
-           data: Optional[dict] = None) -> Optional[dict]:
+def lookup(
+    url: str, device_class: str, path: Optional[str] = None, data: Optional[dict] = None
+) -> Optional[dict]:
     """Return the learned route dict for this host, or None."""
     data = load(path) if data is None else data
     entry = data.get(key_for(url, device_class))
@@ -131,8 +133,7 @@ def lookup(url: str, device_class: str, path: Optional[str] = None,
     return None
 
 
-def record_success(url: str, device_class: str, route: dict,
-                   path: Optional[str] = None) -> None:
+def record_success(url: str, device_class: str, route: dict, path: Optional[str] = None) -> None:
     """Upsert the winning route for this host (resets the failure strike)."""
     path = path or default_path()
     data = load(path)
@@ -151,8 +152,7 @@ def record_success(url: str, device_class: str, route: dict,
     save(_prune(data), path)
 
 
-def record_failure(url: str, device_class: str, penalize: bool,
-                   path: Optional[str] = None) -> None:
+def record_failure(url: str, device_class: str, penalize: bool, path: Optional[str] = None) -> None:
     """Record that the learned route did not win this run.
 
     `penalize=True` (a real block) strikes the entry and deletes it after

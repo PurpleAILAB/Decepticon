@@ -107,8 +107,7 @@ def test_transform_hop_out_of_scope_is_skipped(monkeypatch: pytest.MonkeyPatch) 
 
     r = _fetch("https://www.example.com/p", scope_check=scope)
     assert any(
-        a.executor == "scope_gate" and urlsplit(a.url).hostname == "m.example.com"
-        for a in r.trace
+        a.executor == "scope_gate" and urlsplit(a.url).hostname == "m.example.com" for a in r.trace
     )
     assert "m.example.com" not in fetched_hosts
 
@@ -156,8 +155,16 @@ def test_to_dict_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     # Validator-v2 / failure-gate schema: the gate fields must be serialized and
     # the raw content must NOT be (only its length).
     required = {
-        "ok", "final_url", "verdict", "profile_used", "trace", "summary",
-        "content_length", "grid_exhausted", "stop_reason", "untried_routes",
+        "ok",
+        "final_url",
+        "verdict",
+        "profile_used",
+        "trace",
+        "summary",
+        "content_length",
+        "grid_exhausted",
+        "stop_reason",
+        "untried_routes",
         "must_invoke_playwright_mcp",
     }
     assert required <= set(d)

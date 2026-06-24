@@ -70,8 +70,7 @@ def _configure_learning_env(workspace: str | None) -> None:
     if os.environ.get("INSANE_LEARN") is not None or os.environ.get("INSANE_LEARNED_PATH"):
         return  # caller already configured it
     if workspace:
-        os.environ["INSANE_LEARNED_PATH"] = str(
-            Path(workspace) / ".scratch" / "web_learned.json")
+        os.environ["INSANE_LEARNED_PATH"] = str(Path(workspace) / ".scratch" / "web_learned.json")
     else:
         os.environ["INSANE_LEARN"] = "0"
 
@@ -161,8 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--timeout", type=int, default=25)
     common.add_argument("--max-attempts", type=int, default=12, dest="max_attempts")
     common.add_argument("--no-playwright", action="store_true")
-    common.add_argument("--no-phase0", action="store_true",
-                        help="skip the official public-API router (Reddit/X/YouTube)")
+    common.add_argument(
+        "--no-phase0",
+        action="store_true",
+        help="skip the official public-API router (Reddit/X/YouTube)",
+    )
     common.add_argument("--json", action="store_true", help="(default; reserved)")
 
     # Common opts live ONLY on the subparsers (not the main parser): putting

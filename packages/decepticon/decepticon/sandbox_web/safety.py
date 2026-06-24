@@ -10,6 +10,7 @@ This module provides a pure, deterministic classifier and a redirect resolver.
 Default-deny for private/internal targets; opt in with allow_private=True
 (env INSANE_ALLOW_PRIVATE=1) for local testing.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -42,8 +43,14 @@ def _ip_blocked(ip_str: str) -> bool:
     mapped = getattr(ip, "ipv4_mapped", None)
     if mapped is not None:
         ip = mapped
-    return (ip.is_private or ip.is_loopback or ip.is_link_local
-            or ip.is_reserved or ip.is_multicast or ip.is_unspecified)
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
 
 
 def classify_url(url: str, allow_private: bool = False) -> tuple[bool, str]:

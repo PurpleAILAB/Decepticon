@@ -8,11 +8,11 @@ All detectors operate on WAF-vendor artifacts (cookies / headers / body
 strings) — never site hostnames. See engine/waf_profiles.yaml for the
 profile definitions.
 """
+
 from __future__ import annotations
 
 import fnmatch
 import os
-import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -89,7 +89,7 @@ def _load_profiles(path: str = PROFILES_PATH) -> dict:
         return dict(_DEFAULT_PROFILES)
 
     if not isinstance(loaded, dict) or not any(k for k in loaded if not k.startswith("_")):
-        _LAST_LOAD_ERROR = f"waf_profiles.yaml has no usable profiles"
+        _LAST_LOAD_ERROR = "waf_profiles.yaml has no usable profiles"
         return dict(_DEFAULT_PROFILES)
 
     return loaded
@@ -179,7 +179,9 @@ def _score_profile(profile_id: str, profile: dict, resp) -> Optional[DetectionHi
     return DetectionHit(profile_id=profile_id, confidence=conf, signals=signals)
 
 
-def detect(resp, *, profiles: Optional[dict] = None, min_confidence: float = 0.0) -> list[DetectionHit]:
+def detect(
+    resp, *, profiles: Optional[dict] = None, min_confidence: float = 0.0
+) -> list[DetectionHit]:
     """Return ranked list of detection hits (best first).
 
     When nothing fires, the returned list contains a single `unknown_challenge`
@@ -199,11 +201,13 @@ def detect(resp, *, profiles: Optional[dict] = None, min_confidence: float = 0.0
     hits.sort(key=lambda x: x.confidence, reverse=True)
 
     if not hits:
-        hits.append(DetectionHit(
-            profile_id="unknown_challenge",
-            confidence=0.1,
-            signals=["fallback"],
-        ))
+        hits.append(
+            DetectionHit(
+                profile_id="unknown_challenge",
+                confidence=0.1,
+                signals=["fallback"],
+            )
+        )
     return hits
 
 

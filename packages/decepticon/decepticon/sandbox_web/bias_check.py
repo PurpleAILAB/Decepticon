@@ -9,6 +9,7 @@ Exit code 0 if clean, 1 if violations found.
     python3 engine/bias_check.py
     python3 engine/bias_check.py --strict    # also check references/*.md (usually off)
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,20 +18,33 @@ import re
 import sys
 from pathlib import Path
 
-
 # Known brand / domain substrings that should NOT appear in engine code.
 # This is a non-exhaustive deny list. CI should treat hits as warnings that
 # require human review; false positives (e.g. "github" in comments) can be
 # whitelisted via EXPLICIT_ALLOW.
 BRAND_SUBSTRINGS = [
-    "coupang", "11st", "11번가", "musinsa", "무신사",
-    "fmkorea", "에펨코리아", "dcinside", "디시인사이드",
-    "ohou", "오늘의집", "kurly", "마켓컬리",
-    "daangn", "당근",
+    "coupang",
+    "11st",
+    "11번가",
+    "musinsa",
+    "무신사",
+    "fmkorea",
+    "에펨코리아",
+    "dcinside",
+    "디시인사이드",
+    "ohou",
+    "오늘의집",
+    "kurly",
+    "마켓컬리",
+    "daangn",
+    "당근",
     # Naver is allowed in Phase 0 references (official APIs) but not in engine code.
-    "naver.com", "blog.naver", "shopping.naver",
+    "naver.com",
+    "blog.naver",
+    "shopping.naver",
     # Korean portal brand names
-    "daum.net", "kakao.com",
+    "daum.net",
+    "kakao.com",
 ]
 
 # Regex for bare URLs / domains. Used as a secondary pass to flag hardcoded
@@ -46,12 +60,19 @@ URL_PATTERN = re.compile(
 # tests, etc.). Anything in this set must be provably unrelated to a specific
 # target-site preference.
 URL_ALLOWLIST = {
-    "example.com", "example.org", "example.net",
-    "localhost", "127.0.0.1",
+    "example.com",
+    "example.org",
+    "example.net",
+    "localhost",
+    "127.0.0.1",
     # Official API / documentation sources cited in code comments.
-    "curl.se", "playwright.dev", "nodejs.org", "npmjs.com",
+    "curl.se",
+    "playwright.dev",
+    "nodejs.org",
+    "npmjs.com",
     # Generic Referer strategy target (used as a neutral off-site referer).
-    "www.google.com", "google.com",
+    "www.google.com",
+    "google.com",
     # Generic HTTP test endpoint for infrastructure / transport tests.
     "httpbin.org",
 }
@@ -66,7 +87,13 @@ SCAN_ROOTS_STRICT_ON = ["sandbox_web"]
 # IP literals (e.g. SSRF/redirect cases, per-host session keys) — same exemption
 # rationale as SKILL.md examples; tests are not the generic fetch path.
 EXCLUDED_DIR_NAMES = {
-    "node_modules", "__pycache__", ".git", ".venv", "dist", "build", "tests",
+    "node_modules",
+    "__pycache__",
+    ".git",
+    ".venv",
+    "dist",
+    "build",
+    "tests",
 }
 
 # Comment markers within which a brand mention is OK (explanation).
@@ -142,10 +169,14 @@ def _scan_file(path: Path, root: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Scan engine for site-name bias")
-    parser.add_argument("--strict", action="store_true",
-                        help="Also scan references/*.md (usually noisy — off by default)")
-    parser.add_argument("--root", default=None,
-                        help="Skill root directory. Defaults to parent of this file.")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Also scan references/*.md (usually noisy — off by default)",
+    )
+    parser.add_argument(
+        "--root", default=None, help="Skill root directory. Defaults to parent of this file."
+    )
     args = parser.parse_args(argv)
 
     skill_root = Path(args.root) if args.root else Path(__file__).parent.parent
@@ -183,7 +214,9 @@ def main(argv: list[str] | None = None) -> int:
         print("Fix options:")
         print("  1) Remove the brand name (preferred)")
         print("  2) If genuinely explanatory, add '# NOTE-BIAS-OK' on the same line")
-        print("  3) If this is a Phase 0 official API reference, move it to references/*.md and rerun without --strict")
+        print(
+            "  3) If this is a Phase 0 official API reference, move it to references/*.md and rerun without --strict"
+        )
         return 1
 
     print("[bias-check] ✅ clean")

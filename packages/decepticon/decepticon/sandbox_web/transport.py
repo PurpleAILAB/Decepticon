@@ -13,6 +13,7 @@ Why (multi-AI review 2026-06-21):
 
 No-Site-Name Rule: keys are hashed hosts; no site names are stored or branched.
 """
+
 from __future__ import annotations
 
 import os
@@ -42,6 +43,7 @@ class _Entry:
 @dataclass
 class SessionPool:
     """Thread-safe pool of curl_cffi Sessions keyed by (host, impersonate)."""
+
     _entries: dict = field(default_factory=dict)
     _lock: Any = field(default_factory=threading.Lock)
 
@@ -77,9 +79,10 @@ class SessionPool:
         if ent is None or ent.warmed:
             return False
         from . import safety
+
         ok, _reason = safety.classify_url(root_url, safety.allow_private_default())
         if not ok:
-            ent.warmed = True   # don't retry a blocked root
+            ent.warmed = True  # don't retry a blocked root
             return False
         ent.warmed = True  # mark first to avoid duplicate warmups under race
         try:
@@ -89,8 +92,9 @@ class SessionPool:
         except Exception:
             return False
 
-    def inject_cookies(self, host: str, impersonate: str,
-                       cookies: list[dict], user_agent: Optional[str] = None) -> bool:
+    def inject_cookies(
+        self, host: str, impersonate: str, cookies: list[dict], user_agent: Optional[str] = None
+    ) -> bool:
         """Seed a session with cookies harvested by a real browser. Subsequent
         requests on this (host, impersonate) reuse the browser-cleared state."""
         ent = self.get(host, impersonate)
@@ -115,15 +119,23 @@ class SessionPool:
             ent.injected_ua = user_agent
         return ok
 
-    def request(self, url: str, *, impersonate: str, referer: str = "",
-                timeout: int = 25, extra_headers: Optional[dict] = None,
-                allow_private: Optional[bool] = None,
-                max_redirects: Optional[int] = None) -> tuple[Any, Optional[str]]:
+    def request(
+        self,
+        url: str,
+        *,
+        impersonate: str,
+        referer: str = "",
+        timeout: int = 25,
+        extra_headers: Optional[dict] = None,
+        allow_private: Optional[bool] = None,
+        max_redirects: Optional[int] = None,
+    ) -> tuple[Any, Optional[str]]:
         """GET via the pooled session (cookie + connection reuse), with an SSRF
         guard: the initial URL and EVERY redirect hop are validated against the
         private/loopback/link-local/metadata block-list before being fetched.
         Falls back to a one-shot get if no session could be created."""
         from . import safety
+
         if allow_private is None:
             allow_private = safety.allow_private_default()
         if max_redirects is None:
@@ -149,23 +161,34 @@ class SessionPool:
                 from curl_cffi import requests as cffi_requests
             except ImportError:
                 return None, "curl_cffi not installed"
+
             def _do_get(u):
-                return cffi_requests.get(u, impersonate=impersonate, headers=headers,
-                                         timeout=timeout, allow_redirects=False)
+                return cffi_requests.get(
+                    u,
+                    impersonate=impersonate,
+                    headers=headers,
+                    timeout=timeout,
+                    allow_redirects=False,
+                )
+
             return self._fetch_following(_do_get, url, allow_private, max_redirects, None)
 
         if ent.injected_ua:
             headers.setdefault("User-Agent", ent.injected_ua)
+
         def _do_get(u):
             return ent.session.get(u, headers=headers, timeout=timeout, allow_redirects=False)
+
         return self._fetch_following(_do_get, url, allow_private, max_redirects, ent)
 
     @staticmethod
-    def _fetch_following(do_get, url: str, allow_private: bool, max_redirects: int,
-                         ent) -> tuple[Any, Optional[str]]:
+    def _fetch_following(
+        do_get, url: str, allow_private: bool, max_redirects: int, ent
+    ) -> tuple[Any, Optional[str]]:
         """Manually follow redirects so each hop is SSRF-validated (curl_cffi's
         own allow_redirects=True would skip the per-hop check)."""
         from . import safety
+
         cur = url
         for _ in range(max_redirects + 1):
             try:
@@ -177,7 +200,7 @@ class SessionPool:
             if safety.is_redirect(resp):
                 loc = safety.location_of(resp)
                 if not loc:
-                    return resp, None     # redirect w/o Location → return as-is
+                    return resp, None  # redirect w/o Location → return as-is
                 nxt = safety.resolve_redirect(cur, loc)
                 ok, reason = safety.classify_url(nxt, allow_private)
                 if not ok:

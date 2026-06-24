@@ -22,6 +22,7 @@ Contract:
 
 Each attempt dict: {"route","platform","ok","status","bytes","note"}.
 """
+
 from __future__ import annotations
 
 import re
@@ -51,10 +52,12 @@ def _cffi_get(
     if scope_check is not None and not scope_check(url):
         raise _PhaseBlocked(f"roe_out_of_scope:{url}")
     from . import safety
+
     allowed, reason = safety.classify_url(url, allow_private=safety.allow_private_default())
     if not allowed:
         raise _PhaseBlocked(f"ssrf_blocked:{reason}")
     from curl_cffi import requests as r  # lazy: engine works even if missing
+
     return r.get(
         url,
         impersonate=impersonate,  # type: ignore[arg-type]
@@ -73,8 +76,14 @@ def _host(url: str) -> str:
 
 
 def _attempt(platform: str, route: str, ok: bool, status: int, body: str, note: str = "") -> dict:
-    return {"platform": platform, "route": route, "ok": ok, "status": status,
-            "bytes": len(body or ""), "note": note}
+    return {
+        "platform": platform,
+        "route": route,
+        "ok": ok,
+        "status": status,
+        "bytes": len(body or ""),
+        "note": note,
+    }
 
 
 # --- platform detectors ------------------------------------------------------
@@ -103,11 +112,20 @@ def _reddit(url: str, timeout: int, scope_check=None) -> dict:
     try:
         x = _cffi_get(rss_url, timeout=timeout, scope_check=scope_check)
         ok = x.status_code == 200 and ("<rss" in x.text or "<feed" in x.text)
-        attempts.append(_attempt("reddit", "rss", ok, x.status_code, x.text,
-                                 "feed" if ok else "no-feed-markers"))
+        attempts.append(
+            _attempt(
+                "reddit", "rss", ok, x.status_code, x.text, "feed" if ok else "no-feed-markers"
+            )
+        )
         if ok:
-            return {"platform": "reddit", "ok": True, "route": "rss",
-                    "content": x.text, "final_url": rss_url, "attempts": attempts}
+            return {
+                "platform": "reddit",
+                "ok": True,
+                "route": "rss",
+                "content": x.text,
+                "final_url": rss_url,
+                "attempts": attempts,
+            }
     except Exception as e:
         attempts.append(_attempt("reddit", "rss", False, 0, "", f"{type(e).__name__}"))
 
@@ -115,16 +133,36 @@ def _reddit(url: str, timeout: int, scope_check=None) -> dict:
     try:
         x = _cffi_get(json_url, timeout=timeout, scope_check=scope_check)
         ok = x.status_code == 200 and x.text.lstrip().startswith(("{", "["))
-        attempts.append(_attempt("reddit", "json", ok, x.status_code, x.text,
-                                 "json" if ok else f"status={x.status_code}"))
+        attempts.append(
+            _attempt(
+                "reddit",
+                "json",
+                ok,
+                x.status_code,
+                x.text,
+                "json" if ok else f"status={x.status_code}",
+            )
+        )
         if ok:
-            return {"platform": "reddit", "ok": True, "route": "json",
-                    "content": x.text, "final_url": json_url, "attempts": attempts}
+            return {
+                "platform": "reddit",
+                "ok": True,
+                "route": "json",
+                "content": x.text,
+                "final_url": json_url,
+                "attempts": attempts,
+            }
     except Exception as e:
         attempts.append(_attempt("reddit", "json", False, 0, "", f"{type(e).__name__}"))
 
-    return {"platform": "reddit", "ok": False, "route": None, "content": "",
-            "final_url": url, "attempts": attempts}
+    return {
+        "platform": "reddit",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
 
 
 # --- x / twitter -------------------------------------------------------------
@@ -138,14 +176,32 @@ def _x(url: str, timeout: int, scope_check=None) -> dict:
     if m:  # single tweet → tweet-result + oembed (both no-auth, reliable)
         tid = m.group(1)
         try:
-            x = _cffi_get(f"https://cdn.syndication.twimg.com/tweet-result?id={tid}&token=a", timeout=timeout, scope_check=scope_check)
+            x = _cffi_get(
+                f"https://cdn.syndication.twimg.com/tweet-result?id={tid}&token=a",
+                timeout=timeout,
+                scope_check=scope_check,
+            )
             d = x.json() if x.status_code == 200 else {}
             ok = bool(d.get("text"))
-            attempts.append(_attempt("x", "tweet-result", ok, x.status_code, x.text,
-                                     "has-text" if ok else f"status={x.status_code}"))
+            attempts.append(
+                _attempt(
+                    "x",
+                    "tweet-result",
+                    ok,
+                    x.status_code,
+                    x.text,
+                    "has-text" if ok else f"status={x.status_code}",
+                )
+            )
             if ok:
-                return {"platform": "x", "ok": True, "route": "tweet-result",
-                        "content": x.text, "final_url": url, "attempts": attempts}
+                return {
+                    "platform": "x",
+                    "ok": True,
+                    "route": "tweet-result",
+                    "content": x.text,
+                    "final_url": url,
+                    "attempts": attempts,
+                }
         except Exception as e:
             attempts.append(_attempt("x", "tweet-result", False, 0, "", f"{type(e).__name__}"))
         try:
@@ -153,33 +209,84 @@ def _x(url: str, timeout: int, scope_check=None) -> dict:
             x = _cffi_get(ourl, timeout=timeout, scope_check=scope_check)
             d = x.json() if x.status_code == 200 else {}
             ok = bool(d.get("html"))
-            attempts.append(_attempt("x", "oembed", ok, x.status_code, x.text,
-                                     "has-html" if ok else f"status={x.status_code}"))
+            attempts.append(
+                _attempt(
+                    "x",
+                    "oembed",
+                    ok,
+                    x.status_code,
+                    x.text,
+                    "has-html" if ok else f"status={x.status_code}",
+                )
+            )
             if ok:
-                return {"platform": "x", "ok": True, "route": "oembed",
-                        "content": x.text, "final_url": ourl, "attempts": attempts}
+                return {
+                    "platform": "x",
+                    "ok": True,
+                    "route": "oembed",
+                    "content": x.text,
+                    "final_url": ourl,
+                    "attempts": attempts,
+                }
         except Exception as e:
             attempts.append(_attempt("x", "oembed", False, 0, "", f"{type(e).__name__}"))
     else:  # profile timeline → syndication (rate-limit-prone; retry once)
         handle = urlsplit(url).path.strip("/").split("/")[0]
-        _reserved = {"i", "search", "home", "explore", "messages", "notifications", "settings", "hashtag"}
+        _reserved = {
+            "i",
+            "search",
+            "home",
+            "explore",
+            "messages",
+            "notifications",
+            "settings",
+            "hashtag",
+        }
         if handle and handle.lower() not in _reserved:
             surl = f"https://syndication.twitter.com/srv/timeline-profile/screen-name/{handle}"
             for attempt_no in range(2):
                 try:
                     x = _cffi_get(surl, timeout=timeout, scope_check=scope_check)
                     ok = x.status_code == 200 and "__NEXT_DATA__" in x.text
-                    attempts.append(_attempt("x", f"syndication-timeline#{attempt_no+1}", ok,
-                                             x.status_code, x.text,
-                                             "timeline" if ok else f"status={x.status_code}"))
+                    attempts.append(
+                        _attempt(
+                            "x",
+                            f"syndication-timeline#{attempt_no + 1}",
+                            ok,
+                            x.status_code,
+                            x.text,
+                            "timeline" if ok else f"status={x.status_code}",
+                        )
+                    )
                     if ok:
-                        return {"platform": "x", "ok": True, "route": "syndication-timeline",
-                                "content": x.text, "final_url": surl, "attempts": attempts}
+                        return {
+                            "platform": "x",
+                            "ok": True,
+                            "route": "syndication-timeline",
+                            "content": x.text,
+                            "final_url": surl,
+                            "attempts": attempts,
+                        }
                 except Exception as e:
-                    attempts.append(_attempt("x", f"syndication-timeline#{attempt_no+1}", False, 0, "", f"{type(e).__name__}"))
+                    attempts.append(
+                        _attempt(
+                            "x",
+                            f"syndication-timeline#{attempt_no + 1}",
+                            False,
+                            0,
+                            "",
+                            f"{type(e).__name__}",
+                        )
+                    )
 
-    return {"platform": "x", "ok": False, "route": None, "content": "",
-            "final_url": url, "attempts": attempts}
+    return {
+        "platform": "x",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
 
 
 # --- youtube -----------------------------------------------------------------
@@ -189,31 +296,58 @@ def _youtube(url: str, timeout: int, scope_check=None) -> dict:
     # attacker-influenceable URL to the subprocess.
     if scope_check is not None and not scope_check(url):
         attempts.append(_attempt("youtube", "yt-dlp", False, 0, "", "roe_out_of_scope"))
-        return {"platform": "youtube", "ok": False, "route": None, "content": "",
-                "final_url": url, "attempts": attempts}
+        return {
+            "platform": "youtube",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
     from . import safety
+
     _allowed, _reason = safety.classify_url(url, allow_private=safety.allow_private_default())
     if not _allowed:
         attempts.append(_attempt("youtube", "yt-dlp", False, 0, "", f"ssrf_blocked:{_reason}"))
-        return {"platform": "youtube", "ok": False, "route": None, "content": "",
-                "final_url": url, "attempts": attempts}
+        return {
+            "platform": "youtube",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
     try:
         p = subprocess.run(
             ["yt-dlp", "--dump-json", "--skip-download", url],
-            capture_output=True, text=True, timeout=max(timeout, 60),
+            capture_output=True,
+            text=True,
+            timeout=max(timeout, 60),
         )
         ok = p.returncode == 0 and p.stdout.strip().startswith("{")
         note = "json" if ok else (p.stderr or "").strip()[:80]
         attempts.append(_attempt("youtube", "yt-dlp", ok, 200 if ok else 0, p.stdout, note))
         if ok:
-            return {"platform": "youtube", "ok": True, "route": "yt-dlp",
-                    "content": p.stdout, "final_url": url, "attempts": attempts}
+            return {
+                "platform": "youtube",
+                "ok": True,
+                "route": "yt-dlp",
+                "content": p.stdout,
+                "final_url": url,
+                "attempts": attempts,
+            }
     except FileNotFoundError:
         attempts.append(_attempt("youtube", "yt-dlp", False, 0, "", "yt-dlp not installed"))
     except Exception as e:
         attempts.append(_attempt("youtube", "yt-dlp", False, 0, "", f"{type(e).__name__}"))
-    return {"platform": "youtube", "ok": False, "route": None, "content": "",
-            "final_url": url, "attempts": attempts}
+    return {
+        "platform": "youtube",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
 
 
 _ROUTERS = {"reddit": _reddit, "x": _x, "youtube": _youtube}

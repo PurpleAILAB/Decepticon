@@ -133,8 +133,7 @@ async def web_fetch(
         ]
         if stop in ("auth_required", "not_found"):
             msg.append(
-                "TERMINAL (login/paywall/404) — record it and move on; retrying "
-                "will not help."
+                "TERMINAL (login/paywall/404) — record it and move on; retrying will not help."
             )
         else:
             msg.append(
