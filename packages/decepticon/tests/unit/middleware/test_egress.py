@@ -52,8 +52,17 @@ def test_in_scope_literal_ip_is_allowed_cidr():
 
 def test_in_scope_host_and_glob_go_to_allowed_hosts():
     pol = compile_egress_policy(_rules(mode="enforce", in_scope=["*.acme.com", "prod.acme.com"]))
-    assert set(pol.allowed_hosts) == {"*.acme.com", "prod.acme.com"}
+    # In-scope hosts are present (alongside the always-allowed OSINT providers).
+    assert {"*.acme.com", "prod.acme.com"} <= set(pol.allowed_hosts)
     assert pol.allowed_cidrs == ()
+
+
+def test_osint_search_providers_are_always_allowed():
+    # web_search is OSINT (target-exempt); its provider hosts must be reachable
+    # even under an enforcing in-scope allowlist, else web_search is dropped at
+    # the network layer.
+    pol = compile_egress_policy(_rules(mode="enforce", in_scope=["*.acme.com"]))
+    assert {"duckduckgo.com", "html.duckduckgo.com"} <= set(pol.allowed_hosts)
 
 
 def test_cloud_metadata_denied_by_default():
