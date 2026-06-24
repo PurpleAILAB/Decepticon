@@ -162,7 +162,7 @@ class SessionPool:
             except ImportError:
                 return None, "curl_cffi not installed"
 
-            def _do_get(u):
+            def _oneshot_get(u):
                 return cffi_requests.get(
                     u,
                     impersonate=impersonate,
@@ -171,7 +171,7 @@ class SessionPool:
                     allow_redirects=False,
                 )
 
-            return self._fetch_following(_do_get, url, allow_private, max_redirects, None)
+            return self._fetch_following(_oneshot_get, url, allow_private, max_redirects, None)
 
         if ent.injected_ua:
             headers.setdefault("User-Agent", ent.injected_ua)
