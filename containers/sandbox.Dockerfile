@@ -136,15 +136,12 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 
 # Playwright browser tier — the engine's last escalation rung for JS/WAF
 # challenges (Cloudflare Turnstile, Akamai, DataDome) that the curl_cffi grid
-# can't clear. The executor shells the node templates in
-# `decepticon/sandbox_web/templates/` (Chromium + puppeteer-extra stealth).
-# node/npm are already installed above; install the stealth stack globally.
-RUN npm install -g --no-fund --no-audit \
-        playwright@^1.58.2 \
-        playwright-extra@^4.3.6 \
-        puppeteer-extra-plugin-stealth@^2.11.2 \
-        puppeteer-extra-plugin-user-preferences@^2.4.1 \
-    && npm cache clean --force
+# can't clear. The node templates in `decepticon/sandbox_web/templates/` launch
+# Chromium with the puppeteer-extra stealth stack; their npm deps are installed
+# LOCALLY in that dir AFTER the package is COPYed in (see below) — a global
+# install does not resolve the stealth plugin's nested evasion deps. node/npm
+# are already installed above.
+#
 # Browser binary: use Kali's system Chromium. `playwright install --with-deps`
 # is NOT used — its hardcoded Debian font/xvfb apt list (fonts-liberation,
 # xvfb, …) does not exist in the Kali repos and fails the build. apt installs
@@ -154,10 +151,7 @@ RUN npm install -g --no-fund --no-audit \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends chromium \
     && rm -rf /var/lib/apt/lists/*
-# NODE_PATH lets the package's templates/*.js resolve the GLOBAL stealth stack;
-# INSANE_CHROMIUM_PATH tells the templates which browser binary to launch.
-ENV NODE_PATH=/usr/local/lib/node_modules:/usr/lib/node_modules \
-    INSANE_CHROMIUM_PATH=/usr/bin/chromium
+ENV INSANE_CHROMIUM_PATH=/usr/bin/chromium
 
 # ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
 #
@@ -235,6 +229,15 @@ COPY packages/decepticon/decepticon/sandbox_server /opt/decepticon/sandbox_serve
 COPY packages/decepticon/decepticon/sandbox_web /opt/decepticon/sandbox_web
 COPY packages/decepticon-core/decepticon_core /opt/decepticon_core
 ENV PYTHONPATH=/opt
+
+# Install the Playwright templates' node deps LOCALLY (in their own dir) so the
+# stealth plugin's full nested evasion tree (incl. user-preferences) resolves —
+# a global install + NODE_PATH does not. The executor shells `node` here, so node
+# resolves require() from templates/node_modules. Done after the COPY because the
+# templates' package.json ships inside sandbox_web.
+RUN cd /opt/decepticon/sandbox_web/templates \
+    && npm install --no-fund --no-audit --omit=optional \
+    && npm cache clean --force
 
 # Skip the framework boot path on this image — the sandbox container
 # ships only sandbox_kernel + sandbox_server, NOT decepticon-core or
