@@ -1,11 +1,15 @@
 FROM ghcr.io/berriai/litellm:v1.88.1
 
 # xxhash is required for CCH (Claude Code Hash) request signing.
+# google-cloud-secret-manager backs the Codex GSM single-reader mode
+# (CODEX_AUTH_SECRET_RESOURCE) — the handler reads the rotating codex_auth
+# token from Secret Manager instead of a pinned read-only mount on Cloud Run.
 # The v1.88.x base ships a uv-managed venv at /app/.venv (first on PATH)
 # with no pip and no uv on PATH, so a bare `pip install` fails (exit 127).
 # Bootstrap pip into that venv via ensurepip, then install with the venv's
-# python so xxhash lands where the litellm process imports from.
-RUN python -m ensurepip --upgrade && python -m pip install --no-cache-dir xxhash
+# python so the packages land where the litellm process imports from.
+RUN python -m ensurepip --upgrade && \
+    python -m pip install --no-cache-dir xxhash google-cloud-secret-manager
 
 COPY config/http_client.py /app/http_client.py
 COPY config/oauth_token_store.py /app/oauth_token_store.py

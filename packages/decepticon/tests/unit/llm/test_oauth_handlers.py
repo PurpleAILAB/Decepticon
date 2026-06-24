@@ -155,6 +155,101 @@ class TestCodexRefreshNoSecretLeak:
         assert "SECRET" not in message
 
 
+# ── Codex GSM single-reader mode (Cloud Run) ────────────────────────────
+
+
+def _jwt_with_exp(exp: float) -> str:
+    """Mint a fake JWT whose payload carries only an ``exp`` claim."""
+    import base64
+    import json as _json
+
+    payload = base64.urlsafe_b64encode(_json.dumps({"exp": exp}).encode()).decode().rstrip("=")
+    return f"eyJhbGciOiJub25lIn0.{payload}.sig"
+
+
+def _codex_blob(exp: float) -> dict[str, Any]:
+    return {
+        "auth_mode": "chatgpt",
+        "tokens": {
+            "access_token": _jwt_with_exp(exp),
+            "id_token": "x.y.z",
+            "refresh_token": "r",
+        },
+    }
+
+
+class TestCodexGsmReaderMode:
+    def test_get_caches_while_token_fresh(self, monkeypatch) -> None:
+        import time
+
+        src = codex._GsmCodexAuth("projects/p/secrets/codex_auth")
+        calls = {"n": 0}
+        fresh = _codex_blob(time.time() + 3600)
+
+        def fake_fetch() -> dict[str, Any]:
+            calls["n"] += 1
+            return fresh
+
+        monkeypatch.setattr(src, "_fetch", fake_fetch)
+        assert src.get() is src.get()
+        assert calls["n"] == 1  # cached — no second GSM read while fresh
+
+    def test_get_refetches_when_cached_token_near_expiry(self, monkeypatch) -> None:
+        import time
+
+        src = codex._GsmCodexAuth("projects/p/secrets/codex_auth")
+        near = _codex_blob(time.time() + 60)  # inside the 5-min refetch skew
+        fresh = _codex_blob(time.time() + 3600)
+        seq = [near, fresh]
+        monkeypatch.setattr(src, "_fetch", lambda: seq.pop(0))
+        assert src.get() is near
+        assert src.get() is fresh  # cached blob near expiry → re-read latest
+        assert not seq
+
+    def test_token_expiry_refetches_gsm_and_never_self_refreshes(self, monkeypatch) -> None:
+        import time
+
+        expired = _codex_blob(time.time() - 10)
+        fresh = _codex_blob(time.time() + 3600)
+
+        def fake_get(*, force: bool = False) -> dict[str, Any]:
+            return fresh if force else expired
+
+        monkeypatch.setattr(codex, "_gsm_auth", SimpleNamespace(get=fake_get))
+
+        def _no_refresh(*a, **k):
+            raise AssertionError("GSM mode must not self-refresh (forks the chain)")
+
+        monkeypatch.setattr(codex, "_refresh_tokens", _no_refresh)
+        token, _ = codex.get_codex_access_token()
+        assert token == fresh["tokens"]["access_token"]
+
+    def test_writer_behind_raises_instead_of_self_refresh(self, monkeypatch) -> None:
+        import time
+
+        expired = _codex_blob(time.time() - 10)
+        monkeypatch.setattr(
+            codex, "_gsm_auth", SimpleNamespace(get=lambda *, force=False: expired)
+        )
+
+        def _no_refresh(*a, **k):
+            raise AssertionError("must not self-refresh")
+
+        monkeypatch.setattr(codex, "_refresh_tokens", _no_refresh)
+        with pytest.raises(codex.litellm.AuthenticationError):
+            codex.get_codex_access_token()
+
+    def test_write_auth_is_noop_in_gsm_mode(self, monkeypatch) -> None:
+        # A stray write must not touch disk or fork the externally-managed chain.
+        monkeypatch.setattr(codex, "_gsm_auth", SimpleNamespace(get=lambda **k: {}))
+        wrote = {"called": False}
+        monkeypatch.setattr(
+            codex, "write_json_atomic", lambda *a, **k: wrote.__setitem__("called", True)
+        )
+        codex._write_auth({"tokens": {}})
+        assert wrote["called"] is False
+
+
 # ── B10 / B11: streaming must preserve tool calls + finish_reason ───────
 
 

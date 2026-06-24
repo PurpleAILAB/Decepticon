@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +52,20 @@ CHATGPT_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 
 DEFAULT_ORIGINATOR = "codex_cli_rs"
 DEFAULT_USER_AGENT = "codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown"
+
+# ── GSM single-reader mode (Cloud Run) ──────────────────────────────────────
+# On multi-instance / read-only-mount platforms (Cloud Run) a rotating Codex
+# refresh token can't be refreshed in-process without forking the chain across
+# instances (`refresh_token_reused`). When ``CODEX_AUTH_SECRET_RESOURCE`` names
+# a Secret Manager secret (e.g. ``projects/<id>/secrets/codex_auth``) the
+# handler runs READ-ONLY: an external single writer (the SaaS
+# ``refresh-codex-auth`` cron) rotates the token and publishes a new secret
+# version; this handler only ever reads ``versions/latest`` and never refreshes
+# or writes. Unset → classic file-backed behavior (local / single instance).
+CODEX_AUTH_SECRET_RESOURCE = os.environ.get("CODEX_AUTH_SECRET_RESOURCE", "").strip()
+# Re-read GSM once the cached access token is within this window of expiry —
+# the writer should already have published a fresher version by then.
+GSM_REFETCH_SKEW_SECONDS = 5 * 60
 
 
 def _codex_auth_path() -> Path:
@@ -99,7 +114,55 @@ def _load_codex_auth(path: Path) -> dict[str, Any] | None:
 _auth_cache = FileBackedCache(_codex_auth_path(), _load_codex_auth)
 
 
+class _GsmCodexAuth:
+    """Read-only Secret Manager source for Codex credentials (Cloud Run).
+
+    Reads ``<resource>/versions/latest`` and caches the parsed blob. Re-fetches
+    when the cached access token nears expiry — the external writer should have
+    published a fresher version by then. NEVER refreshes or writes, so the
+    rotating refresh-token chain can never fork across instances.
+    """
+
+    def __init__(self, resource: str) -> None:
+        self._resource = resource
+        self._cached: dict[str, Any] | None = None
+        self._lock = threading.Lock()
+        self._client: Any = None
+
+    def _gsm_client(self) -> Any:
+        if self._client is None:
+            # Lazy import so the dependency is only required on platforms that
+            # opt into GSM mode (the litellm Cloud Run image installs it).
+            from google.cloud import secretmanager
+
+            self._client = secretmanager.SecretManagerServiceClient()
+        return self._client
+
+    def _fetch(self) -> dict[str, Any]:
+        resp = self._gsm_client().access_secret_version(
+            request={"name": f"{self._resource}/versions/latest"},
+        )
+        raw = resp.payload.data.decode("utf-8")
+        return _validate_auth(json.loads(raw), Path(self._resource))
+
+    @staticmethod
+    def _needs_refetch(auth: dict[str, Any]) -> bool:
+        token = auth.get("tokens", {}).get("access_token")
+        return not token or is_jwt_expired(token, skew_seconds=GSM_REFETCH_SKEW_SECONDS)
+
+    def get(self, *, force: bool = False) -> dict[str, Any]:
+        with self._lock:
+            if force or self._cached is None or self._needs_refetch(self._cached):
+                self._cached = self._fetch()
+            return self._cached
+
+
+_gsm_auth = _GsmCodexAuth(CODEX_AUTH_SECRET_RESOURCE) if CODEX_AUTH_SECRET_RESOURCE else None
+
+
 def _read_auth() -> dict[str, Any]:
+    if _gsm_auth is not None:
+        return _gsm_auth.get()
     auth = _auth_cache.get()
     if auth is None:
         path = _codex_auth_path()
@@ -113,6 +176,11 @@ def _read_auth() -> dict[str, Any]:
 
 def _write_auth(auth: dict[str, Any]) -> None:
     """Persist auth back to the Codex CLI store and refresh the cache key."""
+    # GSM single-reader mode never refreshes, so this is normally unreachable;
+    # guard defensively so a stray write can't fork the externally-managed
+    # rotating chain or touch a read-only mount.
+    if _gsm_auth is not None:
+        return
     path = _codex_auth_path()
     write_json_atomic(path, auth)
     # Even if the on-disk write failed (read-only mount), keep the
@@ -173,8 +241,26 @@ def get_codex_access_token(force_refresh: bool = False) -> tuple[str, str | None
     auth = _read_auth()
     token = auth["tokens"]["access_token"]
     if force_refresh or is_jwt_expired(token, skew_seconds=DEFAULT_JWT_SKEW_SECONDS):
-        auth = _refresh_tokens(auth)
-        token = auth["tokens"]["access_token"]
+        if _gsm_auth is not None:
+            # GSM single-reader mode: never self-refresh (that forks the
+            # rotating chain). Re-read the latest secret version — the external
+            # writer should have rotated it. If it's STILL expired the writer is
+            # behind/down: fail loudly rather than mint a forked token.
+            auth = _gsm_auth.get(force=True)
+            token = auth["tokens"]["access_token"]
+            if is_jwt_expired(token, skew_seconds=0):
+                raise litellm.AuthenticationError(
+                    message=(
+                        "Codex access token from Secret Manager is expired and no "
+                        "fresher version is available — the refresh-codex-auth "
+                        "writer may be down."
+                    ),
+                    model="auth",
+                    llm_provider="auth",
+                )
+        else:
+            auth = _refresh_tokens(auth)
+            token = auth["tokens"]["access_token"]
     tokens = auth["tokens"]
     account_id = tokens.get("account_id") or _extract_account_id(tokens.get("id_token"), token)
     return token, account_id
