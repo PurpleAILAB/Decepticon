@@ -88,14 +88,17 @@ def _attempt(platform: str, route: str, ok: bool, status: int, body: str, note: 
 
 # --- platform detectors ------------------------------------------------------
 def _detect(url: str) -> Optional[str]:
+    # Match on the exact host or a real subdomain suffix — NEVER a substring.
+    # `"reddit.com" in h` would also match a spoofed `reddit.com.evil.tld`
+    # (CWE-020 incomplete URL substring sanitization).
     h = _host(url)
     if not h:
         return None
-    if "reddit.com" in h or h == "redd.it":
+    if h == "reddit.com" or h.endswith(".reddit.com") or h == "redd.it":
         return "reddit"
     if h in ("x.com", "twitter.com") or h.endswith(".x.com") or h.endswith(".twitter.com"):
         return "x"
-    if "youtube.com" in h or h == "youtu.be":
+    if h == "youtube.com" or h.endswith(".youtube.com") or h == "youtu.be":
         return "youtube"
     return None
 
