@@ -693,6 +693,10 @@ _SUBSCRIPTION_SHADOW_PRICING: dict[str, tuple[float, float]] = {
     "auth/gpt-5.4": (0.0000025, 0.000015),
     "auth/gpt-5.4-mini": (0.00000075, 0.0000045),
     "auth/gpt-5.3-codex": (0.00000175, 0.000014),
+    # gpt-5.3-codex-spark is the agentic-coding model the Codex subscription
+    # actually serves (verified 2026-06-25 via /backend-api/codex/models);
+    # gpt-5.3-codex is the API slug. Same shadow pricing.
+    "auth/gpt-5.3-codex-spark": (0.00000175, 0.000014),
     "gemini-sub/gemini-2.5-pro": (0.00000125, 0.00001),
     "gemini-sub/gemini-2.5-flash": (0.0000003, 0.0000025),
     "copilot/gpt-5.5": (0.000005, 0.000030),
@@ -759,6 +763,14 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
         {
             "model_name": "auth/gpt-5.3-codex",
             "litellm_params": {"model": "codex-oauth/oauth-gpt-5.3-codex"},
+        },
+        # gpt-5.3-codex-spark is the agentic-coding model the Codex SUBSCRIPTION
+        # actually exposes (chatgpt.com/backend-api/codex/models, verified
+        # 2026-06-25), vs the plain gpt-5.3-codex API slug. Register it so the
+        # subscription (auth) path can route the model it really serves.
+        {
+            "model_name": "auth/gpt-5.3-codex-spark",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.3-codex-spark"},
         },
     ],
     "DECEPTICON_AUTH_GEMINI": [
