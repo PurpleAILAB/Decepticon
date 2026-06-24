@@ -117,12 +117,33 @@ async def web_fetch(
 
     verdict = data.get("verdict", "unknown")
     if not data.get("ok"):
-        return (
-            f"[web_fetch FAILED] verdict={verdict} url={data.get('final_url', url)}\n"
-            f"{data.get('summary', '')}\n"
-            "The page was not retrieved cleanly (challenge/block). Try a "
-            "success selector, or a different device class."
-        )
+        # Surface the engine's failure gate so the agent applies the
+        # "a give-up is not exhaustion" discipline (see the open-web skill):
+        # only a TERMINAL stop_reason (auth_required / not_found / paywall) is a
+        # real wall — everything else (challenge, blocked, rate_limited, a
+        # non-exhausted grid) still has escalation left. The local browser tier
+        # has already run inside the sandbox, so the next move is the agent's
+        # own retry, not an out-of-band MCP browser.
+        stop = data.get("stop_reason", "")
+        exhausted = data.get("grid_exhausted", False)
+        msg = [
+            f"[web_fetch FAILED] verdict={verdict} url={data.get('final_url', url)} "
+            f"stop_reason={stop} grid_exhausted={exhausted}",
+            data.get("summary", ""),
+        ]
+        if stop in ("auth_required", "not_found"):
+            msg.append(
+                "TERMINAL (login/paywall/404) — record it and move on; retrying "
+                "will not help."
+            )
+        else:
+            msg.append(
+                "NOT a terminal wall — escalation remains. Retry with "
+                'device="mobile" and/or a success `selector`; on rate-limit back '
+                "off then retry. Do NOT treat the page as unreadable until "
+                "stop_reason is terminal."
+            )
+        return "\n".join(s for s in msg if s)
     content = data.get("content", "")
     note = ""
     if data.get("content_truncated"):
