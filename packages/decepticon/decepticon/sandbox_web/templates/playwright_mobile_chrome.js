@@ -78,9 +78,15 @@ async function main() {
 
   let ctx;
   try {
+    // Decepticon: prefer the sandbox's system Chromium (INSANE_CHROMIUM_PATH);
+    // else the real Chrome channel.
     ctx = await chromium.launchPersistentContext(profileDir, {
-      channel: 'chrome',
+      ...(process.env.INSANE_CHROMIUM_PATH
+        ? { executablePath: process.env.INSANE_CHROMIUM_PATH }
+        : { channel: 'chrome' }),
       headless,
+      // Chromium won't launch as root without --no-sandbox in a container.
+      args: ['--no-sandbox', '--disable-dev-shm-usage'],
       ...dev,
     });
     const page = await ctx.newPage();

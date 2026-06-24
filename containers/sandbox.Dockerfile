@@ -137,21 +137,27 @@ RUN pip3 install --break-system-packages --no-cache-dir \
 # Playwright browser tier — the engine's last escalation rung for JS/WAF
 # challenges (Cloudflare Turnstile, Akamai, DataDome) that the curl_cffi grid
 # can't clear. The executor shells the node templates in
-# `decepticon/sandbox_web/templates/` (real Chrome via `channel:'chrome'` +
-# puppeteer-extra stealth). node/npm are already installed above. We install
-# the stealth stack globally and the Chrome channel with its OS deps. Runs
-# headless by default (no X server in the sandbox); set INSANE_HEADLESS=0 with
-# an xvfb wrapper for the headful path that evades headless-detecting WAFs.
+# `decepticon/sandbox_web/templates/` (Chromium + puppeteer-extra stealth).
+# node/npm are already installed above; install the stealth stack globally.
 RUN npm install -g --no-fund --no-audit \
         playwright@^1.58.2 \
         playwright-extra@^4.3.6 \
         puppeteer-extra-plugin-stealth@^2.11.2 \
-    && npx --yes playwright install --with-deps chrome \
+        puppeteer-extra-plugin-user-preferences@^2.4.1 \
     && npm cache clean --force
-# The executor shells `node templates/*.js` from the package dir under
-# PYTHONPATH=/opt; the stealth stack is installed GLOBALLY, so point NODE_PATH at
-# the global module roots (both common prefixes) for `require()` to resolve.
-ENV NODE_PATH=/usr/local/lib/node_modules:/usr/lib/node_modules
+# Browser binary: use Kali's system Chromium. `playwright install --with-deps`
+# is NOT used — its hardcoded Debian font/xvfb apt list (fonts-liberation,
+# xvfb, …) does not exist in the Kali repos and fails the build. apt installs
+# Chromium WITH its runtime libs resolved by the distro; the templates launch it
+# via executablePath (INSANE_CHROMIUM_PATH). Headless by default (no X server);
+# INSANE_HEADLESS=0 + xvfb is the headful path for headless-detecting WAFs.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium \
+    && rm -rf /var/lib/apt/lists/*
+# NODE_PATH lets the package's templates/*.js resolve the GLOBAL stealth stack;
+# INSANE_CHROMIUM_PATH tells the templates which browser binary to launch.
+ENV NODE_PATH=/usr/local/lib/node_modules:/usr/lib/node_modules \
+    INSANE_CHROMIUM_PATH=/usr/bin/chromium
 
 # ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
 #
