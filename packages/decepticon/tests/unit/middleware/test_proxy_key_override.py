@@ -85,14 +85,10 @@ class TestRekeyModel:
         bound = _rekey_model(_original_chat_model(), "sk-engagement-xyz")
         # The whole point: authenticate with the per-run key, NOT the master.
         assert bound.openai_api_key.get_secret_value() == "sk-engagement-xyz"
-        assert bound.openai_api_key.get_secret_value() != proxy_env[
-            "DECEPTICON_LLM__PROXY_API_KEY"
-        ]
+        assert bound.openai_api_key.get_secret_value() != proxy_env["DECEPTICON_LLM__PROXY_API_KEY"]
 
     def test_preserves_model_id_and_proxy_url(self, proxy_env: dict[str, str]) -> None:
-        bound = _rekey_model(
-            _original_chat_model(model="anthropic/claude-sonnet-4-6"), "sk-k"
-        )
+        bound = _rekey_model(_original_chat_model(model="anthropic/claude-sonnet-4-6"), "sk-k")
         assert bound.model_name == "anthropic/claude-sonnet-4-6"
         assert bound.openai_api_base == proxy_env["DECEPTICON_LLM__PROXY_URL"]
 
@@ -103,9 +99,7 @@ class TestRekeyModel:
         )
         assert bound.temperature is None
 
-    def test_preserves_temperature_for_other_models(
-        self, proxy_env: dict[str, str]
-    ) -> None:
+    def test_preserves_temperature_for_other_models(self, proxy_env: dict[str, str]) -> None:
         bound = _rekey_model(_original_chat_model(temperature=0.4), "sk-k")
         assert bound.temperature == 0.4
 

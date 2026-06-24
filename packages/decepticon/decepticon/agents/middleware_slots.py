@@ -53,12 +53,12 @@ from decepticon.middleware.hitl import (
     HITLApprovalMiddleware,
 )
 from decepticon.middleware.model_override import ModelOverrideMiddleware
-from decepticon.middleware.proxy_key_override import ProxyKeyOverrideMiddleware
 from decepticon.middleware.notifications import SandboxNotificationMiddleware
 from decepticon.middleware.opscontrol_notifications import (
     OpsControlNotificationMiddleware,
 )
 from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
+from decepticon.middleware.proxy_key_override import ProxyKeyOverrideMiddleware
 from decepticon.middleware.roe import build_default_sink
 
 # Slot enum + per-role applicability mapping + safety-critical set
