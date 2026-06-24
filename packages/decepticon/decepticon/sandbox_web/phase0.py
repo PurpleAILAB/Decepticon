@@ -100,6 +100,12 @@ def _detect(url: str) -> Optional[str]:
         return "x"
     if h == "youtube.com" or h.endswith(".youtube.com") or h == "youtu.be":
         return "youtube"
+    if h == "github.com":
+        return "github"
+    if h == "npmjs.com":
+        return "npm"
+    if h == "pypi.org":
+        return "pypi"
     return None
 
 
@@ -353,7 +359,201 @@ def _youtube(url: str, timeout: int, scope_check=None) -> dict:
     }
 
 
-_ROUTERS = {"reddit": _reddit, "x": _x, "youtube": _youtube}
+# --- github -----------------------------------------------------------------
+# github.com/<owner>/<repo> first-segment reserved words (no repo API behind them).
+_GH_RESERVED = {
+    "orgs",
+    "settings",
+    "marketplace",
+    "features",
+    "about",
+    "pricing",
+    "login",
+    "join",
+    "sponsors",
+    "topics",
+    "search",
+    "explore",
+    "notifications",
+    "new",
+    "apps",
+    "contact",
+    "site",
+    "collections",
+}
+
+
+def _github(url: str, timeout: int, scope_check=None) -> dict:
+    attempts: list[dict] = []
+    segs = [s for s in urlsplit(url).path.split("/") if s]
+    # Only /<owner>/<repo> URLs have a repo API; a profile or /features falls
+    # through to the grid.
+    if len(segs) < 2 or segs[0].lower() in _GH_RESERVED:
+        return {
+            "platform": "github",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
+    owner, repo = segs[0], segs[1].removesuffix(".git")
+    api = f"https://api.github.com/repos/{owner}/{repo}"
+    try:
+        x = _cffi_get(api, timeout=timeout, scope_check=scope_check)
+        d = x.json() if x.status_code == 200 else {}
+        ok = x.status_code == 200 and bool(d.get("full_name"))
+        attempts.append(
+            _attempt(
+                "github",
+                "repos-api",
+                ok,
+                x.status_code,
+                x.text,
+                "repo" if ok else f"status={x.status_code}",
+            )
+        )
+        if ok:
+            return {
+                "platform": "github",
+                "ok": True,
+                "route": "repos-api",
+                "content": x.text,
+                "final_url": api,
+                "attempts": attempts,
+            }
+    except Exception as e:
+        attempts.append(_attempt("github", "repos-api", False, 0, "", f"{type(e).__name__}"))
+    return {
+        "platform": "github",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
+
+
+# --- npm ---------------------------------------------------------------------
+def _npm(url: str, timeout: int, scope_check=None) -> dict:
+    attempts: list[dict] = []
+    path = urlsplit(url).path
+    marker = "/package/"
+    if marker not in path:
+        return {
+            "platform": "npm",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
+    # npmjs.com/package/<pkg>  (pkg may be scoped @scope/name); drop /v/<version>.
+    pkg = path.split(marker, 1)[1].strip("/").split("/v/", 1)[0]
+    if not pkg:
+        return {
+            "platform": "npm",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
+    api = f"https://registry.npmjs.org/{pkg}"
+    try:
+        x = _cffi_get(api, timeout=timeout, scope_check=scope_check)
+        d = x.json() if x.status_code == 200 else {}
+        ok = x.status_code == 200 and bool(d.get("name"))
+        attempts.append(
+            _attempt(
+                "npm",
+                "registry",
+                ok,
+                x.status_code,
+                x.text,
+                "pkg" if ok else f"status={x.status_code}",
+            )
+        )
+        if ok:
+            return {
+                "platform": "npm",
+                "ok": True,
+                "route": "registry",
+                "content": x.text,
+                "final_url": api,
+                "attempts": attempts,
+            }
+    except Exception as e:
+        attempts.append(_attempt("npm", "registry", False, 0, "", f"{type(e).__name__}"))
+    return {
+        "platform": "npm",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
+
+
+# --- pypi --------------------------------------------------------------------
+def _pypi(url: str, timeout: int, scope_check=None) -> dict:
+    attempts: list[dict] = []
+    segs = [s for s in urlsplit(url).path.split("/") if s]
+    # pypi.org/project/<pkg>/
+    if len(segs) < 2 or segs[0].lower() != "project":
+        return {
+            "platform": "pypi",
+            "ok": False,
+            "route": None,
+            "content": "",
+            "final_url": url,
+            "attempts": attempts,
+        }
+    pkg = segs[1]
+    api = f"https://pypi.org/pypi/{pkg}/json"
+    try:
+        x = _cffi_get(api, timeout=timeout, scope_check=scope_check)
+        d = x.json() if x.status_code == 200 else {}
+        ok = x.status_code == 200 and bool(d.get("info"))
+        attempts.append(
+            _attempt(
+                "pypi",
+                "json-api",
+                ok,
+                x.status_code,
+                x.text,
+                "pkg" if ok else f"status={x.status_code}",
+            )
+        )
+        if ok:
+            return {
+                "platform": "pypi",
+                "ok": True,
+                "route": "json-api",
+                "content": x.text,
+                "final_url": api,
+                "attempts": attempts,
+            }
+    except Exception as e:
+        attempts.append(_attempt("pypi", "json-api", False, 0, "", f"{type(e).__name__}"))
+    return {
+        "platform": "pypi",
+        "ok": False,
+        "route": None,
+        "content": "",
+        "final_url": url,
+        "attempts": attempts,
+    }
+
+
+_ROUTERS = {
+    "reddit": _reddit,
+    "x": _x,
+    "youtube": _youtube,
+    "github": _github,
+    "npm": _npm,
+    "pypi": _pypi,
+}
 
 
 # --- public entrypoint -------------------------------------------------------

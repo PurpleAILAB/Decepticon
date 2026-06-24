@@ -90,7 +90,13 @@ escalation, not permission to stop.
 | Reddit thread/sub | the `reddit.com/...` URL (auto `.rss`) |
 | A specific tweet / X profile | the `x.com/.../status/...` or profile URL |
 | YouTube metadata / captions | the `youtube.com/watch?v=...` URL (yt-dlp) |
+| GitHub repo (metadata, stars, language) | the `github.com/<owner>/<repo>` URL → repos API JSON |
+| npm package (deps, versions, maintainers) | the `npmjs.com/package/<pkg>` URL → registry JSON |
+| PyPI package (versions, deps, urls) | the `pypi.org/project/<pkg>` URL → JSON API |
 | Any WAF-protected article/page | the page URL — the grid + browser tier handle it |
+
+GitHub/npm/PyPI return structured JSON (great for supply-chain / source recon)
+instead of HTML — just pass the normal page URL and the engine routes it.
 
 For keyword discovery on a platform (e.g. "what's said about X on Reddit"),
 `web_search("site:reddit.com <topic>")` first, then `web_fetch` the result URLs.

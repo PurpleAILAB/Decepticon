@@ -33,6 +33,13 @@ def _resolve_fail_open() -> bool:
     return os.environ.get("INSANE_RESOLVE_FAIL_OPEN", "") in ("1", "true", "yes")
 
 
+# NAT64 well-known prefix (RFC 6052). A DNS64 resolver (as in the sandbox)
+# synthesises 64:ff9b::<v4> AAAA records for IPv4-only hosts; the real
+# destination is the embedded IPv4 in the low 32 bits. Without unwrapping it the
+# whole prefix looks "reserved" and every NAT64'd public host is falsely blocked.
+_NAT64_WKP = ipaddress.ip_network("64:ff9b::/96")
+
+
 def _ip_blocked(ip_str: str) -> bool:
     try:
         ip = ipaddress.ip_address(ip_str)
@@ -43,6 +50,10 @@ def _ip_blocked(ip_str: str) -> bool:
     mapped = getattr(ip, "ipv4_mapped", None)
     if mapped is not None:
         ip = mapped
+    # Unwrap NAT64 → check the EMBEDDED IPv4 (so 64:ff9b::<public-v4> is allowed,
+    # but 64:ff9b::<private-v4> is still blocked).
+    elif isinstance(ip, ipaddress.IPv6Address) and ip in _NAT64_WKP:
+        ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
     return (
         ip.is_private
         or ip.is_loopback
