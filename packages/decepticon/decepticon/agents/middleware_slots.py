@@ -24,40 +24,42 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-# Middleware classes & factory helpers — imported at module level so
-# slot factories don't pay per-call import cost. langchain + langgraph
-# packages are listed as runtime deps; only ``benchmark_skill_sources``
-# is decepticon-internal.
-from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
-from deepagents.middleware.subagents import SubAgentMiddleware
-from deepagents.middleware.summarization import create_summarization_middleware
-from langchain.agents.middleware import AgentMiddleware, ModelFallbackMiddleware
-from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
+if TYPE_CHECKING:
+    from decepticon.middleware import (
+        EngagementContextMiddleware,
+        FilesystemMiddleware,
+        KGMiddleware,
+        OPPLANMiddleware,
+        RoEGuardrailMiddleware,
+        SkillsMiddleware,
+        UntrustedOutputMiddleware,
+    )
+    from decepticon.middleware.budget import BudgetEnforcementMiddleware
+    from decepticon.middleware.event_logging import EventLogMiddleware
+    from decepticon.middleware.hitl import HITLApprovalMiddleware
+    from decepticon.middleware.model_override import ModelOverrideMiddleware
+    from decepticon.middleware.notifications import SandboxNotificationMiddleware
+    from decepticon.middleware.opscontrol_notifications import (
+        OpsControlNotificationMiddleware,
+    )
+    from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
+    from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
+    from deepagents.middleware.subagents import SubAgentMiddleware
+    from deepagents.middleware.summarization import create_summarization_middleware
+    from langchain.agents.middleware import AgentMiddleware, ModelFallbackMiddleware
+    from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
+# Slot enum + per-role applicability mapping + safety-critical set
+# all live in the contract layer now (decepticon_core.contracts.slots).
+from decepticon_core.contracts.slots import (
+    SAFETY_CRITICAL_SLOTS,
+    SLOTS_PER_ROLE,
+    MiddlewareSlot,
+)
+from decepticon_core.plugin_loader import load_plugin_skill_sources
 from decepticon.agents._benchmark_mode import benchmark_skill_sources
-from decepticon.middleware import (
-    EngagementContextMiddleware,
-    FilesystemMiddleware,
-    KGMiddleware,
-    OPPLANMiddleware,
-    RoEGuardrailMiddleware,
-    SkillsMiddleware,
-    UntrustedOutputMiddleware,
-)
-from decepticon.middleware.budget import BudgetEnforcementMiddleware
-from decepticon.middleware.event_logging import EventLogMiddleware
-from decepticon.middleware.hitl import (
-    DEFAULT_HIGH_IMPACT_POLICY,
-    HITLApprovalMiddleware,
-)
-from decepticon.middleware.model_override import ModelOverrideMiddleware
-from decepticon.middleware.notifications import SandboxNotificationMiddleware
-from decepticon.middleware.opscontrol_notifications import (
-    OpsControlNotificationMiddleware,
-)
-from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
 from decepticon.middleware.roe import build_default_sink
 
 # Slot enum + per-role applicability mapping + safety-critical set
@@ -119,10 +121,12 @@ def skills_sources_for(role: str) -> list[str]:
 
 
 def _make_engagement_context(**_: Any):
+    from decepticon.middleware import EngagementContextMiddleware
     return EngagementContextMiddleware()
 
 
 def _make_roe_guardrail(*, role: str, **_: Any):
+    from decepticon.middleware import RoEGuardrailMiddleware
     """Build the RoE guardrail middleware with a per-engagement sink.
 
     The sink path defaults to ``<workspace>/audit/roe-decisions.jsonl``
@@ -137,6 +141,7 @@ def _make_roe_guardrail(*, role: str, **_: Any):
 
 
 def _make_untrusted_output(*, role: str, **_: Any):
+    from decepticon.middleware import UntrustedOutputMiddleware
     """Build the per-engagement untrusted-output middleware.
 
     The quarantine ledger path resolves to
@@ -154,23 +159,28 @@ def _make_untrusted_output(*, role: str, **_: Any):
 
 
 def _make_skills(*, backend: Any, role: str, skill_sources: list[str] | None = None, **_: Any):
+    from decepticon.middleware import SkillsMiddleware
     sources = list(skill_sources) if skill_sources is not None else skills_sources_for(role)
     return SkillsMiddleware(backend=backend, sources=sources)
 
 
 def _make_filesystem(*, backend: Any, **_: Any):
+    from decepticon.middleware import FilesystemMiddleware
     return FilesystemMiddleware(backend=backend)
 
 
 def _make_subagent(*, backend: Any, subagents: list | None = None, **_: Any):
+    from deepagents.middleware.subagents import SubAgentMiddleware
     return SubAgentMiddleware(backend=backend, subagents=subagents or [])
 
 
 def _make_opplan(*, backend: Any, **_: Any):
+    from decepticon.middleware import OPPLANMiddleware
     return OPPLANMiddleware(backend=backend)
 
 
 def _make_kg(**_: Any):
+    from decepticon.middleware import KGMiddleware
     """Conditional slot — returns None when the KGStore can't be built.
 
     Mirrors :func:`_make_model_fallback`: the agent factory keeps
@@ -201,6 +211,7 @@ def _make_kg(**_: Any):
 
 
 def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
+    from decepticon.middleware.notifications import SandboxNotificationMiddleware
     if sandbox is None:
         raise ValueError(
             "SandboxNotificationMiddleware requires a sandbox kwarg; "
@@ -210,6 +221,9 @@ def _make_sandbox_notification(*, sandbox: Any = None, **_: Any):
 
 
 def _make_opscontrol_notification(**_: Any):
+    from decepticon.middleware.opscontrol_notifications import (
+        OpsControlNotificationMiddleware,
+    )
     """ADR-0006 workload-state-transition delivery for the orchestrator.
 
     Returns a middleware that polls the opscontrol UDS once per turn and
@@ -222,10 +236,12 @@ def _make_opscontrol_notification(**_: Any):
 
 
 def _make_model_override(**_: Any):
+    from decepticon.middleware.model_override import ModelOverrideMiddleware
     return ModelOverrideMiddleware()
 
 
 def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
+    from langchain.agents.middleware import ModelFallbackMiddleware
     """Conditional slot — returns None when no fallback chain exists.
 
     ``build_middleware`` filters None results out so the absent
@@ -237,7 +253,11 @@ def _make_model_fallback(*, fallback_models: list | None = None, **_: Any):
     return ModelFallbackMiddleware(*fallback_models)
 
 
-class _SafeSummarizationProxy(AgentMiddleware):
+def _get_agent_middleware_cls():
+    from langchain.agents.middleware import AgentMiddleware
+    return AgentMiddleware
+
+class _SafeSummarizationProxy(_get_agent_middleware_cls()):
     """Defensive wrapper around the deepagents summarization middleware.
 
     The inner middleware's ``wrap_model_call`` / ``awrap_model_call``
@@ -288,26 +308,32 @@ class _SafeSummarizationProxy(AgentMiddleware):
 
 
 def _make_summarization(*, backend: Any, llm: Any, **_: Any):
+    from deepagents.middleware.summarization import create_summarization_middleware
     return _SafeSummarizationProxy(create_summarization_middleware(llm, backend))
 
 
 def _make_prompt_caching(**_: Any):
+    from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
     return AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore")
 
 
 def _make_patch_tool_calls(**_: Any):
+    from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
     return PatchToolCallsMiddleware()
 
 
 def _make_event_log(**_: Any):
+    from decepticon.middleware.event_logging import EventLogMiddleware
     return EventLogMiddleware()
 
 
 def _make_budget(**_: Any):
+    from decepticon.middleware.budget import BudgetEnforcementMiddleware
     return BudgetEnforcementMiddleware()
 
 
 def _make_prompt_injection_shield(**_: Any):
+    from decepticon.middleware.prompt_injection_shield import PromptInjectionShieldMiddleware
     # UNTRUSTED_OUTPUT already injects its own quarantine system policy;
     # appending the shield's policy too would double-inject. The shield
     # still wraps deny-listed tool output and dedups against
@@ -320,6 +346,10 @@ _HITL_FALSY: frozenset[str] = frozenset({"", "0", "false", "no", "off"})
 
 
 def _make_hitl(*, role: str, **_: Any):
+    from decepticon.middleware.hitl import (
+        DEFAULT_HIGH_IMPACT_POLICY,
+        HITLApprovalMiddleware,
+    )
     """Operator-approval gate — opt-in via ``DECEPTICON_HITL__ENABLED``.
 
     Returns None (slot skipped) unless the env flag is truthy, so default

@@ -178,10 +178,12 @@ model_list:
       input_cost_per_token: 0.0000003
       output_cost_per_token: 0.0000025
 
-  # LOW tier
+  # LOW tier — REMAPPED to flash because flash-lite free tier has 0 cached
+  # content token limit which Decepticon's prompt_caching middleware blows
+  # past (429 RESOURCE_EXHAUSTED). flash has a real cached token budget.
   - model_name: gemini/gemini-2.5-flash-lite
     litellm_params:
-      model: gemini/gemini-2.5-flash-lite
+      model: gemini/gemini-2.5-flash
       api_key: os.environ/GEMINI_API_KEY
     model_info:
       input_cost_per_token: 0.0000001
@@ -417,11 +419,101 @@ model_list:
   # ── Cerebras Inference ─────────────────────────────────────────────
   # OpenAI-compatible at https://api.cerebras.ai/v1 with Bearer auth.
   # Native LiteLLM ``cerebras/`` provider — LiteLLM resolves the base URL
-  # internally. Single production model SKU as of 2026-05-15.
-  - model_name: cerebras/llama3.1-8b
+  # internally. As of 2026-06-23, only `gpt-oss-120b` and `zai-glm-4.7`
+  # are accessible on the free tier.
+  - model_name: cerebras/gpt-oss-120b
     litellm_params:
-      model: cerebras/llama3.1-8b
+      model: cerebras/gpt-oss-120b
       api_key: os.environ/CEREBRAS_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: cerebras/zai-glm-4.7
+    litellm_params:
+      model: cerebras/zai-glm-4.7
+      api_key: os.environ/CEREBRAS_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  # ── Groq Inference ─────────────────────────────────────────────────
+  # OpenAI-compatible at https://api.groq.com/openai/v1 with Bearer auth.
+  # Free tier has llama-3.1-8b-instant, llama-3.3-70b-versatile, and
+  # a few others. LOW tier candidate.
+  - model_name: groq/llama-3.1-8b-instant
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: groq/llama-3.3-70b-versatile
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: groq/openai/gpt-oss-120b
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: os.environ/GROQ_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  # ── OpenCode Zen (free models) ─────────────────────────────────────
+  # OpenAI-compatible at https://opencode.ai/zen/v1 with Bearer auth.
+  # Free models as of 2026-06-23: deepseek-v4-flash-free, mimo-v2.5-free.
+  # glm-5-free, qwen3.6-plus-free, and minimax-m3-free promotions have
+  # ended. opencode/* above uses the non-free model names which require
+  # credits.
+  - model_name: opencode/deepseek-v4-flash-free
+    litellm_params:
+      model: openai/deepseek-v4-flash
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: opencode/mimo-v2.5-free
+    litellm_params:
+      model: openai/mimo-v2.5-free
+      api_base: https://opencode.ai/zen/v1
+      api_key: os.environ/OPENCODE_API_KEY
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  # ── Google Gemini (multiple keys for rotation) ─────────────────────
+  # Use gemini-2.5-flash via each available key. LiteLLM picks the
+  # first one configured. Keys come from /Users/user/repos/llmapikeys.txt
+  # and are loaded via .env (see .env.example for the variable names).
+  - model_name: gemini/gemini-2.5-flash-key2
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY_2
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000025
+  - model_name: gemini/gemini-2.5-flash-key3
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY_3
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000025
+  - model_name: gemini/gemini-2.5-flash-key4
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY_4
+    model_info:
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000025
 
   # ── Xiaomi MiMo Open Platform ──────────────────────────────────────
   # OpenAI-compatible at https://platform.xiaomimimo.com/v1 with Bearer
@@ -450,11 +542,22 @@ model_list:
 
   # ── Nvidia NIM ─────────────────────────────────────────────────────
   # NIM is BYO-hardware: the cost is the GPU rental (DGX Cloud, AWS, on-prem),
-  # NOT per-token. Pinned to $0 so /spend/logs is honest — token-based cost
-  # tracking does not apply. Operators who want to amortize GPU spend across
-  # tokens should override these via DECEPTICON_MODEL_<ROLE> + a custom
-  # gateway with their own rate. Explicit ``0`` here also bypasses LiteLLM
-  # budget checks (zero-cost models skip all budget enforcement).
+   # NOT per-token. Pinned to $0 so /spend/logs is honest — token-based cost
+   # tracking does not apply. Operators who want to amortize GPU spend across
+   # tokens should override these via DECEPTICON_MODEL_<ROLE> + a custom
+   # gateway with their own rate. Explicit ``0`` here also bypasses LiteLLM
+   # budget checks (zero-cost models skip all budget enforcement).
+   #
+   # ⚠️ INCOMPATIBLE WITH DECEPTICON PROMPT CACHING: NVIDIA NIM's
+   # OpenAI-compat endpoint rejects ``messages[].content`` as a list of
+   # parts (the v1 multimodal shape). Decepticon's prompt_caching middleware
+   # adds cache_control blocks that become list-of-parts and 400 every
+   # turn. The Decepticon-side ``_NvidiaNIMChatOpenAI`` does flatten
+   # content, but only when the same subclass is on the call path — the
+   # model_fallback middleware re-wraps the LLM with plain ChatOpenAI in
+   # some paths, so the flattening is bypassed. Net: do NOT use
+   # ``DECEPTICON_AUTH_PRIORITY=nvidia_api`` for engagements until the
+   # upstream is fixed or a custom litellm handler flattens content.
   - model_name: nvidia_nim/meta/llama-3.3-70b-instruct
     litellm_params:
       model: nvidia_nim/meta/llama-3.3-70b-instruct
@@ -769,6 +872,11 @@ litellm_settings:
   #   - pplx-sub     → perplexity_handler.perplexity_sub_handler_instance
   num_retries: 3
   retry_after: 30
+  # Drop unsupported params silently (cerebras rejects parallel_tool_calls,
+  # google flash-lite rejects temperature, etc.). Without this, the proxy
+  # returns 400 BadRequest and the request is dropped instead of falling
+  # back to the next model in the chain.
+  drop_params: true
 
 # --- Router Settings ---
 router_settings:

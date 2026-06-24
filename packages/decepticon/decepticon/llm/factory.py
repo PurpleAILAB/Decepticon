@@ -1619,6 +1619,12 @@ class LLMFactory:
             kwargs["disabled_params"] = {"temperature": None}
         else:
             kwargs["temperature"] = temperature
+        # mundAgent: force sequential tool calls. Gemini Flash / Pro
+        # batch multiple tool calls into a single response, but
+        # OPPLANMiddleware rejects parallel OPPLAN tool calls as
+        # state-mutating races. Disable parallel tool calls so the
+        # orchestrator re-issues sequentially.
+        kwargs["parallel_tool_calls"] = False
         if _model_is_deepseek_thinking(model):
             return _DeepSeekThinkingChatOpenAI(**kwargs)
         if _model_is_nvidia_nim(model):

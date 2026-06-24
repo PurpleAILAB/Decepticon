@@ -33,8 +33,18 @@ import logging
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib.metadata import entry_points
 from typing import Any
+
+
+# Per-process cache of ``entry_points(group=...)``. The decepticon-core
+# plugin loader has its own cache; we mirror it here so the duplicate
+# call in ``_iter_override_bundles`` doesn't re-read every distribution
+# metadata file each time a new agent is constructed.
+@lru_cache(maxsize=None)
+def _cached_entry_points(group: str) -> tuple:
+    return tuple(entry_points(group=group))
 
 from decepticon.agents.middleware_slots import (
     DEFAULT_SLOT_FACTORIES,
@@ -97,7 +107,7 @@ def _iter_override_bundles(role: str) -> Iterator[PluginBundle]:
     """Yield every ``PluginBundle`` registered under
     ``decepticon.bundles`` that is enabled AND scoped to ``role``."""
     try:
-        eps = list(entry_points(group=BUNDLES_GROUP))
+        eps = _cached_entry_points(BUNDLES_GROUP)
     except Exception:  # noqa: BLE001 — entry-point introspection is best-effort
         logger.exception("plugin discovery failed for group %s", BUNDLES_GROUP)
         return

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import posixpath
 from dataclasses import replace
 from typing import Any
@@ -32,31 +33,44 @@ NO_WORKSPACE_ERROR = (
 
 
 def _normalize_engagement_workspace(workspace_path: str | None) -> str | None:
-    """Strict 4-case contract for resolving the engagement workspace root.
+    """Resolve the engagement workspace root.
 
     - Empty / None → ``None`` (fail closed; no engagement configured).
     - ``/workspace`` → ``/workspace`` (launcher mode: the bind-mount IS the
       engagement root, so the literal root is a valid workspace).
     - ``/workspace/<safe-slug>`` → normalized path (web mode: shared root with
       per-engagement subdirectories).
-    - Anything else (traversal like ``/workspace/../etc``, characters outside
-      the slug regex, etc.) → ``None``. Invalid paths are NOT silently coerced
-      to ``/workspace``.
+    - Any other absolute path → returned as-is (dev / local mode: the gateway
+      already knows the real host path of the engagement dir and we trust it.
+      This is gated by ``DECEPTICON_ALLOW_HOST_WORKSPACE=1`` so the strict
+      launcher/web contract is still enforced in containerized deployments).
+    - Anything else (relative paths, traversal like ``/workspace/../etc``,
+      etc.) → ``None``. Invalid paths are NOT silently coerced to
+      ``/workspace``.
     """
     path = (workspace_path or "").strip()
     if not path:
         return None
     if path == WORKSPACE:
         return WORKSPACE
-    if not path.startswith(f"{WORKSPACE}/"):
-        return None
-    expected = path.rstrip("/")
-    # posixpath, not os.path: these are virtual POSIX paths. os.path.normpath
-    # rewrites "/" to "\" on Windows, which would reject every valid workspace.
-    if posixpath.normpath(expected) != expected:
-        return None
-    normalized = SandboxBase._normalize_workspace_path(path)
-    return normalized if normalized == expected else None
+    if path.startswith(f"{WORKSPACE}/"):
+        expected = path.rstrip("/")
+        # posixpath, not os.path: these are virtual POSIX paths. os.path.normpath
+        # rewrites "/" to "\" on Windows, which would reject every valid workspace.
+        if posixpath.normpath(expected) != expected:
+            return None
+        normalized = SandboxBase._normalize_workspace_path(path)
+        return normalized if normalized == expected else None
+    # Dev-mode escape hatch: the gateway tells us a real host path
+    # (e.g. /Users/user/.../engagements/<id>) because the langgraph
+    # process is running outside docker where /workspace is not bind-
+    # mounted. Production deployments keep the strict 4-case contract.
+    if (
+        os.path.isabs(path)
+        and os.environ.get("DECEPTICON_ALLOW_HOST_WORKSPACE") == "1"
+    ):
+        return path
+    return None
 
 
 class EngagementFilesystemBackend(BackendProtocol):

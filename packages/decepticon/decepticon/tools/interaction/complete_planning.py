@@ -1,21 +1,20 @@
-"""complete_engagement_planning — signal soundwave-to-decepticon handoff.
+"""complete_engagement_planning — write plan files and signal handoff to Decepticon.
 
-Soundwave calls this exactly once after RoE / CONOPS / Deconfliction Plan
-have been written, validated, and saved to ``/workspace/plan/``. The
-emitted custom event tells the CLI to switch its LangGraph assistant_id from
-``soundwave`` to ``decepticon`` so the next operator message lands on the
-operations agent without the operator restarting the CLI.
-
-The tool is a pure boolean signal — it carries no slug or other metadata.
-The launcher is the single source of truth for the engagement slug; clients
-inject ``engagement_name``/``workspace_path`` via ``config.configurable`` on
-every run, and EngagementContextMiddleware hydrates them into agent state.
+Soundwave calls this after authoring RoE / CONOPS / Deconfliction Plan.
+Passes the documents as ``plan_documents`` (a dict mapping filenames to
+JSON content strings); the tool writes them to the engagement's plan
+directory and emits the ``engagement_ready`` custom event so the CLI can
+switch its LangGraph assistant_id from ``soundwave`` to ``decepticon``.
 """
 
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Annotated, Any
 
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.config import get_stream_writer
 
@@ -27,20 +26,68 @@ def _safe_writer():
         return None
 
 
+def _resolve_plan_dir(config: RunnableConfig | None) -> Path | None:
+    workspace_path = None
+    engagement_id = None
+
+    if config:
+        configurable = config.get("configurable") or {}
+        workspace_path = configurable.get("workspace_path")
+        engagement_id = (
+            configurable.get("engagement_id") or configurable.get("engagement_name")
+        )
+        # Derive engagement_id from thread_id (gateway sets them to be the same minus dashes)
+        thread_id = configurable.get("thread_id")
+        if not engagement_id and thread_id:
+            engagement_id = thread_id.replace("-", "")
+
+    if workspace_path:
+        return Path(workspace_path) / "plan"
+
+    parent = os.environ.get("DECEPTICON_WORKSPACE_PATH") or os.environ.get("DECEPTICON_WORKSPACE")
+    if parent and engagement_id:
+        return Path(parent) / engagement_id / "plan"
+
+    return None
+
+
 @tool
 def complete_engagement_planning(
+    plan_documents: Annotated[
+        dict[str, str],
+        "Dict mapping filenames (e.g. 'roe.json') to JSON content strings. "
+        "Must include roe.json, conops.json, deconfliction.json."
+    ],
+    config: Annotated[RunnableConfig, "Injected."] = None,
     tool_call_id: Annotated[str, InjectedToolCallId] = "",
 ) -> Any:
-    """Signal that engagement planning is finished and hand off to Decepticon.
+    """Write plan documents to the engagement's plan/ directory and signal handoff.
 
-    Call this tool exactly once, after RoE, CONOPS, and the Deconfliction Plan
-    have all been written under ``/workspace/plan/`` and validated against
-    their schemas. The CLI will switch the active assistant to Decepticon and
-    the operator's next message starts the operations phase.
+    Pass a dict of {filename: json_string}. The tool writes them under
+    the plan directory and emits the engagement_ready event.
 
     Returns:
-        A confirmation string the LLM can include in its closing message.
+        A confirmation string with the list of files written.
     """
+    plan_dir = _resolve_plan_dir(config)
+    if not plan_dir:
+        return "ERROR: could not determine plan directory. workspace_path/engagement_id not in config or env."
+
+    plan_dir.mkdir(parents=True, exist_ok=True)
+
+    written = []
+    for name, content in plan_documents.items():
+        safe_name = os.path.basename(name)
+        if not safe_name.endswith(".json"):
+            continue
+        target = plan_dir / safe_name
+        try:
+            parsed = json.loads(content)
+            target.write_text(json.dumps(parsed, indent=2))
+            written.append(safe_name)
+        except json.JSONDecodeError as exc:
+            return f"ERROR: {safe_name} is not valid JSON: {exc}"
+
     writer = _safe_writer()
     if writer is not None:
         writer(
@@ -48,9 +95,11 @@ def complete_engagement_planning(
                 "type": "engagement_ready",
                 "agent": "soundwave",
                 "id": tool_call_id,
+                "files": written,
             }
         )
+
     return (
-        "Planning complete. The operator's next message will be routed to the "
-        "Decepticon operations agent."
+        f"Planning complete. Wrote {len(written)} files ({', '.join(written)}). "
+        "The operator's next message will be routed to the Decepticon operations agent."
     )

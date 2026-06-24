@@ -56,7 +56,7 @@ the gateway prefix so two gateways exposing the same upstream slug never
 collide in the model_list.
 
                     HIGH                          MID                            LOW
-  opencode_api     opencode/claude-opus-4-6      opencode/gpt-5.4               opencode/glm-5-free
+  opencode_api     opencode/claude-opus-4-6      opencode/gpt-5.4               opencode/deepseek-v4-flash-free
   vercel_gateway   vercel/anthropic/…opus-4.6    vercel/anthropic/…sonnet-4.6  vercel/anthropic/…haiku-4.5
   huggingface_api  hf/…/DeepSeek-V3.1            hf/…/Llama-3.3-70B-…Turbo     hf/openai/gpt-oss-120b
   venice_api       venice/claude-opus-4-6        venice/claude-sonnet-4-6      venice/deepseek-v4-flash
@@ -224,6 +224,14 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.MISTRAL_API: {
         Tier.HIGH: "mistral/mistral-large-latest",
         Tier.MID: "mistral/codestral-latest",
+        # Mistral has no dedicated LOW model in the catalog, so we
+        # reuse mistral-large-latest. It has a generous TPM quota
+        # (much higher than groq's 6K) and tools-capable, so it
+        # handles the recon subagent's large context (~36K tokens
+        # including the orchestrator's history) without falling
+        # over. The orchestrator's primary stays on the same
+        # provider so fallback continuity is preserved.
+        Tier.LOW: "mistral/mistral-large-latest",
     },
     AuthMethod.OPENROUTER_API: {
         Tier.HIGH: "openrouter/anthropic/claude-opus-4-8",
@@ -408,11 +416,11 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     },
     AuthMethod.CEREBRAS_API: {
         # Cerebras Inference — OpenAI-compatible at
-        # ``https://api.cerebras.ai/v1``. Single production model SKU
-        # documented as of 2026-05-15.
-        Tier.HIGH: "cerebras/llama3.1-8b",
-        Tier.MID: "cerebras/llama3.1-8b",
-        Tier.LOW: "cerebras/llama3.1-8b",
+        # ``https://api.cerebras.ai/v1``. As of 2026-06-23 the only
+        # accessible free-tier models are gpt-oss-120b and zai-glm-4.7.
+        Tier.HIGH: "cerebras/gpt-oss-120b",
+        Tier.MID: "cerebras/zai-glm-4.7",
+        Tier.LOW: "cerebras/gpt-oss-120b",
     },
     AuthMethod.XIAOMI_MIMO_API: {
         # Xiaomi MiMo Open Platform — OpenAI-compatible
@@ -434,10 +442,11 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     # static entry in ``config/litellm.yaml``.
     AuthMethod.OPENCODE_API: {
         # OpenCode Zen — https://opencode.ai/zen/v1. Catalog spans Claude,
-        # GPT-5.x, GLM, Kimi. LOW uses the free GLM tier.
+        # GPT-5.x, GLM, Kimi. LOW uses the free deepseek tier; glm-5-free
+        # and qwen3.6-plus-free promotions ended in 2026-06.
         Tier.HIGH: "opencode/claude-opus-4-6",
         Tier.MID: "opencode/gpt-5.4",
-        Tier.LOW: "opencode/glm-5-free",
+        Tier.LOW: "opencode/deepseek-v4-flash-free",
     },
     AuthMethod.VERCEL_GATEWAY_API: {
         # Vercel AI Gateway — https://ai-gateway.vercel.sh/v1. Model ids
@@ -535,7 +544,7 @@ AGENT_TIERS: dict[str, Tier] = {
     "forensicator": Tier.MID,
     "supply_chain_operator": Tier.MID,
     # LOW — high-throughput, low reasoning depth. Recon / triage / docs.
-    "soundwave": Tier.LOW,
+    "soundwave": Tier.MID,  # elevated to MID so it uses codestral-latest (Mistral) which tools well
     "recon": Tier.LOW,
     "scanner": Tier.LOW,
     "wireless_operator": Tier.LOW,

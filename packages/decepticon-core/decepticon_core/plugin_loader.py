@@ -38,9 +38,23 @@ import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+
+
+# Cache entry-points lookups per process. The decepticon-core plugin
+# discovery calls ``entry_points(group=...)`` for ~5 groups per
+# agent × 22 agents = ~110 calls during a single import. Each call
+# re-reads distribution metadata for every installed package (199 in
+# the dev venv, ~75K ``read_text`` calls per top-level import). The
+# installed metadata is fixed for the lifetime of the process, so a
+# one-time cache removes the entire 7-8 s plugin-discovery tax.
+@lru_cache(maxsize=None)
+def _cached_entry_points(group: str) -> tuple:
+    """Return ``entry_points(group=group)`` as an immutable tuple, cached forever."""
+    return tuple(entry_points(group=group))
 
 if TYPE_CHECKING:
     from decepticon_core.protocols.agent import AgentProtocol
@@ -378,7 +392,7 @@ def _discover(group: str, role: str | None, **deps: Any) -> list[Any]:
     """Discover entry-point contributions for one group."""
     found: list[Any] = []
     try:
-        eps = list(entry_points(group=group))
+        eps = _cached_entry_points(group)
     except Exception:  # pragma: no cover — importlib quirks across versions
         logger.exception("plugin discovery failed for group %s", group)
         return found
@@ -471,7 +485,7 @@ def load_plugin_prompts(role: str) -> list[Any]:
     """
     found: list[Any] = []
     try:
-        eps = list(entry_points(group=PROMPTS_GROUP))
+        eps = _cached_entry_points(PROMPTS_GROUP)
     except Exception:  # pragma: no cover — importlib quirks
         logger.exception("plugin discovery failed for group %s", PROMPTS_GROUP)
         return found
@@ -526,7 +540,7 @@ def load_plugin_role_specs() -> list[Any]:
     """
     found: list[Any] = []
     try:
-        eps = list(entry_points(group=ROLES_GROUP))
+        eps = _cached_entry_points(ROLES_GROUP)
     except Exception:  # pragma: no cover
         logger.exception("plugin discovery failed for group %s", ROLES_GROUP)
         return found
@@ -561,7 +575,7 @@ def _discover_subagent_specs() -> list[SubAgentSpec]:
     """Discover every ``SubAgentSpec`` exported under ``decepticon.subagents``."""
     found: list[SubAgentSpec] = []
     try:
-        eps = list(entry_points(group=SUBAGENTS_GROUP))
+        eps = _cached_entry_points(SUBAGENTS_GROUP)
     except Exception:  # pragma: no cover
         logger.exception("plugin discovery failed for group %s", SUBAGENTS_GROUP)
         return found
@@ -659,7 +673,7 @@ def load_plugin_agents() -> dict[str, str]:
     """
     found: dict[str, str] = {}
     try:
-        eps = list(entry_points(group=AGENTS_GROUP))
+        eps = _cached_entry_points(AGENTS_GROUP)
     except Exception:  # pragma: no cover
         logger.exception("plugin discovery failed for group %s", AGENTS_GROUP)
         return found
