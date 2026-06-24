@@ -38,6 +38,7 @@ locally-discovered management plane and loads the ruleset.
 from __future__ import annotations
 
 import ipaddress
+import os
 from collections.abc import Iterable
 
 from decepticon.sandbox_kernel.egress import (
@@ -73,6 +74,24 @@ def _norm(addrs: Iterable[str]) -> tuple[str, ...]:
     return tuple(sorted({a for a in addrs if a}))
 
 
+# OSINT search-provider hosts the sandbox may always reach, even under an
+# enforcing in-scope allowlist. `web_search` is OSINT (target-exempt at the RoE
+# tool layer); without this, an enforce-mode engagement's nftables/DNS allowlist
+# — compiled from in_scope only — would drop the provider connection and
+# web_search would silently fail. Mirrors the provider allowlist in
+# decepticon.sandbox_web.providers (kept as a small literal here to avoid the
+# middleware importing the in-sandbox engine). Extend/replace via
+# DECEPTICON_OSINT_EGRESS_HOSTS (comma-separated); set it empty to disable.
+_DEFAULT_OSINT_EGRESS_HOSTS = ("duckduckgo.com", "html.duckduckgo.com")
+
+
+def osint_egress_hosts() -> tuple[str, ...]:
+    raw = os.environ.get("DECEPTICON_OSINT_EGRESS_HOSTS")
+    if raw is None:
+        return _DEFAULT_OSINT_EGRESS_HOSTS
+    return tuple(h.strip() for h in raw.split(",") if h.strip())
+
+
 def compile_egress_policy(rules: MachineEnforcement) -> EgressPolicy:
     """Compile a ``MachineEnforcement`` block into an :class:`EgressPolicy`.
 
@@ -91,6 +110,11 @@ def compile_egress_policy(rules: MachineEnforcement) -> EgressPolicy:
     )
 
     default_drop = enforce and bool(allowed_cidrs or allowed_hosts)
+
+    # Always allow the OSINT search providers so target-exempt web_search reaches
+    # them under an enforcing in-scope allowlist. (No effect when default_drop is
+    # False — nothing is being dropped anyway.)
+    allowed_hosts = (*allowed_hosts, *osint_egress_hosts())
 
     return EgressPolicy(
         enforce=enforce,
