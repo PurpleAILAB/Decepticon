@@ -56,9 +56,10 @@ URL_ALLOWLIST = {
     "httpbin.org",
 }
 
-# Files / dirs that must be clean.
-SCAN_ROOTS_STRICT_OFF = ["engine"]
-SCAN_ROOTS_STRICT_ON = ["engine", "references"]
+# Files / dirs that must be clean. In Decepticon the engine lives at
+# decepticon/sandbox_web/ (upstream insane-search used engine/).
+SCAN_ROOTS_STRICT_OFF = ["sandbox_web"]
+SCAN_ROOTS_STRICT_ON = ["sandbox_web"]
 
 # Directory names skipped during scan (third-party code, build artefacts).
 # `tests` is excluded because test fixtures legitimately use concrete hosts and
@@ -148,7 +149,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     skill_root = Path(args.root) if args.root else Path(__file__).parent.parent
-    scan_roots = SCAN_ROOTS_STRICT_ON if args.strict else SCAN_ROOTS_STRICT_OFF
+    # An explicit --root is scanned DIRECTLY (the dir given is the engine dir);
+    # the default run scans the engine subdir under the package.
+    if args.root:
+        scan_roots = ["."]
+    else:
+        scan_roots = SCAN_ROOTS_STRICT_ON if args.strict else SCAN_ROOTS_STRICT_OFF
 
     total_violations: list[str] = []
     scanned = 0

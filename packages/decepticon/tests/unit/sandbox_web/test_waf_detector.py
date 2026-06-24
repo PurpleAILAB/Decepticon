@@ -8,7 +8,7 @@ from decepticon.sandbox_web import waf_detector
 from decepticon.sandbox_web.waf_detector import (
     detect,
     load_profile,
-    load_profiles,
+    _load_profiles,
 )
 
 
@@ -20,7 +20,7 @@ class _FakeResp:
 
 
 def test_profiles_load_from_yaml() -> None:
-    profiles = load_profiles()
+    profiles = _load_profiles()
     assert "akamai_bot_manager" in profiles
     assert "unknown_challenge" in profiles
     assert waf_detector.last_load_error() is None
@@ -74,11 +74,11 @@ def test_ranking_is_sorted_by_confidence() -> None:
 
 def test_load_profile_falls_back_to_unknown() -> None:
     prof = load_profile("nonexistent_waf")
-    assert prof == load_profiles()["unknown_challenge"]
+    assert prof == _load_profiles()["unknown_challenge"]
 
 
 def test_graceful_fallback_on_missing_yaml() -> None:
-    profiles = load_profiles(path="/nonexistent/waf_profiles.yaml")
+    profiles = _load_profiles(path="/nonexistent/waf_profiles.yaml")
     assert "unknown_challenge" in profiles
     assert profiles["unknown_challenge"]["notes"].startswith("in-code default")
     assert waf_detector.last_load_error() is not None
