@@ -62,6 +62,20 @@ def _build_scope_check(workspace: str | None) -> ScopeCheck | None:
     return _check
 
 
+def _configure_learning_env(workspace: str | None) -> None:
+    """Point the engine's per-host route learning at the engagement workspace so
+    it never writes to ``~/.insane_search`` in the sandbox. Disabled outright
+    when there is no workspace (each fetch is a fresh subprocess; a learned store
+    is only useful when it persists under the engagement)."""
+    if os.environ.get("INSANE_LEARN") is not None or os.environ.get("INSANE_LEARNED_PATH"):
+        return  # caller already configured it
+    if workspace:
+        os.environ["INSANE_LEARNED_PATH"] = str(
+            Path(workspace) / ".scratch" / "web_learned.json")
+    else:
+        os.environ["INSANE_LEARN"] = "0"
+
+
 def _offload_content(content: str, workspace: str | None, tag: str) -> str | None:
     """Write large content to <workspace>/.scratch and return the path, else None."""
     if not workspace:
@@ -87,6 +101,7 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
         max_attempts=args.max_attempts,
         scope_check=scope_check,
         enable_playwright=not args.no_playwright,
+        enable_phase0=not args.no_phase0,
     )
     envelope = result.to_dict()
     content = result.content
@@ -125,6 +140,7 @@ def _cmd_search(args: argparse.Namespace) -> int:
         max_attempts=args.max_attempts,
         scope_check=None,
         enable_playwright=not args.no_playwright,
+        enable_phase0=False,  # a search-provider URL is never a Phase-0 platform
     )
     resp = SearchResponse(provider=provider, query=args.query)
     if not result.ok:
@@ -145,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
     common.add_argument("--timeout", type=int, default=25)
     common.add_argument("--max-attempts", type=int, default=12, dest="max_attempts")
     common.add_argument("--no-playwright", action="store_true")
+    common.add_argument("--no-phase0", action="store_true",
+                        help="skip the official public-API router (Reddit/X/YouTube)")
     common.add_argument("--json", action="store_true", help="(default; reserved)")
 
     # Common opts live ONLY on the subparsers (not the main parser): putting
@@ -167,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     ps.set_defaults(func=_cmd_search)
 
     args = parser.parse_args(argv)
+    _configure_learning_env(args.workspace or _workspace())
     return int(args.func(args))
 
 

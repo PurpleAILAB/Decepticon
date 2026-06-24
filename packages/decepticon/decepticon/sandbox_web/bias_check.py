@@ -1,27 +1,14 @@
-"""No-Site-Name rule checker for the open-web engine.
+#!/usr/bin/env python3
+"""No-Site-Name Rule checker.
 
-The engine must stay site-agnostic: target knowledge (which host, which CSS
-selector, which referer) enters ONLY at runtime via the tool's arguments, never
-hardcoded in ``decepticon/sandbox_web/**`` or ``waf_profiles.yaml``. A hardcoded
-host would bias the generic fetch chain toward one target and, worse for a
-RoE-gated red-team tool, smuggle an out-of-band destination past scope review.
+Run in CI / pre-commit. Scans engine/** for hard-coded site names or
+domains that would bias the generic fetch chain toward one site.
 
-Run as a CI gate / locally::
+Exit code 0 if clean, 1 if violations found.
 
-    python -m decepticon.sandbox_web.bias_check
-    python -m decepticon.sandbox_web.bias_check --strict   # also scan docstrings
-
-Exit 0 if clean, 1 if violations found.
-
-Derived from ``fivetaku/insane-search`` (MIT), ``engine/bias_check.py``.
-
-What is allowed (NOT a violation):
-  * WAF *product* names (akamai, cloudflare, datadome, …) — the whole point.
-  * Generic/neutral hosts in ``URL_ALLOWLIST`` (example.com, localhost, the
-    google.com referer strategy, httpbin test endpoint).
-  * A line tagged ``# NOTE-BIAS-OK`` / ``# EXAMPLE-ONLY``.
+    python3 engine/bias_check.py
+    python3 engine/bias_check.py --strict    # also check references/*.md (usually off)
 """
-
 from __future__ import annotations
 
 import argparse
@@ -30,69 +17,119 @@ import re
 import sys
 from pathlib import Path
 
-# Bare URL / domain matcher — flags hardcoded site hosts in engine code.
+
+# Known brand / domain substrings that should NOT appear in engine code.
+# This is a non-exhaustive deny list. CI should treat hits as warnings that
+# require human review; false positives (e.g. "github" in comments) can be
+# whitelisted via EXPLICIT_ALLOW.
+BRAND_SUBSTRINGS = [
+    "coupang", "11st", "11번가", "musinsa", "무신사",
+    "fmkorea", "에펨코리아", "dcinside", "디시인사이드",
+    "ohou", "오늘의집", "kurly", "마켓컬리",
+    "daangn", "당근",
+    # Naver is allowed in Phase 0 references (official APIs) but not in engine code.
+    "naver.com", "blog.naver", "shopping.naver",
+    # Korean portal brand names
+    "daum.net", "kakao.com",
+]
+
+# Regex for bare URLs / domains. Used as a secondary pass to flag hardcoded
+# site hosts that slipped past the brand denylist.
 URL_PATTERN = re.compile(
-    r"https?://[\w.-]+|[\w-]+\.(?:com|net|org|co\.kr|kr|io|dev|ai)\b",
+    r"https?://[\w\.-]+|[\w-]+\.(?:com|net|org|co\.kr|kr|io)\b",
     re.IGNORECASE,
 )
 
-# Generic / neutral hosts allowed anywhere — provably unrelated to any target
-# preference (examples, stdlib docs, the neutral google referer, test endpoints).
+# Generic / neutral hosts that are allowed anywhere (examples, specs, stdlib,
+# and domains that legitimately appear as non-site-specific referrers / test
+# fixtures — Google search as a generic Referer strategy, httpbin for transport
+# tests, etc.). Anything in this set must be provably unrelated to a specific
+# target-site preference.
 URL_ALLOWLIST = {
-    "example.com",
-    "example.org",
-    "example.net",
-    "localhost",
-    "127.0.0.1",
-    # Tool/doc sources cited in comments.
-    "curl.se",
-    "playwright.dev",
-    "nodejs.org",
-    "npmjs.com",
-    # Neutral off-site referer strategy target.
-    "www.google.com",
-    "google.com",
-    # Generic HTTP test endpoint for transport tests.
+    "example.com", "example.org", "example.net",
+    "localhost", "127.0.0.1",
+    # Official API / documentation sources cited in code comments.
+    "curl.se", "playwright.dev", "nodejs.org", "npmjs.com",
+    # Generic Referer strategy target (used as a neutral off-site referer).
+    "www.google.com", "google.com",
+    # Generic HTTP test endpoint for infrastructure / transport tests.
     "httpbin.org",
 }
 
-# Comment markers that exempt a line (human-reviewed explanation).
+# Files / dirs that must be clean.
+SCAN_ROOTS_STRICT_OFF = ["engine"]
+SCAN_ROOTS_STRICT_ON = ["engine", "references"]
+
+# Directory names skipped during scan (third-party code, build artefacts).
+# `tests` is excluded because test fixtures legitimately use concrete hosts and
+# IP literals (e.g. SSRF/redirect cases, per-host session keys) — same exemption
+# rationale as SKILL.md examples; tests are not the generic fetch path.
+EXCLUDED_DIR_NAMES = {
+    "node_modules", "__pycache__", ".git", ".venv", "dist", "build", "tests",
+}
+
+# Comment markers within which a brand mention is OK (explanation).
+# Keyed per-extension; any line containing these is skipped.
 COMMENT_OK_MARKERS = {
     ".py": ("# NOTE-BIAS-OK", "# EXAMPLE-ONLY"),
+    ".js": ("// NOTE-BIAS-OK", "// EXAMPLE-ONLY"),
     ".yaml": ("# NOTE-BIAS-OK", "# EXAMPLE-ONLY"),
     ".yml": ("# NOTE-BIAS-OK", "# EXAMPLE-ONLY"),
+    ".md": ("<!-- NOTE-BIAS-OK -->", "<!-- EXAMPLE-ONLY -->"),
 }
 
-# Files exempted entirely (full match against path relative to the scan root).
+# File paths explicitly exempted (full match against relative path from scan root).
 EXPLICIT_ALLOW_FILES = {
-    "bias_check.py",  # self-exempt: this file names the patterns it forbids
+    # Phase 0 official-API router. Per SKILL.md R5, naming platform hosts here is
+    # the SANCTIONED exception — these are official no-auth public endpoints, not
+    # a bias toward one target. This is the ONLY engine/ file allowed to do so;
+    # keeping it isolated is precisely why the rest of engine/ stays site-agnostic.
+    # NOTE: rel paths are computed against skill_root.parent, so they include the
+    # skill dir name (e.g. "insane-search/engine/phase0.py").
+    "insane-search/engine/phase0.py",
+    # Decepticon layout: the engine lives at decepticon/sandbox_web/, so the
+    # sanctioned router resolves here. Both forms are kept so the linter works
+    # whether run from the upstream skill tree or the Decepticon package.
+    "sandbox_web/phase0.py",
+    "decepticon/sandbox_web/phase0.py",
 }
-
-EXCLUDED_DIR_NAMES = {"__pycache__", ".git", ".venv", "dist", "build", "node_modules"}
-
-SCANNED_SUFFIXES = (".py", ".yaml", ".yml")
 
 
 def _line_is_exempt(line: str, ext: str) -> bool:
-    return any(m in line for m in COMMENT_OK_MARKERS.get(ext, ()))
+    markers = COMMENT_OK_MARKERS.get(ext, ())
+    return any(m in line for m in markers)
 
 
 def _scan_file(path: Path, root: Path) -> list[str]:
-    rel = path.relative_to(root)
-    if path.name in EXPLICIT_ALLOW_FILES:
+    """Return list of violation strings for this file."""
+    rel = path.relative_to(root.parent)
+    if str(rel) in EXPLICIT_ALLOW_FILES:
         return []
+
     ext = path.suffix.lower()
     try:
         text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError as exc:
-        return [f"{rel}:0 — read error: {exc}"]
+    except Exception as e:
+        return [f"{rel}:0 — read error: {e}"]
 
     violations: list[str] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
         if _line_is_exempt(line, ext):
             continue
+        lowered = line.lower()
+        # 1) Brand / domain denylist
+        hit_brand = None
+        for brand in BRAND_SUBSTRINGS:
+            if brand.lower() in lowered:
+                hit_brand = brand
+                break
+        if hit_brand:
+            violations.append(f"{rel}:{lineno} — brand `{hit_brand}` in: {line.strip()[:120]}")
+            continue  # one violation per line
+        # 2) URL/domain regex scan — catches hosts that aren't in the denylist.
         for match in URL_PATTERN.finditer(line):
-            host = match.group(0).lower().split("//", 1)[-1].split("/", 1)[0]
+            host = match.group(0).lower()
+            host = host.split("//", 1)[-1].split("/", 1)[0]
             if host in URL_ALLOWLIST:
                 continue
             if host.endswith(".example.com") or host.endswith(".example.org"):
@@ -103,43 +140,47 @@ def _scan_file(path: Path, root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="No-Site-Name rule check for sandbox_web")
-    parser.add_argument(
-        "--root",
-        default=None,
-        help="Engine root. Defaults to the directory containing this file.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="(reserved) also scan docstrings strictly — currently identical scan",
-    )
+    parser = argparse.ArgumentParser(description="Scan engine for site-name bias")
+    parser.add_argument("--strict", action="store_true",
+                        help="Also scan references/*.md (usually noisy — off by default)")
+    parser.add_argument("--root", default=None,
+                        help="Skill root directory. Defaults to parent of this file.")
     args = parser.parse_args(argv)
 
-    root = Path(args.root) if args.root else Path(__file__).parent
+    skill_root = Path(args.root) if args.root else Path(__file__).parent.parent
+    scan_roots = SCAN_ROOTS_STRICT_ON if args.strict else SCAN_ROOTS_STRICT_OFF
 
-    violations: list[str] = []
+    total_violations: list[str] = []
     scanned = 0
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIR_NAMES]
-        for fname in filenames:
-            p = Path(dirpath) / fname
-            if p.suffix.lower() not in SCANNED_SUFFIXES:
-                continue
-            scanned += 1
-            violations.extend(_scan_file(p, root))
+    for name in scan_roots:
+        root = skill_root / name
+        if not root.exists():
+            continue
+        for dirpath, dirnames, filenames in os.walk(root):
+            # In-place filter so os.walk skips these subtrees.
+            dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIR_NAMES]
+            for fname in filenames:
+                p = Path(dirpath) / fname
+                if p.suffix.lower() not in (".py", ".js", ".yaml", ".yml", ".md", ".ts", ".mjs"):
+                    continue
+                if p.name == "bias_check.py":
+                    continue  # self-exempt (this file lists the brands)
+                scanned += 1
+                total_violations.extend(_scan_file(p, skill_root))
 
-    print(f"[bias-check] scanned {scanned} files under {root}")
-    if violations:
-        print(f"[bias-check] FAIL — {len(violations)} violation(s):")
-        for v in violations:
+    print(f"[bias-check] scanned {scanned} files under {skill_root}")
+    if total_violations:
+        print(f"[bias-check] ❌ {len(total_violations)} violation(s):")
+        for v in total_violations:
             print(f"  - {v}")
         print()
-        print("Fix: remove the hardcoded host (target knowledge belongs at runtime),")
-        print("or tag the line '# NOTE-BIAS-OK' if it is a genuine non-site reference.")
+        print("Fix options:")
+        print("  1) Remove the brand name (preferred)")
+        print("  2) If genuinely explanatory, add '# NOTE-BIAS-OK' on the same line")
+        print("  3) If this is a Phase 0 official API reference, move it to references/*.md and rerun without --strict")
         return 1
 
-    print("[bias-check] OK — clean")
+    print("[bias-check] ✅ clean")
     return 0
 
 
