@@ -167,7 +167,8 @@ def test_dns_allowlist_lists_in_scope_hosts_only():
         _rules(mode="enforce", in_scope=["*.acme.com", "prod.acme.com", "10.0.0.0/24"])
     )
     allow = set(render_dns_allowlist(pol))
-    assert allow == {"*.acme.com", "prod.acme.com"}
+    # In-scope hosts resolve (alongside the always-allowed OSINT search providers).
+    assert {"*.acme.com", "prod.acme.com"} <= allow
     # CIDRs are an nft concern, not a DNS one.
     assert "10.0.0.0/24" not in allow
 
