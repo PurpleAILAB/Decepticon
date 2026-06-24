@@ -113,25 +113,45 @@ RUN pip3 install --break-system-packages --no-cache-dir \
     "uvicorn>=0.30.0" \
     "deepagents>=0.5.0"
 
-# ── Open-web acquisition engine (ADR-0010) ───────────────────────────
+# ── Open-web acquisition engine (insane-search port, ADR-0010) ───────
 # decepticon/sandbox_web runs HERE, inside the sandbox, so all open-web
-# egress stays in sandbox-net behind the nftables allowlist. Its deps:
-#   * curl_cffi    — TLS-impersonation fetch tier
+# egress stays in sandbox-net behind the nftables allowlist. Python deps:
+#   * curl_cffi>=0.15 — TLS-impersonation fetch tier. 0.15 is REQUIRED by the
+#                    engine: it ships the current Chrome (146+) JA3/JA4
+#                    fingerprint, HTTP/3, and SSRF-safe redirect defaults; older
+#                    pins are fingerprinted as stale and blocked.
 #   * beautifulsoup4 — success-selector proof + DDG result parsing
 #   * pyyaml       — WAF profile loading
-#   * pydantic*    — required by decepticon-core (copied below) so the
-#                    engine's per-hop RoE scope_check (evaluate_target on
-#                    <workspace>/plan/roe.json) is live, not just nftables.
-# The optional Playwright browser tier is NOT installed by default (the
-# engine degrades to UNKNOWN on JS-challenge fallback); enable it in a
-# follow-up build arg if needed.
+#   * yt-dlp       — Phase 0 media route (YouTube/Vimeo/… --dump-json)
+#   * pydantic*    — decepticon-core dep so the per-hop RoE scope_check
+#                    (evaluate_target on <workspace>/plan/roe.json) is live.
 RUN pip3 install --break-system-packages --no-cache-dir \
-    "curl_cffi>=0.7.0" \
+    "curl_cffi>=0.15.0" \
     "beautifulsoup4>=4.12.0" \
     "pyyaml>=6.0.0" \
+    "yt-dlp>=2025.1.1" \
     "pydantic>=2.0.0" \
     "pydantic-settings>=2.0.0" \
     "typing-extensions>=4.0.0"
+
+# Playwright browser tier — the engine's last escalation rung for JS/WAF
+# challenges (Cloudflare Turnstile, Akamai, DataDome) that the curl_cffi grid
+# can't clear. The executor shells the node templates in
+# `decepticon/sandbox_web/templates/` (real Chrome via `channel:'chrome'` +
+# puppeteer-extra stealth). node/npm are already installed above. We install
+# the stealth stack globally and the Chrome channel with its OS deps. Runs
+# headless by default (no X server in the sandbox); set INSANE_HEADLESS=0 with
+# an xvfb wrapper for the headful path that evades headless-detecting WAFs.
+RUN npm install -g --no-fund --no-audit \
+        playwright@^1.58.2 \
+        playwright-extra@^4.3.6 \
+        puppeteer-extra-plugin-stealth@^2.11.2 \
+    && npx --yes playwright install --with-deps chrome \
+    && npm cache clean --force
+# The executor shells `node templates/*.js` from the package dir under
+# PYTHONPATH=/opt; the stealth stack is installed GLOBALLY, so point NODE_PATH at
+# the global module roots (both common prefixes) for `require()` to resolve.
+ENV NODE_PATH=/usr/local/lib/node_modules:/usr/lib/node_modules
 
 # ── Reverse Engineering: Ghidra 12.1 + radare2 + binwalk (opt-in) ──
 #
