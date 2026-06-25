@@ -11,6 +11,9 @@
  * NO-SITE-NAME RULE: same as playwright_real_chrome.js — no hostname branches.
  */
 
+const dns = require('dns').promises;
+const ipaddr = require('ipaddr.js');
+
 function writeStdoutAsync(payload) {
   return new Promise((resolve, reject) => {
     process.stdout.write(payload, (err) => (err ? reject(err) : resolve()));
@@ -41,6 +44,61 @@ async function readStdinJson() {
   });
 }
 
+function isBlockedIp(host) {
+  try {
+    let ip = ipaddr.process(host); // unwrap IPv4-mapped IPv6 addresses
+    if (ip.kind() === 'ipv6' && ip.match(ipaddr.parse('64:ff9b::'), 96)) {
+      const bytes = ip.toByteArray();
+      ip = ipaddr.fromByteArray(bytes.slice(12)); // NAT64 WKP embeds IPv4 in low 32 bits
+    }
+    const range = ip.range();
+    return !['unicast'].includes(range);
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function classifyUrl(candidate, allowPrivate) {
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch (e) {
+    return { ok: false, reason: `parse_error:${e.message || e}` };
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { ok: false, reason: `scheme:${parsed.protocol.replace(':', '') || 'none'}` };
+  }
+  if (allowPrivate) {
+    return { ok: true, reason: 'allow_private' };
+  }
+  const host = parsed.hostname;
+  if (isBlockedIp(host)) {
+    return { ok: false, reason: `ip_blocked:${host}` };
+  }
+  try {
+    const records = await dns.lookup(host, { all: true });
+    for (const record of records) {
+      if (isBlockedIp(record.address)) {
+        return { ok: false, reason: `resolves_internal:${host}->${record.address}` };
+      }
+    }
+  } catch (_e) {
+    return { ok: false, reason: 'resolve_failed_blocked' };
+  }
+  return { ok: true, reason: 'public' };
+}
+
+async function installSafetyGuard(page, allowPrivate) {
+  await page.route('**/*', async (route) => {
+    const check = await classifyUrl(route.request().url(), allowPrivate);
+    if (!check.ok) {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
+}
+
 async function main() {
   const args = await readStdinJson();
   const url = args.url;
@@ -51,6 +109,7 @@ async function main() {
   const waitSelector = args.waitSelector || null;
   const timeoutMs = args.timeout || 60000;
   const headless = args.headless ?? false;
+  const allowPrivate = args.allowPrivate === true;
 
   let chromium, devices;
   let automation = 'playwright';
@@ -90,6 +149,7 @@ async function main() {
       ...dev,
     });
     const page = await ctx.newPage();
+    await installSafetyGuard(page, allowPrivate);
     const deadline = Date.now() + timeoutMs;
     const rem = (cap) => Math.max(1000, Math.min(cap || timeoutMs, deadline - Date.now()));
     const mainResp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: rem(90000) });
