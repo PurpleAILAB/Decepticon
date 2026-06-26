@@ -32,6 +32,9 @@
 <a href="https://docs.decepticon.red">
   <img src="https://img.shields.io/badge/문서-docs.decepticon.red-8B5CF6?logo=bookstack&logoColor=white&style=for-the-badge" alt="Docs">
 </a>
+<a href="https://app.decepticon.red">
+  <img src="https://img.shields.io/badge/라이브%20앱-app.decepticon.red-FF2D55?logo=rocket&logoColor=white&style=for-the-badge" alt="라이브 호스팅 앱">
+</a>
 
 </div>
 
@@ -39,6 +42,18 @@
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/b3fd40d8-e859-4a39-97f4-bd825694ad96" width="800" controls></video>
+</div>
+
+<div align="center">
+
+### ☁️ 직접 설치하기 번거롭다면? **Decepticon이 클라우드에서 라이브로 돌아갑니다.**
+
+Docker 설치 없이 — 브라우저에서 바로 자율 레드팀 엔게이지먼트를 실행하세요.
+
+<a href="https://app.decepticon.red">
+  <img src="https://img.shields.io/badge/라이브%20앱%20실행하기-app.decepticon.red-FF2D55?logo=rocket&logoColor=white&style=for-the-badge" alt="app.decepticon.red 라이브 앱 실행">
+</a>
+
 </div>
 
 ---
