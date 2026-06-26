@@ -270,6 +270,49 @@ def _workspace_from_runtime(runtime: Any) -> str | None:
     return None
 
 
+def _rebind_sandbox_per_run(backend: BackendProtocol) -> BackendProtocol:
+    """Re-resolve the workspace sandbox transport from THIS run's config.
+
+    The agent backend is composed ONCE at construction
+    (``make_agent_backend(build_sandbox_backend())``) — no run context exists
+    yet, so its ``/workspace`` ``HTTPSandbox`` binds to the process-wide env
+    endpoint (``SANDBOX_URL``). In a SHARED langgraph serving many engagements
+    that single endpoint cannot reach a per-engagement sandbox, so every
+    filesystem op (read / write / ls / glob / grep / edit / download) would land
+    in the shared sidecar instead of the run's OWN sandbox — even though the bash
+    tool already routes per-run via ``configurable.sandbox_url`` (see
+    ``tools/bash/bash.py:get_sandbox``). That left bash and the filesystem
+    pointing at different sandboxes for the same run.
+
+    Re-running ``build_sandbox_backend()`` here resolves the endpoint against the
+    current run's config first (``get_config().configurable.sandbox_url`` /
+    ``sandbox_token``) and the env second — so a multi-tenant run reaches its own
+    per-engagement sandbox while single-tenant / dev runs (no per-run url)
+    resolve to the same env endpoint as before (behaviour unchanged). Only the
+    ``/workspace`` default is swapped; ``/skills/`` and any other routes are
+    preserved. Non-sandbox backends (e.g. a plain ``StateBackend`` in tests) are
+    returned untouched.
+    """
+    # Lazy imports: avoid any import-ordering coupling between the middleware and
+    # the backends package, and keep the env-resolution call out of import time.
+    from deepagents.backends import CompositeBackend
+
+    from decepticon.backends import build_sandbox_backend
+    from decepticon.backends.http_sandbox import HTTPSandbox
+
+    if isinstance(backend, HTTPSandbox):
+        return build_sandbox_backend()
+    if isinstance(backend, CompositeBackend) and isinstance(
+        backend.default, HTTPSandbox
+    ):
+        return CompositeBackend(
+            default=build_sandbox_backend(),
+            routes=backend.routes,
+            artifacts_root=backend.artifacts_root,
+        )
+    return backend
+
+
 class FilesystemMiddleware(BaseFilesystemMiddleware):
     """FilesystemMiddleware with Decepticon's bash tool as the only executor."""
 
@@ -278,6 +321,11 @@ class FilesystemMiddleware(BaseFilesystemMiddleware):
         self.tools = filesystem_tools_without_execute(self.tools)
 
     def _get_backend(self, runtime) -> BackendProtocol:
+        # Resolve the sandbox transport PER-RUN (config.sandbox_url) before
+        # wrapping it in the engagement workspace scoper, so a shared langgraph
+        # routes each engagement's filesystem ops to ITS OWN sandbox — matching
+        # the bash tool. See _rebind_sandbox_per_run.
         return EngagementFilesystemBackend(
-            super()._get_backend(runtime), _workspace_from_runtime(runtime)
+            _rebind_sandbox_per_run(super()._get_backend(runtime)),
+            _workspace_from_runtime(runtime),
         )

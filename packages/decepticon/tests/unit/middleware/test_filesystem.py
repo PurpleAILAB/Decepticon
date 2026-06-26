@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from deepagents.backends import CompositeBackend
 from deepagents.backends.protocol import (
     EditResult,
     FileDownloadResponse,
@@ -12,9 +13,11 @@ from deepagents.backends.protocol import (
 )
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
+from decepticon.backends.http_sandbox import HTTPSandbox
 from decepticon.middleware.filesystem import (
     EngagementFilesystemBackend,
     FilesystemMiddleware,
+    _rebind_sandbox_per_run,
     _workspace_from_runtime,
 )
 
@@ -616,4 +619,82 @@ def test_filesystem_middleware_get_backend_wraps_in_engagement_backend() -> None
     result = mw._get_backend(_FakeRuntime())
 
     assert isinstance(result, EngagementFilesystemBackend)
+    assert result._root == "/workspace/eng"
+
+
+def test_rebind_passes_through_non_sandbox_backend() -> None:
+    """A plain (non-sandbox) backend is returned untouched — single-tenant /
+    dev / test setups that don't use ``HTTPSandbox`` are never rebound."""
+    backend = RecordingBackend()
+    assert _rebind_sandbox_per_run(backend) is backend
+
+
+def test_rebind_reresolves_bare_http_sandbox_per_run(monkeypatch) -> None:
+    """A bare ``HTTPSandbox`` (the construction-time env endpoint) is replaced
+    by the per-run resolution of ``build_sandbox_backend()`` — which consults
+    ``configurable.sandbox_url`` first, env second."""
+    per_run = HTTPSandbox("http://per-run-vm:9999", token="t")
+    monkeypatch.setattr("decepticon.backends.build_sandbox_backend", lambda: per_run)
+
+    env = HTTPSandbox("http://shared-sidecar:9999")
+    assert _rebind_sandbox_per_run(env) is per_run
+
+
+def test_rebind_swaps_composite_default_preserving_routes(monkeypatch) -> None:
+    """For the real agent backend — a ``CompositeBackend`` whose ``/workspace``
+    default is the env ``HTTPSandbox`` and whose ``/skills/`` route reads the
+    local tree — only the workspace default is re-resolved per-run. The
+    ``/skills/`` route and ``artifacts_root`` are preserved, and the cached
+    construction-time composite is left untouched."""
+    per_run = HTTPSandbox("http://per-run-vm:9999", token="t")
+    monkeypatch.setattr("decepticon.backends.build_sandbox_backend", lambda: per_run)
+
+    skills = RecordingBackend()
+    env = HTTPSandbox("http://shared-sidecar:9999")
+    composite = CompositeBackend(
+        default=env, routes={"/skills/": skills}, artifacts_root="/art"
+    )
+
+    rebound = _rebind_sandbox_per_run(composite)
+
+    assert isinstance(rebound, CompositeBackend)
+    assert rebound.default is per_run  # workspace transport re-resolved per-run
+    assert rebound.routes == {"/skills/": skills}  # /skills route preserved
+    assert rebound.artifacts_root == "/art"  # artifacts_root preserved
+    assert composite.default is env  # original (cached) composite untouched
+
+
+def test_rebind_leaves_composite_with_non_sandbox_default_untouched(monkeypatch) -> None:
+    """A composite whose default is NOT a sandbox (e.g. a dev StateBackend) is
+    returned unchanged — we never inject a sandbox where there wasn't one."""
+    monkeypatch.setattr(
+        "decepticon.backends.build_sandbox_backend",
+        lambda: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    state_like = RecordingBackend()
+    composite = CompositeBackend(default=state_like, routes={"/skills/": RecordingBackend()})
+
+    assert _rebind_sandbox_per_run(composite) is composite
+
+
+def test_get_backend_reresolves_sandbox_transport_per_run(monkeypatch) -> None:
+    """End-to-end: a shared langgraph (one construction-time composite bound to
+    the env sidecar) re-resolves each run's filesystem transport to that run's
+    own sandbox before scoping it to the engagement workspace."""
+    per_run = HTTPSandbox("http://per-run-vm:9999", token="t")
+    monkeypatch.setattr("decepticon.backends.build_sandbox_backend", lambda: per_run)
+
+    env = HTTPSandbox("http://shared-sidecar:9999")
+    composite = CompositeBackend(default=env, routes={"/skills/": RecordingBackend()})
+
+    class _FakeRuntime:
+        state = {}
+        config = {"configurable": {"workspace_path": "/workspace/eng"}}
+
+    mw = FilesystemMiddleware(backend=composite)
+    result = mw._get_backend(_FakeRuntime())
+
+    assert isinstance(result, EngagementFilesystemBackend)
+    assert isinstance(result._backend, CompositeBackend)
+    assert result._backend.default is per_run  # routed to THIS run's sandbox
     assert result._root == "/workspace/eng"
