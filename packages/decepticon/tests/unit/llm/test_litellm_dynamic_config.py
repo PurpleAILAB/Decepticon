@@ -250,6 +250,9 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
         # yaml edit. The ``oauth-`` slug sentinel is required because
         # ``gpt-5.3-codex`` is in ``open_ai_chat_completion_models``.
         "auth/gpt-5.3-codex": {"model": "codex-oauth/oauth-gpt-5.3-codex"},
+        "auth/gpt-5.3-codex-spark": {
+            "model": "codex-oauth/oauth-gpt-5.3-codex-spark",
+        },
     }
     assert "auth/gpt-5-nano" not in entries
     assert merged["litellm_settings"]["fallbacks"] == [
