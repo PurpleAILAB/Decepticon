@@ -203,6 +203,15 @@ class StreamingRunnable(RunnableBinding):
         # per-instance state outside the declared field schema.
         object.__setattr__(self, "_consecutive_failures", 0)
 
+    def with_config(self, config: Any = None, **kwargs: Any) -> "StreamingRunnable":
+        rebound = super().with_config(config, **kwargs)
+        object.__setattr__(
+            rebound,
+            "_consecutive_failures",
+            int(getattr(self, "_consecutive_failures", 0)),
+        )
+        return rebound
+
     def _bump_failure_and_format(self, exc: BaseException) -> str:
         """Increment the failure counter; return the message body for the
         returned state. Switches to a distinct TERMINAL marker once the cap
