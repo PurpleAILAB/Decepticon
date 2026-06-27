@@ -651,9 +651,7 @@ def test_rebind_swaps_composite_default_preserving_routes(monkeypatch) -> None:
 
     skills = RecordingBackend()
     env = HTTPSandbox("http://shared-sidecar:9999")
-    composite = CompositeBackend(
-        default=env, routes={"/skills/": skills}, artifacts_root="/art"
-    )
+    composite = CompositeBackend(default=env, routes={"/skills/": skills}, artifacts_root="/art")
 
     rebound = _rebind_sandbox_per_run(composite)
 

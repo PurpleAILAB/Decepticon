@@ -302,9 +302,7 @@ def _rebind_sandbox_per_run(backend: BackendProtocol) -> BackendProtocol:
 
     if isinstance(backend, HTTPSandbox):
         return build_sandbox_backend()
-    if isinstance(backend, CompositeBackend) and isinstance(
-        backend.default, HTTPSandbox
-    ):
+    if isinstance(backend, CompositeBackend) and isinstance(backend.default, HTTPSandbox):
         return CompositeBackend(
             default=build_sandbox_backend(),
             routes=backend.routes,
