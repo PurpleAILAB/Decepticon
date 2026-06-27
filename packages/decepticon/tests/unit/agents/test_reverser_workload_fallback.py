@@ -7,6 +7,10 @@ _PROMPTS = _REPO_ROOT / "packages/decepticon/decepticon/agents/prompts/standard"
 _REVERSER_AGENT = _REPO_ROOT / "packages/decepticon/decepticon/agents/standard/reverser.py"
 
 _REVERSER_SKILL = _REPO_ROOT / "packages/decepticon/decepticon/skills/standard/reverser/SKILL.md"
+_VIRTUALIZED_SKILL = (
+    _REPO_ROOT
+    / "packages/decepticon/decepticon/skills/standard/reverser/virtualized-protectors/SKILL.md"
+)
 
 
 def test_orchestrator_dispatches_reverser_for_no_workload_triage() -> None:
@@ -36,3 +40,25 @@ def test_reverser_skill_catalog_names_radare2_fallback() -> None:
 
     assert "Radare2" in skill
     assert "bin_r2_script" in skill
+
+
+def test_reverser_routes_vmprotect_vmp2_themida_workflow() -> None:
+    prompt = (_PROMPTS / "reverser.md").read_text()
+    catalog = _REVERSER_SKILL.read_text()
+
+    assert "VMProtect / VMP2 / Themida" in prompt
+    assert "/skills/standard/reverser/virtualized-protectors/SKILL.md" in catalog
+    assert "VMProtect / VMP2 / Themida" in catalog
+
+
+def test_virtualized_protectors_skill_captures_backengineering_workflow() -> None:
+    skill = _VIRTUALIZED_SKILL.read_text()
+
+    assert "Back Engineering Labs" in skill
+    assert "VMProtect 2" in skill
+    assert "Themida" in skill
+    assert "VMEnter" in skill
+    assert "VIP" in skill
+    assert "VMEXIT" in skill
+    assert "Avoid brittle VM-handler pattern matching" in skill
+    assert "incremental lifting and control-flow recovery" in skill

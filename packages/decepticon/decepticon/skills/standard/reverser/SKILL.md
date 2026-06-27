@@ -1,10 +1,10 @@
 ---
 name: reverser-overview
-description: Root pointer for the binary reversing lane. Covers triage, Radare2 fallback, string extraction, packer unpacking, symbol risk, ROP, Ghidra deep analysis, and firmware extraction.
+description: Root pointer for the binary reversing lane. Covers triage, Radare2 fallback, string extraction, packer unpacking, virtualized protectors, symbol risk, ROP, Ghidra deep analysis, and firmware extraction.
 metadata:
   subdomain: reverse-engineering
-  when_to_use: "reverser binary reversing triage strings packer unpack rop ghidra firmware overview routing"
-  upstream_ref: "Decepticon reverser lane catalog — Ghidra, Radare2, AFL++, libFuzzer, binwalk, and binary triage tooling"
+  when_to_use: "reverser binary reversing triage strings packer unpack rop ghidra firmware VMProtect VMP2 Themida virtualized protectors overview routing"
+  upstream_ref: "Decepticon reverser lane catalog — Ghidra, Radare2, Back Engineering VMProtect/Themida research, AFL++, libFuzzer, binwalk, and binary triage tooling"
 ---
 
 # Reverser Skill Catalog
@@ -15,6 +15,7 @@ metadata:
 | `/skills/standard/reverser/triage/SKILL.md`            | First-pass ELF/PE/Mach-O triage |
 | `/skills/standard/reverser/firmware/SKILL.md`          | Router / IoT firmware extraction |
 | `/skills/standard/reverser/packer-unpacking/SKILL.md`  | UPX / ASPack / Themida / VMProtect |
+| `/skills/standard/reverser/virtualized-protectors/SKILL.md` | VMProtect / VMP2 / Themida workflow |
 | `/skills/standard/reverser/rop-chain/SKILL.md`         | Gadget hunting for exploit dev |
 | `/skills/standard/reverser/anti-debug-bypass/SKILL.md` | IsDebuggerPresent, ptrace, NtGlobalFlag |
 | `/skills/standard/reverser/ghidra/SKILL.md`            | Deep Ghidra analysis — decompile, xrefs, imports, P-code |
