@@ -4,7 +4,7 @@ description: "Microsoft 365 mailbox compromise chain — OAuth consent phishing,
 metadata:
   subdomain: cloud
   when_to_use: "m365 microsoft 365 office 365 mailbox compromise oauth consent phishing device code phishing delegate access mail rule forwarding application impersonation exchange online token theft email collection outlook graph api"
-  mitre_attack: "T1528 T1098.002 T1114.002 T1137"
+  mitre_attack: "T1528, T1098.002, T1114.002, T1137"
   tags: "cloud m365 oauth phishing email-collection persistence"
 ---
 

@@ -4,7 +4,7 @@ description: "GCP organization-level privilege escalation — cross-project pivo
 metadata:
   subdomain: cloud
   when_to_use: "gcp google cloud organization escalation privilege cross-project pivot service account impersonation org policy bypass terraform state gke cluster iam enumeration gcloud resource manager bigquery cloud function"
-  mitre_attack: "T1078.004 T1580"
+  mitre_attack: "T1078.004, T1580"
   tags: "cloud gcp privilege-escalation org-level cross-project"
 ---
 
