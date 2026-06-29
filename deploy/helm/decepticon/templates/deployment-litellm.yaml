@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "decepticon.fullname" . }}-litellm
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  replicas: {{ .Values.litellm.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "decepticon.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: litellm
+  template:
+    metadata:
+      labels:
+        {{- include "decepticon.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: litellm
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "decepticon.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: litellm
+          image: {{ include "decepticon.image" (dict "image" .Values.litellm.image "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.litellm.port }}
+              protocol: TCP
+          env:
+            - name: LITELLM_MASTER_KEY
+              value: {{ .Values.litellm.env.LITELLM_MASTER_KEY | quote }}
+            - name: LITELLM_SALT_KEY
+              value: {{ .Values.litellm.env.LITELLM_SALT_KEY | quote }}
+            - name: DATABASE_URL
+              value: {{ include "decepticon.postgresDSN" . | quote }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.litellm.healthcheck.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.litellm.healthcheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.litellm.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.litellm.healthcheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.litellm.healthcheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.litellm.healthcheck.path }}
+              port: http
+            periodSeconds: {{ .Values.litellm.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.litellm.healthcheck.timeoutSeconds }}
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

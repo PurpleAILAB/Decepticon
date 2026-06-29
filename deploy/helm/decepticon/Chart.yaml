@@ -1,0 +1,22 @@
+apiVersion: v2
+name: decepticon
+description: >-
+  Decepticon — AI-driven offensive security platform.
+  Deploys LiteLLM proxy, LangGraph agent API, sandbox runner,
+  and Neo4j knowledge graph as a coordinated Kubernetes stack.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - pentest
+  - ai
+  - red-team
+  - langgraph
+  - litellm
+home: https://github.com/PurpleAILab/Decepticon
+sources:
+  - https://github.com/PurpleAILab/Decepticon
+maintainers:
+  - name: PurpleAI Lab
+    url: https://github.com/PurpleAILab

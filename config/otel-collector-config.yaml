@@ -1,0 +1,97 @@
+# OpenTelemetry Collector configuration for Decepticon.
+# Receives traces and metrics from LangGraph/LiteLLM services,
+# processes them (batching, attribute enrichment), and exports
+# to Prometheus (metrics) and Tempo/Jaeger (traces).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Scrape Prometheus metrics from LiteLLM's /metrics endpoint
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: litellm
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["litellm:4000"]
+          metrics_path: /metrics
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Add deployment metadata to all telemetry
+  resource:
+    attributes:
+      - key: service.namespace
+        value: decepticon
+        action: upsert
+      - key: deployment.environment
+        value: ${env:DECEPTICON_ENVIRONMENT:-dev}
+        action: upsert
+
+  # Drop high-cardinality span attributes that bloat storage
+  attributes/sanitize:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.x-api-key
+        action: delete
+      - key: db.statement
+        action: hash
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Prometheus remote-write for Grafana
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # OTLP exporter for traces → Tempo
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+  # Debug exporter (disabled in production)
+  debug:
+    verbosity: basic
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/sanitize, batch, resource]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheusremotewrite]
+
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      address: 0.0.0.0:8888

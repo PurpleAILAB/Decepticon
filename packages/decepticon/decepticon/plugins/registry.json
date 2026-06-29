@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Decepticon plugin marketplace registry",
+  "version": "1.0.0",
+  "plugins": [
+    {
+      "name": "vuln-enricher",
+      "version": "0.3.0",
+      "description": "Enriches findings with CVE/CPE data from NVD, EPSS scores, and KEV status",
+      "author": "PurpleAI Lab",
+      "license": "AGPL-3.0",
+      "category": "enrichment",
+      "entry_point": "decepticon_vuln_enricher.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0"],
+      "tags": ["cve", "nvd", "epss", "kev", "vulnerability"],
+      "homepage": "https://github.com/PurpleAILab/decepticon-vuln-enricher"
+    },
+    {
+      "name": "c2-cobalt-strike",
+      "version": "0.2.0",
+      "description": "Cobalt Strike C2 integration — beacon management, listener control, and payload generation",
+      "author": "PurpleAI Lab",
+      "license": "AGPL-3.0",
+      "category": "c2",
+      "entry_point": "decepticon_c2_cs.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0"],
+      "tags": ["c2", "cobalt-strike", "beacon", "red-team"],
+      "homepage": "https://github.com/PurpleAILab/decepticon-c2-cobalt-strike"
+    },
+    {
+      "name": "report-generator",
+      "version": "0.4.0",
+      "description": "Generates pentest reports from engagement findings — PDF, DOCX, and HTML formats",
+      "author": "PurpleAI Lab",
+      "license": "AGPL-3.0",
+      "category": "reporting",
+      "entry_point": "decepticon_reports.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0", "weasyprint>=62.0"],
+      "tags": ["report", "pdf", "compliance", "findings"],
+      "homepage": "https://github.com/PurpleAILab/decepticon-report-generator"
+    },
+    {
+      "name": "nuclei-scanner",
+      "version": "0.1.0",
+      "description": "ProjectDiscovery Nuclei integration — template-driven vulnerability scanning from the sandbox",
+      "author": "Community",
+      "license": "MIT",
+      "category": "scanner",
+      "entry_point": "decepticon_nuclei.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0"],
+      "tags": ["nuclei", "scanner", "templates", "projectdiscovery"],
+      "homepage": "https://github.com/community/decepticon-nuclei"
+    },
+    {
+      "name": "caldera-bridge",
+      "version": "0.1.0",
+      "description": "MITRE Caldera adversary emulation bridge — import/export operations and ability mapping",
+      "author": "Community",
+      "license": "Apache-2.0",
+      "category": "emulation",
+      "entry_point": "decepticon_caldera.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0"],
+      "tags": ["caldera", "mitre", "adversary-emulation", "att&ck"],
+      "homepage": "https://github.com/community/decepticon-caldera-bridge"
+    },
+    {
+      "name": "jira-sync",
+      "version": "0.2.0",
+      "description": "Bi-directional sync of findings and remediation tasks with Jira",
+      "author": "Community",
+      "license": "MIT",
+      "category": "integration",
+      "entry_point": "decepticon_jira.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0", "jira>=3.8"],
+      "tags": ["jira", "ticketing", "remediation", "integration"],
+      "homepage": "https://github.com/community/decepticon-jira-sync"
+    },
+    {
+      "name": "sigma-rules",
+      "version": "0.1.0",
+      "description": "Generate and validate Sigma detection rules from engagement TTPs",
+      "author": "Community",
+      "license": "LGPL-2.1",
+      "category": "detection",
+      "entry_point": "decepticon_sigma.plugin:register",
+      "min_decepticon_version": "1.0.0",
+      "dependencies": ["decepticon-core>=1.0.0", "pySigma>=0.11"],
+      "tags": ["sigma", "detection", "blue-team", "siem"],
+      "homepage": "https://github.com/community/decepticon-sigma-rules"
+    }
+  ]
+}

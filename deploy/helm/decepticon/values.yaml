@@ -1,0 +1,143 @@
+# -- Global settings
+global:
+  imageRegistry: ghcr.io/purpleailab
+  imageTag: stable
+  imagePullPolicy: IfNotPresent
+  # -- Pull secrets for private registries
+  imagePullSecrets: []
+
+# -- LiteLLM Proxy — LLM API Gateway
+litellm:
+  replicaCount: 1
+  image:
+    repository: decepticon-litellm
+  port: 4000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  env:
+    LITELLM_MASTER_KEY: sk-decepticon-master
+    LITELLM_SALT_KEY: sk-decepticon-salt
+  healthcheck:
+    path: /health/readiness
+    initialDelaySeconds: 120
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 12
+
+# -- LangGraph Platform — Agent API Server
+langgraph:
+  replicaCount: 1
+  image:
+    repository: decepticon-langgraph
+  port: 2024
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  env:
+    DECEPTICON_LLM__PROXY_URL: http://decepticon-litellm:4000
+    DECEPTICON_LLM__PROXY_API_KEY: sk-decepticon-master
+    SANDBOX_URL: http://decepticon-sandbox:9999
+    DECEPTICON_NEO4J_URI: bolt://decepticon-neo4j:7687
+    DECEPTICON_NEO4J_USER: neo4j
+    DECEPTICON_USE_SKILLOGY: "1"
+  healthcheck:
+    path: /ok
+    initialDelaySeconds: 60
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 12
+
+# -- Sandbox — Isolated red-team tool runner
+sandbox:
+  replicaCount: 1
+  image:
+    repository: decepticon-sandbox
+  port: 9999
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  securityContext:
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+
+# -- Neo4j — Attack chain knowledge graph
+neo4j:
+  enabled: true
+  image:
+    repository: neo4j
+    tag: 5.26-community
+  auth:
+    username: neo4j
+    password: decepticon-graph
+  ports:
+    bolt: 7687
+    http: 7474
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  config:
+    heapInitialSize: 64m
+    heapMaxSize: 256m
+    pagecacheSize: 64m
+    plugins: '["apoc"]'
+    apocAllowlist: >-
+      apoc.coll.*,apoc.text.*,apoc.path.*,apoc.create.*,
+      apoc.merge.*,apoc.refactor.*,apoc.periodic.iterate,
+      apoc.lock.*,apoc.case,apoc.do.case,apoc.do.when,apoc.when,
+      apoc.help,apoc.version,apoc.diff.*,apoc.label.*,
+      apoc.node.*,apoc.nodes.*,apoc.rel.*,apoc.util.*
+
+# -- PostgreSQL (external)
+# The chart assumes an external Postgres. Set the connection string.
+postgres:
+  host: ""
+  port: 5432
+  database: litellm
+  username: decepticon
+  password: decepticon
+  # -- Use an existing secret instead of plaintext password
+  existingSecret: ""
+  existingSecretKey: password
+
+# -- Network policies
+networkPolicy:
+  enabled: true
+
+# -- Service account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# -- Pod annotations applied to all workloads
+podAnnotations: {}
+
+# -- Node selector applied to all workloads
+nodeSelector: {}
+
+# -- Tolerations applied to all workloads
+tolerations: []
+
+# -- Affinity rules applied to all workloads
+affinity: {}

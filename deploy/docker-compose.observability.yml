@@ -1,0 +1,99 @@
+# Observability sidecar stack for Decepticon.
+# Usage: docker compose -f docker-compose.yml -f deploy/docker-compose.observability.yml up -d
+#
+# Adds: OpenTelemetry Collector, Prometheus, Tempo, Grafana.
+# The main stack's services export OTLP to the collector; Grafana
+# dashboards visualize engagement metrics, LLM spend, and traces.
+
+x-logging: &obs-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.104.0
+    container_name: decepticon-otel-collector
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ../config/otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    ports:
+      - "127.0.0.1:4317:4317"   # OTLP gRPC
+      - "127.0.0.1:4318:4318"   # OTLP HTTP
+      - "127.0.0.1:13133:13133" # Health check
+    environment:
+      - DECEPTICON_ENVIRONMENT=${DECEPTICON_ENVIRONMENT:-dev}
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+    logging: *obs-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:13133"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: decepticon-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-remote-write-receiver"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+    logging: *obs-logging
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: decepticon-tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - tempo_data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"  # Tempo query frontend
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+    logging: *obs-logging
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: decepticon-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-decepticon}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3100}:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+    networks:
+      - decepticon-net
+    restart: unless-stopped
+    logging: *obs-logging
+
+volumes:
+  prometheus_data:
+  tempo_data:
+  grafana_data:
+
+networks:
+  decepticon-net:
+    external: true
+    name: decepticon_decepticon-net

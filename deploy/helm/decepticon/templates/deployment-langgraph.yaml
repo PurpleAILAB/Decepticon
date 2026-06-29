@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "decepticon.fullname" . }}-langgraph
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: langgraph
+spec:
+  replicas: {{ .Values.langgraph.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "decepticon.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: langgraph
+  template:
+    metadata:
+      labels:
+        {{- include "decepticon.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: langgraph
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "decepticon.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: langgraph
+          image: {{ include "decepticon.image" (dict "image" .Values.langgraph.image "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.langgraph.port }}
+              protocol: TCP
+          env:
+            - name: DECEPTICON_LLM__PROXY_URL
+              value: {{ .Values.langgraph.env.DECEPTICON_LLM__PROXY_URL | quote }}
+            - name: DECEPTICON_LLM__PROXY_API_KEY
+              value: {{ .Values.langgraph.env.DECEPTICON_LLM__PROXY_API_KEY | quote }}
+            - name: SANDBOX_URL
+              value: {{ .Values.langgraph.env.SANDBOX_URL | quote }}
+            - name: DECEPTICON_NEO4J_URI
+              value: {{ .Values.langgraph.env.DECEPTICON_NEO4J_URI | quote }}
+            - name: DECEPTICON_NEO4J_USER
+              value: {{ .Values.langgraph.env.DECEPTICON_NEO4J_USER | quote }}
+            {{- if .Values.neo4j.enabled }}
+            - name: DECEPTICON_NEO4J_PASSWORD
+              value: {{ .Values.neo4j.auth.password | quote }}
+            {{- end }}
+            - name: DECEPTICON_USE_SKILLOGY
+              value: {{ .Values.langgraph.env.DECEPTICON_USE_SKILLOGY | quote }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.langgraph.healthcheck.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.langgraph.healthcheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.langgraph.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.langgraph.healthcheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.langgraph.healthcheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.langgraph.healthcheck.path }}
+              port: http
+            periodSeconds: {{ .Values.langgraph.healthcheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.langgraph.healthcheck.timeoutSeconds }}
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.langgraph.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

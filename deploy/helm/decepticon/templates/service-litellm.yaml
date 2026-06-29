@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "decepticon.fullname" . }}-litellm
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.litellm.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "decepticon.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "decepticon.fullname" . }}-langgraph
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: langgraph
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.langgraph.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "decepticon.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: langgraph
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "decepticon.fullname" . }}-sandbox
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.sandbox.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "decepticon.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+{{- if .Values.neo4j.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "decepticon.fullname" . }}-neo4j
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ .Values.neo4j.ports.bolt }}
+      targetPort: bolt
+      protocol: TCP
+      name: bolt
+    - port: {{ .Values.neo4j.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "decepticon.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+{{- end }}

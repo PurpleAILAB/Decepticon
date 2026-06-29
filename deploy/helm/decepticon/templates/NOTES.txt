@@ -1,0 +1,15 @@
+Decepticon has been deployed to namespace {{ .Release.Namespace }}.
+
+Services:
+  LiteLLM API Gateway : {{ include "decepticon.fullname" . }}-litellm:{{ .Values.litellm.port }}
+  LangGraph Agent API : {{ include "decepticon.fullname" . }}-langgraph:{{ .Values.langgraph.port }}
+  Sandbox Runner      : {{ include "decepticon.fullname" . }}-sandbox:{{ .Values.sandbox.port }}
+{{- if .Values.neo4j.enabled }}
+  Neo4j (Bolt)        : {{ include "decepticon.fullname" . }}-neo4j:{{ .Values.neo4j.ports.bolt }}
+{{- end }}
+
+To verify the deployment:
+  kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }}
+
+To port-forward the LangGraph API locally:
+  kubectl port-forward svc/{{ include "decepticon.fullname" . }}-langgraph {{ .Values.langgraph.port }}:{{ .Values.langgraph.port }} -n {{ .Release.Namespace }}

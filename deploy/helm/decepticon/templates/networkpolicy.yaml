@@ -1,0 +1,71 @@
+{{- if .Values.networkPolicy.enabled }}
+# -- Sandbox isolation: sandbox pods can only talk to neo4j (bolt)
+# and receive connections from langgraph. No egress to litellm or postgres.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "decepticon.fullname" . }}-sandbox-isolation
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "decepticon.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: sandbox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow inbound from langgraph only
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "decepticon.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: langgraph
+      ports:
+        - protocol: TCP
+          port: {{ .Values.sandbox.port }}
+  egress:
+    # DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.neo4j.enabled }}
+    # Allow outbound to neo4j bolt only
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "decepticon.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: neo4j
+      ports:
+        - protocol: TCP
+          port: {{ .Values.neo4j.ports.bolt }}
+    {{- end }}
+---
+# -- LiteLLM: only langgraph may reach it
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "decepticon.fullname" . }}-litellm-access
+  labels:
+    {{- include "decepticon.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "decepticon.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: litellm
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "decepticon.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: langgraph
+      ports:
+        - protocol: TCP
+          port: {{ .Values.litellm.port }}
+{{- end }}
