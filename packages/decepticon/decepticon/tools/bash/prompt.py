@@ -172,10 +172,27 @@ sessions and `background=True` instead.
 - `137` — killed (OOM or size limit) → redirect output to a file
 - `143` — terminated externally
 
-## File Creation
+## File Creation & Reads
 
 ALWAYS use `write_file` for file creation. NEVER `cat > file << EOF` —
 it echoes content back as tool output and wastes context.
+
+- `write_file` requires non-empty `content`; calling it with only `file_path`
+  fails schema validation and wastes the turn. For a large artifact (a full
+  report) write it in sections — one `write_file` then `edit_file` to append
+  the rest — rather than one oversized call. An oversized single `content` is
+  the case a model most often drops or truncates, leaving the call invalid.
+- Before `read_file`, confirm the path EXISTS and is a file: `ls` the
+  directory and read only what it returns. Never read a path before the bash
+  command or `write_file` that creates it has SUCCEEDED, and never invent an
+  artifact name you have not written — guessed names (`dns.txt`, `api.txt`,
+  `fingerprint.txt`) just return `file_not_found` and burn the turn. `read_file`
+  targets a file, not a directory (`ls` the directory instead).
+- Anything you must re-read on a later turn, or hand to another agent, MUST
+  live under the engagement workspace (`/workspace/...`) — it persists there.
+  `/tmp` is session-local scratch: fine for a transient extract inside one bash
+  session, but gone on a later turn or for a different agent, so a `read_file`
+  / `cat` of a `/tmp` path written earlier elsewhere returns not-found.
 
 ## Sandbox Bash Anti-patterns
 
