@@ -4,7 +4,7 @@ description: "Threat-informed adversary emulation — pick a real APT, load its 
 allowed-tools: Bash Read Write
 metadata:
   subdomain: adversary-emulation
-  when_to_use: "adversary emulation, emulate APT, threat actor, threat-informed, mimic adversary, APT29 APT28 APT33 APT34 APT41 Lazarus FIN7 Sandworm Volt Typhoon Scattered Spider, purple team, ATT&CK evaluation, TTP replay"
+  when_to_use: "adversary emulation, emulate APT, threat actor, threat-informed, mimic adversary, APT29 APT28 APT33 APT34 APT41 Lazarus FIN7 Sandworm Volt Typhoon Scattered Spider Salt Typhoon Turla MuddyWater APT36 APT37 Mustang Panda Dark Caracal Patchwork Pink Sandstorm APT10 Kimsuky SideWinder, purple team, ATT&CK evaluation, TTP replay"
   tags: adversary-emulation, threat-intel, mitre-attack, apt, purple-team, ttp, threat-informed
   mitre_attack: T1566, T1078, T1059, T1071, T1021, T1486
 ---
@@ -70,6 +70,18 @@ and `kill-chain-analysis` (which scores detection across the chain).
 | `sandworm-team` | Voodoo Bear, Seashell Blizzard | Russia (GRU) | Destructive / disruptive | NotPetya, Ukraine power-grid attacks, ICS |
 | `volt-typhoon` | Vanguard Panda, Insidious Taurus | China | Pre-positioning | Living-off-the-land in US critical infrastructure |
 | `scattered-spider` | UNC3944, Octo Tempest, Muddled Libra | Financially motivated | Financial / extortion | Help-desk social engineering, SIM-swap, MFA fatigue |
+| `salt-typhoon` | Earth Estries, GhostEmperor, FamousSparrow | China | Espionage / pre-positioning | Edge-device exploitation, telecom targeting, DEMODEX rootkit |
+| `turla` | Venomous Bear, Secret Blizzard, KRYPTON | Russia (FSB) | Espionage | Snake rootkit, satellite C2, hijacking other APTs' infra |
+| `muddywater` | Mercury, Mango Sandstorm, Static Kitten | Iran (MOIS) | Espionage | PowerShell RATs, RMM tool abuse, Middle-East targeting |
+| `apt36-transparent-tribe` | Transparent Tribe, Mythic Leopard, ProjectM | Pakistan | Espionage | CrimsonRAT, Android mobile malware, India-focused targeting |
+| `apt37-reaper` | ScarCruft, Ricochet Chollima, InkySquid | North Korea | Espionage / surveillance | RoKRAT, zero-day browser exploits, defector surveillance |
+| `mustang-panda` | Bronze President, Stately Taurus, RedDelta | China | Espionage | PlugX/DLL side-loading, USB propagation, SE Asia targeting |
+| `dark-caracal` | — | Lebanon (GDGS) | Espionage / surveillance | Bandook RAT, multi-platform (Win/Mac/Android/Linux) |
+| `patchwork` | Dropping Elephant, Chinastrats, Hangover | India | Espionage | BADNEWS RAT, copy-paste tradecraft, South Asia targeting |
+| `pink-sandstorm` | Agrius, DEV-0227 | Iran | Destructive / espionage | Apostle wiper, destructive ops disguised as ransomware |
+| `apt10-stone-panda` | Stone Panda, MenuPass, Red Apollo | China (MSS) | Espionage / IP theft | Cloud Hopper supply-chain, MSP targeting |
+| `kimsuky` | Velvet Chollima, Emerald Sleet, THALLIUM | North Korea (RGB) | Espionage | BabyShark, credential phishing of think tanks/academia |
+| `sidewinder` | Rattlesnake, T-APT-04, Razor Tiger | India | Espionage | LNK chains, .NET implants, Pakistan military targeting |
 
 > Profiles are grounded in MITRE ATT&CK group pages + public advisories; each lists
 > its sources. ATT&CK technique IDs are the source of truth — verify against

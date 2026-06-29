@@ -1,0 +1,23 @@
+name: apt-grid-full
+provider: dreadgoad
+lab_profile: GOAD
+rounds: 3
+parallel: 2
+timeout_per_run_seconds: 10800
+langgraph_url: http://localhost:2024
+agents: [decepticon]
+# Full APT persona grid — all 12 adversary emulation personas × 3 rounds.
+# Estimated cloud cost: $150–300 (isolated mode) or $15–30 (shared mode).
+personas:
+  - apt28
+  - apt29
+  - apt41
+  - apt44
+  - lazarus
+  - salt-typhoon
+  - turla
+  - muddywater
+  - apt10
+  - kimsuky
+  - apt36
+  - mustang-panda
