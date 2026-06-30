@@ -10,8 +10,8 @@ Agent tool surface (Phase 1a, three tools — see Amendment v0.2.2)
   Returns each match's name, path, subdomain, description, plus the
   matched MITRE IDs and tags so the agent sees *why* the skill came
   back.
-- ``load_skill(name_or_path)`` — fetch the full body + frontmatter of
-  one ``:Skill`` node. Accepts either a unique ``name`` or the
+- ``load_skill(name_or_path)`` — fetch the body of one ``:Skill`` node
+  (metadata is search-side, returned by ``find_skill``). Accepts either a unique ``name`` or the
   canonical ``/skills/.../SKILL.md`` path.
 - ``traverse(from_path, edge_types?, depth=2)`` — explicit graph
   walking from a Skill seed along a whitelisted edge set.
@@ -88,8 +88,10 @@ Three tools:
         query     → substring on name / description / when_to_use
       Returns name, path, subdomain, description, matched_mitre, matched_tags.
   • load_skill(name_or_path)
-      Fetch one SKILL.md's body + frontmatter. Accept a unique frontmatter
-      `name` (e.g. 'kerberoasting') or the canonical '/skills/.../SKILL.md' path.
+      Fetch one SKILL.md's body (the content only — metadata like subdomain /
+      tags / when_to_use is search-side, surfaced by find_skill). Accept a
+      unique frontmatter `name` (e.g. 'kerberoasting') or the canonical
+      '/skills/.../SKILL.md' path.
   • traverse(from_path, edge_types?, depth=2)
       BFS from a Skill seed along the edge whitelist
       (IN_PHASE, IMPLEMENTS, TAGGED, BELONGS_TO, RELATED_TO,
