@@ -72,8 +72,9 @@ def test_middleware_load_skill_tool_returns_body():
     backend = _FakeBackend()
     mw = SkillogyMiddleware(backend=backend, append_policy_to_system=False)
     result = _tools_by_name(mw)["load_skill"].invoke({"name_or_path": "/skills/ad/k"})
-    payload = json.loads(result)
-    assert "# Body of /skills/ad/k" in payload["body"]
+    # Body-only contract: the result is the skill BODY as plain markdown (with a
+    # minimal name/path header), NOT a JSON envelope — metadata is search-side.
+    assert "# Body of /skills/ad/k" in result
     assert backend.load_calls[0] == "/skills/ad/k"
 
 
