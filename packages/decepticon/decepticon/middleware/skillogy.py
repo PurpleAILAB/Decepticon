@@ -187,11 +187,16 @@ def _make_load_skill_tool(backend, allowed_path_prefixes: list[str] | None = Non
 
     @tool
     def load_skill(name_or_path: str) -> str:
-        """Fetch one SKILL.md's body + metadata from the skillogy graph.
+        """Fetch one SKILL.md's body from the skillogy graph.
 
         Accepts either a unique frontmatter ``name`` (e.g. 'kerberoasting')
-        or the canonical ``/skills/.../SKILL.md`` path. Returns the full
-        body + frontmatter fields as JSON.
+        or the canonical ``/skills/.../SKILL.md`` path. Returns the skill
+        BODY with a minimal name/path header — the other node properties
+        (subdomain, when_to_use, tags, MITRE/aatmf, allowed_tools …) exist to
+        FIND the skill via ``find_skill``; once it is loaded the agent only
+        needs the content, so they are omitted to keep the reading context
+        lean. Mirrors the filesystem ``load_skill`` (which strips frontmatter
+        and returns the body) so both backends read identically.
         """
         try:
             if name_or_path.startswith("/skills/"):
@@ -209,7 +214,18 @@ def _make_load_skill_tool(backend, allowed_path_prefixes: list[str] | None = Non
                 props = backend.load_skill(exact[0]["path"], **_acl_kwargs)
             if props is None:
                 return json.dumps({"error": f"no Skill at path {name_or_path!r}"})
-            return json.dumps(props, ensure_ascii=False, default=str)
+            # Body only (+ minimal header). Metadata props are search-side
+            # (find_skill); dumping them into the agent's context on every load
+            # is noise. Header mirrors the filesystem load_skill's format.
+            body = str(props.get("body") or "")
+            path = str(props.get("path") or name_or_path)
+            base_dir = path.rsplit("/", 1)[0] if "/" in path else "/"
+            name = str(props.get("name") or "")
+            description = str(props.get("description") or "").strip()
+            header = f"Base directory for this skill: {base_dir}\nSkill: {name}" + (
+                f" — {description}" if description else ""
+            )
+            return f"{header}\n\n{body.rstrip()}\n"
         except Exception as exc:  # noqa: BLE001 — surface as ToolMessage payload
             return json.dumps({"error": f"load_skill failed: {exc!r}"})
 

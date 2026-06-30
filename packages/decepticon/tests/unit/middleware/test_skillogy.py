@@ -257,23 +257,39 @@ class TestFindSkillTool:
 
 
 class TestLoadSkillTool:
-    def test_path_route_returns_props(self) -> None:
-        backend = _StubBackend(load_response={"name": "x", "body": "..."})
+    def test_path_route_returns_body_only(self) -> None:
+        backend = _StubBackend(
+            load_response={
+                "name": "x",
+                "path": "/skills/x/SKILL.md",
+                "body": "BODY-CONTENT",
+                "subdomain": "web-exploitation",
+            }
+        )
         tool = _make_load_skill_tool(backend)
         out = tool.invoke({"name_or_path": "/skills/x/SKILL.md"})
-        data = json.loads(out)
-        assert data == {"name": "x", "body": "..."}
+        # Body only (+ minimal header) — NOT a JSON props dump, and the
+        # search-side metadata (subdomain) must NOT leak into the reading context.
+        assert not out.strip().startswith("{")
+        assert "BODY-CONTENT" in out
+        assert "Skill: x" in out
+        assert "web-exploitation" not in out
         assert backend.load_calls == ["/skills/x/SKILL.md"]
 
     def test_name_route_resolves_via_find_then_loads(self) -> None:
         # find_skill returns a hit; load_skill is then called with the hit's path.
         backend = _StubBackend(
             find_response=[{"name": "kerberoasting", "path": "/skills/ad/k/SKILL.md"}],
-            load_response={"name": "kerberoasting", "body": "kerb body"},
+            load_response={
+                "name": "kerberoasting",
+                "path": "/skills/ad/k/SKILL.md",
+                "body": "kerb body",
+            },
         )
         tool = _make_load_skill_tool(backend)
-        data = json.loads(tool.invoke({"name_or_path": "kerberoasting"}))
-        assert data["name"] == "kerberoasting"
+        out = tool.invoke({"name_or_path": "kerberoasting"})
+        assert "kerb body" in out
+        assert "Skill: kerberoasting" in out
         # find_skill was hit first (name route), then load_skill with the path.
         assert backend.find_calls and backend.find_calls[0]["query"] == "kerberoasting"
         assert backend.load_calls == ["/skills/ad/k/SKILL.md"]
