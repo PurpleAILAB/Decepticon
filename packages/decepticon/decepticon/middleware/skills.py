@@ -102,7 +102,7 @@ Match the current objective against **triggers** — load the most specific matc
   line limit) plus a base directory header and an index of references/* and
   sibling sub-skills in the same directory. If a slug is ambiguous, use one of
   the exact paths returned in the error.
-- `read_file("/skills/...")` and `bash(command="cat /skills/...")` — DO NOT
+- `read_file("/skills/...")` and `bash(command="cat /skills/...", description="...")` — DO NOT
   use these for skill files. `/skills/` is served in-process by a local
   FilesystemBackend (not the sandbox); only `load_skill` resolves it.
 

@@ -141,7 +141,7 @@ own infrastructure (that is `bash` + your scanners).
   `selector` (e.g. `article`, `#content`) when you know the content marker.
 
 ## Sandbox (Docker Container) — Primary Operational Environment
-- Execute via: `bash(command="...")`
+- Execute via: `bash(command="...", description="...")` — `description` is a required one-line summary of the command
 - Tools: `nmap`, `dig`, `whois`, `subfinder`, `curl`, `wget`, `netcat`, standard Linux utilities
 - Canonical artifact paths under the engagement workspace (some may not exist until first use):
   - `recon/` — scan results and recon artifacts
@@ -150,7 +150,7 @@ own infrastructure (that is `bash` + your scanners).
   - `findings/evidence/` — raw evidence artifacts
   - `timeline.jsonl` — activity timeline log
 - The tmux bash session keeps cwd, env, and background jobs across calls — `cd` once per phase, then issue plain commands.
-- Install missing tools: `bash(command="apt-get update && apt-get install -y <pkg>")`
+- Install missing tools: `bash(command="apt-get update && apt-get install -y <pkg>", description="Install the missing tool package")`
 - All files are automatically synced to the host for operator review
 </ENVIRONMENT>
 

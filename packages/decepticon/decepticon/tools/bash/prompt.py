@@ -19,17 +19,25 @@ active engagement workspace supplied by the launcher.
 ### bash() — execute a command
 
 ```
-bash(command, session="main", background=False, timeout=120, is_input=False, description="")
+bash(command, description, session="main", background=False, timeout=120, is_input=False)
 ```
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
 | `command` | `""` | Shell command. Empty = read current screen |
+| `description` | **REQUIRED** | One-line summary of what the command does and why. See the rule below |
 | `session` | `"main"` | Different names = parallel sessions. Use a dedicated name for background jobs |
 | `background` | `False` | Start without waiting. Returns `[BACKGROUND]` immediately |
 | `timeout` | `120` | Upper bound on blocking. Foreground commands **auto-background at 60s**, so values >60 never take effect; only set <60 to give up sooner |
 | `is_input` | `False` | True ONLY when sending input to a waiting interactive process |
-| `description` | `""` | Short UI label |
+
+**`description` is REQUIRED on EVERY `bash()` call.** It is a short, one-line
+summary of what the command does and why you are running it (e.g.
+`description="Scan the top 1000 ports on the target"`). It drives the operator
+UI's "Run <description>" line, so write it for a human reading the engagement
+feed — not the raw command. Because it is now a required schema argument,
+omitting it fails validation and wastes the entire turn. Never leave it blank
+and never call `bash()` without it.
 
 Return-value markers from `bash()`:
 - normal output (single PS1 cycle, ≤15K chars) — command finished, returned inline
@@ -110,9 +118,9 @@ sessions have INDEPENDENT cwd.
 Use a dedicated session for each long-running command. Keep `main`
 free for ad-hoc foreground checks while a heavy scan runs:
 ```
-bash(command="nmap -sV --top-ports 1000 target", session="nmap", background=True)
-bash(command="dig target", session="main")
-bash(command="curl -sI target", session="main")
+bash(command="nmap -sV --top-ports 1000 target", session="nmap", background=True, description="Scan the top 1000 ports on the target")
+bash(command="dig target", session="main", description="Resolve the target's DNS records")
+bash(command="curl -sI target", session="main", description="Fetch the target's HTTP response headers")
 # ... continue work — you'll be notified when nmap finishes
 ```
 
@@ -157,9 +165,9 @@ grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
 
 The tool auto-detects waiting prompts:
 ```
-bash(command="sliver-client console", session="c2")
-bash(command="https -l 443", is_input=True, session="c2")
-bash(command="C-c", is_input=True, session="c2")  # Ctrl+C
+bash(command="sliver-client console", session="c2", description="Open the Sliver client console")
+bash(command="https -l 443", is_input=True, session="c2", description="Start an HTTPS listener on port 443")
+bash(command="C-c", is_input=True, session="c2", description="Send Ctrl+C to the console")  # Ctrl+C
 ```
 
 NEVER start with `is_input=True`. NEVER use `nohup ... &` — use named

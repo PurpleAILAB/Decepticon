@@ -107,6 +107,7 @@ def test_bash_background_uses_engagement_workspace_context():
                     "command": "sleep 1",
                     "background": True,
                     "session": "scan",
+                    "description": "Sleep in the background",
                 }
             )
         )
@@ -126,7 +127,7 @@ def test_bash_uses_engagement_workspace_from_environment(monkeypatch):
     set_sandbox(sandbox)
     monkeypatch.setenv("DECEPTICON_ENGAGEMENT", "env-engagement")
 
-    result = asyncio.run(bash.ainvoke({"command": "pwd"}))
+    result = asyncio.run(bash.ainvoke({"command": "pwd", "description": "Print working directory"}))
 
     sandbox.execute_tmux_async.assert_called_once_with(
         command="pwd",
@@ -146,7 +147,7 @@ def test_large_output_without_engagement_workspace_does_not_create_root_scratch(
 
     result = asyncio.run(
         bash.ainvoke(
-            {"command": "big"},
+            {"command": "big", "description": "Produce large output"},
             config={"configurable": {"workspace_path": "/workspace"}},
         )
     )

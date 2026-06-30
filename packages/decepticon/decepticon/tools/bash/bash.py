@@ -440,7 +440,8 @@ async def bash(
     session: str = "main",
     timeout: int = 120,
     background: bool = False,
-    description: str = "",
+    *,
+    description: str,
     config: RunnableConfig | None = None,
 ) -> str:
     """Execute a bash command in a persistent tmux session inside the Docker sandbox.
@@ -458,7 +459,9 @@ async def bash(
             60s are auto-backgrounded regardless.
         background: Start a long-running command without waiting. Use a dedicated
             session name (not "main"). Check results later with bash_output.
-        description: Short label for UI display.
+        description: REQUIRED. A short one-line summary of what the command does and
+            why. Drives the operator UI's "Run <description>" line. Omitting it fails
+            schema validation and wastes the turn.
     """
     _sandbox = get_sandbox(config)
     if _sandbox is None:

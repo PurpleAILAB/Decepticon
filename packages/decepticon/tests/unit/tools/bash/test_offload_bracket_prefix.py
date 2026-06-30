@@ -44,7 +44,7 @@ def test_bracket_prefixed_real_output_is_offloaded(prefix):
 
     result = asyncio.run(
         bash.ainvoke(
-            {"command": "nuclei -u http://target"},
+            {"command": "nuclei -u http://target", "description": "Run nuclei against the target"},
             config={"configurable": {"workspace_path": "/workspace"}},
         )
     )
@@ -61,7 +61,7 @@ def test_status_prefixed_synthetic_output_is_not_offloaded(status_prefix):
 
     result = asyncio.run(
         bash.ainvoke(
-            {"command": ""},
+            {"command": "", "description": "Read the current screen"},
             config={"configurable": {"workspace_path": "/workspace"}},
         )
     )
@@ -77,7 +77,7 @@ def test_non_bracket_large_output_is_offloaded():
 
     result = asyncio.run(
         bash.ainvoke(
-            {"command": "cat big.txt"},
+            {"command": "cat big.txt", "description": "Print a large file"},
             config={"configurable": {"workspace_path": "/workspace"}},
         )
     )
