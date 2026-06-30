@@ -108,9 +108,7 @@ class SandboxError(RuntimeError):
     pass
 
 
-def _retry_on_connection_error(
-    fn, max_total_delay=150.0, base_delay=0.5, max_delay=8.0
-):
+def _retry_on_connection_error(fn, max_total_delay=150.0, base_delay=0.5, max_delay=8.0):
     """Retry a function on httpx connection errors with capped exponential backoff.
 
     Only ``ConnectError`` / ``ConnectTimeout`` are retried — both mean the TCP
