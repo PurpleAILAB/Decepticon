@@ -125,9 +125,29 @@ def test_ops_available_false_when_socket_absent(tmp_path, monkeypatch) -> None:
     assert ops_available() is False
 
 
-def test_ops_available_true_when_socket_present(tmp_path, monkeypatch) -> None:
-    # `decepticon start` topology — the daemon bind-mounted the socket.
+def test_ops_available_false_when_socket_node_but_no_daemon(tmp_path, monkeypatch) -> None:
+    # A stale/leftover node at the path (or an unrelated file in a hosted
+    # container) must NOT count: no daemon is accepting, so a connect fails and
+    # the ops_* tools must stay unregistered. This is the hosted-SaaS case where
+    # a bare os.path.exists wrongly registered the tools and they then failed at
+    # call time with opscontrol_unreachable.
     present = tmp_path / "present.sock"
-    present.write_text("")  # any node at the path counts as the capability grant
+    present.write_text("")  # a plain file — exists, but nothing listens
     monkeypatch.setenv(SOCKET_PATH_ENV, str(present))
-    assert ops_available() is True
+    assert ops_available() is False
+
+
+def test_ops_available_true_when_daemon_accepting(tmp_path, monkeypatch) -> None:
+    # `decepticon start` topology — a live daemon is bound to + accepting on the
+    # socket. Only a successful connect flips this True.
+    import socket as _socket
+
+    sock_path = tmp_path / "live.sock"
+    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    try:
+        server.bind(str(sock_path))
+        server.listen(1)
+        monkeypatch.setenv(SOCKET_PATH_ENV, str(sock_path))
+        assert ops_available() is True
+    finally:
+        server.close()

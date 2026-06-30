@@ -13,6 +13,7 @@ Sandbox SDK) use for UDS-only control planes.
 from __future__ import annotations
 
 import os
+import socket as _socket
 from typing import Any
 
 import httpx
@@ -27,18 +28,33 @@ def resolve_socket_path() -> str:
 
 
 def ops_available() -> bool:
-    """True when the opscontrol daemon socket is present.
+    """True when the opscontrol daemon is actually REACHABLE.
 
-    The socket file is the ADR-0006 capability grant: it exists only when the
-    stack was brought up via ``decepticon start`` (the daemon bind-mounts it
-    into the langgraph container). Daemon-less topologies — ``make dev`` /
-    ``make smoke``, and hosted deployments that manage workload teardown
-    externally (no opscontrol on the runtime) — have no socket, so the
-    ``ops_*`` tools have nothing to talk to. Registering them there only lets
-    the orchestrator call a tool that can return ``opscontrol_unreachable``;
+    The socket is the ADR-0006 capability grant: a live daemon listens on it
+    only when the stack was brought up via ``decepticon start`` (the daemon
+    bind-mounts it into the langgraph container). Daemon-less topologies —
+    ``make dev`` / ``make smoke``, and hosted deployments that manage workload
+    teardown externally (no opscontrol on the runtime) — have no live daemon,
+    so the ``ops_*`` tools have nothing to talk to. Registering them there only
+    lets the orchestrator call a tool that returns ``opscontrol_unreachable``;
     gating registration on this check keeps the toolset honest per topology.
+
+    A bare ``os.path.exists`` is NOT enough: a stale/leftover socket inode (or a
+    path that exists for an unrelated reason in a hosted container) passes the
+    file check while no daemon answers, so the tools get registered and then
+    fail at call time. We require an actual UDS *connect* to succeed — only a
+    live, accepting daemon flips this True.
     """
-    return os.path.exists(resolve_socket_path())
+    path = resolve_socket_path()
+    if not os.path.exists(path):
+        return False
+    try:
+        with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            sock.connect(path)
+        return True
+    except OSError:
+        return False
 
 
 class OpsControlError(RuntimeError):
