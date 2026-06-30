@@ -21,6 +21,26 @@ DEFAULT_SOCKET_PATH = "/var/run/decepticon-ops.sock"
 SOCKET_PATH_ENV = "DECEPTICON_OPSCONTROL_SOCK"
 
 
+def resolve_socket_path() -> str:
+    """The opscontrol socket path for this process (env override → default)."""
+    return os.environ.get(SOCKET_PATH_ENV, DEFAULT_SOCKET_PATH)
+
+
+def ops_available() -> bool:
+    """True when the opscontrol daemon socket is present.
+
+    The socket file is the ADR-0006 capability grant: it exists only when the
+    stack was brought up via ``decepticon start`` (the daemon bind-mounts it
+    into the langgraph container). Daemon-less topologies — ``make dev`` /
+    ``make smoke``, and hosted deployments that manage workload teardown
+    externally (no opscontrol on the runtime) — have no socket, so the
+    ``ops_*`` tools have nothing to talk to. Registering them there only lets
+    the orchestrator call a tool that can return ``opscontrol_unreachable``;
+    gating registration on this check keeps the toolset honest per topology.
+    """
+    return os.path.exists(resolve_socket_path())
+
+
 class OpsControlError(RuntimeError):
     """Daemon returned a non-2xx HTTP response."""
 
