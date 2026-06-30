@@ -25,6 +25,7 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 HEADER_MAX_CHARS = 60
+MAX_OPTIONS = 6
 RECOMMENDED_SUFFIX = " (Recommended)"
 
 
@@ -128,10 +129,10 @@ def ask_user_question(
         list[QuestionOption],
         BeforeValidator(_coerce_options_list),
         Field(
-            max_length=5,
+            max_length=MAX_OPTIONS,
             description=(
-                "0–5 choices. Each entry needs a label (operator-facing, returned) "
-                "and a description (one-line clarifier). Provide 2–4 plausible "
+                "0–6 choices. Each entry needs a label (operator-facing, returned) "
+                "and a description (one-line clarifier). Provide 2–6 plausible "
                 "guesses even for open-ended questions; the operator picks one or "
                 "types a custom answer via the Other fallback. Never include an "
                 "'Other' option here — set allow_other=True instead. May be left "
@@ -155,7 +156,7 @@ def ask_user_question(
     Args:
         question: The full question text shown to the operator.
         header: ≤60-char label for the picker chrome.
-        options: 2–5 entries, each ``{label, description}``.
+        options: 2–6 entries, each ``{label, description}``.
         multi_select: If True, the operator may pick multiple options and the
             return value is ``list[str]``.
         allow_other: If True, the picker appends an ``Other`` entry that opens

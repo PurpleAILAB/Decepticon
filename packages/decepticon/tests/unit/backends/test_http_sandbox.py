@@ -118,6 +118,48 @@ def test_retry_exhausts_reraises_connect_timeout(monkeypatch: pytest.MonkeyPatch
         _retry_on_connection_error(always_fail)
 
 
+def test_retry_rides_out_sandbox_boot_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A per-engagement sandbox can refuse connections for 1-2 min while it
+    boots. The retry budget must outlast that window — far more than the old
+    3-attempt cap — so the agent's first tool call survives the boot."""
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(
+        "decepticon.backends.http_sandbox.time.sleep", lambda d: sleep_calls.append(d)
+    )
+    sentinel = object()
+    attempts: list[int] = []
+
+    def booting() -> object:
+        attempts.append(1)
+        # Refuse for the first 15 attempts (would blow the old max_retries=3).
+        if len(attempts) <= 15:
+            raise httpx.ConnectError("[Errno 111] Connection refused")
+        return sentinel
+
+    result = _retry_on_connection_error(booting)
+    assert result is sentinel
+    assert len(attempts) == 16
+    # Backoff is capped (no unbounded growth) so the loop keeps probing.
+    assert max(sleep_calls) <= 8.0
+
+
+def test_retry_budget_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A genuinely dead sandbox must still surface within the time budget —
+    the cumulative (intended) backoff stays within max_total_delay."""
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(
+        "decepticon.backends.http_sandbox.time.sleep", lambda d: sleep_calls.append(d)
+    )
+
+    def always_fail() -> None:
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(httpx.ConnectError):
+        _retry_on_connection_error(always_fail, max_total_delay=30.0, max_delay=8.0)
+    assert sum(sleep_calls) <= 30.0
+    assert max(sleep_calls) <= 8.0
+
+
 def test_request_wraps_http_status_error_as_sandbox_error() -> None:
     sb = HTTPSandbox(base_url="http://localhost:9999")
     _inject_client(sb, _make_handler(500, None))

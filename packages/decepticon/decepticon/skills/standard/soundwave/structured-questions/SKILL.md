@@ -24,7 +24,7 @@ through this tool.
 ## When to call `ask_user_question`
 
 EVERY operator-facing question. There is no prose-question path. Provide
-2–5 best-guess options for the dimension and always set `allow_other=true`
+2–6 best-guess options for the dimension and always set `allow_other=true`
 so the operator can override with a custom answer when none of your
 predefined options fit.
 

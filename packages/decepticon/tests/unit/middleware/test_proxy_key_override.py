@@ -162,6 +162,7 @@ def test_declares_proxy_api_key_state_channel() -> None:
 
     assert ProxyKeyOverrideMiddleware.state_schema is ProxyKeyState
     assert "proxy_api_key" in ProxyKeyState.__annotations__
-    # Extends AgentState so the agent's own channels (messages, …) survive the
-    # schema merge.
-    assert issubclass(ProxyKeyState, AgentState)
+    # ``AgentState`` is a TypedDict; runtime ``issubclass`` checks raise on
+    # newer typing_extensions. Check the structural merge that matters instead.
+    for key, annotation in AgentState.__annotations__.items():
+        assert ProxyKeyState.__annotations__[key] == annotation
