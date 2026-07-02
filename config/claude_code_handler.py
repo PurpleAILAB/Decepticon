@@ -291,6 +291,36 @@ def _cap_cache_control(system_blocks: list[dict[str, Any]], max_blocks: int = 4)
             del block["cache_control"]
 
 
+def _add_conversation_cache_control(
+    api_messages: list[dict[str, Any]], max_breakpoints: int = 1
+) -> None:
+    """Cache the conversation prefix (tool-result / history bulk), not just the
+    system prompt. Stamp ``cache_control`` on the last content block of the
+    final message: one tail breakpoint is enough because Anthropic's ≤20-block
+    lookback matches the previous turn's prefix and serves it at 0.1×, writing
+    only the new delta (incremental / auto-advancing caching). Strings are
+    promoted to a text block (Anthropic ignores message-level cache_control on
+    string content). Stays within the global 4-breakpoint budget — the system
+    prompt is capped to leave room (see the call site)."""
+    stamped = 0
+    for msg in reversed(api_messages):
+        if stamped >= max_breakpoints:
+            break
+        content = msg.get("content")
+        if isinstance(content, str):
+            if not content:
+                continue
+            msg["content"] = [
+                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+            ]
+            stamped += 1
+        elif isinstance(content, list) and content:
+            last_blk = content[-1]
+            if isinstance(last_blk, dict):
+                last_blk["cache_control"] = {"type": "ephemeral"}
+                stamped += 1
+
+
 class ClaudeCodeCustomHandler(CustomLLM):
     """LiteLLM custom handler that routes requests through Claude Code OAuth.
 
@@ -463,7 +493,11 @@ class ClaudeCodeCustomHandler(CustomLLM):
 
         # Build Anthropic Messages API request body
         opts = optional_params or {}
-        _cap_cache_control(system_blocks)
+        # Global cap is 4 cache_control breakpoints. Reserve 1 for the
+        # conversation tail (below) so the 58:1 tool-result/history bulk gets
+        # cached, not just the system prompt; cap the system to the other 3.
+        _cap_cache_control(system_blocks, max_blocks=3)
+        _add_conversation_cache_control(api_messages, max_breakpoints=1)
 
         request_body: dict[str, Any] = {
             "model": actual_model,
@@ -629,6 +663,13 @@ class ClaudeCodeCustomHandler(CustomLLM):
         usage_data = data.get("usage") or {}
         input_tokens = usage_data.get("input_tokens") or 0
         output_tokens = usage_data.get("output_tokens") or 0
+        # Anthropic reports *non-cached* input in ``input_tokens``; cached-prefix
+        # reads and cache writes are separate buckets. LiteLLM's cost path derives
+        # text_tokens = prompt_tokens − cache buckets, so prompt_tokens MUST include
+        # them or cache tokens are dropped from spend logs and cost clamps wrong.
+        cache_creation_tokens = usage_data.get("cache_creation_input_tokens") or 0
+        cache_read_tokens = usage_data.get("cache_read_input_tokens") or 0
+        prompt_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
 
         # Map finish_reason: tool_use → tool_calls (OpenAI convention)
         stop_reason = data.get("stop_reason", "end_turn")
@@ -648,9 +689,14 @@ class ClaudeCodeCustomHandler(CustomLLM):
                 }
             ],
             usage={
-                "prompt_tokens": input_tokens,
+                # ``Usage(**usage)`` maps these top-level Anthropic cache fields
+                # onto ``prompt_tokens_details`` + top-level attrs, so LiteLLM's
+                # generic cost path prices cache reads (0.1×) / writes (1.25×).
+                "prompt_tokens": prompt_tokens,
                 "completion_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
+                "total_tokens": prompt_tokens + output_tokens,
+                "cache_creation_input_tokens": cache_creation_tokens,
+                "cache_read_input_tokens": cache_read_tokens,
             },
         )
 
@@ -744,11 +790,20 @@ class ClaudeCodeCustomHandler(CustomLLM):
                     }
                 )
 
-        usage = {
+        usage: dict[str, Any] = {
             "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
             "total_tokens": response.usage.total_tokens if response.usage else 0,
         }
+        # Propagate cache buckets so litellm's stream_chunk_builder records + prices
+        # them on the completed streaming response (it reads these keys directly).
+        if response.usage is not None:
+            _cc = getattr(response.usage, "cache_creation_input_tokens", None)
+            _cr = getattr(response.usage, "cache_read_input_tokens", None)
+            if _cc:
+                usage["cache_creation_input_tokens"] = _cc
+            if _cr:
+                usage["cache_read_input_tokens"] = _cr
 
         chunks: list[dict[str, Any]] = []
 
