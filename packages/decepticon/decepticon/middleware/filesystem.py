@@ -270,7 +270,7 @@ def _workspace_from_runtime(runtime: Any) -> str | None:
     return None
 
 
-def _rebind_sandbox_per_run(backend: BackendProtocol) -> BackendProtocol:
+def _rebind_sandbox_per_run(backend: BackendProtocol, runtime: Any = None) -> BackendProtocol:
     """Re-resolve the workspace sandbox transport from THIS run's config.
 
     The agent backend is composed ONCE at construction
@@ -285,13 +285,19 @@ def _rebind_sandbox_per_run(backend: BackendProtocol) -> BackendProtocol:
     pointing at different sandboxes for the same run.
 
     Re-running ``build_sandbox_backend()`` here resolves the endpoint against the
-    current run's config first (``get_config().configurable.sandbox_url`` /
-    ``sandbox_token``) and the env second — so a multi-tenant run reaches its own
-    per-engagement sandbox while single-tenant / dev runs (no per-run url)
-    resolve to the same env endpoint as before (behaviour unchanged). Only the
-    ``/workspace`` default is swapped; ``/skills/`` and any other routes are
-    preserved. Non-sandbox backends (e.g. a plain ``StateBackend`` in tests) are
-    returned untouched.
+    current run's config first (``configurable.sandbox_url`` / ``sandbox_token``)
+    and the env second — so a multi-tenant run reaches its own per-engagement
+    sandbox while single-tenant / dev runs (no per-run url) resolve to the same
+    env endpoint as before (behaviour unchanged). Only the ``/workspace`` default
+    is swapped; ``/skills/`` and any other routes are preserved. Non-sandbox
+    backends (e.g. a plain ``StateBackend`` in tests) are returned untouched.
+
+    ``runtime`` is the middleware runtime passed by ``_get_backend``. We forward
+    its ``runtime.config`` explicitly to ``build_sandbox_backend`` so the endpoint
+    is resolved from the run config the middleware ALREADY holds — reliable inside
+    a SUB-AGENT, where the ambient ``get_config()`` contextvar is not seeded and
+    would otherwise fall back to the env sidecar (that split filesystem ops from
+    the bash tool, which reads its injected config and reached the run's own VM).
     """
     # Lazy imports: avoid any import-ordering coupling between the middleware and
     # the backends package, and keep the env-resolution call out of import time.
@@ -300,11 +306,12 @@ def _rebind_sandbox_per_run(backend: BackendProtocol) -> BackendProtocol:
     from decepticon.backends import build_sandbox_backend
     from decepticon.backends.http_sandbox import HTTPSandbox
 
+    config = getattr(runtime, "config", None)
     if isinstance(backend, HTTPSandbox):
-        return build_sandbox_backend()
+        return build_sandbox_backend(config)
     if isinstance(backend, CompositeBackend) and isinstance(backend.default, HTTPSandbox):
         return CompositeBackend(
-            default=build_sandbox_backend(),
+            default=build_sandbox_backend(config),
             routes=backend.routes,
             artifacts_root=backend.artifacts_root,
         )
@@ -324,6 +331,6 @@ class FilesystemMiddleware(BaseFilesystemMiddleware):
         # routes each engagement's filesystem ops to ITS OWN sandbox — matching
         # the bash tool. See _rebind_sandbox_per_run.
         return EngagementFilesystemBackend(
-            _rebind_sandbox_per_run(super()._get_backend(runtime)),
+            _rebind_sandbox_per_run(super()._get_backend(runtime), runtime),
             _workspace_from_runtime(runtime),
         )

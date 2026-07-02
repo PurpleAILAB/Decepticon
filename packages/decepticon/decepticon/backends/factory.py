@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import functools
 import os
+from typing import Any
 
 from decepticon.backends.http_sandbox import HTTPSandbox
 
@@ -43,34 +44,57 @@ def _shared_sandbox(base_url: str, token: str | None) -> HTTPSandbox:
     return HTTPSandbox(base_url=base_url, token=token)
 
 
-def _resolve_endpoint() -> tuple[str, str | None]:
+def _endpoint_from_configurable(configurable: Any) -> tuple[str | None, str | None]:
+    """Extract ``(sandbox_url, sandbox_token)`` from a ``configurable`` mapping."""
+    if not isinstance(configurable, dict):
+        return None, None
+    raw_url = configurable.get("sandbox_url")
+    raw_token = configurable.get("sandbox_token")
+    url = raw_url if isinstance(raw_url, str) and raw_url else None
+    token = raw_token if isinstance(raw_token, str) and raw_token else None
+    return url, token
+
+
+def _resolve_endpoint(config: Any = None) -> tuple[str, str | None]:
     """Resolve the sandbox ``(base_url, token)``, preferring per-run config.
 
     A shared langgraph process serving many engagements cannot reach a
-    per-engagement sandbox through one process-wide env var. So we first consult
-    the current run's LangGraph config — ``configurable.sandbox_url`` /
-    ``configurable.sandbox_token``, set by the caller per invocation — then fall
-    back to ``SANDBOX_URL`` / ``SANDBOX_TOKEN``. The env path still covers
-    single-tenant, sidecar, local-docker, and import-time construction where
-    there is no active run context.
+    per-engagement sandbox through one process-wide env var. Resolution order:
+
+    1. An **explicitly-passed** run ``config`` (``config.configurable.sandbox_url``
+       / ``sandbox_token``). This is the reliable source inside a SUB-AGENT: the
+       tool/middleware holds the run's ``runtime.config`` and passes it here.
+       The ambient ``get_config()`` contextvar (step 2) is NOT seeded in a
+       sub-agent's tool-execution context, so relying on it alone routed
+       sub-agent filesystem ops to the env sidecar instead of the run's own
+       per-engagement sandbox (bash, which reads its injected ``config``, did
+       reach the right sandbox — the two diverged).
+    2. The ambient ``get_config()`` contextvar (top-level orchestrator path).
+    3. ``SANDBOX_URL`` / ``SANDBOX_TOKEN`` env (single-tenant / sidecar /
+       local-docker / import-time construction with no active run).
     """
     url: str | None = None
     token: str | None = None
-    try:
-        # get_config() exposes the current run's RunnableConfig via contextvars
-        # while a graph node executes. It raises RuntimeError outside a runnable
-        # context (for example, import-time agent construction), so fall back to
-        # env in that case.
-        from langgraph.config import get_config
 
-        configurable = (get_config() or {}).get("configurable") or {}
-        raw_url = configurable.get("sandbox_url")
-        raw_token = configurable.get("sandbox_token")
-        url = raw_url if isinstance(raw_url, str) and raw_url else None
-        token = raw_token if isinstance(raw_token, str) and raw_token else None
-    except Exception:
-        pass
+    # 1) Explicit run config passed by the caller (sub-agent-safe).
+    if config is not None:
+        url, token = _endpoint_from_configurable((config or {}).get("configurable"))
 
+    # 2) Ambient contextvar (raises outside a runnable context → fall through).
+    if url is None:
+        try:
+            from langgraph.config import get_config
+
+            cv_url, cv_token = _endpoint_from_configurable(
+                (get_config() or {}).get("configurable")
+            )
+            url = cv_url
+            if token is None:
+                token = cv_token
+        except Exception:
+            pass
+
+    # 3) Env fallback.
     if url is None:
         url = os.environ.get("SANDBOX_URL", _DEFAULT_SANDBOX_URL)
     if token is None:
@@ -78,8 +102,16 @@ def _resolve_endpoint() -> tuple[str, str | None]:
     return url, token
 
 
-def build_sandbox_backend() -> HTTPSandbox:
+def build_sandbox_backend(config: Any = None) -> HTTPSandbox:
     """Build the HTTP-transport sandbox backend.
+
+    ``config`` — an optional run ``RunnableConfig``. When provided its
+    ``configurable.sandbox_url`` / ``sandbox_token`` take precedence over the
+    ambient ``get_config()`` contextvar (see ``_resolve_endpoint``). Callers that
+    hold the run's config explicitly (the filesystem middleware, which has
+    ``runtime.config``) MUST pass it so filesystem ops reach the run's own
+    per-engagement sandbox even inside a sub-agent, where the contextvar is not
+    seeded.
 
     Returns the same ``HTTPSandbox`` instance for every call with the
     same ``(base_url, token)``. langgraph dev server invokes one factory
@@ -108,5 +140,5 @@ def build_sandbox_backend() -> HTTPSandbox:
             Optional bearer token for daemon auth — recommended even on
             loopback as defence-in-depth.
     """
-    base_url, token = _resolve_endpoint()
+    base_url, token = _resolve_endpoint(config)
     return _shared_sandbox(base_url, token)
