@@ -103,6 +103,37 @@ def _build_opplan_payload(opplan: OPPLAN) -> dict[str, Any]:
     }
 
 
+def _live_sandbox_backend(fallback: BackendProtocol | None) -> BackendProtocol | None:
+    """Resolve the CURRENT run's sandbox backend, not the graph-build-time one.
+
+    The backend captured when the graph is compiled (``OPPLANMiddleware(backend=)``)
+    resolves its sandbox endpoint from the ``SANDBOX_URL`` env var, because there
+    is no run config at construction time. In a SHARED multi-tenant langgraph that
+    env points at the process-local sidecar, NOT the run's OWN per-engagement
+    sandbox (per-run VM / silo). So OPPLAN persistence wrote ``opplan.json`` to the
+    sidecar's shared workspace (bucket ROOT, unprefixed) while every OTHER doc —
+    written through FilesystemMiddleware, which rebinds per run — landed in the
+    engagement's tenant bucket. ``read_file`` then resolved against the tenant
+    prefix and could never see the OPPLAN.
+
+    Re-resolve per call from the ambient run config, mirroring
+    ``FilesystemMiddleware`` (``build_sandbox_backend`` reads
+    ``config.configurable.sandbox_url`` since the per-run-sandbox fix). OPPLAN
+    runs only in the TOP-LEVEL orchestrator, where langgraph seeds the
+    ``get_config()`` contextvar that ``build_sandbox_backend()`` reads — so no
+    explicit config threading is needed here (unlike a sub-agent). Falls back to
+    the captured backend when there is no active run (unit tests) or if
+    resolution raises, so behaviour is unchanged off the hosted path.
+    """
+    try:
+        from decepticon.backends import build_sandbox_backend, make_agent_backend
+
+        return make_agent_backend(build_sandbox_backend())
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("OPPLAN live backend resolution failed, using build-time backend: %s", exc)
+        return fallback
+
+
 def _scoped_opplan_backend(
     backend: BackendProtocol | None,
     workspace_path: str | None,
@@ -113,11 +144,18 @@ def _scoped_opplan_backend(
     if not workspace_path:
         return None
 
+    # Rebind to the run's OWN sandbox before scoping — the captured ``backend``
+    # points at the build-time env sidecar in a shared langgraph (see
+    # ``_live_sandbox_backend``), which routed OPPLAN writes to the wrong bucket.
+    live = _live_sandbox_backend(backend)
+    if live is None:
+        return None
+
     # Local import avoids a module cycle: filesystem.py imports the OPPLAN
     # reducers for its state schema.
     from decepticon.middleware.filesystem import EngagementFilesystemBackend
 
-    return EngagementFilesystemBackend(backend, workspace_path)
+    return EngagementFilesystemBackend(live, workspace_path)
 
 
 def _read_text_from_backend(
