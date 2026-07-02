@@ -85,9 +85,7 @@ def _resolve_endpoint(config: Any = None) -> tuple[str, str | None]:
         try:
             from langgraph.config import get_config
 
-            cv_url, cv_token = _endpoint_from_configurable(
-                (get_config() or {}).get("configurable")
-            )
+            cv_url, cv_token = _endpoint_from_configurable((get_config() or {}).get("configurable"))
             url = cv_url
             if token is None:
                 token = cv_token
