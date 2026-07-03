@@ -30,6 +30,7 @@ Why a RunnableBinding subclass:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import logging
 import os
@@ -57,6 +58,44 @@ TRANSCRIPT_STATE_KEY = "subagent_transcripts"
 # truncation, or any positive int to change the cap.
 _DEFAULT_TRANSCRIPT_RESULT_CAP = 8000
 _TRANSCRIPT_TRUNCATION_MARKER = "…[truncated]"
+
+
+@contextlib.contextmanager
+def _bind_per_run_sandbox():
+    """Scope bash / web / research tools to THIS run's per-engagement sandbox.
+
+    Sub-agent tool calls resolve their sandbox via ``get_sandbox(config)``, but
+    the ``config`` injected into a SUB-AGENT's tools does not carry the run's
+    ``configurable.sandbox_url`` — only the middleware runtime does (which is why
+    FilesystemMiddleware/``read_file`` reach the per-run VM while ``bash`` fell
+    back to the process-wide ``SANDBOX_URL`` env, i.e. the shared sidecar). This
+    wrapper runs at the PARENT task-node level, where ``get_config()`` IS seeded
+    with the run's config, so resolve the per-engagement sandbox here and set it
+    as the ``_sandbox_var`` contextvar override that ``get_sandbox`` honours
+    before the env default. No-op when there is no per-run ``sandbox_url``
+    (single-tenant / dev) or resolution fails.
+    """
+    token = None
+    var = None
+    try:
+        from langgraph.config import get_config
+
+        cfg = get_config()
+        sandbox_url = ((cfg or {}).get("configurable", {}) or {}).get("sandbox_url")
+        if sandbox_url:
+            from decepticon.backends import build_sandbox_backend
+            from decepticon.tools.bash.bash import _sandbox_var, set_sandbox
+
+            var = _sandbox_var
+            token = set_sandbox(build_sandbox_backend(cfg))
+    except Exception as exc:  # pragma: no cover - defensive
+        log.debug("per-run sandbox bind skipped: %s", exc)
+        token = None
+    try:
+        yield
+    finally:
+        if token is not None and var is not None:
+            var.reset(token)
 
 
 def _transcript_result_cap() -> int:
@@ -439,22 +478,23 @@ class StreamingRunnable(RunnableBinding):
         active_tool_calls: dict[str, ToolCall] = {}
 
         try:
-            for state in self._runnable.stream(
-                input, config=config, stream_mode="values", **kwargs
-            ):
-                last_state = state
-                messages = state.get("messages", [])
-                new_messages = messages[last_count:]
-                last_count = len(messages)
-                self._process_messages(
-                    new_messages,
-                    active_tool_calls,
-                    renderer,
-                    has_renderer,
-                    writer,
-                    session_id,
-                    transcript,
-                )
+            with _bind_per_run_sandbox():
+                for state in self._runnable.stream(
+                    input, config=config, stream_mode="values", **kwargs
+                ):
+                    last_state = state
+                    messages = state.get("messages", [])
+                    new_messages = messages[last_count:]
+                    last_count = len(messages)
+                    self._process_messages(
+                        new_messages,
+                        active_tool_calls,
+                        renderer,
+                        has_renderer,
+                        writer,
+                        session_id,
+                        transcript,
+                    )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] invoke() cancelled", self._name)
@@ -558,29 +598,30 @@ class StreamingRunnable(RunnableBinding):
         active_tool_calls: dict[str, ToolCall] = {}
 
         try:
-            async for state in self._runnable.astream(
-                input, config=config, stream_mode="values", **kwargs
-            ):
-                last_state = state
-                messages = state.get("messages", [])
-                new_messages = messages[last_count:]
-                last_count = len(messages)
-                if new_messages:
-                    log.debug(
-                        "[%s] astream: %d new messages (total %d)",
-                        self._name,
-                        len(new_messages),
-                        len(messages),
+            with _bind_per_run_sandbox():
+                async for state in self._runnable.astream(
+                    input, config=config, stream_mode="values", **kwargs
+                ):
+                    last_state = state
+                    messages = state.get("messages", [])
+                    new_messages = messages[last_count:]
+                    last_count = len(messages)
+                    if new_messages:
+                        log.debug(
+                            "[%s] astream: %d new messages (total %d)",
+                            self._name,
+                            len(new_messages),
+                            len(messages),
+                        )
+                    self._process_messages(
+                        new_messages,
+                        active_tool_calls,
+                        renderer,
+                        has_renderer,
+                        writer,
+                        session_id,
+                        transcript,
                     )
-                self._process_messages(
-                    new_messages,
-                    active_tool_calls,
-                    renderer,
-                    has_renderer,
-                    writer,
-                    session_id,
-                    transcript,
-                )
 
         except (KeyboardInterrupt, asyncio.CancelledError):
             log.info("[%s] ainvoke() cancelled", self._name)
