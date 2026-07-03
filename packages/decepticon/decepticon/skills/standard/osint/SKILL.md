@@ -24,20 +24,26 @@ Censys, Hunter, GitHub API, crt.sh, Wayback, etc.).
 
 ## Playbooks
 
-| Skill | Use for |
+> **Inline technique reference — not separately loadable skills.** The entries below
+> are summarized here for direct use; there is no separate `SKILL.md` to open for
+> each. Do NOT call the skill loader on them — apply the technique with your tools
+> using this summary and the Workflow in this file.
+
+
+| Technique | Use for |
 |---|---|
-| `/skills/standard/osint/domain-pivots/SKILL.md` | Whois history, reverse-IP, related-domain enumeration |
-| `/skills/standard/osint/ct-logs/SKILL.md` | crt.sh / Censys cert search for subdomain enumeration |
-| `/skills/standard/osint/shodan-fingerprint/SKILL.md` | Shodan host search; service / banner / ssl.cn pivots |
-| `/skills/standard/osint/censys-pivots/SKILL.md` | Censys cert/host/services pivots |
-| `/skills/standard/osint/github-code-search/SKILL.md` | GitHub code search for org's leaked secrets / config |
-| `/skills/standard/osint/wayback-archives/SKILL.md` | Wayback Machine API; retired endpoints, deleted docs |
-| `/skills/standard/osint/breach-data/SKILL.md` | HIBP / DeHashed (RoE-permitted only); credential reuse paths |
-| `/skills/standard/osint/employee-profiling/SKILL.md` | LinkedIn search (Sales Nav / manual), email-format inference |
-| `/skills/standard/osint/asn-bgp/SKILL.md` | ASN ownership, BGP table snapshots, RIR records |
-| `/skills/standard/osint/maltego/SKILL.md` | Maltego CLI graph projection; transform chain |
-| `/skills/standard/osint/cryptocurrency/SKILL.md` | Chain analysis (Etherscan / Mempool.space / Arkham) for crypto-adjacent targets |
-| `/skills/standard/osint/geospatial/SKILL.md` | Image geolocation, EXIF mining, satellite/streetview cross-reference |
+| **domain-pivots** | Whois history, reverse-IP, related-domain enumeration |
+| **ct-logs** | crt.sh / Censys cert search for subdomain enumeration |
+| **shodan-fingerprint** | Shodan host search; service / banner / ssl.cn pivots |
+| **censys-pivots** | Censys cert/host/services pivots |
+| **github-code-search** | GitHub code search for org's leaked secrets / config |
+| **wayback-archives** | Wayback Machine API; retired endpoints, deleted docs |
+| **breach-data** | HIBP / DeHashed (RoE-permitted only); credential reuse paths |
+| **employee-profiling** | LinkedIn search (Sales Nav / manual), email-format inference |
+| **asn-bgp** | ASN ownership, BGP table snapshots, RIR records |
+| **maltego** | Maltego CLI graph projection; transform chain |
+| **cryptocurrency** | Chain analysis (Etherscan / Mempool.space / Arkham) for crypto-adjacent targets |
+| **geospatial** | Image geolocation, EXIF mining, satellite/streetview cross-reference |
 
 ## Workflow
 
