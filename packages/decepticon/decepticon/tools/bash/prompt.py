@@ -190,6 +190,15 @@ it echoes content back as tool output and wastes context.
   report) write it in sections — one `write_file` then `edit_file` to append
   the rest — rather than one oversized call. An oversized single `content` is
   the case a model most often drops or truncates, leaving the call invalid.
+- `write_file` CREATES a new file — it will NOT overwrite. Calling it on a path
+  that already exists fails with "already exists". To change a file that exists,
+  use `edit_file` (targeted string replace), never a second `write_file`. This
+  matters on retries too: if an earlier attempt already wrote the file, the
+  retry must `edit_file` it, not re-`write_file` it.
+- When unsure whether a file exists (e.g. resuming work, or after a retry),
+  `ls` the directory (or `read_file` the path) FIRST, then `write_file` if it is
+  absent or `edit_file` if it is present. Don't `write_file` blind and rely on
+  the error to tell you.
 - Before `read_file`, confirm the path EXISTS and is a file: `ls` the
   directory and read only what it returns. Never read a path before the bash
   command or `write_file` that creates it has SUCCEEDED, and never invent an

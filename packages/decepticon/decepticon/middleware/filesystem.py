@@ -176,7 +176,22 @@ class EngagementFilesystemBackend(BackendProtocol):
             return WriteResult(error=str(e))
         result = self._backend.write(real_path, content)
         if result.error:
-            return replace(result, error=self._mask(result.error, real_path))
+            masked = self._mask(result.error, real_path)
+            if masked and "already exists" in masked.lower():
+                # deepagents backends refuse to overwrite by design (an
+                # overwrite would force the agent to re-emit the whole file for
+                # a one-line change — wasteful, and it re-triggers max_tokens
+                # truncation on large files). The raw backend messages vary
+                # ("File already exists" from the sandbox backend, a longer one
+                # from state/filesystem); normalize to a single actionable
+                # instruction so the agent switches to edit_file instead of
+                # guessing.
+                virtual = self._virtual(real_path) or file_path
+                masked = (
+                    f"{virtual} already exists — use edit_file to modify it, "
+                    "or delete it first if you intend to replace it."
+                )
+            return replace(result, error=masked)
         path = self._virtual(result.path or "") if result.path else None
         return replace(result, path=path) if path else result
 

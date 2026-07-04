@@ -124,6 +124,26 @@ def test_returns_virtual_paths_to_agent() -> None:
     assert write_result.path == "/workspace/findings/FIND-001.md"
 
 
+def test_write_exists_error_is_actionable_and_masks_real_path() -> None:
+    """A no-overwrite backend error is rewritten to point the agent at
+    edit_file, using the virtual (not the real engagement) path."""
+
+    class ExistsBackend(RecordingBackend):
+        def write(self, file_path: str, content: str) -> WriteResult:
+            # Mirror the deepagents sandbox backend's terse message shape,
+            # which does not itself mention edit_file.
+            return WriteResult(error=f"Error: File already exists: '{file_path}'")
+
+    scoped = EngagementFilesystemBackend(ExistsBackend(), "/workspace/test")
+    result = scoped.write("/workspace/findings/FIND-001.md", "x")
+
+    assert result.error is not None
+    assert "/workspace/findings/FIND-001.md already exists" in result.error
+    assert "edit_file" in result.error
+    # Real engagement path must not leak into the message.
+    assert "/workspace/test" not in result.error
+
+
 def test_scopes_glob_and_grep_without_exposing_real_engagement_path() -> None:
     backend = RecordingBackend()
     scoped = EngagementFilesystemBackend(backend, "/workspace/test")
