@@ -688,15 +688,22 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
 # Perplexity Sonar numbers are best-effort against the published rate
 # card (Sonar $1/$1, Sonar Pro $3/$15) — search-call surcharge not
 # modeled.
-_SUBSCRIPTION_SHADOW_PRICING: dict[str, tuple[float, float]] = {
-    "auth/gpt-5.5": (0.000005, 0.000030),
-    "auth/gpt-5.4": (0.0000025, 0.000015),
-    "auth/gpt-5.4-mini": (0.00000075, 0.0000045),
-    "auth/gpt-5.3-codex": (0.00000175, 0.000014),
+# Values are (input, output) or (input, output, cache_read) USD per token.
+# The optional third element is the prompt-cache-read rate: OpenAI's GPT-5
+# generation prices cached input at ~1/10th of input (90% off), so the
+# ChatGPT/Codex OAuth routes carry cache_read = input * 0.1. LiteLLM only
+# discounts cached tokens when this cost is present in ``model_info`` AND the
+# codex handler surfaces ``prompt_tokens_details.cached_tokens`` (it now does).
+# Track OpenAI's published cached-input rate if it changes.
+_SUBSCRIPTION_SHADOW_PRICING: dict[str, tuple[float, ...]] = {
+    "auth/gpt-5.5": (0.000005, 0.000030, 0.0000005),
+    "auth/gpt-5.4": (0.0000025, 0.000015, 0.00000025),
+    "auth/gpt-5.4-mini": (0.00000075, 0.0000045, 0.000000075),
+    "auth/gpt-5.3-codex": (0.00000175, 0.000014, 0.000000175),
     # gpt-5.3-codex-spark is the agentic-coding model the Codex subscription
     # actually serves (verified 2026-06-25 via /backend-api/codex/models);
     # gpt-5.3-codex is the API slug. Same shadow pricing.
-    "auth/gpt-5.3-codex-spark": (0.00000175, 0.000014),
+    "auth/gpt-5.3-codex-spark": (0.00000175, 0.000014, 0.000000175),
     "gemini-sub/gemini-2.5-pro": (0.00000125, 0.00001),
     "gemini-sub/gemini-2.5-flash": (0.0000003, 0.0000025),
     "copilot/gpt-5.5": (0.000005, 0.000030),
@@ -723,10 +730,16 @@ def _with_shadow_pricing(route: dict[str, Any]) -> dict[str, Any]:
     if pricing is None:
         return route
     enriched = dict(route)
-    enriched["model_info"] = {
+    model_info: dict[str, float] = {
         "input_cost_per_token": pricing[0],
         "output_cost_per_token": pricing[1],
     }
+    # Optional third element = prompt-cache-read cost per token. Stamped only
+    # when present so LiteLLM discounts cached input on routes whose handler
+    # surfaces cached_tokens (codex/ChatGPT); routes without it are unchanged.
+    if len(pricing) > 2:
+        model_info["cache_read_input_token_cost"] = pricing[2]
+    enriched["model_info"] = model_info
     return enriched
 
 

@@ -487,6 +487,21 @@ def _model_response(model: str, payload: dict[str, Any]) -> ModelResponse:
     usage = payload.get("usage") or {}
     input_tokens = usage.get("input_tokens", 0) or 0
     output_tokens = usage.get("output_tokens", 0) or 0
+    # The OpenAI Responses API reports prompt-cache hits under
+    # ``input_tokens_details.cached_tokens``. Surface it as the OpenAI-style
+    # ``prompt_tokens_details.cached_tokens`` that LiteLLM reads for cost
+    # calculation, so the ChatGPT/Codex OAuth path is billed at the
+    # cache-read rate instead of full input rate (mirrors
+    # claude_code_handler surfacing ``cache_read_input_tokens``). When the
+    # field is absent the value is 0 and nothing is stamped — harmless no-op.
+    cached_tokens = (usage.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0
+    usage_out: dict[str, Any] = {
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": usage.get("total_tokens", input_tokens + output_tokens),
+    }
+    if cached_tokens:
+        usage_out["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
     return ModelResponse(
         id=payload.get("id", f"chatcmpl-{model}"),
         model=model,
@@ -497,11 +512,7 @@ def _model_response(model: str, payload: dict[str, Any]) -> ModelResponse:
                 "finish_reason": "tool_calls" if tool_calls else "stop",
             }
         ],
-        usage={
-            "prompt_tokens": input_tokens,
-            "completion_tokens": output_tokens,
-            "total_tokens": usage.get("total_tokens", input_tokens + output_tokens),
-        },
+        usage=usage_out,
     )
 
 
@@ -576,6 +587,14 @@ class CodexChatGPTCustomHandler(CustomLLM):
             "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             "total_tokens": response.usage.total_tokens if response.usage else 0,
         }
+        # Carry the prompt-cache hit count into the streaming final-usage chunk
+        # so streamed calls are cost-calculated at the cache-read rate too.
+        _ptd = getattr(response.usage, "prompt_tokens_details", None) if response.usage else None
+        _cached = getattr(_ptd, "cached_tokens", None) if _ptd is not None else None
+        if not _cached and isinstance(_ptd, dict):
+            _cached = _ptd.get("cached_tokens")
+        if _cached:
+            usage["prompt_tokens_details"] = {"cached_tokens": _cached}
         if raw_tool_calls:
             chunks = []
             if content:
