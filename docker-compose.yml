@@ -605,7 +605,6 @@ services:
       - SKILLOGY_NEO4J_URI=bolt://neo4j:7687
       - SKILLOGY_NEO4J_USER=neo4j
       - SKILLOGY_NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
-      - SKILLOGY_AUTO_INGEST=${SKILLOGY_AUTO_INGEST:-1}
       # Hybrid retrieval embeds skills + queries through the same litellm
       # proxy the agents use (ADR-0011 §"Skillogy↔litellm coupling").
       # Unset → find_skill falls back to substring search.
