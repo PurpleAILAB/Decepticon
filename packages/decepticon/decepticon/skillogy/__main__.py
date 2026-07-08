@@ -15,6 +15,8 @@ Environment variables:
   SKILLOGY_NEO4J_URI          (default ``bolt://neo4j:7687``)
   SKILLOGY_NEO4J_USER         (default ``neo4j``)
   SKILLOGY_NEO4J_PASSWORD     (default ``decepticon-graph``)
+  SKILLOGY_NEO4J_DATABASE     (default ``neo4j``; managed backends e.g. Aura
+                              name the database after the instance id)
   SKILLOGY_CYPHER_PATH        (default ``/app/skills.cypher`` — baked into the image)
   SKILLOGY_AUTO_INGEST        (default ``1``; set ``0`` to skip the bulk load)
   SKILLOGY_API_KEY            (optional Bearer-token auth for the protected endpoints)
@@ -54,6 +56,7 @@ def _build_backend() -> Neo4jBackend:
         uri=os.environ.get("SKILLOGY_NEO4J_URI", "bolt://neo4j:7687"),
         user=os.environ.get("SKILLOGY_NEO4J_USER", "neo4j"),
         password=os.environ.get("SKILLOGY_NEO4J_PASSWORD", "decepticon-graph"),
+        database=os.environ.get("SKILLOGY_NEO4J_DATABASE", "neo4j"),
     )
 
 
