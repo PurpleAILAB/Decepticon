@@ -36,16 +36,22 @@ every write-scope skill carries an explicit safety gate.
 
 ## Playbooks
 
-| Skill | Use for |
+> **Inline technique reference — not separately loadable skills.** The entries below
+> are summarized here for direct use; there is no separate `SKILL.md` to open for
+> each. Do NOT call the skill loader on them — apply the technique with your tools
+> using this summary and the Workflow in this file.
+
+
+| Technique | Use for |
 |---|---|
-| `/skills/standard/ics/modbus-discovery/SKILL.md` | Read-only Modbus TCP/RTU enumeration, function code 3/4 polling |
-| `/skills/standard/ics/modbus-write/SKILL.md` | **GATED** Write coils / registers; safety gate enforced |
-| `/skills/standard/ics/bacnet-discovery/SKILL.md` | BACnet/IP Who-Is, object enumeration, device profile |
-| `/skills/standard/ics/s7comm/SKILL.md` | Siemens S7 / S7Comm Plus enumeration via Snap7 / python-snap7 |
-| `/skills/standard/ics/dnp3/SKILL.md` | DNP3 outstation / master discovery; integrity poll |
-| `/skills/standard/ics/opcua/SKILL.md` | OPC-UA browse, anonymous auth check, certificate analysis |
-| `/skills/standard/ics/hmi-web/SKILL.md` | HMI web stacks (Wonderware, Iconics, Schneider) — known CVEs |
-| `/skills/standard/ics/engineering-software/SKILL.md` | TIA Portal / Studio 5000 / Unity Pro project extraction |
+| **modbus-discovery** | Read-only Modbus TCP/RTU enumeration, function code 3/4 polling |
+| **modbus-write** | **GATED** Write coils / registers; safety gate enforced |
+| **bacnet-discovery** | BACnet/IP Who-Is, object enumeration, device profile |
+| **s7comm** | Siemens S7 / S7Comm Plus enumeration via Snap7 / python-snap7 |
+| **dnp3** | DNP3 outstation / master discovery; integrity poll |
+| **opcua** | OPC-UA browse, anonymous auth check, certificate analysis |
+| **hmi-web** | HMI web stacks (Wonderware, Iconics, Schneider) — known CVEs |
+| **engineering-software** | TIA Portal / Studio 5000 / Unity Pro project extraction |
 
 ## Workflow
 

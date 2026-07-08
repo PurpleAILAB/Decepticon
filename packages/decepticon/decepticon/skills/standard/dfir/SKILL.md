@@ -21,16 +21,22 @@ detection rules back through real forensic artifacts to confirm they fire
 
 ## Playbooks
 
-| Skill | Use for |
+> **Inline technique reference — not separately loadable skills.** The entries below
+> are summarized here for direct use; there is no separate `SKILL.md` to open for
+> each. Do NOT call the skill loader on them — apply the technique with your tools
+> using this summary and the Workflow in this file.
+
+
+| Technique | Use for |
 |---|---|
-| `/skills/standard/dfir/volatility-windows/SKILL.md` | Volatility 3 Windows plugins: pslist, malfind, cmdline, netscan, dlllist, handles |
-| `/skills/standard/dfir/volatility-linux/SKILL.md` | Volatility 3 Linux: linux.pslist, linux.bash, linux.malfind |
-| `/skills/standard/dfir/plaso-timeline/SKILL.md` | psort + log2timeline; super-timeline construction; Sigma matchers on the timeline |
-| `/skills/standard/dfir/sigma-cli-validation/SKILL.md` | sigma-cli convert + match against captured event logs |
-| `/skills/standard/dfir/yara-scan/SKILL.md` | yara-x scan against memory dumps and disk images |
-| `/skills/standard/dfir/event-log-mining/SKILL.md` | Windows Event Log (.evtx) extraction + key event ID reference |
-| `/skills/standard/dfir/etw-trace/SKILL.md` | ETW provider triage; .etl file extraction |
-| `/skills/standard/dfir/edr-validation/SKILL.md` | Replay an attack against a target with Velociraptor / OSQuery active; capture artifacts |
+| **volatility-windows** | Volatility 3 Windows plugins: pslist, malfind, cmdline, netscan, dlllist, handles |
+| **volatility-linux** | Volatility 3 Linux: linux.pslist, linux.bash, linux.malfind |
+| **plaso-timeline** | psort + log2timeline; super-timeline construction; Sigma matchers on the timeline |
+| **sigma-cli-validation** | sigma-cli convert + match against captured event logs |
+| **yara-scan** | yara-x scan against memory dumps and disk images |
+| **event-log-mining** | Windows Event Log (.evtx) extraction + key event ID reference |
+| **etw-trace** | ETW provider triage; .etl file extraction |
+| **edr-validation** | Replay an attack against a target with Velociraptor / OSQuery active; capture artifacts |
 
 ## Loop closure workflow
 
