@@ -55,13 +55,13 @@ class TestMethodModels:
     def test_anthropic_api_full_tier_coverage(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_API]
         assert m[Tier.HIGH] == "anthropic/claude-opus-4-8"
-        assert m[Tier.MID] == "anthropic/claude-sonnet-4-6"
+        assert m[Tier.MID] == "anthropic/claude-sonnet-5"
         assert m[Tier.LOW] == "anthropic/claude-haiku-4-5"
 
     def test_anthropic_oauth_routes_to_auth_prefix(self):
         m = METHOD_MODELS[AuthMethod.ANTHROPIC_OAUTH]
         assert m[Tier.HIGH] == "auth/claude-opus-4-8"
-        assert m[Tier.MID] == "auth/claude-sonnet-4-6"
+        assert m[Tier.MID] == "auth/claude-sonnet-5"
         assert m[Tier.LOW] == "auth/claude-haiku-4-5"
 
     def test_openai_full_tier_coverage(self):
