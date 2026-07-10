@@ -174,12 +174,12 @@ class AuthMethod(StrEnum):
 METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ANTHROPIC_API: {
         Tier.HIGH: "anthropic/claude-opus-4-8",
-        Tier.MID: "anthropic/claude-sonnet-4-6",
+        Tier.MID: "anthropic/claude-sonnet-5",
         Tier.LOW: "anthropic/claude-haiku-4-5",
     },
     AuthMethod.ANTHROPIC_OAUTH: {
         Tier.HIGH: "auth/claude-opus-4-8",
-        Tier.MID: "auth/claude-sonnet-4-6",
+        Tier.MID: "auth/claude-sonnet-5",
         Tier.LOW: "auth/claude-haiku-4-5",
     },
     AuthMethod.OPENAI_API: {

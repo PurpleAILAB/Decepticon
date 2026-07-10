@@ -234,6 +234,42 @@ class TestReadOverride:
 
         assert _read_override(_Req()) == "openai/gpt-5.4"
 
+    def test_per_role_map_targets_the_matching_role(self) -> None:
+        class _Runtime:
+            context = {"model_overrides": {"soundwave": "auth/claude-sonnet-5"}}
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        assert _read_override(_Req(), "soundwave") == "auth/claude-sonnet-5"
+        # a role NOT in the map (and no global) → no override
+        assert _read_override(_Req(), "recon") == ""
+        # no role passed → the per-role map is ignored
+        assert _read_override(_Req()) == ""
+
+    def test_per_role_map_beats_the_global_override(self) -> None:
+        class _Runtime:
+            context = {
+                "model_overrides": {"exploit": "auth/claude-sonnet-5"},
+                "model_override": "openai/gpt-5.5",
+            }
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        # exploit → its per-role model; other roles → the global override
+        assert _read_override(_Req(), "exploit") == "auth/claude-sonnet-5"
+        assert _read_override(_Req(), "recon") == "openai/gpt-5.5"
+
+    def test_per_role_map_from_state_channel(self) -> None:
+        class _Req:
+            runtime = None
+            state = {"model_overrides": {"soundwave": "auth/claude-sonnet-5"}}
+
+        assert _read_override(_Req(), "soundwave") == "auth/claude-sonnet-5"
+
     def test_empty_string_means_no_override(self) -> None:
         class _Runtime:
             context = {"model_override": ""}
