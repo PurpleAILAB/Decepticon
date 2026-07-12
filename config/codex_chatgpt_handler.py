@@ -287,6 +287,12 @@ def _responses_tools(tools: Any) -> list[dict[str, Any]] | None:
     return out
 
 
+# Total-output cap (reasoning + text) for GPT-5.x when the caller sends none.
+# Keeps an over-eager reasoning pass from exhausting the budget before it
+# emits content/tool calls; generous enough for reasoning + a tool round-trip.
+_DEFAULT_MAX_OUTPUT_TOKENS = 32000
+
+
 def _upstream_model_slug(model: str) -> str:
     """Translate a LiteLLM-side model id back to the chatgpt.com model slug.
 
@@ -330,8 +336,24 @@ def _request_body(
         body["tools"] = tools
     if opts.get("tool_choice"):
         body["tool_choice"] = opts["tool_choice"]
+
+    # Reasoning — GPT-5.x are reasoning models (effort none|low|medium|high|
+    # xhigh, reasoning tokens counted in the output budget). Caller-supplied
+    # ``reasoning`` (Responses shape) wins; else honor the OpenAI-style
+    # ``reasoning_effort`` alias; else default to ``medium`` (the vendor's
+    # balanced starting point) so requests get consistent, controlled depth.
     if opts.get("reasoning"):
         body["reasoning"] = opts["reasoning"]
+    elif opts.get("reasoning_effort"):
+        body["reasoning"] = {"effort": opts["reasoning_effort"]}
+    else:
+        body["reasoning"] = {
+            "effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")
+        }
+
+    # Cap total output (reasoning + text) so an over-eager reasoning pass can't
+    # exhaust the budget before emitting content/tool calls. Caller value wins.
+    body["max_output_tokens"] = opts.get("max_tokens") or _DEFAULT_MAX_OUTPUT_TOKENS
     return body
 
 
