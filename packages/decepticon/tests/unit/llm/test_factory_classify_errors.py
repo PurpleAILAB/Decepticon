@@ -100,6 +100,20 @@ class TestActionableMessageFatalLabel:
         # Existing remediation text preserved (regression).
         assert "rejected the request (400)" in msg
 
+    def test_400_invalid_model_names_the_proxy_configuration(self):
+        exc = _exc_with_status(
+            "BadRequestError",
+            400,
+            "Error code: 400 - Invalid model name passed in model=custom/kimi-k2.7-code. "
+            "Call `/v1/models` to view available models for your key.",
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code")
+
+        msg = str(info.value)
+        assert "config/litellm.yaml" in msg
+        assert "/v1/models" in msg
+
     def test_401_message_labelled_non_retryable(self):
         exc = _exc_with_status("AuthenticationError", 401, "Error code: 401 - invalid_api_key")
         with pytest.raises(RuntimeError) as info:
