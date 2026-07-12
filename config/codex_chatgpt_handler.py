@@ -287,14 +287,6 @@ def _responses_tools(tools: Any) -> list[dict[str, Any]] | None:
     return out
 
 
-# Total-output cap (reasoning + text) for GPT-5.x when the caller sends none.
-# It's a CEILING billed on actual output, not a target, so we hand the model
-# its full published budget (GPT-5.4/5.5/5.6/5.6-sol all cap at 128K output,
-# reasoning tokens included) — no truncation risk of a reasoning pass, no cost
-# vs a lower cap since only generated tokens are billed.
-_DEFAULT_MAX_OUTPUT_TOKENS = 128000
-
-
 def _upstream_model_slug(model: str) -> str:
     """Translate a LiteLLM-side model id back to the chatgpt.com model slug.
 
@@ -340,20 +332,18 @@ def _request_body(
         body["tool_choice"] = opts["tool_choice"]
 
     # Reasoning — GPT-5.x are reasoning models (effort none|low|medium|high|
-    # xhigh, reasoning tokens counted in the output budget). Caller-supplied
-    # ``reasoning`` (Responses shape) wins; else honor the OpenAI-style
-    # ``reasoning_effort`` alias; else default to ``medium`` (the vendor's
-    # balanced starting point) so requests get consistent, controlled depth.
+    # xhigh). Caller-supplied ``reasoning`` (Responses shape) wins; else honor
+    # the OpenAI-style ``reasoning_effort`` alias; else default to ``medium``
+    # (the vendor's balanced starting point) so requests get consistent depth.
+    # NOTE: the ChatGPT Codex backend REJECTS ``max_output_tokens`` ("Unsupported
+    # parameter", verified 2026-07-13 against gpt-5.5 and gpt-5.6-sol) — do not
+    # add it here. Output length is governed by the effort level, not a cap.
     if opts.get("reasoning"):
         body["reasoning"] = opts["reasoning"]
     elif opts.get("reasoning_effort"):
         body["reasoning"] = {"effort": opts["reasoning_effort"]}
     else:
         body["reasoning"] = {"effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")}
-
-    # Cap total output (reasoning + text) so an over-eager reasoning pass can't
-    # exhaust the budget before emitting content/tool calls. Caller value wins.
-    body["max_output_tokens"] = opts.get("max_tokens") or _DEFAULT_MAX_OUTPUT_TOKENS
     return body
 
 

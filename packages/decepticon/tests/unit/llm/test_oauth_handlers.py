@@ -550,10 +550,16 @@ class TestCodexReasoningBody:
     def _body(self, opts):
         return codex._request_body("auth/gpt-5.5", [{"role": "user", "content": "hi"}], opts)
 
-    def test_default_reasoning_medium_and_output_cap(self) -> None:
+    def test_default_reasoning_medium(self) -> None:
         body = self._body({})
         assert body["reasoning"] == {"effort": "medium"}
-        assert body["max_output_tokens"] == 128000
+
+    def test_no_max_output_tokens(self) -> None:
+        # The ChatGPT Codex backend rejects ``max_output_tokens`` (400
+        # "Unsupported parameter", verified 2026-07-13) — the handler must
+        # never send it, even when the caller supplies ``max_tokens``.
+        assert "max_output_tokens" not in self._body({})
+        assert "max_output_tokens" not in self._body({"max_tokens": 8000})
 
     def test_caller_reasoning_object_wins(self) -> None:
         body = self._body({"reasoning": {"effort": "high"}})
@@ -562,10 +568,6 @@ class TestCodexReasoningBody:
     def test_reasoning_effort_alias(self) -> None:
         body = self._body({"reasoning_effort": "xhigh"})
         assert body["reasoning"] == {"effort": "xhigh"}
-
-    def test_caller_max_tokens_wins(self) -> None:
-        body = self._body({"max_tokens": 8000})
-        assert body["max_output_tokens"] == 8000
 
     def test_env_effort_override(self, monkeypatch) -> None:
         monkeypatch.setenv("DECEPTICON_GPT_EFFORT", "low")
