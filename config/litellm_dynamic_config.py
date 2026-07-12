@@ -689,12 +689,17 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
 # card (Sonar $1/$1, Sonar Pro $3/$15) — search-call surcharge not
 # modeled.
 _SUBSCRIPTION_SHADOW_PRICING: dict[str, tuple[float, float]] = {
-    # gpt-5.6-sol is the GPT-5.6-family frontier model the Codex subscription
-    # actually serves (verified 2026-07-13 via /backend-api/codex/responses;
-    # plain gpt-5.6 400s with "not supported when using Codex with a ChatGPT
-    # account"). Shadow pricing tracks gpt-5.5 ($5 input parity per the model
-    # card); opportunity-cost only — real spend is the flat subscription.
+    # gpt-5.6-{sol,terra,luna} are the GPT-5.6-family frontier checkpoints the
+    # Codex subscription actually serves (all three verified 2026-07-13 via
+    # /backend-api/codex/responses; plain gpt-5.6 / gpt-5.6-nova / gpt-5.6-codex
+    # 400 with "not supported when using Codex with a ChatGPT account"). They
+    # behave equivalently on verification-reasoning probes — registered so any
+    # agent can be composed onto any of them. Shadow pricing tracks gpt-5.5
+    # ($5 input parity per the model card); opportunity-cost only — real spend
+    # is the flat subscription.
     "auth/gpt-5.6-sol": (0.000005, 0.000030),
+    "auth/gpt-5.6-terra": (0.000005, 0.000030),
+    "auth/gpt-5.6-luna": (0.000005, 0.000030),
     "auth/gpt-5.5": (0.000005, 0.000030),
     "auth/gpt-5.4": (0.0000025, 0.000015),
     "auth/gpt-5.4-mini": (0.00000075, 0.0000045),
@@ -748,13 +753,21 @@ _SUBSCRIPTION_ROUTES: dict[str, list[dict[str, Any]]] = {
         # to api.openai.com regardless of provider. The codex_chatgpt
         # handler strips the ``oauth-`` prefix before sending the model
         # name upstream, so chatgpt.com still receives ``gpt-5.5``.
-        # gpt-5.6-sol — GPT-5.6-family frontier model, served on the ChatGPT
-        # subscription (verified 2026-07-13). Reasoning model; the codex
-        # handler applies the default effort (medium) — no output cap, the
-        # Codex backend rejects max_output_tokens.
+        # gpt-5.6-{sol,terra,luna} — GPT-5.6-family frontier checkpoints served
+        # on the ChatGPT subscription (all three verified 2026-07-13). Reasoning
+        # models; the codex handler applies the default effort (medium) — no
+        # output cap, the Codex backend rejects max_output_tokens.
         {
             "model_name": "auth/gpt-5.6-sol",
             "litellm_params": {"model": "codex-oauth/oauth-gpt-5.6-sol"},
+        },
+        {
+            "model_name": "auth/gpt-5.6-terra",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.6-terra"},
+        },
+        {
+            "model_name": "auth/gpt-5.6-luna",
+            "litellm_params": {"model": "codex-oauth/oauth-gpt-5.6-luna"},
         },
         {
             "model_name": "auth/gpt-5.5",
