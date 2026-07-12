@@ -241,6 +241,9 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
     # provider because the ``gpt-*`` slug collides with OpenAI's aliases.
     entries = {entry["model_name"]: entry["litellm_params"] for entry in merged["model_list"]}
     assert entries == {
+        # GPT-5.6-family frontier model served on the Codex subscription
+        # (verified 2026-07-13; plain gpt-5.6 400s on the Codex account).
+        "auth/gpt-5.6-sol": {"model": "codex-oauth/oauth-gpt-5.6-sol"},
         "auth/gpt-5.5": {"model": "codex-oauth/oauth-gpt-5.5"},
         "auth/gpt-5.4": {"model": "codex-oauth/oauth-gpt-5.4"},
         "auth/gpt-5.4-mini": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
