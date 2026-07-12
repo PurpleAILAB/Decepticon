@@ -1359,6 +1359,25 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
     safe_msg = _redact_secrets(msg)
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    status_match = _STATUS_IN_MSG.search(msg)
+    is_bad_request = (
+        "badrequest" in err_type.lower()
+        or status == 400
+        or (status_match is not None and int(status_match.group(1)) == 400)
+    )
+
+    if is_bad_request and "invalid model name" in msg_lower:
+        raise RuntimeError(
+            f"{fatal_prefix}Model '{model_name}' is not available through the LiteLLM "
+            f"proxy. Verify its static route in config/litellm.yaml or dynamic environment "
+            f"configuration (DECEPTICON_MODEL*, DECEPTICON_LITELLM_MODELS, "
+            f"CUSTOM_OPENAI_*, or OLLAMA_MODEL). Restart the proxy, inspect its startup "
+            f"logs, and query /v1/models for the models available to your key.\n"
+            f"Underlying: {safe_msg}"
+        ) from exc
 
     # LiteLLM puts a recognizable prefix in the inner message when the
     # proxy ran out of fallback options for a model_group — issue #107.
@@ -1372,15 +1391,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"Underlying: {safe_msg}"
         ) from exc
 
-    if "invalid model name" in msg_lower:
-        raise RuntimeError(
-            f"{fatal_prefix}Model '{model_name}' is not available through the LiteLLM "
-            f"proxy. Verify its route in config/litellm.yaml and query the proxy's "
-            f"/v1/models endpoint for the models available to your key.\n"
-            f"Underlying: {safe_msg}"
-        ) from exc
-
-    if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
+    if is_bad_request:
         raise RuntimeError(
             f"{fatal_prefix}Model '{model_name}' rejected the request (400). "
             f"This usually means a parameter the model no longer supports "
