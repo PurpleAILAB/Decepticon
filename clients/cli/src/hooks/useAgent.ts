@@ -24,7 +24,7 @@ import {
   extractText,
   stripResultTags,
 } from "@decepticon/streaming";
-import { getModelOverride } from "../commands/modelOverride.js";
+import { getModelOverride, getModelOverrides } from "../commands/modelOverride.js";
 import { getAssistantOverride } from "../commands/assistantOverride.js";
 
 interface LangChainMessage {
@@ -56,6 +56,25 @@ interface UseAgentOptions {
 interface PendingTool {
   name: string;
   args: Record<string, unknown>;
+}
+
+function buildRunConfig(): { config?: { configurable: Record<string, unknown> } } {
+  const configurable: Record<string, unknown> = {};
+  const slug = process.env.DECEPTICON_ENGAGEMENT;
+  if (slug) {
+    configurable.engagement_name = slug;
+    configurable.workspace_path =
+      process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
+  }
+  const modelOverride = getModelOverride();
+  if (modelOverride) {
+    configurable.model_override = modelOverride;
+  }
+  const modelOverrides = getModelOverrides();
+  if (Object.keys(modelOverrides).length > 0) {
+    configurable.model_overrides = modelOverrides;
+  }
+  return Object.keys(configurable).length > 0 ? { config: { configurable } } : {};
 }
 
 export interface StreamStats {
@@ -765,28 +784,13 @@ export function useAgent({
           messages: [{ role: "user", content: message }],
         };
 
-        const configurable: Record<string, unknown> = {};
-        const slug = process.env.DECEPTICON_ENGAGEMENT;
-        if (slug) {
-          configurable.engagement_name = slug;
-          configurable.workspace_path =
-            process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
-        }
-        const modelOverride = getModelOverride();
-        if (modelOverride) {
-          configurable.model_override = modelOverride;
-        }
-
-        const hasConfigurable = Object.keys(configurable).length > 0;
-        const streamConfig = hasConfigurable ? { configurable } : undefined;
-
         try {
           const stream = client.runs.stream(
             threadIdRef.current!,
             getAssistantOverride() || assistantIdRef.current,
             {
               input,
-              ...(streamConfig ? { config: streamConfig } : {}),
+              ...buildRunConfig(),
               ...STREAM_OPTIONS,
               onDisconnect: "continue",
               signal: abortController.signal,
@@ -872,6 +876,7 @@ export function useAgent({
             getAssistantOverride() || assistantIdRef.current,
             {
               command: { resume: value },
+              ...buildRunConfig(),
               ...STREAM_OPTIONS,
               onDisconnect: "continue",
               signal: abortController.signal,
@@ -934,6 +939,7 @@ export function useAgent({
               getAssistantOverride() || assistantIdRef.current,
               {
                 command: { resume: value ?? true },
+                ...buildRunConfig(),
                 ...STREAM_OPTIONS,
                 onDisconnect: "continue",
                 signal: abortController.signal,

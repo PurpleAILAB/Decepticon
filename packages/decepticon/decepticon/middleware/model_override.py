@@ -30,6 +30,8 @@ Failure modes:
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware
@@ -44,7 +46,51 @@ from decepticon_core.utils.logging import get_logger
 log = get_logger("middleware.model_override")
 
 
-def _read_override(request: Any) -> str:
+def _normalize_role(role: str | None) -> str:
+    """Normalize role names to the env/UI spelling used for overrides."""
+    return (role or "").strip().lower().replace("-", "_")
+
+
+def _read_model_overrides_value(value: Any) -> dict[str, str]:
+    """Parse a role -> model map from runtime context or state."""
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return {}
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(value, Mapping):
+        return {}
+
+    overrides: dict[str, str] = {}
+    for role, model_id in value.items():
+        if not isinstance(role, str) or not isinstance(model_id, str):
+            continue
+        normalized_role = _normalize_role(role)
+        cleaned_model_id = model_id.strip()
+        if normalized_role and cleaned_model_id:
+            overrides[normalized_role] = cleaned_model_id
+    return overrides
+
+
+def _read_model_overrides(request: Any) -> dict[str, str]:
+    """Pull the role override map out of runtime context or input state."""
+    runtime = getattr(request, "runtime", None)
+    if runtime is not None:
+        ctx = getattr(runtime, "context", None) or {}
+        if isinstance(ctx, dict):
+            overrides = _read_model_overrides_value(ctx.get("model_overrides", {}))
+            if overrides:
+                return overrides
+
+    state = getattr(request, "state", None) or {}
+    get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
+    return _read_model_overrides_value(get("model_overrides", {}))
+
+
+def _read_global_override(request: Any) -> str:
     """Pull the override id out of runtime context or input state.
 
     Returns the empty string when nothing is set so the caller can
@@ -61,6 +107,21 @@ def _read_override(request: Any) -> str:
     get = state.get if hasattr(state, "get") else (lambda _k, _d=None: None)
     value = get("model_override", "") or ""
     return value.strip() if isinstance(value, str) else ""
+
+
+def _read_override(request: Any, role: str | None = None) -> str:
+    """Resolve the effective override id for one agent role.
+
+    Role-specific overrides win over the engagement-wide/global override.
+    A ``default`` entry in the role map can act as a map-local fallback.
+    """
+    normalized_role = _normalize_role(role)
+    overrides = _read_model_overrides(request)
+    if normalized_role and normalized_role in overrides:
+        return overrides[normalized_role]
+    if "default" in overrides:
+        return overrides["default"]
+    return _read_global_override(request)
 
 
 def _build_proxied_llm(model_id: str, original: BaseChatModel) -> BaseChatModel:
@@ -106,9 +167,13 @@ class ModelOverrideMiddleware(AgentMiddleware):
     and the existing fallback chain still applies on its failure.
     """
 
+    def __init__(self, role: str | None = None) -> None:
+        super().__init__()
+        self.role = _normalize_role(role)
+
     @override
     def wrap_model_call(self, request, handler):
-        override_id = _read_override(request)
+        override_id = _read_override(request, self.role)
         if not override_id:
             return handler(request)
         try:
@@ -116,12 +181,12 @@ class ModelOverrideMiddleware(AgentMiddleware):
         except Exception as exc:
             log.warning("model_override %s failed to bind: %s", override_id, exc)
             return handler(request)
-        log.info("model_override active: %s", override_id)
+        log.info("model_override active%s: %s", f" for {self.role}" if self.role else "", override_id)
         return handler(request.override(model=new_llm))
 
     @override
     async def awrap_model_call(self, request, handler):
-        override_id = _read_override(request)
+        override_id = _read_override(request, self.role)
         if not override_id:
             return await handler(request)
         try:
@@ -129,7 +194,7 @@ class ModelOverrideMiddleware(AgentMiddleware):
         except Exception as exc:
             log.warning("model_override %s failed to bind: %s", override_id, exc)
             return await handler(request)
-        log.info("model_override active: %s", override_id)
+        log.info("model_override active%s: %s", f" for {self.role}" if self.role else "", override_id)
         return await handler(request.override(model=new_llm))
 
 

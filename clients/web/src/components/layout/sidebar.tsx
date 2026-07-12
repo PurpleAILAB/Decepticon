@@ -17,9 +17,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { EngagementModelPicker, type ModelOverrides } from "@/components/engagement/engagement-model-picker";
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +58,8 @@ const bottomNav: NavItem[] = [
 interface Engagement {
   id: string;
   name: string;
+  modelOverride?: string | null;
+  modelOverrides?: ModelOverrides | null;
 }
 
 export function Sidebar() {
@@ -63,6 +67,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [engDropdownOpen, setEngDropdownOpen] = useState(false);
   const [engagements, setEngagements] = useState<Engagement[]>([]);
+  const [activeEngagement, setActiveEngagement] = useState<Engagement | null>(null);
 
   // Derive engagement ID from pathname — only refetch when engagement context changes
   const engMatch = pathname.match(/^\/engagements\/([^/]+)/);
@@ -84,8 +89,29 @@ export function Sidebar() {
     return () => { cancelled = true; };
   }, [activeEngId]);
 
+  useEffect(() => {
+    if (!activeEngId) {
+      setActiveEngagement(null);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/engagements/${activeEngId}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("fetch failed");
+        return res.json();
+      })
+      .then((data: Engagement) => {
+        if (!cancelled) setActiveEngagement(data);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveEngagement(null);
+      });
+    return () => { cancelled = true; };
+  }, [activeEngId]);
+
   const activeEng = activeEngId
-    ? engagements.find((e) => e.id === activeEngId) ?? null
+    ? activeEngagement ?? engagements.find((e) => e.id === activeEngId) ?? null
     : null;
 
   function resolveHref(item: NavItem) {
@@ -142,25 +168,62 @@ export function Sidebar() {
     return link;
   }
 
+  function renderMobileNavItem(item: NavItem) {
+    const href = resolveHref(item);
+    const active = isActive(item);
+    const disabled = item.engagementScoped && !activeEngId;
+
+    return (
+      <Link
+        key={href}
+        href={disabled ? "#" : href}
+        aria-label={item.label}
+        className={cn(
+          "flex min-w-14 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[10px] font-medium transition-colors",
+          active
+            ? "bg-primary/10 text-primary"
+            : disabled
+              ? "cursor-not-allowed text-muted-foreground/25"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+        )}
+        onClick={(e) => disabled && e.preventDefault()}
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        <span className="max-w-14 truncate">{item.label}</span>
+      </Link>
+    );
+  }
+
   return (
+    <>
     <aside
       className={cn(
-        "flex h-full flex-col border-r border-border/50 bg-sidebar transition-all duration-200",
-        collapsed ? "w-16" : "w-60"
+        "hidden h-full flex-col border-r border-border/50 bg-sidebar transition-all duration-200 md:flex",
+        collapsed ? "w-16" : "w-72"
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2.5 border-b border-border/50 px-4">
+      <div className="flex min-h-14 items-center gap-2.5 border-b border-border/50 px-4 py-3">
         <img src="/logo.png" alt="PurpleAILab" width={26} height={26} className="shrink-0" />
         {!collapsed && (
-          <span className="text-sm font-bold tracking-tight">
-            <span className="text-purple-400">Purple</span>
-            <span className="text-foreground">AILab</span>
-          </span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-bold tracking-tight">
+              <span className="text-purple-400">Purple</span>
+              <span className="text-foreground">AILab</span>
+            </span>
+            <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+              <span className="truncate">Autonomous Red Team Platform</span>
+              <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 font-medium text-emerald-400">Online</span>
+            </div>
+            <div className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground" title="Self-hosted Docker instance running on this Windows host">
+              <Bell className="size-3" />
+              <span>Self-hosted</span>
+            </div>
+          </div>
         )}
       </div>
 
-      <nav className="flex flex-1 flex-col overflow-hidden">
+      <nav className="flex flex-1 flex-col overflow-y-auto overflow-x-hidden">
         {/* Global nav */}
         <div className="space-y-0.5 p-2">
           {globalNav.map(renderNavItem)}
@@ -229,9 +292,31 @@ export function Sidebar() {
           <div className="space-y-0.5">
             {engagementNav.map(renderNavItem)}
           </div>
+
+          {!collapsed && activeEngagement && (
+            <div className="mt-3">
+              <EngagementModelPicker
+                engagementId={activeEngagement.id}
+                value={activeEngagement.modelOverride ?? ""}
+                overrides={activeEngagement.modelOverrides ?? null}
+                variant="sidebar"
+                onChange={(modelOverride, modelOverrides) => {
+                  setActiveEngagement((current) =>
+                    current
+                      ? {
+                          ...current,
+                          modelOverride: modelOverride || null,
+                          modelOverrides,
+                        }
+                      : current,
+                  );
+                }}
+              />
+            </div>
+          )}
         </div>
 
-        <div className="flex-1" />
+        <div className="min-h-4 flex-1" />
 
         {/* Bottom nav */}
         <div className="space-y-0.5 p-2">
@@ -251,5 +336,11 @@ export function Sidebar() {
         </Button>
       </div>
     </aside>
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border/60 bg-sidebar/95 px-2 py-1.5 backdrop-blur md:hidden">
+      <div className="flex gap-1 overflow-x-auto">
+        {[...globalNav, ...engagementNav, ...bottomNav].map(renderMobileNavItem)}
+      </div>
+    </nav>
+    </>
   );
 }

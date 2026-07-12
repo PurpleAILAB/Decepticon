@@ -29,9 +29,9 @@ export default function LivePage() {
   }
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[minmax(420px,1fr)_240px] overflow-hidden xl:grid-cols-[320px_minmax(520px,1fr)] xl:grid-rows-1">
       {/* Left: Activity Feed */}
-      <div className="relative w-1/4 min-w-[280px] overflow-hidden border-r border-white/[0.08]">
+      <div className="relative order-2 min-h-0 overflow-hidden border-t border-white/[0.08] xl:order-none xl:border-r xl:border-t-0">
         <LiveActivityFeed events={events} engagementId={engagementId} />
         {selectedAgent && (
           <div className="absolute inset-0 z-20">
@@ -45,18 +45,18 @@ export default function LivePage() {
       </div>
 
       {/* Center: Agent Execution Graph + OPPLAN overlay */}
-      <div className="relative flex-1 min-w-[400px] overflow-hidden">
+      <div className="relative order-1 min-h-0 min-w-0 overflow-hidden xl:order-none">
         <AgentGraphCanvas
           agents={agents}
           events={events}
           selectedAgent={selectedAgent}
           onAgentClick={handleAgentClick}
         />
-        <div className="absolute right-4 top-4 z-10">
+        <div className="absolute inset-x-3 bottom-3 z-10 md:inset-auto md:right-4 md:top-4">
           <OpplanLiveOverlay engagementId={engagementId} />
         </div>
         {/* HITL approval gates — surface prominently during a run */}
-        <div className="absolute left-4 top-4 z-30 w-[360px] max-w-[calc(100%-2rem)]">
+        <div className="absolute left-3 top-3 z-30 w-[min(360px,calc(100%-1.5rem))] sm:left-4 sm:top-4 sm:max-w-[calc(100%-2rem)]">
           <ApprovalGate engagementId={engagementId} />
         </div>
       </div>

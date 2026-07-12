@@ -1,4 +1,5 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
+import { assertModelAllowed } from "@/lib/model-policy";
 import { prisma } from "@/lib/prisma";
 import { SLUG_RE, VALID_TARGET_TYPES, VALID_STATUSES } from "@/lib/workspace";
 import { NextRequest, NextResponse } from "next/server";
@@ -48,7 +49,15 @@ export async function PATCH(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const ALLOWED_FIELDS = ["name", "status", "targetType", "targetValue", "threadId"] as const;
+    const ALLOWED_FIELDS = [
+      "name",
+      "status",
+      "targetType",
+      "targetValue",
+      "threadId",
+      "modelOverride",
+      "modelOverrides",
+    ] as const;
     const data: Record<string, unknown> = {};
     for (const field of ALLOWED_FIELDS) {
       if (field in body) data[field] = body[field];
@@ -85,6 +94,68 @@ export async function PATCH(
         { error: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(", ")}` },
         { status: 400 }
       );
+    }
+
+    if ("modelOverride" in data) {
+      if (data.modelOverride == null || data.modelOverride === "") {
+        data.modelOverride = null;
+      } else if (typeof data.modelOverride !== "string" || data.modelOverride.length > 200) {
+        return NextResponse.json(
+          { error: "Invalid modelOverride. Must be a model id up to 200 chars" },
+          { status: 400 }
+        );
+      } else {
+        try {
+          await assertModelAllowed(data.modelOverride);
+        } catch (e) {
+          return NextResponse.json(
+            { error: e instanceof Error ? e.message : "Blocked model id is not allowed" },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    if ("modelOverrides" in data) {
+      if (data.modelOverrides == null || data.modelOverrides === "") {
+        data.modelOverrides = null;
+      } else if (
+        typeof data.modelOverrides !== "object" ||
+        Array.isArray(data.modelOverrides)
+      ) {
+        return NextResponse.json(
+          { error: "Invalid modelOverrides. Must be an object of role to model id" },
+          { status: 400 },
+        );
+      } else {
+        const clean: Record<string, string> = {};
+        for (const [role, model] of Object.entries(data.modelOverrides as Record<string, unknown>)) {
+          if (!/^[a-z][a-z0-9_-]{1,63}$/.test(role)) {
+            return NextResponse.json(
+              { error: "Invalid modelOverrides role key" },
+              { status: 400 },
+            );
+          }
+          if (model == null || model === "") continue;
+          if (typeof model !== "string" || model.length > 200) {
+            return NextResponse.json(
+              { error: "Invalid modelOverrides model id. Must be up to 200 chars" },
+              { status: 400 },
+            );
+          }
+          const trimmed = model.trim();
+          try {
+            await assertModelAllowed(trimmed);
+          } catch (e) {
+            return NextResponse.json(
+              { error: e instanceof Error ? e.message : "Blocked model id is not allowed" },
+              { status: 400 },
+            );
+          }
+          if (trimmed) clean[role] = trimmed;
+        }
+        data.modelOverrides = Object.keys(clean).length > 0 ? clean : null;
+      }
     }
 
     const engagement = await prisma.engagement.update({

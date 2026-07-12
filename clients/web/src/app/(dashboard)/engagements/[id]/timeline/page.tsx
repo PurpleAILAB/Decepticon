@@ -76,7 +76,7 @@ export default function TimelinePage() {
 
       <Card>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-14rem)]">
+          <ScrollArea className="h-[calc(100dvh-14rem)]">
             <div className="divide-y divide-border/50">
               {events.length === 0 ? (
                 <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
@@ -87,20 +87,20 @@ export default function TimelinePage() {
                   const cfg = typeConfig[event.type] ?? typeConfig.file_created;
                   const Icon = cfg.icon;
                   return (
-                    <div key={i} className="flex items-start gap-4 px-6 py-4">
+                    <div key={i} className="flex flex-col gap-2 px-3 py-4 sm:flex-row sm:items-start sm:gap-4 sm:px-6">
                       <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", cfg.bg)}>
                         <Icon className={cn("h-4 w-4", cfg.color)} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{event.title}</span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 break-words text-sm font-medium">{event.title}</span>
                           {event.severity && (
                             <Badge className={cn("text-[10px]", sevColor[event.severity])}>
                               {event.severity}
                             </Badge>
                           )}
                         </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">{event.detail}</p>
+                        <p className="mt-0.5 break-words text-xs text-muted-foreground">{event.detail}</p>
                       </div>
                       <time className="shrink-0 text-xs text-muted-foreground">
                         {new Date(event.timestamp).toLocaleString()}

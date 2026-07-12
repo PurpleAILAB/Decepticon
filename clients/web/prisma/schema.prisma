@@ -36,7 +36,9 @@ model Engagement {
   userId      String           @default("local")
 
   // LangGraph thread tracking
-  threadId      String?
+  threadId       String?
+  modelOverride  String?
+  modelOverrides Json?
   workspacePath String?
 
   createdAt   DateTime         @default(now())

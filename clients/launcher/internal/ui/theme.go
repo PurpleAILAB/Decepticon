@@ -76,8 +76,8 @@ const bannerLogo = "" +
 	"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢷⡿⡯⠃\n" +
 	"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁"
 
-const bannerFullWidth = 165
-const bannerLogoWidth = 60
+const bannerFullWidth = 220
+const bannerLogoWidth = 110
 
 // RenderBanner returns a responsive banner based on terminal width.
 func RenderBanner() string {

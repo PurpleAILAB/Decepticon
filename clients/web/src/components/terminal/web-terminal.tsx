@@ -17,7 +17,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
 
-const TERMINAL_WS_URL = process.env.NEXT_PUBLIC_TERMINAL_WS_URL ?? "ws://localhost:3003";
 const MAX_RECONNECT_DELAY = 4000;
 const INITIAL_RECONNECT_DELAY = 1000;
 const MAX_RECONNECT_ATTEMPTS = 15;
@@ -39,10 +38,22 @@ function sanitizeTermBytes(s: string): string {
   return s.replace(/[\x00\x7f]/g, "");
 }
 
+function defaultTerminalWsUrl(): string {
+  if (typeof window === "undefined") return "ws://localhost:3003";
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}/terminal`;
+}
+
+function terminalWsUrl(): string {
+  return process.env.NEXT_PUBLIC_TERMINAL_WS_URL?.trim() || defaultTerminalWsUrl();
+}
+
 interface WebTerminalProps {
   engagementId: string;
   engagementSlug: string;
   agentId?: string;
+  modelOverride?: string;
+  modelOverrides?: Record<string, string>;
   threadId?: string;
   className?: string;
   onThreadId?: (threadId: string) => void;
@@ -52,6 +63,8 @@ export function WebTerminal({
   engagementId,
   engagementSlug,
   agentId = "soundwave",
+  modelOverride,
+  modelOverrides,
   threadId,
   className,
   onThreadId,
@@ -65,6 +78,12 @@ export function WebTerminal({
   engagementSlugRef.current = engagementSlug;
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
+  const modelOverrideRef = useRef(modelOverride ?? "");
+  const modelOverridesRef = useRef(modelOverrides ?? {});
+  const lastConnectedModelOverrideRef = useRef(modelOverride ?? "");
+  const lastConnectedModelOverridesRef = useRef(JSON.stringify(modelOverrides ?? {}));
+  modelOverrideRef.current = modelOverride ?? "";
+  modelOverridesRef.current = modelOverrides ?? {};
   const threadIdRef = useRef(threadId);
   threadIdRef.current = threadId;
   const onThreadIdRef = useRef(onThreadId);
@@ -80,6 +99,7 @@ export function WebTerminal({
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track whether we've shown the reconnecting message (to avoid spam)
   const reconnectMsgShownRef = useRef(false);
+  const modelChangeReconnectRef = useRef(false);
   // True between sending a ping and receiving the next inbound frame; the
   // pong-timeout only force-closes the socket while this is still set.
   const awaitingPongRef = useRef(false);
@@ -121,12 +141,21 @@ export function WebTerminal({
     const eid = engagementIdRef.current;
     const slug = engagementSlugRef.current;
     const aid = agentIdRef.current;
+    const model = modelOverrideRef.current.trim();
+    const roleModels = modelOverridesRef.current;
+    const roleModelsJson = JSON.stringify(roleModels);
+    lastConnectedModelOverrideRef.current = model;
+    lastConnectedModelOverridesRef.current = roleModelsJson;
     const tid = threadIdRef.current;
 
     let wsUrl =
-      `${TERMINAL_WS_URL}?engagementId=${encodeURIComponent(eid)}` +
+      `${terminalWsUrl()}?engagementId=${encodeURIComponent(eid)}` +
       `&engagementSlug=${encodeURIComponent(slug)}` +
       `&agentId=${encodeURIComponent(aid)}`;
+    if (model) wsUrl += `&modelOverride=${encodeURIComponent(model)}`;
+    if (Object.keys(roleModels).length > 0) {
+      wsUrl += `&modelOverrides=${encodeURIComponent(roleModelsJson)}`;
+    }
     if (tid) wsUrl += `&threadId=${encodeURIComponent(tid)}`;
 
     const ws = new WebSocket(wsUrl);
@@ -172,6 +201,13 @@ export function WebTerminal({
 
     ws.onclose = (ev) => {
       if (disposedRef.current) return;
+
+      if (modelChangeReconnectRef.current) {
+        modelChangeReconnectRef.current = false;
+        setConnState("reconnecting");
+        connectWs();
+        return;
+      }
 
       if (ev.code === 4001) {
         // Server handed this session to another connection (e.g. a second tab).
@@ -272,7 +308,7 @@ export function WebTerminal({
       const term = new Terminal({
         cursorBlink: true,
         cursorStyle: "bar",
-        fontSize: 13,
+        fontSize: 12,
         fontFamily: "'JetBrains Mono', 'IBM Plex Mono', 'Fira Code', monospace",
         theme: {
           background: "#0a0e14",
@@ -342,6 +378,26 @@ export function WebTerminal({
     init();
     return cleanup;
   }, [init, cleanup]);
+
+  useEffect(() => {
+    const next = (modelOverride ?? "").trim();
+    const nextRoles = JSON.stringify(modelOverrides ?? {});
+    if (
+      next === lastConnectedModelOverrideRef.current.trim() &&
+      nextRoles === lastConnectedModelOverridesRef.current
+    ) {
+      return;
+    }
+    reconnectAttemptRef.current = 0;
+    reconnectMsgShownRef.current = false;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      modelChangeReconnectRef.current = true;
+      ws.close(1000, "model override changed");
+    } else if (termRef.current) {
+      connectWs();
+    }
+  }, [modelOverride, modelOverrides, connectWs]);
 
   // ── Heartbeat: detect silently-dead sockets ──────────────────────
   // Ping every 15s. A live socket answers with a pong (or is already
@@ -426,11 +482,10 @@ export function WebTerminal({
   return (
     <div className={cn("relative flex flex-col", className)}>
       {/* Status bar */}
-      <div className="flex items-center gap-2 border-b border-white/[0.06] bg-[#0a0e14] px-3 py-1.5">
+      <div className="flex min-w-0 items-center gap-2 border-b border-white/[0.06] bg-[#0a0e14] px-3 py-1.5">
         <div className={cn("h-2 w-2 rounded-full", statusColor[connState])} />
-        <span className="text-[11px] text-zinc-500">{statusLabel[connState]}</span>
-        <span className="flex-1" />
-        <span className="text-[10px] font-mono text-zinc-600">{engagementSlug}</span>
+        <span className="shrink-0 text-[11px] text-zinc-500">{statusLabel[connState]}</span>
+        <span className="min-w-0 flex-1 truncate text-right font-mono text-[10px] text-zinc-600">{engagementSlug}</span>
       </div>
       {/* Terminal container */}
       <div

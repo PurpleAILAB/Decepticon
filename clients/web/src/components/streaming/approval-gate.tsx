@@ -191,13 +191,13 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
 
         {error && <p className="text-destructive">{error}</p>}
 
-        <div className="flex gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button
             type="button"
             size="sm"
             onClick={() => decide("allow")}
             disabled={submitting !== null}
-            className="flex-1 bg-emerald-600 text-white hover:bg-emerald-500"
+            className="bg-emerald-600 text-white hover:bg-emerald-500"
           >
             {submitting === "allow" ? (
               <Loader2 className="animate-spin" />
@@ -212,7 +212,7 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
             variant="destructive"
             onClick={() => decide("deny")}
             disabled={submitting !== null}
-            className="flex-1"
+            className="w-full"
           >
             {submitting === "deny" ? <Loader2 className="animate-spin" /> : <X />}
             Deny
@@ -223,7 +223,7 @@ function ApprovalCard({ request, engagementId, onDecided }: ApprovalCardProps) {
             variant="outline"
             onClick={() => decide("redirect")}
             disabled={submitting !== null}
-            className="flex-1"
+            className="w-full"
           >
             {submitting === "redirect" ? (
               <Loader2 className="animate-spin" />

@@ -425,7 +425,7 @@ export function LiveActivityFeed({ events, engagementId, className }: LiveActivi
   }
 
   return (
-    <div className={cn("flex flex-col overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-900", className)}>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-white/[0.08] bg-zinc-900", className)}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-white/[0.08] px-3 py-1.5">
         <span className="text-[11px] font-medium text-zinc-400">Activity Feed</span>

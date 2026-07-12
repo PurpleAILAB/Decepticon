@@ -73,15 +73,15 @@ export default function EngagementsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Engagements</h1>
           <p className="text-sm text-muted-foreground">
             Manage your red team testing operations
           </p>
         </div>
-        <Link href="/engagements/new">
-          <Button>
+        <Link href="/engagements/new" className="w-full sm:w-auto">
+          <Button className="w-full sm:w-auto">
             <Plus className="mr-2 h-4 w-4" />
             New Engagement
           </Button>
@@ -108,7 +108,8 @@ export default function EngagementsPage() {
               one.
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -122,7 +123,7 @@ export default function EngagementsPage() {
                   const Icon = targetIcons[eng.targetType] ?? Globe;
                   return (
                     <TableRow key={eng.id}>
-                      <TableCell>
+                      <TableCell className="max-w-56 whitespace-normal break-words">
                         <Link
                           href={`/engagements/${eng.id}`}
                           className="font-medium text-foreground hover:underline"
@@ -133,7 +134,7 @@ export default function EngagementsPage() {
                       <TableCell>
                         <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Icon className="h-3.5 w-3.5" />
-                          <span className="truncate max-w-[200px]">
+                          <span className="max-w-[220px] truncate">
                             {eng.targetValue}
                           </span>
                         </div>
@@ -154,6 +155,7 @@ export default function EngagementsPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

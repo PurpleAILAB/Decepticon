@@ -68,6 +68,7 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "openrouter/anthropic/claude-opus-4-7",
     "openrouter/anthropic/claude-sonnet-4-6",
     "openrouter/anthropic/claude-haiku-4-5",
+    "openrouter/moonshotai/kimi-k2",
   ],
   "NVIDIA NIM": [
     "nvidia_nim/meta/llama-3.3-70b-instruct",
@@ -115,6 +116,7 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "cohere_chat/command-r",
   ],
   "Moonshot Kimi K2": [
+    "openrouter/moonshotai/kimi-k2",
     "moonshot/kimi-k2-instruct",
     "moonshot/moonshot-v1-128k",
     "moonshot/moonshot-v1-8k",
@@ -173,9 +175,10 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "cfgateway/anthropic/claude-sonnet-4-6",
     "cfgateway/anthropic/claude-haiku-4-5",
   ],
+  "Mittwald": ["mittwald/Mistral-Medium-3.5-128B"],
   // Local
-  "Ollama (local)": ["ollama_chat/qwen3-coder:30b (or your OLLAMA_MODEL)"],
-  "Ollama Cloud": ["ollama_chat/<your OLLAMA_CLOUD_MODEL>"],
+  "Ollama (local)": ["ollama_chat/qwen2.5-coder:7b", "ollama_chat/qwen3-coder:30b"],
+  "Ollama Cloud": ["ollama_cloud/kimi-k2.6"],
   "LM Studio (local)": ["lm_studio/<your LMSTUDIO_MODEL>"],
   "Custom OpenAI Endpoint": ["custom/<your CUSTOM_OPENAI_MODEL>"],
 };

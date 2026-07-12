@@ -38,6 +38,7 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-decepticon-master}
       - LITELLM_SALT_KEY=${LITELLM_SALT_KEY:-sk-decepticon-salt}
+      - STORE_MODEL_IN_DB=True
       - CODEX_AUTH_PATH=/root/.codex/auth.json
       - DATABASE_URL=postgresql://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/litellm
     depends_on:

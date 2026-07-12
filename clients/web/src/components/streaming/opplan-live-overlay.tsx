@@ -303,7 +303,7 @@ export function OpplanLiveOverlay({
       >
         <div className="overflow-hidden">
           <div className="border-t border-white/[0.06]">
-            <ScrollArea className="max-h-[300px]">
+            <ScrollArea className="max-h-[min(300px,45dvh)]">
               <div className="divide-y divide-white/[0.04]">
                 {objectives.map((obj) => (
                   <ObjectiveRow key={obj.id} obj={obj} expandedObjectiveId={expandedObjectiveId} onToggleExpand={setExpandedObjectiveId} />

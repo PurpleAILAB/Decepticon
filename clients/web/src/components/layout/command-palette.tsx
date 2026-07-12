@@ -116,7 +116,7 @@ export function CommandPalette() {
       <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={() => { setOpen(false); setQuery(""); }} />
 
       {/* Palette */}
-      <div className="fixed left-1/2 top-[20%] z-50 w-[520px] -translate-x-1/2 overflow-hidden rounded-xl border border-white/[0.1] bg-zinc-900 shadow-2xl">
+      <div className="fixed left-1/2 top-16 z-50 w-[calc(100vw-1rem)] max-w-[520px] -translate-x-1/2 overflow-hidden rounded-xl border border-white/[0.1] bg-zinc-900 shadow-2xl sm:top-[20%]">
         {/* Search input */}
         <div className="flex items-center gap-2 border-b border-white/[0.08] px-4 py-3">
           <Search className="h-4 w-4 text-zinc-500" />
@@ -132,7 +132,7 @@ export function CommandPalette() {
         </div>
 
         {/* Results */}
-        <div className="max-h-[340px] overflow-auto p-2">
+        <div className="max-h-[min(60dvh,340px)] overflow-auto p-2">
           {filtered.length === 0 ? (
             <p className="py-8 text-center text-sm text-zinc-500">No commands found</p>
           ) : (
@@ -151,14 +151,14 @@ export function CommandPalette() {
                       onClick={() => execute(cmd)}
                       onMouseEnter={() => setSelectedIndex(globalIdx)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                        "flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors sm:gap-3 sm:px-3",
                         isSelected ? "bg-white/[0.08] text-white" : "text-zinc-400 hover:bg-white/[0.04]",
                       )}
                     >
                       <cmd.icon className="h-4 w-4 shrink-0 text-zinc-500" />
-                      <span className="flex-1">{cmd.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{cmd.label}</span>
                       {cmd.shortcut && (
-                        <kbd className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-600">
+                        <kbd className="hidden shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-600 sm:inline">
                           {cmd.shortcut}
                         </kbd>
                       )}

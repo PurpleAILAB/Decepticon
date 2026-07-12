@@ -143,7 +143,7 @@ export function AgentDetailPanel({
   return (
     <div
       className={cn(
-        "flex h-full w-[360px] shrink-0 flex-col bg-zinc-950 border-l border-white/[0.08]",
+        "flex h-full w-full shrink-0 flex-col bg-zinc-950 border-l border-white/[0.08] sm:w-[360px]",
         className,
       )}
     >

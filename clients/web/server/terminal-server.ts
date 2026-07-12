@@ -29,7 +29,8 @@
 
 import { WebSocketServer, WebSocket } from "ws";
 import * as pty from "node-pty";
-import { resolve, dirname } from "path";
+import * as fs from "fs";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -41,6 +42,7 @@ const CLI_PATH = resolve(__dirname, "../../cli/src/index.tsx");
 const LANGGRAPH_API_URL = process.env.LANGGRAPH_API_URL ?? "http://localhost:2024";
 const ORPHAN_TTL = 60_000; // Kill orphaned PTYs after 60s with no WS
 const SCROLLBACK_LIMIT = 50_000; // chars of recent output to buffer for reattach
+const DEFAULT_BLOCKED_MODEL_PATTERNS = ["wormgpt", "uncensored", "abliterate"];
 
 const ALLOWED_ORIGINS = new Set(
   (process.env.TERMINAL_ALLOWED_ORIGINS ?? `http://localhost:${WEB_PORT},http://127.0.0.1:${WEB_PORT}`)
@@ -63,6 +65,8 @@ interface Session {
   orphanTimer: ReturnType<typeof setTimeout> | null;
   dead: boolean;                // PTY exited
   exitCode: number | null;
+  modelOverride: string;
+  modelOverridesJson: string;
 }
 
 const sessions = new Map<string, Session>();
@@ -130,6 +134,59 @@ function persistThreadId(engagementId: string, threadId: string): void {
   }).catch(() => {});
 }
 
+function isBlockedModelId(value: string): boolean {
+  const blockedPatterns = readBlockedModelPatterns();
+  const lower = value.toLowerCase();
+  return blockedPatterns.some((part) => lower.includes(part.toLowerCase()));
+}
+
+function modelPolicyPath(): string {
+  return (
+    process.env.MODEL_POLICY_PATH ??
+    join(process.env.WORKSPACE_PATH ?? "/workspace", ".decepticon", "model-policy.json")
+  );
+}
+
+function readBlockedModelPatterns(): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(modelPolicyPath(), "utf8")) as {
+      blockedPatterns?: unknown;
+    };
+    const values = Array.isArray(parsed.blockedPatterns) ? parsed.blockedPatterns : [];
+    const seen = new Set<string>();
+    return values
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .filter((pattern) => {
+        const key = pattern.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  } catch {
+    return [...DEFAULT_BLOCKED_MODEL_PATTERNS];
+  }
+}
+
+function normalizeModelOverridesJson(raw: string): string {
+  if (!raw.trim()) return "";
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return "";
+    const clean: Record<string, string> = {};
+    for (const [role, model] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!/^[a-z][a-z0-9_-]{1,63}$/.test(role)) continue;
+      if (typeof model !== "string") continue;
+      const trimmed = model.trim();
+      if (trimmed && trimmed.length <= 200 && !isBlockedModelId(trimmed)) clean[role] = trimmed;
+    }
+    return Object.keys(clean).length > 0 ? JSON.stringify(clean) : "";
+  } catch {
+    return "";
+  }
+}
+
 // ── Connection Handler ───────────────────────────────────────────
 
 wss.on("connection", async (ws: WebSocket, req) => {
@@ -142,6 +199,9 @@ wss.on("connection", async (ws: WebSocket, req) => {
   const engagementId = url.searchParams.get("engagementId") ?? "";
   const engagementSlug = url.searchParams.get("engagementSlug") ?? "";
   const agentId = url.searchParams.get("agentId") ?? "soundwave";
+  const requestedModelOverride = (url.searchParams.get("modelOverride") ?? "").trim();
+  const modelOverride = isBlockedModelId(requestedModelOverride) ? "" : requestedModelOverride;
+  const modelOverridesJson = normalizeModelOverridesJson(url.searchParams.get("modelOverrides") ?? "");
 
   if (!engagementSlug) {
     ws.close(1008, "Missing engagementSlug");
@@ -153,32 +213,41 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
   // ── Reattach to existing session ──
   if (session && !session.dead) {
-    console.log(`[terminal-server] Reattaching WS to existing session: ${key} (pid=${session.term.pid})`);
+    if (
+      session.modelOverride !== modelOverride ||
+      session.modelOverridesJson !== modelOverridesJson
+    ) {
+      console.log(`[terminal-server] Model config changed for ${key}; respawning PTY`);
+      destroySession(key);
+      session = undefined;
+    } else {
+      console.log(`[terminal-server] Reattaching WS to existing session: ${key} (pid=${session.term.pid})`);
 
-    // Cancel orphan timer
-    if (session.orphanTimer) {
-      clearTimeout(session.orphanTimer);
-      session.orphanTimer = null;
+      // Cancel orphan timer
+      if (session.orphanTimer) {
+        clearTimeout(session.orphanTimer);
+        session.orphanTimer = null;
+      }
+
+      // Detach old WS if any. 4001 (app range) distinguishes "another connection
+      // took over" from the genuine PTY-exit 1000 the client treats as session end.
+      if (session.ws && session.ws !== ws && session.ws.readyState === WebSocket.OPEN) {
+        session.ws.close(4001, "Replaced by new connection");
+      }
+      session.ws = ws;
+
+      // Send threadId
+      if (session.threadId) sendJson(ws, { type: "threadId", threadId: session.threadId });
+
+      // Send scrollback so the client sees recent output without a full re-render
+      if (session.scrollback) {
+        sendJson(ws, { type: "reattached" });
+        ws.send(session.scrollback);
+      }
+
+      wireWsToSession(ws, session);
+      return;
     }
-
-    // Detach old WS if any. 4001 (app range) distinguishes "another connection
-    // took over" from the genuine PTY-exit 1000 the client treats as session end.
-    if (session.ws && session.ws !== ws && session.ws.readyState === WebSocket.OPEN) {
-      session.ws.close(4001, "Replaced by new connection");
-    }
-    session.ws = ws;
-
-    // Send threadId
-    if (session.threadId) sendJson(ws, { type: "threadId", threadId: session.threadId });
-
-    // Send scrollback so the client sees recent output without a full re-render
-    if (session.scrollback) {
-      sendJson(ws, { type: "reattached" });
-      ws.send(session.scrollback);
-    }
-
-    wireWsToSession(ws, session);
-    return;
   }
 
   // ── Clean up dead session ──
@@ -214,12 +283,14 @@ wss.on("connection", async (ws: WebSocket, req) => {
     DECEPTICON_API_URL: LANGGRAPH_API_URL,
   };
   if (threadId) env.DECEPTICON_THREAD_ID = threadId;
+  if (modelOverride) env.DECEPTICON_MODEL_OVERRIDE = modelOverride;
+  if (modelOverridesJson) env.DECEPTICON_MODEL_OVERRIDES = modelOverridesJson;
 
   let term: pty.IPty;
   try {
     term = pty.spawn("node", ["--import", "tsx/esm", CLI_PATH], {
       name: "xterm-256color",
-      cols: 120,
+      cols: 80,
       rows: 30,
       cwd: resolve(__dirname, "../.."),
       env,
@@ -244,6 +315,8 @@ wss.on("connection", async (ws: WebSocket, req) => {
     orphanTimer: null,
     dead: false,
     exitCode: null,
+    modelOverride,
+    modelOverridesJson,
   };
   sessions.set(key, newSession);
 

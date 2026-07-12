@@ -173,9 +173,9 @@ export default function DocumentsPage() {
   const totalFiles = folders.reduce((sum, g) => sum + g.files.length, 0);
 
   return (
-    <div className="flex h-full gap-4 overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col gap-4 overflow-visible md:flex-row md:overflow-hidden">
       {/* Left: Folder tree */}
-      <div className="w-64 shrink-0 overflow-hidden flex flex-col">
+      <div className="flex max-h-72 w-full shrink-0 flex-col overflow-hidden md:max-h-none md:w-64">
         <div className="mb-3">
           <h1 className="text-lg font-bold tracking-tight">Documents</h1>
           <p className="text-xs text-muted-foreground">
@@ -247,22 +247,22 @@ export default function DocumentsPage() {
       </div>
 
       {/* Right: File content viewer */}
-      <Card className="flex-1 overflow-hidden">
+      <Card className="min-w-0 flex-1 overflow-hidden">
         <CardHeader className="border-b border-border/50 pb-3">
-          <CardTitle className="flex items-center gap-2 text-sm font-mono">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-mono sm:text-sm">
             <FileText className="h-4 w-4" />
-            {selectedFile?.path ?? "Select a file"}
+            <span className="min-w-0 break-all">{selectedFile?.path ?? "Select a file"}</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-14rem)]">
-            <div className="p-6">
+          <ScrollArea className="h-[calc(100dvh-18rem)] md:h-[calc(100dvh-14rem)]">
+            <div className="p-3 sm:p-6">
               {fileLoading ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
               ) : selectedFile ? (
-                <pre className="whitespace-pre-wrap text-sm text-muted-foreground font-mono">
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground sm:text-sm">
                   {selectedFile.content}
                 </pre>
               ) : (

@@ -214,7 +214,7 @@ export default function FindingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Findings</h1>
           <p className="text-sm text-muted-foreground">
@@ -222,7 +222,7 @@ export default function FindingsPage() {
           </p>
         </div>
         <Select value={filterSeverity} onValueChange={(v) => setFilterSeverity(v ?? "all")}>
-          <SelectTrigger className="w-40">
+          <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder="Filter severity" />
           </SelectTrigger>
           <SelectContent>
@@ -252,7 +252,8 @@ export default function FindingsPage() {
               </div>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>ID</TableHead>
@@ -272,7 +273,7 @@ export default function FindingsPage() {
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {finding.id}
                     </TableCell>
-                    <TableCell className="font-medium">
+                    <TableCell className="max-w-72 whitespace-normal break-words font-medium">
                       {finding.title}
                     </TableCell>
                     <TableCell>
@@ -286,7 +287,7 @@ export default function FindingsPage() {
                     <TableCell className="font-mono text-xs text-muted-foreground">
                       {finding.cvssScore != null ? finding.cvssScore.toFixed(1) : "—"}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="max-w-72 whitespace-normal break-words text-sm text-muted-foreground">
                       {finding.affectedAssets.length > 0
                         ? finding.affectedAssets.join(", ")
                         : "—"}
@@ -295,6 +296,7 @@ export default function FindingsPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -52,7 +52,7 @@ function SafeText({ value, className }: { value: unknown; className?: string }) 
   if (typeof value === "string") return <p className={className}>{value}</p>;
   if (typeof value === "boolean" || typeof value === "number") return <p className={className}>{String(value)}</p>;
   return (
-    <pre className="whitespace-pre-wrap text-xs text-foreground/80 rounded bg-muted/50 p-2 font-mono">
+    <pre className="whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-xs text-foreground/80">
       {JSON.stringify(value, null, 2)}
     </pre>
   );
@@ -74,12 +74,12 @@ function Field({ label, value }: { label: string; value: unknown }) {
   const display = typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
   const isBlock = display.includes("\n");
   return (
-    <div className={isBlock ? "space-y-1 text-sm" : "flex gap-3 text-sm"}>
-      <span className="w-40 shrink-0 text-muted-foreground">{label}</span>
+    <div className={isBlock ? "space-y-1 text-sm" : "space-y-1 text-sm sm:flex sm:gap-3 sm:space-y-0"}>
+      <span className="w-auto shrink-0 text-muted-foreground sm:w-40">{label}</span>
       {isBlock ? (
-        <pre className="whitespace-pre-wrap text-xs text-foreground/80 rounded bg-muted/50 p-2 font-mono">{display}</pre>
+        <pre className="whitespace-pre-wrap break-words rounded bg-muted/50 p-2 font-mono text-xs text-foreground/80">{display}</pre>
       ) : (
-        <span className="text-foreground">{display}</span>
+        <span className="min-w-0 break-words text-foreground">{display}</span>
       )}
     </div>
   );
@@ -642,9 +642,9 @@ export default function PlanPage() {
   const selectedMeta = DOC_META.find((d) => d.key === selected);
 
   return (
-    <div className="flex h-full gap-4 overflow-hidden">
+    <div className="flex h-full min-w-0 flex-col gap-4 overflow-visible md:flex-row md:overflow-hidden">
       {/* Left: Document list */}
-      <div className="w-64 shrink-0 space-y-1.5">
+      <div className="w-full shrink-0 space-y-1.5 md:w-64">
         <div className="mb-3">
           <h1 className="text-lg font-bold tracking-tight">Plan</h1>
           <p className="text-xs text-muted-foreground">Engagement documents</p>
@@ -685,21 +685,21 @@ export default function PlanPage() {
       </div>
 
       {/* Right: Document content */}
-      <Card className="flex-1 overflow-hidden">
+      <Card className="min-w-0 flex-1 overflow-hidden">
         <CardHeader className="border-b border-border/50 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+          <CardTitle className="flex min-w-0 flex-wrap items-center gap-2 text-sm sm:text-base">
             {selectedMeta && (
               <selectedMeta.icon className={cn("h-4 w-4", selectedMeta.color)} />
             )}
             {selectedMeta?.label ?? "Select a document"}
-            <span className="text-xs font-normal text-muted-foreground">
+            <span className="min-w-0 text-xs font-normal text-muted-foreground">
               {selectedMeta?.desc}
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea className="h-[calc(100vh-14rem)]">
-            <div className="p-6">
+          <ScrollArea className="h-[calc(100dvh-18rem)] md:h-[calc(100dvh-14rem)]">
+            <div className="p-3 sm:p-6">
               {selectedData && Renderer ? (
                 <Renderer data={selectedData} />
               ) : (

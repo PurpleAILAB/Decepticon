@@ -1,4 +1,5 @@
 import { requireAuth, AuthError } from "@/lib/auth-bridge";
+import { assertModelAllowed } from "@/lib/model-policy";
 import { prisma } from "@/lib/prisma";
 import { SLUG_RE, VALID_TARGET_TYPES } from "@/lib/workspace";
 import { NextRequest, NextResponse } from "next/server";
@@ -8,6 +9,27 @@ import * as path from "path";
 const WORKSPACE = process.env.WORKSPACE_PATH ?? path.join(process.env.HOME ?? "", ".decepticon", "workspace");
 
 const WORKSPACE_SUBDIRS = ["plan"];
+
+async function normalizeModelOverrides(value: unknown): Promise<Record<string, string> | null> {
+  if (value == null || value === "") return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid modelOverrides. Must be an object of role to model id");
+  }
+
+  const clean: Record<string, string> = {};
+  for (const [role, model] of Object.entries(value as Record<string, unknown>)) {
+    if (!/^[a-z][a-z0-9_-]{1,63}$/.test(role)) {
+      throw new Error("Invalid modelOverrides role key");
+    }
+    if (typeof model !== "string" || model.length > 200) {
+      throw new Error("Invalid modelOverrides model id. Must be up to 200 chars");
+    }
+    const trimmed = model.trim();
+    await assertModelAllowed(trimmed);
+    if (trimmed) clean[role] = trimmed;
+  }
+  return Object.keys(clean).length > 0 ? clean : null;
+}
 
 function isEngagementWorkspaceDir(name: string) {
   return SLUG_RE.test(name) && !name.startsWith(".");
@@ -69,6 +91,19 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { name, targetType, targetValue } = body;
+    const modelOverride =
+      typeof body.modelOverride === "string" && body.modelOverride.trim()
+        ? body.modelOverride.trim()
+        : null;
+    let modelOverrides: Record<string, string> | null = null;
+    try {
+      modelOverrides = await normalizeModelOverrides(body.modelOverrides);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Invalid modelOverrides" },
+        { status: 400 }
+      );
+    }
 
     if (!name || !targetType || !targetValue) {
       return NextResponse.json(
@@ -80,6 +115,21 @@ export async function POST(req: NextRequest) {
     if (!VALID_TARGET_TYPES.includes(targetType)) {
       return NextResponse.json(
         { error: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    if (modelOverride && modelOverride.length > 200) {
+      return NextResponse.json(
+        { error: "Invalid modelOverride. Must be a model id up to 200 chars" },
+        { status: 400 }
+      );
+    }
+    try {
+      await assertModelAllowed(modelOverride ?? "");
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Blocked model id is not allowed" },
         { status: 400 }
       );
     }
@@ -112,6 +162,8 @@ export async function POST(req: NextRequest) {
         name,
         targetType,
         targetValue,
+        modelOverride,
+        ...(modelOverrides ? { modelOverrides } : {}),
         userId,
         workspacePath: wsPath,
       },

@@ -227,6 +227,62 @@ class TestReadOverride:
 
         assert _read_override(_Req()) == "openai/gpt-5.5"
 
+    def test_role_override_takes_priority_over_global(self) -> None:
+        class _Runtime:
+            context = {
+                "model_override": "openai/gpt-5.5",
+                "model_overrides": {"recon": "ollama_chat/qwen2.5-coder:7b"},
+            }
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        assert _read_override(_Req(), "recon") == "ollama_chat/qwen2.5-coder:7b"
+
+    def test_role_override_normalizes_hyphenated_role_names(self) -> None:
+        class _Runtime:
+            context = {"model_overrides": {"blue_cell": "mittwald/Mistral-Medium-3.5-128B"}}
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        assert _read_override(_Req(), "blue-cell") == "mittwald/Mistral-Medium-3.5-128B"
+
+    def test_default_role_override_falls_back_before_global(self) -> None:
+        class _Runtime:
+            context = {
+                "model_override": "openai/gpt-5.5",
+                "model_overrides": {"default": "groq/llama-3.1-8b-instant"},
+            }
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        assert _read_override(_Req(), "recon") == "groq/llama-3.1-8b-instant"
+
+    def test_state_role_override_used_when_runtime_absent(self) -> None:
+        class _Req:
+            runtime = None
+            state = {
+                "model_override": "openai/gpt-5.4",
+                "model_overrides": {"exploit": "openrouter/moonshotai/kimi-k2"},
+            }
+
+        assert _read_override(_Req(), "exploit") == "openrouter/moonshotai/kimi-k2"
+
+    def test_json_encoded_role_overrides_are_supported(self) -> None:
+        class _Runtime:
+            context = {"model_overrides": '{"analyst":"auth/gpt-5.4-mini"}'}
+
+        class _Req:
+            runtime = _Runtime()
+            state: dict[str, Any] = {}
+
+        assert _read_override(_Req(), "analyst") == "auth/gpt-5.4-mini"
+
     def test_state_used_when_runtime_absent(self) -> None:
         class _Req:
             runtime = None

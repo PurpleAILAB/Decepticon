@@ -47,6 +47,8 @@ const BANNER_LOGO = extractLogo(BANNER_FULL);
 const BANNER_LOGO_WIDTH = Math.max(
   ...BANNER_LOGO.split("\n").map((l) => l.length),
 );
+const COMPACT_FULL_WIDTH = Math.max(BANNER_FULL_WIDTH, 220);
+const COMPACT_LOGO_WIDTH = Math.max(BANNER_LOGO_WIDTH, 110);
 
 // ── Responsive banner component ──────────────────────────────────────
 
@@ -55,12 +57,12 @@ export const Banner = React.memo(function Banner() {
   const cols = stdout?.columns ?? 80;
 
   // Wide terminal — full banner with logo + text art
-  if (cols >= BANNER_FULL_WIDTH) {
+  if (cols >= COMPACT_FULL_WIDTH) {
     return <Text color="red">{BANNER_FULL}</Text>;
   }
 
   // Medium terminal — braille logo + text name below
-  if (cols >= BANNER_LOGO_WIDTH) {
+  if (cols >= COMPACT_LOGO_WIDTH) {
     return (
       <Box flexDirection="column">
         <Text color="red">{BANNER_LOGO}</Text>

@@ -18,6 +18,9 @@ cd /app/clients/web
 
 NEXT_PID=""
 TERM_PID=""
+PROXY_PID=""
+WEB_PROXY_PORT="${WEB_PROXY_PORT:-3000}"
+NEXT_INTERNAL_PORT="${NEXT_INTERNAL_PORT:-3001}"
 
 # ── Handlers ──────────────────────────────────────────────────────
 
@@ -27,14 +30,15 @@ restart_next() {
     kill "$NEXT_PID" 2>/dev/null
     wait "$NEXT_PID" 2>/dev/null || true
   fi
-  echo "[entrypoint] Starting Next.js..."
-  node server.js &
+  echo "[entrypoint] Starting Next.js on internal port ${NEXT_INTERNAL_PORT}..."
+  PORT="$NEXT_INTERNAL_PORT" node server.js &
   NEXT_PID=$!
   echo "[entrypoint] Next.js restarted (PID $NEXT_PID)"
 }
 
 shutdown() {
   echo "[entrypoint] SIGTERM received — shutting down..."
+  [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null
   [ -n "$NEXT_PID" ] && kill "$NEXT_PID" 2>/dev/null
   [ -n "$TERM_PID" ] && kill "$TERM_PID" 2>/dev/null
   wait 2>/dev/null
@@ -53,11 +57,15 @@ echo "[entrypoint] Starting terminal server (ws://0.0.0.0:${TERMINAL_PORT:-3003}
 npx --yes tsx server/terminal-server.ts &
 TERM_PID=$!
 
-echo "[entrypoint] Starting Next.js (standalone)..."
-node server.js &
+echo "[entrypoint] Starting Next.js (standalone on internal port ${NEXT_INTERNAL_PORT})..."
+PORT="$NEXT_INTERNAL_PORT" node server.js &
 NEXT_PID=$!
 
-echo "[entrypoint] Ready (terminal=$TERM_PID, next=$NEXT_PID)"
+echo "[entrypoint] Starting web proxy (http://0.0.0.0:${WEB_PROXY_PORT})..."
+WEB_PROXY_PORT="$WEB_PROXY_PORT" NEXT_INTERNAL_PORT="$NEXT_INTERNAL_PORT" npx --yes tsx server/web-proxy.ts &
+PROXY_PID=$!
+
+echo "[entrypoint] Ready (terminal=$TERM_PID, next=$NEXT_PID, proxy=$PROXY_PID)"
 
 # Wait for either child to exit. If Next.js crashes, restart it.
 # If the terminal server crashes, exit (Docker will restart the container).
@@ -66,15 +74,22 @@ while true; do
   # so we poll instead.
   if ! kill -0 "$TERM_PID" 2>/dev/null; then
     echo "[entrypoint] Terminal server died — exiting"
+    [ -n "$PROXY_PID" ] && kill "$PROXY_PID" 2>/dev/null
     [ -n "$NEXT_PID" ] && kill "$NEXT_PID" 2>/dev/null
     exit 1
   fi
   if ! kill -0 "$NEXT_PID" 2>/dev/null; then
     echo "[entrypoint] Next.js died — restarting..."
     sleep 1
-    node server.js &
+    PORT="$NEXT_INTERNAL_PORT" node server.js &
     NEXT_PID=$!
     echo "[entrypoint] Next.js restarted (PID $NEXT_PID)"
+  fi
+  if ! kill -0 "$PROXY_PID" 2>/dev/null; then
+    echo "[entrypoint] Web proxy died - exiting"
+    [ -n "$NEXT_PID" ] && kill "$NEXT_PID" 2>/dev/null
+    [ -n "$TERM_PID" ] && kill "$TERM_PID" 2>/dev/null
+    exit 1
   fi
   sleep 2
 done
