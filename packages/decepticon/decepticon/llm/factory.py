@@ -42,6 +42,7 @@ from decepticon_core.types.llm import (
     AuthMethod,
     Credentials,
     LLMModelMapping,
+    ModelAssignment,
     ModelProfile,
     ProxyConfig,
     Tier,
@@ -1509,6 +1510,29 @@ class LLMFactory:
         self._cache: dict[str, BaseChatModel] = {}
 
     @staticmethod
+    def _compose_assignment(role: str, assignment: ModelAssignment) -> ModelAssignment:
+        """Apply a composed per-role model override to ``assignment``.
+
+        Precedence (env > ``PluginBundle.models`` > tier default) is owned
+        by ``decepticon.agents.build.resolve_role_model``. The displaced
+        tier primary is kept as the head of the fallback chain so a bad
+        override still degrades to the vetted default. Applied per get, so
+        it also re-tiers custom plugin roles that resolve via a fallback
+        role rather than living in ``AGENT_TIERS``. Imported lazily —
+        build → factory is a normal edge; the reverse must stay absent.
+        """
+        from decepticon.agents.build import resolve_role_model
+
+        override = resolve_role_model(role)
+        if not override or override == assignment.primary:
+            return assignment
+        return ModelAssignment(
+            primary=override,
+            fallbacks=[assignment.primary, *(m for m in assignment.fallbacks if m != override)],
+            temperature=assignment.temperature,
+        )
+
+    @staticmethod
     def _resolve_proxy_config() -> ProxyConfig:
         """Resolve proxy config from DecepticonConfig (env vars)."""
         from decepticon_core.utils.config import load_config
@@ -1575,7 +1599,9 @@ class LLMFactory:
             return self._cache[role]
 
         default_role = self._resolve_default_role(role, default_role)
-        assignment = self._router.get_assignment(role, default_role=default_role)
+        assignment = self._compose_assignment(
+            role, self._router.get_assignment(role, default_role=default_role)
+        )
         log.info(
             "Creating LLM for role '%s' → model '%s' via %s",
             role,
@@ -1598,7 +1624,9 @@ class LLMFactory:
         until one succeeds. ``default_role`` works as in ``get_model``.
         """
         default_role = self._resolve_default_role(role, default_role)
-        assignment = self._router.get_assignment(role, default_role=default_role)
+        assignment = self._compose_assignment(
+            role, self._router.get_assignment(role, default_role=default_role)
+        )
         if not assignment.fallbacks:
             return []
 

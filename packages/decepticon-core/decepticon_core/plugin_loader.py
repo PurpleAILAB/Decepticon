@@ -282,6 +282,13 @@ class PluginBundle:
         ``load_subagents_for_parent``.
     replaced_subagents
         Sub-agent name → SubAgentSpec replacement.
+    models
+        Role name → model id (e.g. ``{"exploit": "auth/claude-sonnet-5"}``).
+        Promotes that model to the role's PRIMARY, demoting the tier
+        default into the fallback chain. Lets a plugin re-tier a single
+        agent by composition, without editing the OSS tier map or an
+        operator env var. ``DECEPTICON_MODEL_<ROLE>`` still wins over a
+        bundle entry (operator override beats plugin default).
     """
 
     items: tuple[Any, ...] = ()
@@ -304,6 +311,9 @@ class PluginBundle:
     # ── Sub-agent overrides ──────────────────────────────────────────
     disabled_subagents: tuple[str, ...] = ()
     replaced_subagents: dict[str, Any] = field(default_factory=dict)
+
+    # ── Model overrides ──────────────────────────────────────────────
+    models: dict[str, str] = field(default_factory=dict)
 
     def matches_role(self, role: str) -> bool:
         """``roles`` filter — empty tuple = unrestricted."""
