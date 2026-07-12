@@ -288,9 +288,11 @@ def _responses_tools(tools: Any) -> list[dict[str, Any]] | None:
 
 
 # Total-output cap (reasoning + text) for GPT-5.x when the caller sends none.
-# Keeps an over-eager reasoning pass from exhausting the budget before it
-# emits content/tool calls; generous enough for reasoning + a tool round-trip.
-_DEFAULT_MAX_OUTPUT_TOKENS = 32000
+# It's a CEILING billed on actual output, not a target, so we hand the model
+# its full published budget (GPT-5.4/5.5/5.6/5.6-sol all cap at 128K output,
+# reasoning tokens included) — no truncation risk of a reasoning pass, no cost
+# vs a lower cap since only generated tokens are billed.
+_DEFAULT_MAX_OUTPUT_TOKENS = 128000
 
 
 def _upstream_model_slug(model: str) -> str:
@@ -347,9 +349,7 @@ def _request_body(
     elif opts.get("reasoning_effort"):
         body["reasoning"] = {"effort": opts["reasoning_effort"]}
     else:
-        body["reasoning"] = {
-            "effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")
-        }
+        body["reasoning"] = {"effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")}
 
     # Cap total output (reasoning + text) so an over-eager reasoning pass can't
     # exhaust the budget before emitting content/tool calls. Caller value wins.

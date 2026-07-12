@@ -252,7 +252,21 @@ _REASONING_EFFORT_DEFAULTS: dict[str, str] = {
     "claude-opus-4-7": "xhigh",
     "claude-sonnet-5": "medium",
 }
-_DEFAULT_MAX_TOKENS = 32000
+
+# Per-model max output tokens (Anthropic's published caps). Used as the default
+# when the caller sends no ``max_tokens`` — e.g. deepagents summarization
+# sub-calls, which previously defaulted to 4096 and truncated an adaptive
+# thinking pass before it could emit ``tool_use``. ``max_tokens`` is a CEILING
+# billed on actual output, not a target (a scoping turn uses ~3K), so handing
+# each model its full budget removes truncation risk at no extra cost.
+_MODEL_MAX_OUTPUT: dict[str, int] = {
+    "claude-opus-4-8": 128000,
+    "claude-opus-4-7": 128000,
+    "claude-sonnet-5": 128000,
+    "claude-sonnet-4-6": 128000,
+    "claude-haiku-4-5": 64000,
+}
+_FALLBACK_MAX_TOKENS = 64000  # <= every known model's cap, safe for unknowns
 
 
 def _reasoning_params(actual_model: str, opts: dict[str, Any]) -> dict[str, Any]:
@@ -283,13 +297,14 @@ def _reasoning_params(actual_model: str, opts: dict[str, Any]) -> dict[str, Any]
         effort = output_config.get("effort")
     effort = effort or opts.get("reasoning_effort")
     if not effort and actual_model in _REASONING_EFFORT_DEFAULTS:
-        env_key = "DECEPTICON_CLAUDE_EFFORT_" + actual_model.replace(
-            "-", "_"
-        ).replace(".", "_").upper()
+        env_key = (
+            "DECEPTICON_CLAUDE_EFFORT_" + actual_model.replace("-", "_").replace(".", "_").upper()
+        )
         effort = os.environ.get(env_key, _REASONING_EFFORT_DEFAULTS[actual_model])
     if effort:
         out["output_config"] = {"effort": effort}
     return out
+
 
 BASE_HEADERS = {
     "anthropic-version": "2023-06-01",
@@ -559,7 +574,8 @@ class ClaudeCodeCustomHandler(CustomLLM):
             "model": actual_model,
             "messages": api_messages,
             "system": system_blocks,
-            "max_tokens": opts.get("max_tokens") or _DEFAULT_MAX_TOKENS,
+            "max_tokens": opts.get("max_tokens")
+            or _MODEL_MAX_OUTPUT.get(actual_model, _FALLBACK_MAX_TOKENS),
         }
         if "temperature" in opts:
             request_body["temperature"] = opts["temperature"]

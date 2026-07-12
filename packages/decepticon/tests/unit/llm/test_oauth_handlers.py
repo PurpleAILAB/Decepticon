@@ -522,9 +522,7 @@ class TestClaudeReasoningParams:
         assert claude._reasoning_params("claude-haiku-4-5", {}) == {}
 
     def test_caller_thinking_wins(self) -> None:
-        out = claude._reasoning_params(
-            "claude-sonnet-5", {"thinking": {"type": "disabled"}}
-        )
+        out = claude._reasoning_params("claude-sonnet-5", {"thinking": {"type": "disabled"}})
         assert out["thinking"] == {"type": "disabled"}
 
     def test_reasoning_effort_alias_overrides_default(self) -> None:
@@ -532,9 +530,7 @@ class TestClaudeReasoningParams:
         assert out["output_config"] == {"effort": "low"}
 
     def test_output_config_effort_overrides_default(self) -> None:
-        out = claude._reasoning_params(
-            "claude-sonnet-5", {"output_config": {"effort": "high"}}
-        )
+        out = claude._reasoning_params("claude-sonnet-5", {"output_config": {"effort": "high"}})
         assert out["output_config"] == {"effort": "high"}
 
     def test_env_override(self, monkeypatch) -> None:
@@ -545,23 +541,19 @@ class TestClaudeReasoningParams:
     def test_caller_thinking_on_non_reasoner_sets_effort_default_absent(self) -> None:
         # An explicit thinking on a non-mapped model: thinking honored, no
         # per-model effort default to apply.
-        out = claude._reasoning_params(
-            "claude-sonnet-4-6", {"thinking": {"type": "adaptive"}}
-        )
+        out = claude._reasoning_params("claude-sonnet-4-6", {"thinking": {"type": "adaptive"}})
         assert out["thinking"] == {"type": "adaptive"}
         assert "output_config" not in out
 
 
 class TestCodexReasoningBody:
     def _body(self, opts):
-        return codex._request_body(
-            "auth/gpt-5.5", [{"role": "user", "content": "hi"}], opts
-        )
+        return codex._request_body("auth/gpt-5.5", [{"role": "user", "content": "hi"}], opts)
 
     def test_default_reasoning_medium_and_output_cap(self) -> None:
         body = self._body({})
         assert body["reasoning"] == {"effort": "medium"}
-        assert body["max_output_tokens"] == 32000
+        assert body["max_output_tokens"] == 128000
 
     def test_caller_reasoning_object_wins(self) -> None:
         body = self._body({"reasoning": {"effort": "high"}})
