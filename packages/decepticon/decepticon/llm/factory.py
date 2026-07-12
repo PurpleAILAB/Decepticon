@@ -1372,6 +1372,14 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"Underlying: {safe_msg}"
         ) from exc
 
+    if "invalid model name" in msg_lower:
+        raise RuntimeError(
+            f"{fatal_prefix}Model '{model_name}' is not available through the LiteLLM "
+            f"proxy. Verify its route in config/litellm.yaml and query the proxy's "
+            f"/v1/models endpoint for the models available to your key.\n"
+            f"Underlying: {safe_msg}"
+        ) from exc
+
     if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
         raise RuntimeError(
             f"{fatal_prefix}Model '{model_name}' rejected the request (400). "
