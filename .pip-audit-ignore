@@ -6,3 +6,6 @@
 #
 # Empty file = nothing ignored. Keep it that way whenever possible: prefer
 # upgrading the locked dependency (uv lock -P <pkg>==<fixed>) over ignoring.
+# semgrep 1.169.0 pins click~=8.1.8, so the workspace cannot resolve the
+# PYSEC-2026-2132 fix (>=8.3.3). Remove when Semgrep permits it.
+PYSEC-2026-2132
