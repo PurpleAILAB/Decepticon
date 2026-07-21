@@ -42,6 +42,7 @@ from decepticon_core.types.llm import (
     AuthMethod,
     Credentials,
     LLMModelMapping,
+    ModelAssignment,
     ModelProfile,
     ProxyConfig,
     Tier,
@@ -52,17 +53,20 @@ from decepticon_core.utils.logging import get_logger
 log = get_logger("llm.factory")
 
 
-# Default output-token cap for every model created through this factory.
+# Output-token cap for every model created through this factory.
 # We must set one explicitly: the LiteLLM proxy applies the Anthropic default
 # of 4096 when the client sends no ``max_tokens``, and a single large
 # ``write_file`` tool call (e.g. a full finding report or a recon target model)
-# then truncates mid-argument at 4096 output tokens — the tool-call JSON never
-# closes, so the ``content`` arg is dropped and the write fails. Modern Claude
-# models (opus-4-8 / sonnet-4-6 / haiku-4-5) support far larger outputs; 16384
-# is a generous cap (it is a ceiling, not a forced value — short replies cost
-# nothing extra) that lets large deliverables complete in one call.
-# Override with ``DECEPTICON_LLM_MAX_TOKENS``.
-DEFAULT_LLM_MAX_TOKENS = 16384
+# then truncates mid-argument — the tool-call JSON never closes, so the
+# ``content`` arg is dropped and the write fails. The cap is per-model: we hand
+# each model its OWN max-output ceiling so a big deliverable completes in one
+# call. It is a ceiling, not a forced value — short replies cost nothing extra.
+# Values above 64k require the streaming API path (the SDK already streams).
+# Authoritative caps (see ``_model_max_output_tokens``): Claude Opus 4.x and
+# Sonnet (4.6/5) = 128000; Claude Haiku 4.5 = 64000. Unknown models fall back
+# to the safe 64k default. Override with ``DECEPTICON_LLM_MAX_TOKENS`` (an
+# explicit value wins over the per-model resolution).
+DEFAULT_LLM_MAX_TOKENS = 64000
 LLM_MAX_TOKENS_ENV = "DECEPTICON_LLM_MAX_TOKENS"
 
 DEFAULT_LLM_REQUEST_TIMEOUT_SECONDS = 600
@@ -78,8 +82,32 @@ LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
 
 
-def _resolve_max_tokens() -> int:
-    """Output-token cap for factory-created models (env override, safe parse)."""
+def _model_max_output_tokens(model: str) -> int:
+    """Return ``model``'s own max-output-token ceiling.
+
+    Match on the model slug suffix (last path segment) so every namespace we
+    route through resolves the same — ``anthropic/claude-opus-4-8``,
+    ``auth/claude-opus-4-8``, ``openrouter/anthropic/claude-sonnet-4-6``.
+    Opus 4.x and Sonnet (4.6/5) support 128000 output tokens; Haiku 4.5
+    supports 64000. Unknown / non-Claude models fall back to the safe 64k
+    default rather than an over-large value the upstream might reject.
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    if "opus" in slug or "sonnet" in slug:
+        return 128000
+    if "haiku" in slug:
+        return 64000
+    return DEFAULT_LLM_MAX_TOKENS
+
+
+def _resolve_max_tokens(model: str) -> int:
+    """Output-token cap for a factory-created model.
+
+    ``DECEPTICON_LLM_MAX_TOKENS`` (explicit override) wins when set to a
+    positive int; otherwise the model's own max-output ceiling is used so a
+    large single-call deliverable (finding report, recon model) never truncates
+    at the proxy's 4096 default.
+    """
     raw = os.environ.get(LLM_MAX_TOKENS_ENV)
     if raw:
         try:
@@ -88,7 +116,7 @@ def _resolve_max_tokens() -> int:
             value = 0
         if value > 0:
             return value
-    return DEFAULT_LLM_MAX_TOKENS
+    return _model_max_output_tokens(model)
 
 
 class LLMTimeoutError(RuntimeError):
@@ -1410,6 +1438,25 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
     safe_msg = _redact_secrets(msg)
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    status_match = _STATUS_IN_MSG.search(msg)
+    is_bad_request = (
+        "badrequest" in err_type.lower()
+        or status == 400
+        or (status_match is not None and int(status_match.group(1)) == 400)
+    )
+
+    if is_bad_request and "invalid model name" in msg_lower:
+        raise RuntimeError(
+            f"{fatal_prefix}Model '{model_name}' is not available through the LiteLLM "
+            f"proxy. Verify its static route in config/litellm.yaml or dynamic environment "
+            f"configuration (DECEPTICON_MODEL*, DECEPTICON_LITELLM_MODELS, "
+            f"CUSTOM_OPENAI_*, or OLLAMA_MODEL). Restart the proxy, inspect its startup "
+            f"logs, and query /v1/models for the models available to your key.\n"
+            f"Underlying: {safe_msg}"
+        ) from exc
 
     # LiteLLM puts a recognizable prefix in the inner message when the
     # proxy ran out of fallback options for a model_group — issue #107.
@@ -1423,7 +1470,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
             f"Underlying: {safe_msg}"
         ) from exc
 
-    if "badrequest" in err_type.lower() or "code: 400" in msg_lower:
+    if is_bad_request:
         raise RuntimeError(
             f"{fatal_prefix}Model '{model_name}' rejected the request (400). "
             f"This usually means a parameter the model no longer supports "
@@ -1561,6 +1608,29 @@ class LLMFactory:
         self._cache: dict[str, BaseChatModel] = {}
 
     @staticmethod
+    def _compose_assignment(role: str, assignment: ModelAssignment) -> ModelAssignment:
+        """Apply a composed per-role model override to ``assignment``.
+
+        Precedence (env > ``PluginBundle.models`` > tier default) is owned
+        by ``decepticon.agents.build.resolve_role_model``. The displaced
+        tier primary is kept as the head of the fallback chain so a bad
+        override still degrades to the vetted default. Applied per get, so
+        it also re-tiers custom plugin roles that resolve via a fallback
+        role rather than living in ``AGENT_TIERS``. Imported lazily —
+        build → factory is a normal edge; the reverse must stay absent.
+        """
+        from decepticon.agents.build import resolve_role_model
+
+        override = resolve_role_model(role)
+        if not override or override == assignment.primary:
+            return assignment
+        return ModelAssignment(
+            primary=override,
+            fallbacks=[assignment.primary, *(m for m in assignment.fallbacks if m != override)],
+            temperature=assignment.temperature,
+        )
+
+    @staticmethod
     def _resolve_proxy_config() -> ProxyConfig:
         """Resolve proxy config from DecepticonConfig (env vars)."""
         from decepticon_core.utils.config import load_config
@@ -1627,7 +1697,9 @@ class LLMFactory:
             return self._cache[role]
 
         default_role = self._resolve_default_role(role, default_role)
-        assignment = self._router.get_assignment(role, default_role=default_role)
+        assignment = self._compose_assignment(
+            role, self._router.get_assignment(role, default_role=default_role)
+        )
         log.info(
             "Creating LLM for role '%s' → model '%s' via %s",
             role,
@@ -1650,7 +1722,9 @@ class LLMFactory:
         until one succeeds. ``default_role`` works as in ``get_model``.
         """
         default_role = self._resolve_default_role(role, default_role)
-        assignment = self._router.get_assignment(role, default_role=default_role)
+        assignment = self._compose_assignment(
+            role, self._router.get_assignment(role, default_role=default_role)
+        )
         if not assignment.fallbacks:
             return []
 
@@ -1687,9 +1761,9 @@ class LLMFactory:
             "api_key": SecretStr(self._proxy.api_key),
             "timeout": self._proxy.timeout,
             "max_retries": self._proxy.max_retries,
-            # Explicit cap so large single-call deliverables (finding reports,
+            # Per-model cap so large single-call deliverables (finding reports,
             # recon target models) don't truncate at the proxy's 4096 default.
-            "max_tokens": _resolve_max_tokens(),
+            "max_tokens": _resolve_max_tokens(model),
         }
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}

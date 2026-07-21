@@ -88,6 +88,7 @@ from decepticon.tools.research._state import (  # noqa: E402
     _json,
     _kg_backend_name,
     graph_transaction,
+    kg_degrades,
 )
 
 
@@ -331,6 +332,7 @@ def _parse_dependencies(path: Path) -> list[tuple[str, str, str]]:
 
 
 @tool
+@kg_degrades
 def kg_add_node(kind: str, label: str, props: str = "{}") -> str:
     """Insert or update a node in the engagement knowledge graph.
 
@@ -369,6 +371,7 @@ def kg_add_node(kind: str, label: str, props: str = "{}") -> str:
 
 
 @tool
+@kg_degrades
 def kg_add_edge(src: str, dst: str, kind: str, weight: float = 1.0) -> str:
     """Connect two nodes with a typed, weighted edge.
 
@@ -410,6 +413,7 @@ def kg_add_edge(src: str, dst: str, kind: str, weight: float = 1.0) -> str:
 
 
 @tool
+@kg_degrades
 def kg_query(kind: str = "", min_severity: str = "", limit: int = 25) -> str:
     """Query the knowledge graph for nodes matching kind / severity.
 
@@ -461,6 +465,7 @@ def kg_query(kind: str = "", min_severity: str = "", limit: int = 25) -> str:
 
 
 @tool
+@kg_degrades
 def kg_neighbors(node_id: str, direction: str = "out", edge_kind: str = "") -> str:
     """Walk one hop out from a node to see what it connects to.
 
@@ -497,6 +502,7 @@ def kg_neighbors(node_id: str, direction: str = "out", edge_kind: str = "") -> s
 
 
 @tool
+@kg_degrades
 def kg_stats() -> str:
     """Return counts of nodes and edges by kind. Cheapest way to sanity check
     graph state at iteration start. Returns JSON stats dict."""
@@ -505,6 +511,7 @@ def kg_stats() -> str:
 
 
 @tool
+@kg_degrades
 def kg_backend_health() -> str:
     """Report KnowledgeGraph backend health/startup diagnostics.
 
@@ -700,6 +707,7 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
 
 
 @tool
+@kg_degrades
 def kg_ingest_sarif(path: str, scanner_hint: str = "") -> str:
     """Ingest a SARIF report (semgrep, bandit, gitleaks, trivy, codeql) into the graph.
 
@@ -732,6 +740,7 @@ def kg_ingest_sarif(path: str, scanner_hint: str = "") -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
     """Ingest Nmap XML output into the knowledge graph.
 
@@ -828,6 +837,7 @@ def kg_ingest_nmap_xml(path: str, scanner_hint: str = "nmap") -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_nuclei_jsonl(path: str, scanner_hint: str = "nuclei") -> str:
     """Ingest Nuclei JSONL output into the knowledge graph.
 
@@ -930,6 +940,7 @@ def kg_ingest_nuclei_jsonl(path: str, scanner_hint: str = "nuclei") -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_subfinder(path: str, root_domain: str = "") -> str:
     """Ingest subfinder plaintext output (one subdomain per line).
 
@@ -987,6 +998,7 @@ def kg_ingest_subfinder(path: str, root_domain: str = "") -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
     """Ingest httpx JSONL output into host/service/entrypoint graph nodes."""
     p = Path(path)
@@ -1125,6 +1137,7 @@ def kg_ingest_httpx_jsonl(path: str, scanner_hint: str = "httpx") -> str:
 
 
 @tool
+@kg_degrades
 def kg_analyze_jwt(token: str, source: str = "") -> str:
     """Parse a JWT and lift suspicious indicators into graph vulnerabilities."""
     parsed = parse_token(token)
@@ -1200,6 +1213,7 @@ def kg_analyze_jwt(token: str, source: str = "") -> str:
 
 
 @tool
+@kg_degrades
 def kg_analyze_oauth_callback(
     callback_url: str,
     initial_request_url: str = "",
@@ -1265,6 +1279,7 @@ def kg_analyze_oauth_callback(
 
 
 @tool
+@kg_degrades
 def kg_analyze_cookie_value(
     name: str,
     value: str,
@@ -1350,6 +1365,7 @@ def kg_analyze_cookie_value(
 
 
 @tool
+@kg_degrades
 def kg_scan_solidity(
     path: str, min_severity: str = "low", scanner_hint: str = "solidity-patterns"
 ) -> str:
@@ -1424,6 +1440,7 @@ def kg_scan_solidity(
 
 
 @tool
+@kg_degrades
 def kg_ingest_slither(path: str) -> str:
     """Ingest Slither JSON output into the engagement KG.
 
@@ -1449,6 +1466,7 @@ def kg_ingest_slither(path: str) -> str:
 
 
 @tool
+@kg_degrades
 def kg_triage_binary(path: str, max_strings: int = 400) -> str:
     """Triage a binary for exploit-relevant signals and persist graph entities."""
     binary_path = Path(path)
@@ -1881,6 +1899,7 @@ async def validate_finding(
 
 
 @tool
+@kg_degrades
 def kg_ingest_dnsx(path: str) -> str:
     """Ingest dnsx JSONL output (one resolution record per line).
 
@@ -1955,6 +1974,7 @@ def kg_ingest_dnsx(path: str) -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_katana(path: str) -> str:
     """Ingest katana JSONL crawl output as URL / entrypoint nodes."""
     p = Path(path)
@@ -2019,6 +2039,7 @@ def kg_ingest_katana(path: str) -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_masscan(path: str) -> str:
     """Ingest masscan JSON output into host + service nodes.
 
@@ -2088,6 +2109,7 @@ def kg_ingest_masscan(path: str) -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_ffuf(path: str) -> str:
     """Ingest ffuf JSON output as URL nodes anchored to a host.
 
@@ -2167,6 +2189,7 @@ def kg_ingest_ffuf(path: str) -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_testssl(path: str, target: str = "") -> str:
     """Ingest testssl.sh JSON output as TLS vulnerability nodes.
 
@@ -2273,6 +2296,7 @@ def kg_ingest_testssl(path: str, target: str = "") -> str:
 
 
 @tool
+@kg_degrades
 def kg_ingest_crackmapexec(path: str, protocol: str = "smb", target: str = "") -> str:
     """Ingest a crackmapexec / netexec log file as credential leads.
 
@@ -2337,6 +2361,7 @@ def kg_ingest_crackmapexec(path: str, protocol: str = "smb", target: str = "") -
 
 
 @tool
+@kg_degrades
 def kg_ingest_asrep_hashes(path: str, domain: str = "") -> str:
     """Ingest an ``impacket-GetNPUsers`` output file as credential leads.
 

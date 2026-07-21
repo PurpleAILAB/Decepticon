@@ -64,7 +64,11 @@ repos:
       - id: detect-private-key
         # tests/unit/cloud/test_cloud.py contains a test fixture private
         # key (intentionally — it's verifying the AWS credential parser).
-        exclude: ^packages/decepticon/tests/unit/cloud/test_cloud\.py$
+        exclude: |
+          (?x)^(
+            packages/decepticon/tests/unit/cloud/test_cloud\.py|
+            packages/decepticon/decepticon/skills/\.graph/skills\.cypher
+          )$
       - id: mixed-line-ending
         args: ["--fix=lf"]
         # PowerShell / Windows shell scripts intentionally use CRLF per
@@ -139,6 +143,7 @@ repos:
         # Per-repo allowlist for offensive-security jargon that typos
         # flags by default (Mimikatz commands, base64 noise, etc.) lives
         # in .typos.toml at the repo root.
+        exclude: ^packages/decepticon/decepticon/skills/\.graph/skills\.cypher$
 
   # ── Secrets scan ────────────────────────────────────────────────
   - repo: https://github.com/gitleaks/gitleaks

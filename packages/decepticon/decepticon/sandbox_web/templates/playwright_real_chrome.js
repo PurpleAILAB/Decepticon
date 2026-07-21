@@ -16,6 +16,8 @@
  */
 
 const fs = require('fs');
+const dns = require('dns').promises;
+const ipaddr = require('ipaddr.js');
 
 // Drain stdout fully before exiting. `process.exit()` can truncate a large
 // HTML payload because it does not wait for pending stdout I/O (Node docs).
@@ -51,6 +53,61 @@ async function readStdinJson() {
   });
 }
 
+function isBlockedIp(host) {
+  try {
+    let ip = ipaddr.process(host); // unwrap IPv4-mapped IPv6 addresses
+    if (ip.kind() === 'ipv6' && ip.match(ipaddr.parse('64:ff9b::'), 96)) {
+      const bytes = ip.toByteArray();
+      ip = ipaddr.fromByteArray(bytes.slice(12)); // NAT64 WKP embeds IPv4 in low 32 bits
+    }
+    const range = ip.range();
+    return !['unicast'].includes(range);
+  } catch (_e) {
+    return false;
+  }
+}
+
+async function classifyUrl(candidate, allowPrivate) {
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch (e) {
+    return { ok: false, reason: `parse_error:${e.message || e}` };
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    return { ok: false, reason: `scheme:${parsed.protocol.replace(':', '') || 'none'}` };
+  }
+  if (allowPrivate) {
+    return { ok: true, reason: 'allow_private' };
+  }
+  const host = parsed.hostname;
+  if (isBlockedIp(host)) {
+    return { ok: false, reason: `ip_blocked:${host}` };
+  }
+  try {
+    const records = await dns.lookup(host, { all: true });
+    for (const record of records) {
+      if (isBlockedIp(record.address)) {
+        return { ok: false, reason: `resolves_internal:${host}->${record.address}` };
+      }
+    }
+  } catch (_e) {
+    return { ok: false, reason: 'resolve_failed_blocked' };
+  }
+  return { ok: true, reason: 'public' };
+}
+
+async function installSafetyGuard(page, allowPrivate) {
+  await page.route('**/*', async (route) => {
+    const check = await classifyUrl(route.request().url(), allowPrivate);
+    if (!check.ok) {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
+}
+
 async function main() {
   const args = await readStdinJson();
   const url = args.url;
@@ -61,6 +118,7 @@ async function main() {
   const timeoutMs = args.timeout || 60000;
   const headless = args.headless ?? false;     // Akamai/etc detect headless
   const viewport = args.viewport || { width: 1366, height: 900 };
+  const allowPrivate = args.allowPrivate === true;
 
   let chromium;
   let automation = 'playwright';
@@ -110,6 +168,7 @@ async function main() {
     }
     ctx = await chromium.launchPersistentContext(profileDir, ctxOpts);
     const page = await ctx.newPage();
+    await installSafetyGuard(page, allowPrivate);
     // Single shared deadline across warmup + main + reload navigations so the
     // first nav can't eat the whole budget and starve the rest.
     const deadline = Date.now() + timeoutMs;

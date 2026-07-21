@@ -330,8 +330,20 @@ def _request_body(
         body["tools"] = tools
     if opts.get("tool_choice"):
         body["tool_choice"] = opts["tool_choice"]
+
+    # Reasoning — GPT-5.x are reasoning models (effort none|low|medium|high|
+    # xhigh). Caller-supplied ``reasoning`` (Responses shape) wins; else honor
+    # the OpenAI-style ``reasoning_effort`` alias; else default to ``medium``
+    # (the vendor's balanced starting point) so requests get consistent depth.
+    # NOTE: the ChatGPT Codex backend REJECTS ``max_output_tokens`` ("Unsupported
+    # parameter", verified 2026-07-13 against gpt-5.5 and gpt-5.6-sol) — do not
+    # add it here. Output length is governed by the effort level, not a cap.
     if opts.get("reasoning"):
         body["reasoning"] = opts["reasoning"]
+    elif opts.get("reasoning_effort"):
+        body["reasoning"] = {"effort": opts["reasoning_effort"]}
+    else:
+        body["reasoning"] = {"effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")}
     return body
 
 

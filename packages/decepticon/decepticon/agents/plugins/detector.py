@@ -58,14 +58,21 @@ from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
+
+# cve_lookup / cve_by_package are self-contained NVD/EPSS/KEV + OSV lookups (no
+# KG/Neo4j dependency) — exactly the dependency-correlation surface this agent
+# needs per its docstring. Only the kg_* tools in tools/research stay deferred
+# pending the Neo4j middleware redesign.
+from decepticon.tools.research.tools import cve_by_package, cve_lookup
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# KG tools and cve_* were removed pending the Neo4j middleware redesign
-# (see docs/design/neo4j-research-notes.md). KG surface is currently
-# limited to the analyst agent. cve_lookup / cve_by_package also live
-# in the broken tools/research module; reintroduce from a clean source
-# after the refactor lands.
-_STANDARD_TOOLS: dict[str, Any] = {}
+_STANDARD_TOOLS: dict[str, Any] = {
+    t.name: t
+    for t in [
+        cve_lookup,
+        cve_by_package,
+    ]
+}
 
 _SKILL_SOURCES: list[str] = [
     "/skills/plugins/detector/",

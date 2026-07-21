@@ -100,6 +100,54 @@ class TestActionableMessageFatalLabel:
         # Existing remediation text preserved (regression).
         assert "rejected the request (400)" in msg
 
+    def test_400_invalid_model_names_static_and_dynamic_proxy_configuration(self):
+        exc = _exc_with_status(
+            "BadRequestError",
+            400,
+            "Error code: 400 - Invalid model name passed in model=custom/kimi-k2.7-code. "
+            "Authorization: Bearer ***. Call `/v1/models` to view "
+            "available models for your key.",
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code")
+
+        msg = str(info.value)
+        assert "non-retryable provider error" in msg
+        assert "config/litellm.yaml" in msg
+        assert "dynamic environment" in msg
+        assert "DECEPTICON_MODEL" in msg
+        assert "restart" in msg.lower()
+        assert "startup logs" in msg.lower()
+        assert "/v1/models" in msg
+        assert "ROUTELEAKTOKEN12345" not in msg
+        assert "[REDACTED]" in msg
+
+    def test_503_invalid_model_text_is_not_reclassified_as_a_route_error(self):
+        exc = _exc_with_status(
+            "ServiceUnavailableError",
+            503,
+            "Error code: 503 - upstream temporarily returned Invalid model name",
+        )
+        assert _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code") is None
+
+    def test_value_error_invalid_model_text_passes_through(self):
+        exc = ValueError("parser captured provider text: Invalid model name")
+        assert _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code") is None
+
+    def test_composite_400_invalid_model_precedes_no_fallback_guidance(self):
+        exc = _exc_with_status(
+            "BadRequestError",
+            400,
+            "Error code: 400 - Invalid model name passed in model=custom/kimi-k2.7-code. "
+            "No fallback model group found for original model_group=custom/kimi-k2.7-code",
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code")
+
+        msg = str(info.value)
+        assert "not available through the LiteLLM proxy" in msg
+        assert "another auth method" not in msg
+
     def test_401_message_labelled_non_retryable(self):
         exc = _exc_with_status("AuthenticationError", 401, "Error code: 401 - invalid_api_key")
         with pytest.raises(RuntimeError) as info:
