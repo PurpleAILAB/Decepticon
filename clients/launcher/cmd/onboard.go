@@ -317,7 +317,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Together AI         — Llama / Mixtral hub (together_ai/*)", methodTogetherAPI),
 					huh.NewOption("Fireworks AI        — Llama / Mixtral hub (fireworks_ai/*)", methodFireworksAPI),
 					huh.NewOption("Cohere Command      — Command-A / Command-R (cohere/*)", methodCohereAPI),
-					huh.NewOption("Moonshot Kimi K2    — Kimi K2 (moonshot/*)", methodMoonshotAPI),
+					huh.NewOption("Moonshot Kimi K3    — Kimi K3 (moonshot/*)", methodMoonshotAPI),
 					huh.NewOption("Z.ai GLM-4.5        — GLM-4.5 / GLM-4.5-Air (zai/*)", methodZaiAPI),
 					huh.NewOption("Alibaba DashScope   — Qwen Max/Plus/Turbo (dashscope/*)", methodDashscopeAPI),
 					huh.NewOption("LM Studio (local)   — local OpenAI-compatible server (lm_studio/*)", methodLMStudioLocal),
@@ -667,7 +667,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("2 / 5  ·  Cohere").
 			WithHideFunc(func() bool { return !contains(methods, methodCohereAPI) }),
 
-		// Step 2-cloud-ix: Moonshot Kimi K2
+		// Step 2-cloud-ix: Moonshot Kimi K3
 		huh.NewGroup(
 			huh.NewInput().
 				Title("MOONSHOT_API_KEY").
@@ -675,7 +675,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 				EchoMode(huh.EchoModePassword).
 				Value(&moonshotKey).
 				Validate(nonEmpty),
-		).Title("2 / 5  ·  Moonshot Kimi K2").
+		).Title("2 / 5  ·  Moonshot Kimi K3").
 			WithHideFunc(func() bool { return !contains(methods, methodMoonshotAPI) }),
 
 		// Step 2-cloud-x: Z.ai GLM-4.5

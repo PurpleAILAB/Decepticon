@@ -1003,7 +1003,7 @@ def _model_is_deepseek_thinking(model: str) -> bool:
 def _model_is_moonshot_thinking(model: str) -> bool:
     """Return True for Moonshot Kimi models.
 
-    Moonshot's kimi models (e.g. kimi-k2.6) use thinking/reasoning mode and
+    Moonshot's kimi models (e.g. kimi-k3) use thinking/reasoning mode and
     return ``reasoning_content`` in assistant messages.
     """
     slug = model.rsplit("/", 1)[-1].lower()

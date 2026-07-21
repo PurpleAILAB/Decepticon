@@ -284,7 +284,7 @@ OPENAI_API_KEY=sk-proj-...
 | OpenRouter | `OPENROUTER_API_KEY` | `sk-or-...` | [openrouter.ai](https://openrouter.ai) |
 | Replicate | `REPLICATE_API_TOKEN` | `r8_...` | [replicate.com](https://replicate.com) |
 | NVIDIA NIM | `NVIDIA_API_KEY` | `nvapi-...` | [build.nvidia.com](https://build.nvidia.com) |
-| Moonshot (Kimi K2) | `MOONSHOT_API_KEY` | `sk-...` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| Moonshot (Kimi K3) | `MOONSHOT_API_KEY` | `sk-...` | [platform.moonshot.cn](https://platform.moonshot.cn) |
 | Z.ai (GLM-4.5) | `ZAI_API_KEY` | `...` | [z.ai/manage](https://z.ai/manage) |
 | Alibaba DashScope (Qwen) | `DASHSCOPE_API_KEY` | `sk-...` | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | GitHub Models | `GITHUB_TOKEN` | `github_pat_...` | [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens) |

@@ -118,8 +118,8 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "cohere_chat/command-r-plus",
     "cohere_chat/command-r",
   ],
-  "Moonshot Kimi K2": [
-    "moonshot/kimi-k2.6",
+  "Moonshot Kimi K3": [
+    "moonshot/kimi-k3",
     "moonshot/moonshot-v1-128k",
     "moonshot/moonshot-v1-8k",
   ],

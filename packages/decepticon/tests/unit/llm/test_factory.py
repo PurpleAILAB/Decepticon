@@ -1214,7 +1214,7 @@ class TestDeepSeekReasoningContent:
         assert _model_is_deepseek_thinking("deepseek/deepseek-chat") is False
         assert _model_is_deepseek_thinking("openai/gpt-5.5") is False
 
-        assert _model_is_moonshot_thinking("moonshot/kimi-k2.6") is True
+        assert _model_is_moonshot_thinking("moonshot/kimi-k3") is True
         assert _model_is_moonshot_thinking("moonshot/moonshot-v1-8k") is True
         assert _model_is_moonshot_thinking("moonshot/moonshot-v1-128k") is True
         assert _model_is_moonshot_thinking("openai/gpt-5.5") is False

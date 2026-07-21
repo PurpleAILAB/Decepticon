@@ -261,21 +261,16 @@ model_list:
       input_cost_per_token: 0.0000003
       output_cost_per_token: 0.0000012
 
-  # ── Moonshot / Kimi ──────────────────────────────────────────────────
+  # ── Moonshot / Kimi K3 ───────────────────────────────────────────────
   # Native LiteLLM moonshot/ provider — registry-registered model IDs.
-  - model_name: moonshot/kimi-k2.6
+  - model_name: moonshot/kimi-k3
     litellm_params:
-      model: moonshot/kimi-k2.6
+      model: moonshot/kimi-k3
       api_key: os.environ/MOONSHOT_API_KEY
       additional_drop_params: ["temperature"]
   - model_name: moonshot/kimi-k2.7-code
     litellm_params:
       model: moonshot/kimi-k2.7-code
-      api_key: os.environ/MOONSHOT_API_KEY
-      additional_drop_params: ["temperature"]
-  - model_name: moonshot/kimi-k2-instruct
-    litellm_params:
-      model: moonshot/kimi-k2-instruct
       api_key: os.environ/MOONSHOT_API_KEY
       additional_drop_params: ["temperature"]
   - model_name: moonshot/moonshot-v1-8k
@@ -984,13 +979,13 @@ router_settings:
     # Anthropic API path (opus-4-8 is the current flagship; 4.7 is the
     # first within-provider step down before sonnet/haiku)
     - {"anthropic/claude-fable-5": ["anthropic/claude-opus-4-8"]}
-    - {"anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"anthropic/claude-sonnet-5": ["anthropic/claude-haiku-4-5"]}
     - {"anthropic/claude-opus-4-7": ["anthropic/claude-sonnet-4-6"]}
     - {"anthropic/claude-sonnet-4-6": ["anthropic/claude-haiku-4-5"]}
     # Anthropic OAuth (Claude Code subscription) path
     - {"auth/claude-fable-5": ["auth/claude-opus-4-8"]}
-    - {"auth/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"auth/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"auth/claude-sonnet-5": ["auth/claude-haiku-4-5"]}
     - {"auth/claude-opus-4-7": ["auth/claude-sonnet-4-6"]}
     - {"auth/claude-sonnet-4-6": ["auth/claude-haiku-4-5"]}
@@ -1005,7 +1000,7 @@ router_settings:
     - {"auth/claude-haiku-4-5": ["anthropic/claude-haiku-4-5"]}
     # OpenRouter mirrors of the Anthropic models
     - {"openrouter/anthropic/claude-fable-5": ["openrouter/anthropic/claude-opus-4-8"]}
-    - {"openrouter/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"openrouter/anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"openrouter/anthropic/claude-sonnet-5": ["openrouter/anthropic/claude-haiku-4-5"]}
     - {"openrouter/anthropic/claude-opus-4-7": ["openrouter/anthropic/claude-sonnet-4-6"]}
     - {"openrouter/anthropic/claude-sonnet-4-6": ["openrouter/anthropic/claude-haiku-4-5"]}
@@ -1043,7 +1038,7 @@ router_settings:
     - {"opencode/claude-opus-4-6": ["opencode/gpt-5.4"]}
     - {"opencode/gpt-5.4": ["opencode/glm-5-free"]}
     - {"vercel/anthropic/claude-fable-5": ["vercel/anthropic/claude-opus-4-8"]}
-    - {"vercel/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"vercel/anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"vercel/anthropic/claude-sonnet-5": ["vercel/anthropic/claude-haiku-4.5"]}
     - {"vercel/anthropic/claude-opus-4.6": ["vercel/anthropic/claude-sonnet-4.6"]}
     - {"vercel/anthropic/claude-sonnet-4.6": ["vercel/anthropic/claude-haiku-4.5"]}
@@ -1052,21 +1047,21 @@ router_settings:
     - {"venice/claude-opus-4-6": ["venice/claude-sonnet-4-6"]}
     - {"venice/claude-sonnet-4-6": ["venice/deepseek-v4-flash"]}
     - {"nanogpt/anthropic/claude-fable-5": ["nanogpt/anthropic/claude-opus-4-8"]}
-    - {"nanogpt/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"nanogpt/anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"nanogpt/anthropic/claude-sonnet-5": ["nanogpt/anthropic/claude-haiku-4.5"]}
     - {"nanogpt/anthropic/claude-opus-4.6": ["nanogpt/anthropic/claude-sonnet-4.6"]}
     - {"nanogpt/anthropic/claude-sonnet-4.6": ["nanogpt/anthropic/claude-haiku-4.5"]}
     - {"synthetic/hf:deepseek-ai/DeepSeek-V3.2": ["synthetic/hf:meta-llama/Llama-3.3-70B-Instruct"]}
     - {"synthetic/hf:meta-llama/Llama-3.3-70B-Instruct": ["synthetic/hf:openai/gpt-oss-120b"]}
     - {"zenmux/anthropic/claude-fable-5": ["zenmux/anthropic/claude-opus-4-8"]}
-    - {"zenmux/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"zenmux/anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"zenmux/anthropic/claude-sonnet-5": ["zenmux/anthropic/claude-haiku-4.5"]}
     - {"zenmux/anthropic/claude-opus-4.6": ["zenmux/anthropic/claude-sonnet-4.6"]}
     - {"zenmux/anthropic/claude-sonnet-4.6": ["zenmux/anthropic/claude-haiku-4.5"]}
     - {"qianfan/ernie-4.5-turbo-128k": ["qianfan/ernie-4.5-turbo-32k"]}
     - {"qianfan/ernie-4.5-turbo-32k": ["qianfan/ernie-speed-pro-128k"]}
     - {"cfgateway/anthropic/claude-fable-5": ["cfgateway/anthropic/claude-opus-4-8"]}
-    - {"cfgateway/anthropic/claude-opus-4-8": ["moonshot/kimi-k2.6"]}
+    - {"cfgateway/anthropic/claude-opus-4-8": ["moonshot/kimi-k3"]}
     - {"cfgateway/anthropic/claude-sonnet-5": ["cfgateway/anthropic/claude-haiku-4-5"]}
     - {"cfgateway/anthropic/claude-opus-4-6": ["cfgateway/anthropic/claude-sonnet-4-6"]}
     - {"cfgateway/anthropic/claude-sonnet-4-6": ["cfgateway/anthropic/claude-haiku-4-5"]}
