@@ -139,7 +139,7 @@ class AuthMethod(StrEnum):
     TOGETHER_API = "together_api"  # Together AI
     FIREWORKS_API = "fireworks_api"  # Fireworks AI
     COHERE_API = "cohere_api"  # Cohere Command
-    MOONSHOT_API = "moonshot_api"  # Moonshot Kimi K2
+    MOONSHOT_API = "moonshot_api"  # Moonshot Kimi K3
     ZAI_API = "zai_api"  # Z.ai GLM-4.5
     DASHSCOPE_API = "dashscope_api"  # Alibaba DashScope (Qwen)
     GITHUB_MODELS_API = "github_models_api"  # GitHub Models (PAT auth)
@@ -349,14 +349,13 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.MID: "cohere_chat/command-r-plus",
         Tier.LOW: "cohere_chat/command-r",
     },
-    # Moonshot Kimi K2 — moonshot/<model>. K2 generation uses a single
-    # ``kimi-k2-instruct`` ID (context window negotiated at the
-    # request level, not encoded in the model id). Older v1 models
-    # keep their context-tier suffixes (8k/32k/128k).
+    # Moonshot Kimi K3 — moonshot/<model>. K3 uses a single
+    # ``kimi-k3`` ID. Older v1 models keep their context-tier suffixes
+    # (8k/32k/128k).
     AuthMethod.MOONSHOT_API: {
-        Tier.HIGH: "moonshot/kimi-k2-instruct",
-        Tier.MID: "moonshot/kimi-k2-instruct",
-        Tier.LOW: "moonshot/kimi-k2-instruct",
+        Tier.HIGH: "moonshot/kimi-k3",
+        Tier.MID: "moonshot/kimi-k3",
+        Tier.LOW: "moonshot/kimi-k3",
     },
     # Z.ai GLM family — native ``zai/`` LiteLLM provider (no custom shim
     # needed since LiteLLM 1.55+). LOW = glm-4.5-flash, the free-tier
