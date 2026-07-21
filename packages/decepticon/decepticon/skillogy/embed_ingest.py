@@ -1,7 +1,7 @@
 """Boot-time embedding backfill for skillogy hybrid retrieval (ADR-0011).
 
 Runs once per container boot, AFTER the ``skills.cypher`` dump has been loaded
-(see ``__main__._maybe_ingest``). It creates the vector index and embeds every
+(see ``__main__._seed_if_empty``). It creates the vector index and embeds every
 skill whose embedding-input text changed since the last boot — so the dump
 stays embedding-free (a model swap is a re-embed, not a rebuild) and an
 unchanged corpus is a no-op.

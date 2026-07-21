@@ -23,35 +23,41 @@ shared Frida tooling for runtime work.
 
 ## Playbooks — Android
 
-| Skill | Use for |
+> **Inline technique reference — not separately loadable skills.** The entries below
+> are summarized here for direct use; there is no separate `SKILL.md` to open for
+> each. Do NOT call the skill loader on them — apply the technique with your tools
+> using this summary and the Workflow in this file.
+
+
+| Technique | Use for |
 |---|---|
-| `/skills/standard/mobile/android/apk-triage/SKILL.md` | apktool decode + jadx -d for source recovery |
-| `/skills/standard/mobile/android/manifest-analysis/SKILL.md` | exported components, permissions, deeplinks |
-| `/skills/standard/mobile/android/insecure-storage/SKILL.md` | SharedPreferences / SQLite / external storage scans |
-| `/skills/standard/mobile/android/intent-redirection/SKILL.md` | Intent forwarding / pendingIntent abuse |
-| `/skills/standard/mobile/android/webview-flaws/SKILL.md` | JavaScriptInterface, file:// access, mixed content |
-| `/skills/standard/mobile/android/frida-ssl-pin-bypass/SKILL.md` | OkHttp / TrustKit / Cordova pin-bypass scripts |
-| `/skills/standard/mobile/android/root-detect-bypass/SKILL.md` | Common root-detection libraries and their bypasses |
+| **apk-triage** | apktool decode + jadx -d for source recovery |
+| **manifest-analysis** | exported components, permissions, deeplinks |
+| **insecure-storage** | SharedPreferences / SQLite / external storage scans |
+| **intent-redirection** | Intent forwarding / pendingIntent abuse |
+| **webview-flaws** | JavaScriptInterface, file:// access, mixed content |
+| **frida-ssl-pin-bypass** | OkHttp / TrustKit / Cordova pin-bypass scripts |
+| **root-detect-bypass** | Common root-detection libraries and their bypasses |
 
 ## Playbooks — iOS
 
-| Skill | Use for |
+| Technique | Use for |
 |---|---|
-| `/skills/standard/mobile/ios/ipa-triage/SKILL.md` | class-dump-z + Hopper; Mach-O headers; entitlements |
-| `/skills/standard/mobile/ios/keychain-acl/SKILL.md` | Keychain ACL misconfigurations; `kSecAccessControl` flags |
-| `/skills/standard/mobile/ios/url-scheme-abuse/SKILL.md` | Universal links + URL scheme handler attacks |
-| `/skills/standard/mobile/ios/xpc-services/SKILL.md` | XPC interface enumeration; unauthenticated XPC services |
-| `/skills/standard/mobile/ios/frida-trust-killer/SKILL.md` | SSL Kill Switch + Frida pin-bypass for iOS apps |
-| `/skills/standard/mobile/ios/jailbreak-detect-bypass/SKILL.md` | DTAppJailbreakDetectorSwift, Liberty Lite, common patterns |
+| **ipa-triage** | class-dump-z + Hopper; Mach-O headers; entitlements |
+| **keychain-acl** | Keychain ACL misconfigurations; `kSecAccessControl` flags |
+| **url-scheme-abuse** | Universal links + URL scheme handler attacks |
+| **xpc-services** | XPC interface enumeration; unauthenticated XPC services |
+| **frida-trust-killer** | SSL Kill Switch + Frida pin-bypass for iOS apps |
+| **jailbreak-detect-bypass** | DTAppJailbreakDetectorSwift, Liberty Lite, common patterns |
 
 ## Cross-platform
 
-| Skill | Use for |
+| Technique | Use for |
 |---|---|
-| `/skills/standard/mobile/frida-bridge/SKILL.md` | frida-server install on emulator / jailbroken device; basic scripts |
-| `/skills/standard/mobile/objection-walkthrough/SKILL.md` | Objection cheatsheet (env, memory, sqlite, classes) |
-| `/skills/standard/mobile/firebase-misconfig/SKILL.md` | Firebase /Firestore RLS / Storage / Auth bypasses |
-| `/skills/standard/mobile/mobile-api-testing/SKILL.md` | Burp / Caido proxy → mobile API endpoint enumeration |
+| **frida-bridge** | frida-server install on emulator / jailbroken device; basic scripts |
+| **objection-walkthrough** | Objection cheatsheet (env, memory, sqlite, classes) |
+| **firebase-misconfig** | Firebase /Firestore RLS / Storage / Auth bypasses |
+| **mobile-api-testing** | Burp / Caido proxy → mobile API endpoint enumeration |
 
 ## Workflow
 

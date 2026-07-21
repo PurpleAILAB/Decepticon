@@ -23,16 +23,22 @@ ConOps.
 
 ## Playbooks
 
-| Skill | Use for |
+> **Inline technique reference — not separately loadable skills.** The entries below
+> are summarized here for direct use; there is no separate `SKILL.md` to open for
+> each. Do NOT call the skill loader on them — apply the technique with your tools
+> using this summary and the Workflow in this file.
+
+
+| Technique | Use for |
 |---|---|
-| `/skills/standard/supply-chain/typo-name-gen/SKILL.md` | Generate typosquat candidates for a target package; reachability + popularity score |
-| `/skills/standard/supply-chain/dep-confusion-probe/SKILL.md` | Check whether an internal package name is squat-able on PyPI / NPM / RubyGems / NuGet |
-| `/skills/standard/supply-chain/post-install-script/SKILL.md` | Author + sandboxed publish of a benign post-install probe |
-| `/skills/standard/supply-chain/gh-actions-fork-pr/SKILL.md` | Fork-PR secret mining; `pull_request_target` misconfiguration scan |
-| `/skills/standard/supply-chain/oauth-app-impersonation/SKILL.md` | Lookalike OAuth app + scope-creep social engineering |
-| `/skills/standard/supply-chain/internal-mirror-poison/SKILL.md` | Verdaccio / Artifactory / Nexus index manipulation |
-| `/skills/standard/supply-chain/sbom-divergence/SKILL.md` | Audit SBOM vs actual installed packages for drift |
-| `/skills/standard/supply-chain/vendor-portal-creds/SKILL.md` | SaaS vendor admin portal credential abuse paths |
+| **typo-name-gen** | Generate typosquat candidates for a target package; reachability + popularity score |
+| **dep-confusion-probe** | Check whether an internal package name is squat-able on PyPI / NPM / RubyGems / NuGet |
+| **post-install-script** | Author + sandboxed publish of a benign post-install probe |
+| **gh-actions-fork-pr** | Fork-PR secret mining; `pull_request_target` misconfiguration scan |
+| **oauth-app-impersonation** | Lookalike OAuth app + scope-creep social engineering |
+| **internal-mirror-poison** | Verdaccio / Artifactory / Nexus index manipulation |
+| **sbom-divergence** | Audit SBOM vs actual installed packages for drift |
+| **vendor-portal-creds** | SaaS vendor admin portal credential abuse paths |
 
 ## Dry-run mode
 

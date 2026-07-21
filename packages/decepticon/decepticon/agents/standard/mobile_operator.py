@@ -35,17 +35,20 @@ from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
 from decepticon.tools.references.tools import methodology_lookup, payload_search
+
+# cve_lookup is a self-contained NVD/EPSS/CISA-KEV scorer (no KG/Neo4j
+# dependency) — mobile targets ship native libs with version-specific CVEs, so
+# keep it on the surface. Only the kg_* tools in tools/research stay deferred
+# pending the Neo4j middleware redesign.
+from decepticon.tools.research.tools import cve_lookup
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# KG tools were removed pending the Neo4j middleware redesign (see
-# docs/design/neo4j-research-notes.md). KG surface is currently limited
-# to the analyst agent. cve_lookup also lives in the broken tools/research
-# module; reintroduce from a clean source after the refactor lands.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
         payload_search,
         methodology_lookup,
+        cve_lookup,
         *BASH_TOOLS,
     ]
 }

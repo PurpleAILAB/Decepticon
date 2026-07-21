@@ -59,3 +59,23 @@ def test_token_is_part_of_the_cache_key() -> None:
     t1 = get_sandbox(_cfg("http://eng:9999", "tok-1"))
     t2 = get_sandbox(_cfg("http://eng:9999", "tok-2"))
     assert t1 is not t2
+
+
+def test_subagent_override_wins_when_config_lacks_sandbox_url() -> None:
+    """Sub-agent tools get a config WITHOUT ``sandbox_url`` (langgraph re-seeds
+    its config contextvar per node), so bash fell back to the process default —
+    the shared sidecar. StreamingRunnable._bind_per_run_sandbox sets the run's
+    sandbox as the ``_sandbox_var`` override (which langgraph does NOT touch), so
+    get_sandbox honours it before the default and the sub-agent reaches the VM.
+    """
+    from decepticon.tools.bash.bash import _sandbox_var
+
+    override = MagicMock()
+    token = set_sandbox(override)
+    try:
+        assert get_sandbox({"configurable": {}}) is override
+        assert get_sandbox(None) is override
+        # an explicit per-run config.sandbox_url still wins (orchestrator path)
+        assert get_sandbox(_cfg("http://eng-x:9999")) is not override
+    finally:
+        _sandbox_var.reset(token)

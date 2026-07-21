@@ -4,6 +4,7 @@
   "private": true,
   "description": "Local deps for Playwright real-Chrome templates. npm install && npx playwright install chrome",
   "dependencies": {
+    "ipaddr.js": "^2.2.0",
     "playwright": "^1.58.2",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",

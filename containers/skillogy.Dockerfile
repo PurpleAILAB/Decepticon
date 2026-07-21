@@ -22,9 +22,9 @@ RUN apt-get update \
 COPY packages/decepticon/decepticon/skillogy ./decepticon/skillogy
 COPY packages/decepticon/decepticon/skill_audit ./decepticon/skill_audit
 
-# CI-built graph dump. The builder emits MERGE-only Cypher so re-runs
-# against an already-loaded Neo4j are idempotent — the boot script
-# below replays this file every time SKILLOGY_AUTO_INGEST is set.
+# CI-built graph dump. The boot script seeds it into Neo4j only when the
+# graph is empty; the builder emits MERGE-only Cypher so the first-boot
+# seed (and any out-of-band incremental re-apply) is idempotent.
 COPY packages/decepticon/decepticon/skills/.graph/skills.cypher /app/skills.cypher
 
 RUN touch ./decepticon/__init__.py
@@ -50,10 +50,8 @@ ENV SKILLOGY_REST_PORT=9100
 ENV SKILLOGY_NEO4J_URI=bolt://neo4j:7687
 ENV SKILLOGY_NEO4J_USER=neo4j
 
-# Cypher auto-ingest on boot. SKILLOGY_AUTO_INGEST=0 disables it —
-# useful when an operator pre-loads the graph out of band.
+# Baked cypher dump the boot seed reads when the graph is empty.
 ENV SKILLOGY_CYPHER_PATH=/app/skills.cypher
-ENV SKILLOGY_AUTO_INGEST=1
 
 EXPOSE 9100
 

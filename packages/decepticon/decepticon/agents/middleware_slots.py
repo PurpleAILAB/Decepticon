@@ -234,8 +234,8 @@ def _make_opscontrol_notification(**_: Any):
     return OpsControlNotificationMiddleware()
 
 
-def _make_model_override(**_: Any):
-    return ModelOverrideMiddleware()
+def _make_model_override(*, role: str | None = None, **_: Any):
+    return ModelOverrideMiddleware(role=role)
 
 
 def _make_proxy_key_override(**_: Any):

@@ -137,6 +137,41 @@ def _iter_override_bundles(role: str) -> Iterator[PluginBundle]:
         yield bundle
 
 
+def resolve_role_model(role: str) -> str | None:
+    """Composed override for a role's PRIMARY model.
+
+    Precedence: ``DECEPTICON_MODEL_<ROLE>`` (operator env) beats a
+    ``PluginBundle.models`` entry (plugin), which beats the tier default
+    (returned as ``None`` here — the factory keeps the default when this
+    yields nothing). This is the model analogue of ``build_middleware`` /
+    ``build_tools``: it lets a plugin re-tier one agent by composition
+    rather than editing the OSS tier map. Returns the winning model id
+    or ``None`` when neither an env nor a bundle override is set.
+    """
+    env = os.environ.get(f"DECEPTICON_MODEL_{role.upper()}", "").strip()
+    if env:
+        return env
+    chosen: str | None = None
+    owner: str | None = None
+    for bundle in _iter_override_bundles(role):
+        model = bundle.models.get(role)
+        if not model:
+            continue
+        this_owner = bundle.bundle or "<unknown>"
+        if chosen is not None and chosen != model:
+            logger.warning(
+                "role %r model set by multiple bundles (%s=%r kept, %s=%r ignored)",
+                role,
+                owner,
+                chosen,
+                this_owner,
+                model,
+            )
+            continue
+        chosen, owner = model, this_owner
+    return chosen
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Override resolution
 # ─────────────────────────────────────────────────────────────────────

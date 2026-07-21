@@ -31,14 +31,20 @@ What the shim guarantees:
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import threading
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from decepticon.middleware.kg_internal.store import KGStore
+from decepticon.middleware.kg_internal.store import (
+    KGStore,
+    KGStoreConfigError,
+    KGStoreUnavailableError,
+)
 from decepticon.tools.reporting.kg_adapter import load_engagement_graph
 from decepticon.tools.research._engagement_scope import _LEGACY_ENGAGEMENT_LABEL
 from decepticon_core.types.kg import Edge, KnowledgeGraph, Node
@@ -273,6 +279,42 @@ def _kg_backend_name() -> str:
 def _json(data: Any) -> str:
     """Compact-ish JSON serializer used by tool return values."""
     return json.dumps(data, indent=2, default=str, ensure_ascii=False)
+
+
+_KG_UNAVAILABLE_GUIDANCE = (
+    "The knowledge-graph backend is not configured for this run (no reachable "
+    "Neo4j). Do NOT retry kg_* tools — record this observation to a workspace "
+    "file instead (e.g. write it into your findings / recon notes)."
+)
+
+
+def kg_degrades(fn: Callable[..., str]) -> Callable[..., str]:
+    """Wrap a ``kg_*`` @tool body so a missing/unreachable KGStore returns a
+    graceful message instead of raising.
+
+    The KG middleware *slot* (:func:`decepticon.agents.middleware_slots._make_kg`)
+    already degrades when ``DECEPTICON_NEO4J_*`` is unset, but agents such as
+    ``osint_operator`` import the ``kg_*`` tools DIRECTLY into their tool set,
+    bypassing that guard — so a call would raise ``KGStoreConfigError`` from
+    ``get_store()`` and surface as a hard tool error. This mirrors the slot
+    guard at the tool layer: the agent is told the KG is unavailable and to
+    write findings to files, and adapts, rather than looping on a dead backend.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        try:
+            return fn(*args, **kwargs)
+        except (KGStoreConfigError, KGStoreUnavailableError) as exc:
+            return _json(
+                {
+                    "error": "knowledge_graph_unavailable",
+                    "detail": str(exc),
+                    "guidance": _KG_UNAVAILABLE_GUIDANCE,
+                }
+            )
+
+    return wrapper
 
 
 @contextmanager

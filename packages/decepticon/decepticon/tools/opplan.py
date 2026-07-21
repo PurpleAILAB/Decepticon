@@ -130,6 +130,22 @@ def _live_sandbox_backend(fallback: BackendProtocol | None) -> BackendProtocol |
     captured ``fallback`` already resolves the right endpoint, so it is returned
     untouched and behaviour is unchanged off the hosted multi-tenant path.
     """
+    # Only re-resolve when an ACTIVE run actually seeds a per-run sandbox_url
+    # (the multi-tenant orchestrator path this exists for). Off that path — unit
+    # tests, build-time construction, single-tenant/env deploys — there is no
+    # per-run sandbox to reach, and ``build_sandbox_backend()`` does NOT raise:
+    # it returns an HTTPSandbox for the default ``http://localhost:9999``. Writing
+    # OPPLAN through that dead endpoint hangs (the persist test hung the whole
+    # middleware suite → CI 30-min timeout). The captured ``fallback`` already
+    # points at the right backend for those cases, so use it.
+    try:
+        from langgraph.config import get_config
+
+        sandbox_url = ((get_config() or {}).get("configurable") or {}).get("sandbox_url")
+    except Exception:
+        sandbox_url = None
+    if not sandbox_url:
+        return fallback
     try:
         from langgraph.config import get_config
 

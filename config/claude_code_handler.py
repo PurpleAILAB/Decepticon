@@ -235,6 +235,77 @@ REQUIRED_BETAS = [
     "interleaved-thinking-2025-05-14",
 ]
 
+# Reasoning defaults for Anthropic thinking models (opus 4.x, sonnet 5).
+# These models support adaptive thinking + ``output_config.effort`` (effort
+# levels low|medium|high|xhigh|max). Effort follows the vendor's agentic
+# guidance — opus at xhigh, sonnet-5 at medium — and is applied ONLY when the
+# caller passes no ``thinking`` / effort of its own (optional_params win).
+# haiku-4.5 and sonnet-4.6 are omitted: haiku errors on ``output_config.effort``
+# and neither is a reasoning default here. Thinking tokens count toward
+# ``max_tokens``, so the default output cap below is generous enough for
+# reasoning + tool calls (the prior 4096 default truncated adaptive thinking
+# before it could emit tool_use, yielding empty ``max_tokens``-stopped turns).
+# Per-model env override: ``DECEPTICON_CLAUDE_EFFORT_<MODEL>`` where <MODEL> is
+# the slug upper-cased with -/. → _ (e.g. DECEPTICON_CLAUDE_EFFORT_CLAUDE_SONNET_5=high).
+_REASONING_EFFORT_DEFAULTS: dict[str, str] = {
+    "claude-opus-4-8": "xhigh",
+    "claude-opus-4-7": "xhigh",
+    "claude-sonnet-5": "medium",
+}
+
+# Per-model max output tokens (Anthropic's published caps). Used as the default
+# when the caller sends no ``max_tokens`` — e.g. deepagents summarization
+# sub-calls, which previously defaulted to 4096 and truncated an adaptive
+# thinking pass before it could emit ``tool_use``. ``max_tokens`` is a CEILING
+# billed on actual output, not a target (a scoping turn uses ~3K), so handing
+# each model its full budget removes truncation risk at no extra cost.
+_MODEL_MAX_OUTPUT: dict[str, int] = {
+    "claude-opus-4-8": 128000,
+    "claude-opus-4-7": 128000,
+    "claude-sonnet-5": 128000,
+    "claude-sonnet-4-6": 128000,
+    "claude-haiku-4-5": 64000,
+}
+_FALLBACK_MAX_TOKENS = 64000  # <= every known model's cap, safe for unknowns
+
+
+def _reasoning_params(actual_model: str, opts: dict[str, Any]) -> dict[str, Any]:
+    """Anthropic ``thinking`` + ``output_config.effort`` for a request.
+
+    Caller-supplied ``thinking`` wins; otherwise adaptive thinking is enabled
+    for the reasoning models in ``_REASONING_EFFORT_DEFAULTS``. Effort accepts
+    the Anthropic-native ``output_config.effort`` or the OpenAI-style
+    ``reasoning_effort`` alias, falling back to the per-model default
+    (env-overridable via ``DECEPTICON_CLAUDE_EFFORT_<MODEL>``). Effort is only
+    emitted when thinking is on — it controls thinking depth. Returns the keys
+    to merge into the request body ( ``{}`` when the model isn't a reasoner and
+    the caller passed nothing).
+    """
+    out: dict[str, Any] = {}
+    thinking = opts.get("thinking")
+    if thinking:
+        out["thinking"] = thinking
+    elif actual_model in _REASONING_EFFORT_DEFAULTS:
+        out["thinking"] = {"type": "adaptive"}
+
+    if "thinking" not in out:
+        return out
+
+    effort = None
+    output_config = opts.get("output_config")
+    if isinstance(output_config, dict):
+        effort = output_config.get("effort")
+    effort = effort or opts.get("reasoning_effort")
+    if not effort and actual_model in _REASONING_EFFORT_DEFAULTS:
+        env_key = (
+            "DECEPTICON_CLAUDE_EFFORT_" + actual_model.replace("-", "_").replace(".", "_").upper()
+        )
+        effort = os.environ.get(env_key, _REASONING_EFFORT_DEFAULTS[actual_model])
+    if effort:
+        out["output_config"] = {"effort": effort}
+    return out
+
+
 BASE_HEADERS = {
     "anthropic-version": "2023-06-01",
     "anthropic-dangerous-direct-browser-access": "true",
@@ -503,7 +574,8 @@ class ClaudeCodeCustomHandler(CustomLLM):
             "model": actual_model,
             "messages": api_messages,
             "system": system_blocks,
-            "max_tokens": opts.get("max_tokens", 4096),
+            "max_tokens": opts.get("max_tokens")
+            or _MODEL_MAX_OUTPUT.get(actual_model, _FALLBACK_MAX_TOKENS),
         }
         if "temperature" in opts:
             request_body["temperature"] = opts["temperature"]
@@ -511,6 +583,8 @@ class ClaudeCodeCustomHandler(CustomLLM):
             request_body["top_p"] = opts["top_p"]
         if "stop" in opts:
             request_body["stop_sequences"] = opts["stop"]
+
+        request_body.update(_reasoning_params(actual_model, opts))
 
         # Tools — convert from OpenAI format to Anthropic format
         openai_tools = opts.get("tools")
