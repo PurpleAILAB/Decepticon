@@ -8,6 +8,7 @@ and `run_playwright_fallback` with the node subprocess mocked.
 from __future__ import annotations
 
 import json
+from urllib.parse import urlparse
 
 import pytest
 
@@ -114,7 +115,7 @@ def test_final_out_of_scope_url_is_blocked(monkeypatch: pytest.MonkeyPatch) -> N
         profile_id="unknown_challenge",
         success_selectors=["article#c"],
         force_executor="playwright_real_chrome",
-        scope_check=lambda candidate: "example.com" in candidate,
+        scope_check=lambda candidate: urlparse(candidate).hostname == "example.com",
     )
     assert att.verdict == Verdict.BLOCKED.value
     assert att.error == "ROE_REFUSED: final URL not in engagement scope"
