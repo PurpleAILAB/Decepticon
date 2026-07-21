@@ -92,15 +92,6 @@ def _seed_if_empty(backend: Neo4jBackend) -> None:
     n = backend.bulk_ingest_cypher(cypher_text)
     log.info("seeded %d Cypher statements from %s", n, cypher_path)
 
-    # Hybrid retrieval (ADR-0011): once the corpus is loaded, create the
-    # vector index and embed each skill through the litellm proxy. The dump
-    # is deliberately embedding-free, so this is what makes semantic
-    # find_skill possible. It degrades to a no-op when the proxy env is
-    # absent — the substring path keeps working either way.
-    from decepticon.skillogy.embed_ingest import ingest_embeddings  # noqa: PLC0415
-
-    ingest_embeddings(backend)
-
 
 def _start_rest(backend: Neo4jBackend, port: int, started_at: float) -> None:
     try:
@@ -119,7 +110,7 @@ def _start_rest(backend: Neo4jBackend, port: int, started_at: float) -> None:
 
 
 def _ingest_in_background(backend: Neo4jBackend) -> None:
-    """Run the first-boot seed off the main thread.
+    """Run the boot seed and embedding backfill off the main thread.
 
     On a cold container with an empty database the bundled
     ``skills.cypher`` is ~3.7 MB and Neo4j MERGEs ~6000 statements over
@@ -130,7 +121,8 @@ def _ingest_in_background(backend: Neo4jBackend) -> None:
     thread so the REST server comes up first and the healthcheck passes
     immediately; the corpus then loads in the background and the existing
     ``skill_count`` field in ``/v1/health`` reports its progress. When the
-    graph is already populated the seed is a cheap no-op count check.
+    graph is already populated the seed is a cheap no-op count check, while
+    the embedding backfill still runs incrementally on every boot.
     """
     try:
         _seed_if_empty(backend)
@@ -140,6 +132,18 @@ def _ingest_in_background(backend: Neo4jBackend) -> None:
         # (a different cypher file, or a manual seed). REST stays up
         # so health probes can report the situation.
         log.error("cypher seed failed: %r — continuing without it", exc)
+    try:
+        # Hybrid retrieval (ADR-0011): the dump is deliberately
+        # embedding-free, so this incremental pass creates or refreshes the
+        # vector index and embeddings. It degrades to a no-op when the proxy
+        # env is absent — the substring path keeps working either way.
+        from decepticon.skillogy.embed_ingest import ingest_embeddings  # noqa: PLC0415
+
+        ingest_embeddings(backend)
+    except Exception as exc:  # noqa: BLE001
+        # Embedding failures are loud but not fatal: substring search and the
+        # REST service remain available, and the next boot retries the pass.
+        log.error("embedding ingest failed: %r — continuing without it", exc)
 
 
 def main() -> int:
