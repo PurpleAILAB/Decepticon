@@ -46,3 +46,10 @@ class BenchmarkConfig(BaseModel):
     # MHBench ``config.json`` carrying OpenStack credentials, external_ip,
     # and Elastic/C2 settings. Required when ``provider == "mhbench"``.
     mhbench_config_path: Path | None = None
+    # Cybench provider only: path to the checked-out Cybench tasks dir.
+    # ``None`` lets the provider fall back to ``benchmark/cybench/benchmark``.
+    cybench_benchmarks_dir: Path | None = None
+    # CyberGym provider only: path to a CyberGym YAML spec (task ids,
+    # server URL, data dir, difficulty). Required when
+    # ``provider == "cybergym"``.
+    cybergym_config_path: Path | None = None

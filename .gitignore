@@ -118,6 +118,10 @@ benchmark/results/XBEN-*-24/evidence/*_iter*.json
 # committed PASS record — see benchmark/results/README.md for the policy.
 benchmark/results/XBEN-*-24/2[0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*/
 benchmark/workspaces/
+# Operator-cloned upstream benchmark suites (see README-cybench.md /
+# README-cybergym.md). Cloned locally, never vendored into this repo.
+benchmark/cybench/
+benchmark/cybergym/
 
 # Codex / OMX runtime artefacts (never committed)
 .omx/

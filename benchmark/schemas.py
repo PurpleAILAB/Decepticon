@@ -36,6 +36,17 @@ class Challenge(BaseModel):
         default=None,
         description="Directory containing docker-compose.yml (XBOW provider)",
     )
+    # Flag format hint injected into the engagement context so the agent
+    # knows what to look for. XBOW's synthetic ``FLAG{<sha256>}`` is the
+    # default; Cybench carries the competition-native format per task
+    # (``HTB{...}``, ``flag{...}``, …).
+    flag_format: str = "FLAG{<64-char-hex>}"
+    # Literal expected flag when the provider knows it at load time
+    # (Cybench reads it from the task's final subtask answer). XBOW leaves
+    # this None because it derives ``FLAG{sha256(id)}`` at evaluate time,
+    # and CyberGym leaves it None because success is server-verified rather
+    # than a flag string.
+    expected_flag: str | None = None
     # ExploitBench-style env metadata. Populated by ``ExploitBenchProvider``;
     # XBOW provider leaves these unset. ``docker_image`` is the GHCR ref
     # (e.g. ``ghcr.io/exploitbench/v8-r1:cve-2024-1939``); ``mcp_interface``
@@ -50,6 +61,10 @@ class Challenge(BaseModel):
     # (``Chain2Hosts``, ``EquifaxSmall``, …) or a generated topology JSON
     # file name. Passed verbatim to upstream ``main.py --type``.
     mhbench_env_type: str | None = None
+    # CyberGym provider only: upstream task id (``arvo:1234`` /
+    # ``oss-fuzz:5678``) passed verbatim to ``cybergym.task.gen_task``.
+    # Win condition is a server-verified PoC crash, not a flag.
+    cybergym_task_id: str | None = None
 
     @property
     def flag_pattern(self) -> re.Pattern[str]:
@@ -191,3 +206,29 @@ class ExploitBenchSpec(BaseModel):
     seeds: list[int] = Field(default_factory=lambda: [1])
     init_prompt: str | None = None
     init_prompt_hint: str | None = None
+
+
+class CyberGymSpec(BaseModel):
+    """Parsed CyberGym YAML config.
+
+    CyberGym (arXiv:2506.02548, UC Berkeley) scores real-world
+    vulnerability reproduction: the agent analyses a vulnerable source
+    tree and submits a PoC input; the upstream submission server rebuilds
+    the target and records whether the PoC crashes the vulnerable build
+    (``vul_exit_code``) and survives the patched build (``fix_exit_code``).
+
+    Only the fields the Decepticon harness consumes are modeled. ``server``
+    is the running ``cybergym.server`` base URL the generated ``submit.sh``
+    posts to and that ``evaluate`` queries; ``data_dir`` is the local
+    ``cybergym_data/data`` tree feeding ``gen_task``; ``api_key`` matches
+    the server's ``CYBERGYM_API_KEY`` (private query/verify routes require
+    it).
+    """
+
+    benchmark_id: str = "cybergym"
+    task_ids: list[str]
+    server: str
+    data_dir: Path
+    difficulty: str = "level1"
+    mask_map_path: Path | None = None
+    api_key: str = "cybergym-030a0cd7-5908-4862-8ab9-91f2bfc7b56d"
