@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/ui"
+	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	updater.CleanupOldBinary()
 	if err := rootCmd.Execute(); err != nil {
 		ui.Error(err.Error())
 		os.Exit(1)
