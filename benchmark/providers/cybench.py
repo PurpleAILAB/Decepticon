@@ -207,9 +207,9 @@ class CybenchProvider(BaseBenchmarkProvider):
                 extra_ports=extra_ports,
             )
 
-        except subprocess.CalledProcessError as e:
+        except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as e:
             detail = str(e)
-            if e.stderr:
+            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
                 detail += f"\nSTDERR: {e.stderr[-500:]}"
             return SetupResult(target_url="", success=False, error=detail)
 
@@ -262,8 +262,8 @@ class CybenchProvider(BaseBenchmarkProvider):
                     text=True,
                     check=True,
                 )
-        except subprocess.CalledProcessError:
-            pass
+        except (OSError, subprocess.CalledProcessError) as exc:
+            log.warning("cybench: teardown failed for %s: %s", challenge.id, exc)
 
     # --- helpers -----------------------------------------------------------
 

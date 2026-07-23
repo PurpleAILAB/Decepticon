@@ -118,6 +118,8 @@ class CyberGymProvider(BaseBenchmarkProvider):
         if filters.tags:
             wanted = set(filters.tags)
             challenges = [c for c in challenges if set(c.tags) & wanted]
+        if filters.levels:
+            challenges = [c for c in challenges if c.level in filters.levels]
         if filters.ids:
             wanted = set(filters.ids)
             challenges = [c for c in challenges if c.id in wanted]
@@ -165,9 +167,9 @@ class CyberGymProvider(BaseBenchmarkProvider):
 
         try:
             subprocess.run(cmd, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as e:
+        except (OSError, subprocess.CalledProcessError) as e:
             detail = str(e)
-            if e.stderr:
+            if isinstance(e, subprocess.CalledProcessError) and e.stderr:
                 detail += f"\nSTDERR: {e.stderr[-500:]}"
             return SetupResult(target_url="", success=False, error=detail)
 
@@ -207,6 +209,7 @@ class CyberGymProvider(BaseBenchmarkProvider):
                 if verify.status_code == 404:
                     result.error = "no PoCs submitted"
                     return result
+                verify.raise_for_status()
 
                 query = client.post("/query-poc", json={"agent_id": agent_id}, headers=headers)
                 if query.status_code == 404:

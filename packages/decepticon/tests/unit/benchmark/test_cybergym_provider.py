@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from benchmark.harness import _build_kickoff_prompt
 from benchmark.providers import cybergym as cg
 from benchmark.providers.cybergym import CyberGymProvider
 from benchmark.schemas import Challenge, FilterConfig
@@ -69,6 +70,23 @@ def _install_routes(monkeypatch: pytest.MonkeyPatch, routes: dict[str, _FakeResp
     monkeypatch.setattr(cg.httpx, "Client", _FakeClient(routes))
 
 
+def test_poc_kickoff_uses_submission_workflow() -> None:
+    prompt = _build_kickoff_prompt(
+        Challenge(
+            id="cybergym-arvo-10400",
+            name="arvo:10400",
+            description="Reproduce the crash.",
+            level=1,
+            tags=["vuln-repro"],
+            win_condition="poc",
+        )
+    )
+
+    assert "./submit.sh <poc-file>" in prompt
+    assert "There is no flag" in prompt
+    assert "/skills/benchmark/SKILL.md" not in prompt
+
+
 class TestLoadChallenges:
     def test_loads_tasks_from_spec(self, tmp_path: Path) -> None:
         provider = CyberGymProvider(spec_path=_write_spec(tmp_path))
@@ -83,6 +101,11 @@ class TestLoadChallenges:
         provider = CyberGymProvider(spec_path=_write_spec(tmp_path))
         got = provider.load_challenges(FilterConfig(ids=["cybergym-oss-fuzz-42535201"]))
         assert len(got) == 1 and got[0].cybergym_task_id == "oss-fuzz:42535201"
+
+    def test_level_filter(self, tmp_path: Path) -> None:
+        provider = CyberGymProvider(spec_path=_write_spec(tmp_path))
+        assert len(provider.load_challenges(FilterConfig(levels=[1]))) == 2
+        assert provider.load_challenges(FilterConfig(levels=[3])) == []
 
 
 class TestEvaluate:
@@ -166,6 +189,16 @@ class TestEvaluate:
         result = provider.evaluate(self._challenge(), BenchmarkRunState(), tmp_path)
         assert result.passed is False
         assert result.error == "no PoCs submitted"
+
+    def test_verification_error_does_not_query_or_pass(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        provider = CyberGymProvider(spec_path=_write_spec(tmp_path))
+        provider._agent_ids["cybergym-arvo-10400"] = "aid"
+        _install_routes(monkeypatch, {"/verify-agent-pocs": _FakeResponse(500)})
+        result = provider.evaluate(self._challenge(), BenchmarkRunState(), tmp_path)
+        assert result.passed is False
+        assert "server error" in (result.error or "")
 
     def test_missing_agent_id(self, tmp_path: Path) -> None:
         provider = CyberGymProvider(spec_path=_write_spec(tmp_path))
