@@ -393,6 +393,10 @@ func TestSelfUpdate_WritesAndRenames(t *testing.T) {
 
 	dir := t.TempDir()
 	fakeBin := filepath.Join(dir, "decepticon")
+	previousContent := []byte("previous binary content")
+	if err := os.WriteFile(fakeBin, previousContent, 0o755); err != nil {
+		t.Fatalf("seed current binary: %v", err)
+	}
 
 	// Redirect executableFn so SelfUpdate writes into our temp dir instead
 	// of clobbering the running test binary. Matches the isWSLFn pattern.
@@ -419,6 +423,15 @@ func TestSelfUpdate_WritesAndRenames(t *testing.T) {
 	// The temp file must be cleaned up by the rename.
 	if _, statErr := os.Stat(fakeBin + ".tmp"); !os.IsNotExist(statErr) {
 		t.Error(".tmp file should not exist after a successful rename")
+	}
+	if runtime.GOOS == "windows" {
+		previous, readErr := os.ReadFile(fakeBin + ".old")
+		if readErr != nil {
+			t.Fatalf("read Windows backup: %v", readErr)
+		}
+		if string(previous) != string(previousContent) {
+			t.Errorf("Windows backup content = %q, want %q", previous, previousContent)
+		}
 	}
 }
 
