@@ -173,14 +173,14 @@ class AuthMethod(StrEnum):
 
 METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ANTHROPIC_API: {
-        Tier.HIGH: "anthropic/claude-opus-4-8",
-        Tier.MID: "anthropic/claude-sonnet-5",
-        Tier.LOW: "anthropic/claude-haiku-4-5",
+        Tier.HIGH: "anthropic/claude-fable-5",
+        Tier.MID: "anthropic/claude-opus-4-8",
+        Tier.LOW: "anthropic/claude-sonnet-5",
     },
     AuthMethod.ANTHROPIC_OAUTH: {
-        Tier.HIGH: "auth/claude-opus-4-8",
-        Tier.MID: "auth/claude-sonnet-5",
-        Tier.LOW: "auth/claude-haiku-4-5",
+        Tier.HIGH: "auth/claude-fable-5",
+        Tier.MID: "auth/claude-opus-4-8",
+        Tier.LOW: "auth/claude-sonnet-5",
     },
     AuthMethod.OPENAI_API: {
         Tier.HIGH: "openai/gpt-5.5",
@@ -226,9 +226,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.MID: "mistral/codestral-latest",
     },
     AuthMethod.OPENROUTER_API: {
-        Tier.HIGH: "openrouter/anthropic/claude-opus-4-8",
-        Tier.MID: "openrouter/anthropic/claude-sonnet-5",
-        Tier.LOW: "openrouter/anthropic/claude-haiku-4-5",
+        Tier.HIGH: "openrouter/anthropic/claude-fable-5",
+        Tier.MID: "openrouter/anthropic/claude-opus-4-8",
+        Tier.LOW: "openrouter/anthropic/claude-sonnet-5",
     },
     AuthMethod.NVIDIA_API: {
         Tier.HIGH: "nvidia_nim/meta/llama-3.3-70b-instruct",
@@ -442,9 +442,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # Vercel AI Gateway — https://ai-gateway.vercel.sh/v1. Model ids
         # are ``creator/model``; route the Anthropic family for tool-call
         # reliability parity with the native anthropic path.
-        Tier.HIGH: "vercel/anthropic/claude-opus-4-8",
-        Tier.MID: "vercel/anthropic/claude-sonnet-5",
-        Tier.LOW: "vercel/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "vercel/anthropic/claude-fable-5",
+        Tier.MID: "vercel/anthropic/claude-opus-4-8",
+        Tier.LOW: "vercel/anthropic/claude-sonnet-5",
     },
     AuthMethod.HUGGINGFACE_API: {
         # Hugging Face Router — https://router.huggingface.co/v1, HF_TOKEN
@@ -463,9 +463,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.NANOGPT_API: {
         # NanoGPT — https://nano-gpt.com/api/v1, pay-as-you-go aggregator
         # exposing ``creator/model`` slugs across most major vendors.
-        Tier.HIGH: "nanogpt/anthropic/claude-opus-4-8",
-        Tier.MID: "nanogpt/anthropic/claude-sonnet-5",
-        Tier.LOW: "nanogpt/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "nanogpt/anthropic/claude-fable-5",
+        Tier.MID: "nanogpt/anthropic/claude-opus-4-8",
+        Tier.LOW: "nanogpt/anthropic/claude-sonnet-5",
     },
     AuthMethod.SYNTHETIC_API: {
         # Synthetic — https://api.synthetic.new/openai/v1. Open-weight
@@ -477,9 +477,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
     AuthMethod.ZENMUX_API: {
         # ZenMux — https://zenmux.ai/api/v1. Multi-vendor gateway; route
         # the Anthropic family for tool-call parity.
-        Tier.HIGH: "zenmux/anthropic/claude-opus-4-8",
-        Tier.MID: "zenmux/anthropic/claude-sonnet-5",
-        Tier.LOW: "zenmux/anthropic/claude-haiku-4.5",
+        Tier.HIGH: "zenmux/anthropic/claude-fable-5",
+        Tier.MID: "zenmux/anthropic/claude-opus-4-8",
+        Tier.LOW: "zenmux/anthropic/claude-sonnet-5",
     },
     AuthMethod.QIANFAN_API: {
         # Baidu Qianfan v2 — https://qianfan.baidubce.com/v2, OpenAI-
@@ -497,9 +497,9 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         # comes from CLOUDFLARE_AI_GATEWAY_API_BASE (the OpenAI-compat
         # ``.../compat`` path). Model slugs are the gateway's
         # ``provider/model`` form proxied to Anthropic.
-        Tier.HIGH: "cfgateway/anthropic/claude-opus-4-8",
-        Tier.MID: "cfgateway/anthropic/claude-sonnet-5",
-        Tier.LOW: "cfgateway/anthropic/claude-haiku-4-5",
+        Tier.HIGH: "cfgateway/anthropic/claude-fable-5",
+        Tier.MID: "cfgateway/anthropic/claude-opus-4-8",
+        Tier.LOW: "cfgateway/anthropic/claude-sonnet-5",
     },
 }
 
