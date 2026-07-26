@@ -18,9 +18,8 @@ in the room when the decision was made. Concretely:
   invariant about which services share a Docker network).
 - A reversal of a previous decision — the old ADR is marked
   `Superseded` and the new one explains why.
-- A policy that governs how the project is operated (e.g. the
-  blast-radius tiering used by CODEOWNERS, the AI-assisted contribution
-  charter).
+- A policy that governs how the project is operated (e.g. which merge
+  and release gates exist, the AI-assisted contribution charter).
 
 Do **not** write an ADR for:
 
@@ -54,16 +53,17 @@ Use [`template.md`](template.md) as the starting point.
 - Append-only. To change a decision, write a new ADR that supersedes
   the old one; do not edit the old one except to flip its `Status` to
   `Superseded by ADR-NNNN`.
-- ADRs are CODEOWNERS-gated (`docs/adr/**` requires owner review).
-  Proposed ADRs may be opened by any contributor; only an owner-approved
-  PR can land them at `Status: Accepted`.
+- Anyone may open an ADR. Landing one at `Status: Accepted` is a
+  maintainer decision, by convention rather than by a branch rule — see
+  [ADR-0012](0012-retire-codeowners-merge-gate.md) for why the repo no
+  longer enforces per-path review.
 
 ## Index
 
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
-| [0002](0002-pr-tiering-and-blast-radius.md) | PR tiering by blast radius | Accepted |
+| [0002](0002-pr-tiering-and-blast-radius.md) | PR tiering by blast radius | Superseded by 0012 |
 | [0003](0003-ai-contributor-self-review.md) | AI-assisted contribution self-review charter | Accepted |
 | [0004](0004-zero-ai-slop-policy.md) | Zero AI-slop policy — the 100% quality bar | Accepted |
 | [0005](0005-bloodhound-via-bhce-rest-client.md) | Integrate BloodHound via the official BHCE REST API, not via in-house reimplementation | Accepted |
@@ -73,5 +73,6 @@ Use [`template.md`](template.md) as the starting point.
 | [0009](0009-hitl-langgraph-native-migration.md) | Migrate HITL to LangGraph-native `interrupt()` + explicit-policy sets | Proposed |
 | [0010](0010-open-web-acquisition.md) | Acquire open-web content with a sandbox-side, RoE-gated fetch engine | Proposed |
 | [0011](0011-skillogy-lightrag-hybrid-retrieval.md) | Skillogy find_skill uses LightRAG-style hybrid retrieval over the existing graph | Proposed |
+| [0012](0012-retire-codeowners-merge-gate.md) | Retire the CODEOWNERS merge gate; keep required CI and the release environment | Accepted |
 
 Keep this index in sync when you land a new ADR.

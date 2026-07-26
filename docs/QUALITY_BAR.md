@@ -10,7 +10,8 @@ This document is the closed contract. The [Karpathy Four](#the-karpathy-four)
 are the philosophy; the rules below are the operational consequence.
 [ADR-0004](adr/0004-zero-ai-slop-policy.md) records why this bar exists.
 
-This file is `CODEOWNERS`-gated. To change the bar, open an ADR.
+To change the bar, open an ADR. No branch rule enforces that — see
+[ADR-0012](adr/0012-retire-codeowners-merge-gate.md) — so it is on you.
 
 ---
 
@@ -476,8 +477,8 @@ explicit; none can be invoked silently.
    Justify it in the PR body and request the label from `@PurpleCHOIms`.
    Refusal is the default.
 3. **Documented exception in this file.** A rule needs a permanent
-   carve-out? Open a PR against this file with an ADR. (See: this
-   file is CODEOWNERS-gated.)
+   carve-out? Open a PR against this file with an ADR — the carve-out
+   and its reasoning land together, or neither lands.
 
 The rules are not democratic. They are how the project survives a
 contribution stream that scales faster than review can.
