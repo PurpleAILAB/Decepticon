@@ -278,8 +278,7 @@ def test_dual_homed_services_are_allowlisted():
     new place where prompt-injection or process compromise can pivot
     across the boundary.
 
-    Adding to DUAL_HOMED_SERVICES requires an ADR + maintainer review
-    (docs/adr/** is CODEOWNERS-gated).
+    Adding to DUAL_HOMED_SERVICES requires an ADR + maintainer review.
     """
     services = _rendered_compose()["services"]
     actual_dual_homed: set[str] = set()
