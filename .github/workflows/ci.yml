@@ -63,6 +63,12 @@ jobs:
               - 'packages/decepticon-sdk/**'
               - 'pyproject.toml'
               - 'uv.lock'
+              # tests/ and docker-compose.yml were missing here, so a
+              # compose edit could break tests/test_compose_network_isolation.py
+              # and no lane would run it. That is how the cli docker.sock
+              # regression from #625 stayed red on main.
+              - 'tests/**'
+              - 'docker-compose.yml'
               - '.github/workflows/ci.yml'
             cli:
               - 'clients/cli/**'
