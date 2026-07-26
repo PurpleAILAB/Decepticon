@@ -12,17 +12,29 @@ ADR-0002 routed PRs into three review tiers and made a set of
 supply-chain-critical paths require owner review through
 `.github/CODEOWNERS`. Two things are now known about that gate.
 
-**1. It was never enforced.** The `main` ruleset carried
-`require_code_owner_review: true` together with
-`required_approving_review_count: 0`. In that combination GitHub
-auto-requests the code owner as a reviewer but does not block the merge.
-Across the last 150 merged PRs, none ever reported `REVIEW_REQUIRED`,
-and PRs #681, #682 and #773 — touching `docs/adr/**`,
-`containers/sandbox.Dockerfile` and `uv.lock` respectively — were merged
-by a collaborator holding no ruleset bypass, with zero approving
-reviews. The "Green CI + 1 owner approval" gate that ADR-0002 recorded,
-that `docs/COWORK.md §4.3` described, and that the PR template asked
-contributors to respect did not exist in the repository configuration.
+**1. It never produced the review it promised.** The `main` ruleset
+carried `require_code_owner_review: true` together with
+`required_approving_review_count: 0`. What was observed against the live
+API: across the last 150 merged PRs none ever reported
+`REVIEW_REQUIRED`, and PRs #681, #682 and #773 — touching
+`docs/adr/**`, `containers/sandbox.Dockerfile` and `uv.lock`
+respectively — were merged with **zero approving reviews**, by a
+collaborator holding neither of the ruleset's two bypass roles
+(`OrganizationAdmin`, `RepositoryRole 5`).
+
+Two readings fit that: either the `0`-approval setting leaves the
+code-owner rule non-blocking, or GitHub treats the requirement as
+satisfied when the only code owner is the PR author (which those three
+were). We did not run the controlled experiment to separate them,
+because the decision does not turn on which is true. Under the first
+reading the gate blocked nothing. Under the second it blocked only PRs
+that the owner did not author, and #686 — authored by the other
+collaborator, touching `packages/decepticon/pyproject.toml` and
+`uv.lock`, code owner auto-requested — still merged with zero approving
+reviews. Either way the "Green CI + 1 owner approval" gate that
+ADR-0002 recorded, that `docs/COWORK.md §4.3` described, and that the PR
+template asked contributors to respect was not the thing deciding what
+landed on `main`.
 
 **2. Enforcing it is self-blocking at the current team size.**
 `@PurpleCHOIms` is the only code owner. Raising required approvals to 1
@@ -52,6 +64,18 @@ configuration rather than in prose:
    externally visible artifact is published, and usable only from `v*`
    tags. `tag-immutability-v` additionally blocks delete / update /
    non-fast-forward of a `v*` tag once created.
+
+Both gates are subject to the ruleset's existing `bypass_actors`
+(`OrganizationAdmin` and `RepositoryRole 5` / repository admin, both
+`bypass_mode: always`). `GET /repos/{owner}/{repo}/rules/branches/main`
+returns the rules that apply to the *calling* user, and for the owner it
+returns `[]` — no rule on `main` applies to them, `CI OK` included. That
+is left as-is: it is what makes tag recovery and a wedged-CI unblock
+possible, and it is why write/maintain collaborators — who hold no
+bypass — are the population the required check actually governs. It is
+also the reason no collaborator should be given the repository **admin**
+role casually: admin is a bypass actor here, and can edit the rulesets
+and the `pypi-release` reviewers besides.
 
 Blast-radius awareness survives as guidance, not as a gate. The PR
 template's *Blast radius* section and `CONTRIBUTING_AGENT.md §2.3` still
