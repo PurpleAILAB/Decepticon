@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 from contextvars import ContextVar, Token
+from functools import lru_cache
 from typing import Any
 
 from decepticon.telemetry.config import TelemetryConfig, TelemetryMode, resolve_config
@@ -297,6 +298,16 @@ def current_session() -> str | None:
     return _current_session.get()
 
 
+@lru_cache(maxsize=1)
+def _session_salt() -> str:
+    """The anonymous install id, used to scope session ids to this machine.
+
+    Cached: resolving it touches the filesystem, and it cannot change within a
+    process.
+    """
+    return resolve_config().install_id
+
+
 def session_id_for(engagement: str | None) -> str:
     """Stable per-engagement session id (sha256[:16]).
 
@@ -304,10 +315,17 @@ def session_id_for(engagement: str | None) -> str:
     raw — this hash is the grouping key shared by every event of one engagement
     (trajectory steps, tool calls, findings, OPPLAN phases). Canonical home for
     the hash so the middleware and the OPPLAN/finding tools all agree.
+
+    Salted with the install id, because the engagement name alone is NOT unique
+    across users: measured in production, ``sha256("test")`` was shared by 37
+    installs and ``sha256("default-engagement")`` by 27, merging unrelated
+    people's work into one "engagement" — 28.3% of all events sat in a colliding
+    session. Salting keeps the id stable for a given install (so a resumed
+    engagement keeps its id) while making it unique across machines.
     """
     import hashlib
 
-    return hashlib.sha256((engagement or "").encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(f"{_session_salt()}\x00{engagement or ''}".encode()).hexdigest()[:16]
 
 
 # ── process-wide lazy singleton (what middleware uses) ───────────────────────
