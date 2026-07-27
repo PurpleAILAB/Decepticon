@@ -106,7 +106,8 @@ def _query(host: str, project: str, api_key: str, since_hours: int | None) -> li
         "'11111111-1111-4111-8111-111111111111', "
         "'ce9fffea-a87a-4375-a2dd-f6217f743959', "
         "'2e953b6e-bf01-4140-bc6d-26a6ec2c82f2', "
-        "'6b49be5b-459c-4332-a2f6-30787d8bd479')"
+        "'6b49be5b-459c-4332-a2f6-30787d8bd479', "
+        "'28bcd7df-a74e-4489-859d-ed6a8d912add')"
     )
     if since_hours:
         where += f" AND timestamp > now() - INTERVAL {int(since_hours)} HOUR"
