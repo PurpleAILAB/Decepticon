@@ -6,6 +6,32 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [1.1.40] — 2026-07-27
+
+### Fixed
+
+- **Engagement scope is a boundary again, not a convention.** `KGStore` was
+  engagement-scoped but the legacy attack-graph helpers around it were not, and
+  the scope that did exist could be overridden by the caller — a raw statement
+  that omitted the predicate read every engagement's nodes, and
+  `params={"engagement": …}` replaced the value the store had resolved (a
+  dict-merge order bug: the caller's spread landed on top of the trusted value).
+  Both were reachable from an agent tool, since `plan_attack_chains` issues raw
+  Cypher through `query_custom`. Anywhere one graph holds more than one
+  engagement — a shared LangGraph plane, a hosted control plane, a team
+  instance — those were cross-engagement read/write primitives.
+  `execute_read`/`execute_write` now reject a statement that does not bind
+  `$engagement` and build their params so the resolved value always wins;
+  schema migrations stay exempt. The in-repo callers (`chain.py`, `summary.py`,
+  `kg_adapter.py`, `adcs_post.py`, the snapshot path) carry the scope rather
+  than being left to fail. Summarization also binds the model selected for the
+  current request instead of the deployment-keyed one captured at process boot,
+  so concurrent runs stop summarizing through each other's model. (#790)
+
+  **Breaking for raw Cypher:** a statement without `$engagement` now raises
+  instead of returning unscoped rows. `$engagement` is already injected into the
+  params, so an external caller adds a `WHERE` predicate, not new plumbing.
+
 ## [1.1.39] — 2026-07-27
 
 Released as a patch by maintainer decision: the one `feat:` in the range
@@ -53,6 +79,7 @@ computed was overridden.
   code — MID is `claude-sonnet-5`, HIGH is `claude-opus-4-8`, and the web
   dashboard is dynamic-spawn (`/web`), not part of the default stack. (#778)
 
+[1.1.40]: https://github.com/PurpleAILAB/Decepticon/compare/v1.1.39...v1.1.40
 [1.1.39]: https://github.com/PurpleAILAB/Decepticon/compare/v1.1.38...v1.1.39
 
 ## [1.1.8] — Unreleased
