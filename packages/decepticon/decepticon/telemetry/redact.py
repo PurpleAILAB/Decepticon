@@ -98,7 +98,11 @@ _DOMAIN = re.compile(
 
 # Local-regex fallbacks for the LangChain built-ins (used only if the import fails).
 _IP = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
-_IP6 = re.compile(r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b")
+# Four groups minimum. Three colon-separated groups is a wall-clock time —
+# `21:35:00` was being masked as an address, and tool output is full of
+# timestamps. Compressed `::` forms never matched this pattern anyway, so
+# nothing real is lost.
+_IP6 = re.compile(r"\b(?:[A-Fa-f0-9]{1,4}:){3,7}[A-Fa-f0-9]{1,4}\b")
 _MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 _URL = re.compile(r"\bhttps?://[^\s)\]\"'<>]+", re.IGNORECASE)
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")

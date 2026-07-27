@@ -35,6 +35,10 @@ import sys
 import urllib.request
 from typing import Any
 
+# Rows per page. HogQL caps a single query well below the corpus size, so the
+# export pages rather than trusting one request.
+_PAGE = 10_000
+
 # Column order returned by the HogQL query below.
 _COLS = [
     "session_id",
@@ -106,20 +110,61 @@ def _query(host: str, project: str, api_key: str, since_hours: int | None) -> li
     )
     if since_hours:
         where += f" AND timestamp > now() - INTERVAL {int(since_hours)} HOUR"
-    hogql = (
-        "SELECT properties.session_id, properties.step, properties.role, properties.agent, "
-        "properties.tool, properties.text, properties.args_text, properties.observation, distinct_id "
-        f"FROM events WHERE {where} ORDER BY distinct_id, properties.session_id, toInt(properties.step)"
-    )
-    body = json.dumps({"query": {"kind": "HogQLQuery", "query": hogql}}).encode()
-    req = urllib.request.Request(
-        f"{host.rstrip('/')}/api/projects/{project}/query/",
-        data=body,
-        headers={"content-type": "application/json", "authorization": f"Bearer {api_key}"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 — operator-configured host
-        return json.loads(resp.read()).get("results", [])
+    # Paginate. HogQL applies a default LIMIT of 100 when a query does not state
+    # one, so this exported 100 of 119,774 rows and reported success — a
+    # silently truncated corpus is worse than a failed export. OFFSET is
+    # rejected for personal API keys, so this is keyset pagination on
+    # `timestamp`, as PostHog directs. `timestamp` is selected last so the
+    # `_COLS` zip is unaffected.
+    rows: list[list[Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    cursor = "1970-01-01 00:00:00"
+    while True:
+        hogql = (
+            "SELECT properties.session_id, properties.step, properties.role, properties.agent, "
+            "properties.tool, properties.text, properties.args_text, properties.observation, "
+            "distinct_id, timestamp "
+            f"FROM events WHERE {where} AND timestamp >= toDateTime('{cursor}') "
+            f"ORDER BY timestamp LIMIT {_PAGE}"
+        )
+        body = json.dumps({"query": {"kind": "HogQLQuery", "query": hogql}}).encode()
+        req = urllib.request.Request(
+            f"{host.rstrip('/')}/api/projects/{project}/query/",
+            data=body,
+            headers={"content-type": "application/json", "authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:  # noqa: S310 — operator-configured
+            page = json.loads(resp.read()).get("results", [])
+        if not page:
+            return rows
+        # `>=` re-reads the boundary timestamp, so dedupe rather than risk the
+        # strict-`>` variant skipping rows that share it.
+        fresh = [r for r in page if (key := tuple(map(str, r))) not in seen and not seen.add(key)]
+        rows.extend(fresh)
+        if len(page) < _PAGE:
+            return rows
+        last = str(page[-1][-1])
+        if not fresh:
+            # A whole page at one timestamp: step past it or loop forever.
+            cursor = _bump_ms(last)
+        else:
+            cursor = last
+        print(f"  fetched {len(rows)} rows…", file=sys.stderr)
+
+
+def _bump_ms(ts: str) -> str:
+    """Advance an ISO timestamp by 1ms to break a same-timestamp page."""
+    from datetime import datetime, timedelta
+
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return (datetime.strptime(ts, fmt) + timedelta(milliseconds=1)).strftime(
+                "%Y-%m-%d %H:%M:%S.%f"
+            )
+        except ValueError:
+            continue
+    return ts
 
 
 _SELF_TEST_ROWS = [

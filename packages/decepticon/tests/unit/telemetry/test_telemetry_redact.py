@@ -163,3 +163,21 @@ def test_ip_glued_to_a_label_is_masked() -> None:
     assert scan_tier_c(out) is None
     # A longer dotted number is never sliced in half.
     assert Redactor().redact("version 1.2.3 build 4") == "version 1.2.3 build 4"
+
+
+def test_wall_clock_time_is_not_an_ipv6_address() -> None:
+    """`21:35:00` is three colon-separated groups — so was every timestamp.
+
+    Found in the exported corpus as `"saved_at": "2026-07-21T21:<CRED_1>:00"`.
+    Tool output is full of timestamps, so this corrupted text at scale.
+    """
+    from decepticon.telemetry.redact import Redactor
+    from decepticon.telemetry.sanitizer import scan_tier_c
+
+    for text in ('"saved_at": "2026-07-21T21:35:00"', "completed at 21:35:00 UTC"):
+        assert Redactor().redact(text) == text, text
+        assert scan_tier_c(text) is None, text
+
+    # A real address is still masked.
+    v6 = "2001:db8:85a3:8d3:1319:8a2e:370:7348"
+    assert v6 not in Redactor().redact(f"pivot via {v6}")
