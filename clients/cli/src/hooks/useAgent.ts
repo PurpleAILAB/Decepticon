@@ -735,10 +735,13 @@ export function useAgent({
               if (attempt === maxRetries) {
                 const msg =
                   err instanceof Error ? err.message : "Failed to create thread";
-                setError(`Connection failed: ${msg}`);
+                const connectionError = `Connection failed: ${msg}`;
+                setError(connectionError);
+                addEvent({ type: "system", content: connectionError });
                 // Clear queued message to prevent infinite retry loop
                 queuedMessageRef.current = null;
                 setQueuedMessage(null);
+                handleStreamComplete(abortController);
                 return;
               }
               // Server may still be loading graphs — wait and retry
