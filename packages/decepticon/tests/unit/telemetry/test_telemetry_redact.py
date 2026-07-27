@@ -121,3 +121,45 @@ def test_dotted_code_is_neither_masked_nor_dropped() -> None:
     # A real bare host is still masked, and still caught if it somehow is not.
     assert Redactor().redact("pivot to app.corp.internal") == "pivot to <DOMAIN_1>"
     assert scan_tier_c("pivot to app.corp.internal") is not None
+
+
+def test_credentials_passed_as_command_line_flags_are_masked() -> None:
+    """Operators paste whole command lines; no key:value detector sees a flag.
+
+    Observed leaking verbatim from a real engagement:
+    ``nxc smb <ip> -u Administrator -p 'Ujmqaz5055'``.
+    """
+    from decepticon.telemetry.redact import Redactor
+
+    out = Redactor().redact("nxc smb 10.0.0.5 -p 'Ujmqaz5055' --local-auth")
+    assert "Ujmqaz5055" not in out and "<CRED_" in out
+    assert "sshpass -p <CRED_1>" in Redactor().redact("sshpass -p Hunter2 ssh a@b")
+    # `-u` only in its credential form.
+    assert "s3cret" not in Redactor().redact("curl -u admin:s3cret https://x")
+
+
+def test_port_flags_are_not_mistaken_for_passwords() -> None:
+    """`-p` is nmap's port flag — the most-run tool in the corpus."""
+    from decepticon.telemetry.redact import Redactor
+
+    for cmd in ("nmap -p 80,443 host", "nmap -p- -T4 host", "nmap -p 1-65535 host"):
+        assert Redactor().redact(cmd) == cmd, cmd
+    # `-u` is heavily overloaded and must stay untouched without a colon.
+    assert Redactor().redact("cat f | sort -u") == "cat f | sort -u"
+    assert Redactor().redact("docker run -u 1000 img") == "docker run -u 1000 img"
+
+
+def test_ip_glued_to_a_label_is_masked() -> None:
+    """`\\b` is not a boundary between a letter and a digit.
+
+    ``ESXI10.10.0.95`` reached production unmasked because both the maintained
+    detector and the Tier-C scanner anchor on a word boundary.
+    """
+    from decepticon.telemetry.redact import Redactor
+    from decepticon.telemetry.sanitizer import scan_tier_c
+
+    out = Redactor().redact("ESXI10.10.0.95 and veeam 10.10.0.51")
+    assert "10.10.0.95" not in out and "10.10.0.51" not in out
+    assert scan_tier_c(out) is None
+    # A longer dotted number is never sliced in half.
+    assert Redactor().redact("version 1.2.3 build 4") == "version 1.2.3 build 4"

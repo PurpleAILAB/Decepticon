@@ -138,17 +138,40 @@ same placeholder every time that host recurs in the session, but the real target
 / credentials never leave the machine. `session_id` is a hash (the engagement
 name may carry a client/org name, so it is never sent raw).
 
-## What is NEVER collected (Tier C)
+## What is blocked before sending (Tier C)
 
-Raw prompts, target IPs / domains / hosts, credentials, file contents, tool
-output, and client/org names. These are blocked by **three independent layers**:
+Target IPs / domains / hosts, credentials, keys and tokens are blocked by
+**three layers**:
 
-1. **Shape redaction at the source** — `EventLogMiddleware` already records
-   shapes, not contents (`<str:42>`, `***REDACTED***`).
+1. **Shape redaction at the source** — `EventLogMiddleware` records shapes, not
+   contents (`<str:42>`, `***REDACTED***`), for the `basic` tier.
 2. **Client Tier-C scan** — before anything is queued, a fail-closed scanner
-   drops any event that still matches an IP / cred / host pattern.
+   drops any event still matching an IP / cred / host pattern. Drops are
+   reported as a `telemetry.drop` count, never as content.
 3. **Gateway Tier-C reject** — the ingest gateway re-scans and rejects, and
-   drops the client IP (it never reaches the analytics backend).
+   drops your IP (it never reaches the analytics backend).
+
+Layers 2 and 3 are **pattern-based**, which bounds what they can promise: see
+the `research` tier notes above for what survives. They are a floor, not
+anonymization.
+
+## Where it goes, and for how long
+
+- **Recipient:** PurpleAILAB, the Decepticon maintainers. Batches go to a
+  Cloudflare Worker we operate, which forwards to our PostHog project. The
+  Worker never records your IP and disables geo-enrichment.
+- **Purpose:** improving Decepticon, and — for the `research` tier — building a
+  training corpus for future autonomous red-team agents.
+- **Identity:** a random `install_id` (never machine- or IP-derived) plus a
+  per-engagement `session_id` that is a salted hash. Neither is linked to an
+  account; we cannot contact you from telemetry alone.
+- **Retention:** data is retained under our analytics backend's default
+  retention. A specific published retention window and a self-serve deletion
+  path are **not yet in place** — until they are, the reliable control is
+  turning telemetry off (`DECEPTICON_TELEMETRY=off`, `DO_NOT_TRACK=1`, or
+  `decepticon-cli telemetry off`), which takes effect immediately. If you need
+  data already sent to be removed, open an issue with your `install_id`
+  (`decepticon-cli telemetry status` prints it).
 
 ## How it is sent
 

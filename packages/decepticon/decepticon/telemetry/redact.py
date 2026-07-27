@@ -63,6 +63,31 @@ _CRED_SECRET_KV = re.compile(
 # Username pairs, TIGHT form only (`user:bob`). A spaced `user: the attacker` is
 # prose, not a credential, and masking it would corrupt the reasoning.
 _CRED_USER_KV = re.compile(r"(?:login|username|user)[:=]([^\s,;\"']{3,64})", re.IGNORECASE)
+# Credential passed as a COMMAND-LINE FLAG. Observed leaking verbatim in a real
+# engagement: `nxc smb <ip> -u Administrator -p 'Ujmqaz5055'`. Operators paste
+# whole command lines, and no key:value detector sees a flag.
+#
+# `-p` is overloaded — it is nmap's port flag — so a purely numeric/comma/dash
+# value is left alone (`nmap -p 80,443`, `-p 1-65535`, `-p-`). A password is
+# never shaped like a port list.
+_CRED_PW_FLAG = re.compile(
+    r"(?:^|\s)--?(?:p|pw|pass|passwd|password)[=\s]+"
+    r"['\"]?(?![\d,\-]+(?:\s|$|['\"]))([^\s'\"]{3,64})",
+    re.IGNORECASE,
+)
+# `-u` only in its credential form (`curl -u admin:secret`). A bare `-u` is far
+# too overloaded to touch — `sort -u`, `docker -u`, `nxc -u <name>`.
+_CRED_USERPASS_FLAG = re.compile(
+    r"(?:^|\s)--?(?:u|user|username)[=\s]+['\"]?([^\s'\":]{1,64}:[^\s'\"]{1,64})",
+    re.IGNORECASE,
+)
+# IPv4 glued to a label — `ESXI10.10.0.95`. The maintained detector anchors on
+# `\b`, and a letter directly before a digit is not a word boundary, so this
+# leaked a real address verbatim. A leading digit or dot is still excluded so a
+# longer dotted number is never sliced in half.
+_IP_GLUED = re.compile(
+    r"(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])"
+)
 # Bare host/domain — requires a non-numeric TLD so "1.2.3"/"x86_64" never match.
 # The trailing `(?!\()` keeps dotted CODE out: `json.load(...)`, `os.uname()` and
 # friends are not hosts, and masking them destroyed the prompt. Measured: 1,697
@@ -172,6 +197,9 @@ class Redactor:
             ("CRED", _regex_detector(_CRED_SPECIAL)),
             ("CRED", _group_detector(_CRED_SECRET_KV)),
             ("CRED", _group_detector(_CRED_USER_KV)),
+            ("CRED", _group_detector(_CRED_PW_FLAG)),
+            ("CRED", _group_detector(_CRED_USERPASS_FLAG)),
+            ("IP", _regex_detector(_IP_GLUED)),
             ("BLOB", _regex_detector(_BLOB)),
             ("IP6", _regex_detector(_IP6)),
             *_builtin_detectors(),
