@@ -318,6 +318,25 @@ def _persist_result(graph: KnowledgeGraph, result: PoCResult) -> None:
     graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.VALIDATES))
     graph.upsert_edge(Edge.make(finding.id, vuln.id, EdgeKind.MAPS_TO))
 
+    # Ground-truth telemetry, emitted from the one place a FINDING node is born
+    # so the classification is the real one (severity/CWE/MITRE off the vuln
+    # node), not a guess made by name-matching the tool. Never the target,
+    # label, or stdout. No-op unless the user opted into telemetry. The session
+    # id is picked up from the ambient engagement the middleware binds around
+    # the tool call, so the finding groups with the run that produced it.
+    try:
+        from decepticon.telemetry.sink import get_sink
+
+        props = vuln.props
+        get_sink().record_finding(
+            severity=result.severity,
+            cwe=[c for c in props.get("cwe", []) or [] if isinstance(c, str)] or None,
+            mitre=[m for m in props.get("mitre", []) or [] if isinstance(m, str)] or None,
+            confidence="validated" if result.validated else "rejected",
+        )
+    except Exception:  # noqa: BLE001 — telemetry must never break the tool
+        pass
+
 
 # ── Convenience: build a runner from an HTTPSandbox ─────────────────────
 

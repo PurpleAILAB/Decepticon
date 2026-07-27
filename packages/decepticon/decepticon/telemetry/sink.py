@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+from contextvars import ContextVar, Token
 from typing import Any
 
 from decepticon.telemetry.config import TelemetryConfig, TelemetryMode, resolve_config
 from decepticon.telemetry.exporter import BatchExporter, Transport
 from decepticon.telemetry.redact import Redactor
-from decepticon.telemetry.sanitizer import SCHEMA_VERSION, event_to_tier_a, scan_tier_c
+from decepticon.telemetry.sanitizer import SCHEMA_VERSION, event_to_tier_a, scan_tier_c, slug
 
 log = logging.getLogger("decepticon.telemetry.sink")
 
@@ -29,6 +31,14 @@ class TelemetrySink:
         # One masker per sink/session so identifiers map to STABLE placeholders
         # across a whole trajectory (reasoning stays coherent for training).
         self._redactor = Redactor()
+        # Per-engagement trajectory step counters, shared by every agent in the
+        # process (see :meth:`next_step`).
+        self._steps: dict[str, int] = {}
+        self._step_lock = threading.Lock()
+        # Tier-C drops, counted by class. Fail-closed dropping is correct but was
+        # invisible (a debug log line), so there was no way to tell a quiet run
+        # from a run whose corpus was being silently discarded.
+        self._drops: dict[str, int] = {}
         self._exporter: BatchExporter | None = None
         if config.enabled and config.endpoint:
             self._exporter = BatchExporter(
@@ -47,6 +57,9 @@ class TelemetrySink:
         return self._exporter is not None and self._research
 
     def _envelope(self, events: list[dict[str, Any]]) -> dict[str, Any]:
+        # Drop tallies ride along with a batch we were sending anyway — no extra
+        # request, and the counts stay adjacent to the events they were dropped from.
+        events = events + self._drain_drops()
         client: dict[str, Any] = {
             "decepticon_version": self._config.version,
             "os": self._config.os_name,
@@ -90,11 +103,16 @@ class TelemetrySink:
             if ev is None:
                 return
             # Engagement grouping key — a hash, never the raw engagement name.
-            if session_id:
-                ev["session_id"] = session_id
+            # Falls back to the ambient session so tool-side emits (findings)
+            # group with the engagement that produced them.
+            sid = session_id or current_session()
+            if sid:
+                ev["session_id"] = sid
             # Fail-closed: if anything in the mapped event still looks like Tier-C
             # content, drop it rather than ship it.
-            if scan_tier_c(ev) is not None:
+            hit = scan_tier_c(ev)
+            if hit is not None:
+                self._count_drop(hit[0])
                 log.debug("telemetry: dropped %s event failing local Tier-C scan", event_type)
                 return
             self._exporter.record(ev)
@@ -151,6 +169,35 @@ class TelemetrySink:
             "opplan.update", {"phase": phase, "status": status}, agent, session_id=session_id
         )
 
+    def _count_drop(self, klass: str) -> None:
+        """Tally one fail-closed drop by CLASS only — never the value or path."""
+        with self._step_lock:
+            self._drops[klass] = self._drops.get(klass, 0) + 1
+
+    def _drain_drops(self) -> list[dict[str, Any]]:
+        """Pop the drop tallies as events, to ride along with the next batch."""
+        with self._step_lock:
+            if not self._drops:
+                return []
+            drops, self._drops = self._drops, {}
+        return [
+            {"type": "telemetry.drop", "ts": _now(), "category": klass, "count": n}
+            for klass, n in drops.items()
+        ]
+
+    def next_step(self, session_id: str) -> int:
+        """Next monotonic step index for ``session_id``.
+
+        Lives on the process-wide sink, not on the middleware: every agent in an
+        engagement builds its OWN middleware instance, so a per-instance counter
+        restarted at 0 for each specialist and `ORDER BY step` reconstructed a
+        scrambled trajectory (measured: 71% duplicate indices in one session).
+        """
+        with self._step_lock:
+            n = self._steps.get(session_id, 0)
+            self._steps[session_id] = n + 1
+            return n
+
     def add_known_targets(self, targets: list[str]) -> None:
         """Feed the session masker the engagement's known targets (RoE scope).
 
@@ -161,7 +208,9 @@ class TelemetrySink:
             return
         self._redactor.add_known(targets)
 
-    def record_step(self, step: dict[str, Any], agent: str | None = None) -> None:
+    def record_step(
+        self, step: dict[str, Any], agent: str | None = None, *, model: str | None = None
+    ) -> None:
         """Record an identifier-MASKED reasoning/trajectory step (RESEARCH only).
 
         ``step`` carries the raw turn as-is (role, session_id, step, and the text
@@ -179,12 +228,22 @@ class TelemetrySink:
             if not isinstance(masked, dict):
                 return
             # Fail-closed: drop the step if any raw identifier survived masking.
-            if scan_tier_c(masked) is not None:
+            hit = scan_tier_c(masked)
+            if hit is not None:
+                self._count_drop(hit[0])
                 log.debug("telemetry: dropped trajectory step failing post-mask Tier-C scan")
                 return
             ev: dict[str, Any] = {"type": "trajectory.step", "ts": _now(), **masked}
-            if agent:
-                ev["agent"] = agent
+            # Slugified like every other event's agent: an off-pattern value
+            # (a plugin role with a space) fails the gateway's strict schema and
+            # takes the whole batch down with it.
+            if agent and (agent_slug := slug(agent)):
+                ev["agent"] = agent_slug
+            # Which model produced this turn — a corpus without it cannot tell
+            # strong reasoning from weak. Slugified: raw ids carry "/"
+            # ("anthropic/claude-haiku-4-5"), which the gateway's Slug rejects.
+            if model and (model_slug := slug(model)):
+                ev["model"] = model_slug
             self._exporter.record(ev)
         except Exception:  # noqa: BLE001 — telemetry must never break the agent
             log.debug("telemetry: record_step failed", exc_info=True)
@@ -214,6 +273,28 @@ def _now() -> float:
     import time
 
     return time.time()
+
+
+# The engagement whose tool call is currently executing. Set by
+# ``EventLogMiddleware`` around each tool invocation and read by tool-side emits
+# (findings) that have no other handle on the run: a tool receives no state and
+# cannot read the run config reliably, so without this every finding shipped
+# without a session and could not be grouped with the engagement that produced it.
+_current_session: ContextVar[str | None] = ContextVar("decepticon_telemetry_session", default=None)
+
+
+def set_current_session(session_id: str | None) -> Token[str | None]:
+    """Bind the session id for the current context. Returns a reset token."""
+    return _current_session.set(session_id)
+
+
+def reset_current_session(token: Token[str | None]) -> None:
+    _current_session.reset(token)
+
+
+def current_session() -> str | None:
+    """The session id bound to this context, if any."""
+    return _current_session.get()
 
 
 def session_id_for(engagement: str | None) -> str:

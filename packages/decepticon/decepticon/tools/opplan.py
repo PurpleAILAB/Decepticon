@@ -741,6 +741,21 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
             target["status"] = status
             updated_fields.append(f"status → {status}")
 
+            # Ground-truth telemetry: the objective's OUTCOME. Recording only
+            # the creation of an objective (add_objective, always "pending")
+            # answers what was attempted but never what completed or stalled —
+            # the whole point of the phase signal. No objective text/target.
+            try:
+                from decepticon.telemetry.sink import get_sink, session_id_for
+
+                get_sink().record_phase(
+                    str(target.get("phase", "")),
+                    status,
+                    session_id=session_id_for(state.get("engagement_name", "")),
+                )
+            except Exception:  # noqa: BLE001 — telemetry must never break the tool
+                pass
+
         # ── Notes ─────────────────────────────────────────────────────
         if notes is not None:
             target["notes"] = notes

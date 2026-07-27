@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TelemetryBatch } from "../src/schema";
+import { TelemetryBatch, TelemetryEvent } from "../src/schema";
 
 const VALID = {
   schema_version: "1.0",
@@ -87,5 +87,28 @@ describe("TelemetryBatch schema", () => {
   it("caps masked text length", () => {
     const bad = { ...VALID, events: [{ type: "trajectory.step", ts: 1, text: "x".repeat(16001) }] };
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe("telemetry.drop", () => {
+  it("accepts a drop tally carrying only a class and a count", () => {
+    const parsed = TelemetryEvent.safeParse({
+      type: "telemetry.drop",
+      ts: 1.0,
+      category: "opaque_blob",
+      count: 7,
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("still rejects a drop event that smuggles content", () => {
+    const parsed = TelemetryEvent.safeParse({
+      type: "telemetry.drop",
+      ts: 1.0,
+      category: "ipv4",
+      count: 1,
+      value: "10.0.0.5",
+    });
+    expect(parsed.success).toBe(false);
   });
 });

@@ -44,6 +44,10 @@ _AWSKEY = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 # user:pass@host, and user:pass whose password carries a special char (so
 # host:port and plain key:value pairs are left intact).
 _CRED_AT = re.compile(r"\b[\w.-]+:[^\s:@/]{3,}@[\w.-]+")
+# Long opaque base64/hex run — hashes, dumps, key material. The Tier-C scanner
+# REJECTS these, so the masker must have a matching detector: without one, any
+# reasoning step quoting a hash was silently dropped whole instead of masked.
+_BLOB = re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b")
 _CRED_SPECIAL = re.compile(r"\b[\w.-]+:[^\s:@/]*[!@#$%^&*+=][^\s:@/]*")
 # Bare host/domain — requires a non-numeric TLD so "1.2.3"/"x86_64" never match.
 _DOMAIN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE)
@@ -64,7 +68,7 @@ def _regex_detector(pattern: re.Pattern[str]) -> _Detector:
 
 
 # Lower rank = higher priority when two matches overlap.
-_PRIORITY = {"HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2}
+_PRIORITY = {"HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2, "BLOB": 3}
 
 
 _BUILTINS: list[tuple[str, _Detector]] | None = None
@@ -125,6 +129,7 @@ class Redactor:
             ("AWSKEY", _regex_detector(_AWSKEY)),
             ("CRED", _regex_detector(_CRED_AT)),
             ("CRED", _regex_detector(_CRED_SPECIAL)),
+            ("BLOB", _regex_detector(_BLOB)),
             ("IP6", _regex_detector(_IP6)),
             *_builtin_detectors(),
             ("DOMAIN", _regex_detector(_DOMAIN)),
