@@ -30,8 +30,18 @@ const PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["aws_access_key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["email", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
   ["url", /\bhttps?:\/\/[^\s/$.?#][^\s]*/i],
-  ["ipv4", /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/],
-  ["ipv6", /\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,7}:\b/],
+  // `(?<![\d.])` rather than `\b`: a letter directly before a digit is not a
+  // word boundary, so `ESXI10.10.0.95` slipped past both this scanner and the
+  // client masker in a real engagement. Mirrors `redact._IP_GLUED`.
+  [
+    "ipv4",
+    /(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])/,
+  ],
+  // Four groups minimum, mirroring `redact._IP6`: three colon-separated groups
+  // is a wall-clock time, and tool output is full of timestamps. With `{2,7}`
+  // this scanner rejected a batch over `21:35:00` that the masker — correctly —
+  // had left alone.
+  ["ipv6", /\b(?:[A-Fa-f0-9]{1,4}:){3,7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,7}:\b/],
   ["mac", /\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b/],
   ["user_pass", /\b[\w.-]+:[^\s:@/]{4,}@[\w.-]+/],
   // Long opaque blob: base64/hex secret material. 40+ chars with no spaces.

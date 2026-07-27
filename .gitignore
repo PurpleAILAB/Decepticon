@@ -91,6 +91,7 @@ skills/_corpus/
 .ouroboros/
 .gstack/
 .claude/
+.agents/
 
 # Project-specific Claude Code instructions (private)
 CLAUDE.md
