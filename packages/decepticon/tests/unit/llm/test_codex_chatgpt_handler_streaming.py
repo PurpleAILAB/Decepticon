@@ -194,7 +194,14 @@ def test_truncated_stream_still_terminates() -> None:
 
 def test_malformed_and_done_lines_are_skipped() -> None:
     accumulator = _Accumulator("auth/gpt-5.4-mini")
-    assert accumulator.push("data: not-json") == []
-    assert accumulator.push("data: [DONE]") == []
-    assert accumulator.push("event: response.completed") == []
-    assert accumulator.close()[0]["is_finished"] is True
+    # Both push and close mutate the accumulator, so they run outside the
+    # asserts — `python -O` strips assert statements along with their calls.
+    malformed = accumulator.push("data: not-json")
+    done_marker = accumulator.push("data: [DONE]")
+    event_line = accumulator.push("event: response.completed")
+    final = accumulator.close()
+
+    assert malformed == []
+    assert done_marker == []
+    assert event_line == []
+    assert final[0]["is_finished"] is True
