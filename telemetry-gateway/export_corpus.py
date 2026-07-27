@@ -92,7 +92,16 @@ def _as_int(v: Any) -> int | None:
 
 
 def _query(host: str, project: str, api_key: str, since_hours: int | None) -> list[list[Any]]:
-    where = "event = 'trajectory.step'"
+    # Exclude gateway/deploy verification traffic — a poisoned training corpus is
+    # far more expensive than a skewed chart. Mirrors build_dashboard.NOT_TEST.
+    where = (
+        "event = 'trajectory.step' "
+        "AND coalesce(toString(properties.decepticon_version),'') "
+        "NOT IN ('deploy-verify', 'live-verify') "
+        "AND distinct_id NOT IN ('00000000-0000-4000-8000-000000000001', "
+        "'11111111-1111-4111-8111-111111111111', "
+        "'ce9fffea-a87a-4375-a2dd-f6217f743959')"
+    )
     if since_hours:
         where += f" AND timestamp > now() - INTERVAL {int(since_hours)} HOUR"
     hogql = (

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 
 HOST = os.environ.get("POSTHOG_HOST", "https://us.posthog.com").rstrip("/")
@@ -39,8 +40,47 @@ def api(method: str, path: str, body: dict | None = None) -> dict:
         return json.loads(raw) if raw else {}
 
 
+# Throwaway events from gateway/deploy verification. They are only a handful of
+# rows, but they are indistinguishable from real usage in every chart, and
+# PostHog cannot delete them: the gateway sets ``$process_person_profile: false``
+# so no person profile exists, and person deletion is the only supported path
+# for removing events. So they are excluded at query time instead — permanently,
+# in one place, rather than remembered per-query.
+TEST_VERSIONS = ("deploy-verify", "live-verify")
+TEST_INSTALLS = (
+    "00000000-0000-4000-8000-000000000001",
+    "11111111-1111-4111-8111-111111111111",
+    "ce9fffea-a87a-4375-a2dd-f6217f743959",
+)
+NOT_TEST = (
+    "coalesce(toString(properties.decepticon_version),'') NOT IN "
+    f"({', '.join(repr(v) for v in TEST_VERSIONS)}) "
+    f"AND distinct_id NOT IN ({', '.join(repr(i) for i in TEST_INSTALLS)})"
+)
+
+
+def exclude_test_data(sql: str) -> str:
+    """Apply :data:`NOT_TEST` to every ``FROM events`` scope in ``sql``.
+
+    Done by rewrite rather than by hand-editing each query so a future insight
+    cannot silently forget it. Raises if any scope was missed — a filter that
+    quietly fails to apply is worse than no filter.
+    """
+    out, with_where = re.subn(r"FROM events\s+WHERE\s+", f"FROM events WHERE {NOT_TEST} AND ", sql)
+    out, bare = re.subn(r"FROM events(?!\s+WHERE)(\s|$)", f"FROM events WHERE {NOT_TEST}\\1", out)
+    expected = sql.count("FROM events")
+    if with_where + bare != expected:
+        raise AssertionError(
+            f"test-data filter applied to {with_where + bare}/{expected} `FROM events` scopes"
+        )
+    return out
+
+
 def hogql(sql: str) -> dict:
-    return {"kind": "DataVisualizationNode", "source": {"kind": "HogQLQuery", "query": sql}}
+    return {
+        "kind": "DataVisualizationNode",
+        "source": {"kind": "HogQLQuery", "query": exclude_test_data(sql)},
+    }
 
 
 SID = "coalesce(toString(properties.session_id),'') != ''"
