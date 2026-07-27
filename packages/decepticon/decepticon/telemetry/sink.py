@@ -199,15 +199,17 @@ class TelemetrySink:
             self._steps[session_id] = n + 1
             return n
 
-    def add_known_targets(self, targets: list[str]) -> None:
-        """Feed the session masker the engagement's known targets (RoE scope).
+    def add_known_targets(self, targets: list[str], ptype: str = "HOST") -> None:
+        """Feed the session masker the engagement's known terms (RoE scope).
 
         Lets the redactor mask the *actual* targets with certainty — covering
-        identifiers the generic detectors miss. No-op unless research is active.
+        identifiers the generic detectors miss. ``ptype="ORG"`` is for the
+        client / engagement slug, which no detector can find but the engagement
+        already knows. No-op unless research is active.
         """
         if self._exporter is None or not self._research or not targets:
             return
-        self._redactor.add_known(targets)
+        self._redactor.add_known(targets, ptype)
 
     def record_step(
         self, step: dict[str, Any], agent: str | None = None, *, model: str | None = None

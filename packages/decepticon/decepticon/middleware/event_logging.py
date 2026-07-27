@@ -270,6 +270,44 @@ def _roe_literal_targets(workspace: str) -> list[str]:
     return [r.pattern for r in rules.in_scope if r.resolved_kind() in ("ip", "host")]
 
 
+# Identity fields the operator DECLARES when the RoE is written — the
+# roe-template skill interviews for each of them ("Client organization" is
+# question 2). Nothing here is guessed: an absent field masks nothing.
+_ROE_IDENTITY_FIELDS = ("client", "engagement_name", "engagement_slug", "authorized_by")
+
+
+def _engagement_identity_terms(workspace: str) -> list[str]:
+    """Who was tested, as declared by the engagement itself.
+
+    No detector can find this. A client name is not shaped like a hostname, so
+    regex cannot; a PII model scores F1 ~0.5 on names cross-domain, degrades
+    further the further text sits from its training distribution, and would have
+    to run on every trajectory step. The engagement, meanwhile, simply knows —
+    the RoE interview asks for the client organization outright.
+
+    Measured in the live corpus, these leaked verbatim: ``Workspace:
+    /workspace/<client>-new`` inside prompts, and the authorizer's name.
+
+    Only declared values are used, plus the workspace directory (which is the
+    engagement slug on disk). Terms under 4 characters are skipped because a
+    2-3 character string matches everywhere — there is no word list.
+    """
+    import json
+    from pathlib import Path
+
+    ws = Path(workspace)
+    terms: list[str] = [ws.name]
+    try:
+        data = json.loads((ws / "plan" / "roe.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if isinstance(data, dict):
+        terms.extend(
+            value for key in _ROE_IDENTITY_FIELDS if isinstance(value := data.get(key), str)
+        )
+    return [t for t in {t.strip() for t in terms} if len(t) >= 4]
+
+
 class EventLogMiddleware(AgentMiddleware):
     """Emit compact engagement events to ``events.jsonl`` as the agent runs.
 
@@ -474,6 +512,14 @@ class EventLogMiddleware(AgentMiddleware):
             targets = []
         if targets:
             self._telemetry.add_known_targets(targets)
+        # Client / engagement identity. Separate placeholder type because it is a
+        # different disclosure: <HOST_1> is a machine, <ORG_1> is who was tested.
+        try:
+            identities = _engagement_identity_terms(workspace)
+        except Exception:  # noqa: BLE001 — never break the run on a bad RoE file
+            identities = []
+        if identities:
+            self._telemetry.add_known_targets(identities, "ORG")
 
     def _next_step(self, session_id: str) -> int:
         return self._telemetry.next_step(session_id)

@@ -104,7 +104,7 @@ def _regex_detector(pattern: re.Pattern[str]) -> _Detector:
 
 
 # Lower rank = higher priority when two matches overlap.
-_PRIORITY = {"HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2, "BLOB": 3}
+_PRIORITY = {"ORG": 0, "HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2, "BLOB": 3}
 
 
 _BUILTINS: list[tuple[str, _Detector]] | None = None
@@ -156,7 +156,12 @@ class Redactor:
     def __init__(self, known: list[str] | None = None) -> None:
         self._map: dict[str, str] = {}  # real value -> placeholder, stable
         self._counters: dict[str, int] = {}
-        self._known: list[str] = sorted({k for k in (known or []) if k}, key=len, reverse=True)
+        # (term, placeholder type). Ground truth beats every detector: no PII
+        # model reliably finds a client's project slug or a bare NetBIOS name,
+        # but the engagement already knows them.
+        self._known: list[tuple[str, str]] = sorted(
+            {(k, "HOST") for k in (known or []) if k}, key=lambda kv: len(kv[0]), reverse=True
+        )
         # Custom classes (no library ships these) + always-on IPv6 fallback, then
         # the LangChain built-ins, then bare-domain last (least specific).
         self._detectors: list[tuple[str, _Detector]] = [
@@ -173,17 +178,19 @@ class Redactor:
             ("DOMAIN", _regex_detector(_DOMAIN)),
         ]
 
-    def add_known(self, targets: list[str]) -> None:
-        """Add engagement-known targets (RoE scope / discovered hosts).
+    def add_known(self, targets: list[str], ptype: str = "HOST") -> None:
+        """Add engagement-known terms, masked with certainty by exact match.
 
-        These are masked with certainty by exact match — covering identifiers no
-        detector catches (bare Windows hostnames like ``dc01``, NetBIOS names,
-        internal codenames). Re-sorted longest-first so a subdomain is replaced
-        before its parent.
+        Covers what no detector — regex or model — reliably catches: bare Windows
+        hostnames (``dc01``), NetBIOS names, and (with ``ptype="ORG"``) the
+        client / engagement slug that shows up verbatim in workspace paths.
+        Cross-domain PII models score F1 ~0.5 on names; ground truth scores 1.0.
+
+        Re-sorted longest-first so a subdomain is replaced before its parent.
         """
         merged = set(self._known)
-        merged.update(t for t in targets if t)
-        self._known = sorted(merged, key=len, reverse=True)
+        merged.update((t, ptype) for t in targets if t)
+        self._known = sorted(merged, key=lambda kv: len(kv[0]), reverse=True)
 
     def _placeholder(self, value: str, ptype: str) -> str:
         existing = self._map.get(value)
@@ -200,9 +207,12 @@ class Redactor:
         if not text:
             return text
         spans: list[tuple[int, int, str, str]] = []  # (start, end, ptype, value)
-        for target in self._known:
-            for m in re.finditer(re.escape(target), text):
-                spans.append((m.start(), m.end(), "HOST", target))
+        for target, ktype in self._known:
+            # Case-insensitive: a hostname or project slug is written both ways
+            # ("CodeAnt" in prose, "codeant" in a path). The matched TEXT is the
+            # map key, so casing stays stable per spelling.
+            for m in re.finditer(re.escape(target), text, re.IGNORECASE):
+                spans.append((m.start(), m.end(), ktype, m.group(0)))
         for ptype, detect in self._detectors:
             for start, end, value in detect(text):
                 spans.append((start, end, ptype, value))

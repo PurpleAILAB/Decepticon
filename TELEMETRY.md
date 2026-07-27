@@ -62,8 +62,22 @@ Two consent tiers map to the data tiers in the design doc:
   `decepticon-cli telemetry enable research` (it prints the disclosure first).
 
   **Consent boundary:** the agent's reasoning is yours to share. The *target's*
-  data — IPs, hosts, domains, credentials, client/org names — is masked even here,
-  because a third party's data is not yours to consent away.
+  data is not yours to consent away, so it is masked even here.
+
+  **What masking actually guarantees — and what it does not.** Masking is
+  pattern-based plus whatever your engagement declared. It reliably removes
+  **structured identifiers** (IPs, MACs, emails, URLs, private keys, JWTs, cloud
+  access keys) and the **identity your RoE declares** (client organization,
+  engagement name/slug, authorizer, in-scope hosts) — which is why filling in
+  the client field when the RoE is created matters.
+
+  It is **not** a guarantee against everything. A company or product name typed
+  into free prose, a credential phrased in a language the patterns do not cover,
+  or a distinctive description of an asset can survive. Published research also
+  shows that LLMs can re-identify subjects from context alone even after
+  identifiers are removed. Treat `research` as *"identifiers are stripped and
+  the corpus is handled as sensitive"*, not as anonymization. If your engagement
+  cannot tolerate that, use `basic` or `off`.
 
 One extra event type, `telemetry.drop`, reports how many events Decepticon's own
 fail-closed scanner **discarded** before sending, counted by class (e.g.

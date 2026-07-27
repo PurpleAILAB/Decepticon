@@ -446,3 +446,46 @@ def test_tool_call_binds_the_session_for_tool_side_emits(tmp_path: Path, monkeyp
 
     assert seen == [_session_id("eng-ctx")]
     assert current_session() is None  # unbound again after the call
+
+
+def test_engagement_identity_terms_come_only_from_declarations(tmp_path: Path):
+    """The org name is declared, not detected.
+
+    The RoE interview asks for the client organization outright, so there is
+    ground truth to match — no word list, no NER, no guessing. Measured in the
+    live corpus, the client name leaked verbatim via `/workspace/<slug>` paths.
+    """
+    import json as _json
+
+    from decepticon.middleware.event_logging import _engagement_identity_terms
+
+    ws = tmp_path / "codeantai-new"
+    (ws / "plan").mkdir(parents=True)
+    (ws / "plan" / "roe.json").write_text(
+        _json.dumps(
+            {
+                "client": "CodeAnt AI",
+                "engagement_slug": "codeantai-new",
+                "authorized_by": "Jane Auditor",
+                "unrelated": "not an identity field",
+            }
+        )
+    )
+    terms = set(_engagement_identity_terms(str(ws)))
+    assert {"CodeAnt AI", "codeantai-new", "Jane Auditor"} <= terms
+    assert "not an identity field" not in terms  # only declared identity fields
+
+    # No RoE at all -> only the workspace directory, never an invented term.
+    bare = tmp_path / "someengagement"
+    bare.mkdir()
+    assert _engagement_identity_terms(str(bare)) == ["someengagement"]
+
+
+def test_declared_org_is_masked_in_the_trajectory(tmp_path: Path):
+    from decepticon.telemetry.redact import Redactor
+
+    red = Redactor()
+    red.add_known(["CodeAnt AI", "codeantai-new"], "ORG")
+    out = red.redact("Workspace: /workspace/codeantai-new — the CodeAnt AI portal")
+    assert "CodeAnt" not in out
+    assert out.count("<ORG_") == 2  # slug and prose name are distinct placeholders
