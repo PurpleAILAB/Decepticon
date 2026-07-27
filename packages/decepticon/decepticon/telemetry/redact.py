@@ -44,9 +44,32 @@ _AWSKEY = re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")
 # user:pass@host, and user:pass whose password carries a special char (so
 # host:port and plain key:value pairs are left intact).
 _CRED_AT = re.compile(r"\b[\w.-]+:[^\s:@/]{3,}@[\w.-]+")
+# Long opaque base64/hex run — hashes, dumps, key material. The Tier-C scanner
+# REJECTS these, so the masker must have a matching detector: without one, any
+# reasoning step quoting a hash was silently dropped whole instead of masked.
+_BLOB = re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b")
 _CRED_SPECIAL = re.compile(r"\b[\w.-]+:[^\s:@/]*[!@#$%^&*+=][^\s:@/]*")
+# Credential written as key=value / key: value. `_CRED_SPECIAL` only fires when
+# the password carries a special character and `_CRED_AT` only on `user:pass@host`,
+# so the most common real form — `login:bob senha:123456` — shipped in the clear.
+# Only the VALUE (group 1) is masked, so the reasoning stays readable:
+# "senha:123456" -> "senha:<CRED_1>", not "<CRED_1>".
+_CRED_SECRET_KV = re.compile(
+    r"(?:password|passwd|pwd|pass|senha|contrase\w+|пароль"
+    r"|secret|token|api[_-]?key)"
+    r"\s*(?:[:=]|\s+(?:is|es|la|là)\s+)\s*([^\s,;\"']{3,64})",
+    re.IGNORECASE,
+)
+# Username pairs, TIGHT form only (`user:bob`). A spaced `user: the attacker` is
+# prose, not a credential, and masking it would corrupt the reasoning.
+_CRED_USER_KV = re.compile(r"(?:login|username|user)[:=]([^\s,;\"']{3,64})", re.IGNORECASE)
 # Bare host/domain — requires a non-numeric TLD so "1.2.3"/"x86_64" never match.
-_DOMAIN = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE)
+# The trailing `(?!\()` keeps dotted CODE out: `json.load(...)`, `os.uname()` and
+# friends are not hosts, and masking them destroyed the prompt. Measured: 1,697
+# of 7,990 masked turns carried a `<DOMAIN_n>(` — a mangled function call.
+_DOMAIN = re.compile(
+    r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b(?!\()", re.IGNORECASE
+)
 
 # Local-regex fallbacks for the LangChain built-ins (used only if the import fails).
 _IP = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")
@@ -54,6 +77,23 @@ _IP6 = re.compile(r"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b")
 _MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 _URL = re.compile(r"\bhttps?://[^\s)\]\"'<>]+", re.IGNORECASE)
 _EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+
+def _group_detector(pattern: re.Pattern[str], group: int = 1) -> _Detector:
+    """Detector that reports only a capture group — the surrounding text stays.
+
+    Used for credential pairs, where masking the whole `senha:123456` would drop
+    the fact that a password was involved; masking only the value keeps that.
+    """
+
+    def detect(text: str) -> list[tuple[int, int, str]]:
+        return [
+            (m.start(group), m.end(group), m.group(group))
+            for m in pattern.finditer(text)
+            if m.group(group)
+        ]
+
+    return detect
 
 
 def _regex_detector(pattern: re.Pattern[str]) -> _Detector:
@@ -64,7 +104,7 @@ def _regex_detector(pattern: re.Pattern[str]) -> _Detector:
 
 
 # Lower rank = higher priority when two matches overlap.
-_PRIORITY = {"HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2}
+_PRIORITY = {"ORG": 0, "HOST": 0, "KEY": 1, "JWT": 1, "AWSKEY": 1, "CRED": 2, "BLOB": 3}
 
 
 _BUILTINS: list[tuple[str, _Detector]] | None = None
@@ -116,7 +156,12 @@ class Redactor:
     def __init__(self, known: list[str] | None = None) -> None:
         self._map: dict[str, str] = {}  # real value -> placeholder, stable
         self._counters: dict[str, int] = {}
-        self._known: list[str] = sorted({k for k in (known or []) if k}, key=len, reverse=True)
+        # (term, placeholder type). Ground truth beats every detector: no PII
+        # model reliably finds a client's project slug or a bare NetBIOS name,
+        # but the engagement already knows them.
+        self._known: list[tuple[str, str]] = sorted(
+            {(k, "HOST") for k in (known or []) if k}, key=lambda kv: len(kv[0]), reverse=True
+        )
         # Custom classes (no library ships these) + always-on IPv6 fallback, then
         # the LangChain built-ins, then bare-domain last (least specific).
         self._detectors: list[tuple[str, _Detector]] = [
@@ -125,22 +170,27 @@ class Redactor:
             ("AWSKEY", _regex_detector(_AWSKEY)),
             ("CRED", _regex_detector(_CRED_AT)),
             ("CRED", _regex_detector(_CRED_SPECIAL)),
+            ("CRED", _group_detector(_CRED_SECRET_KV)),
+            ("CRED", _group_detector(_CRED_USER_KV)),
+            ("BLOB", _regex_detector(_BLOB)),
             ("IP6", _regex_detector(_IP6)),
             *_builtin_detectors(),
             ("DOMAIN", _regex_detector(_DOMAIN)),
         ]
 
-    def add_known(self, targets: list[str]) -> None:
-        """Add engagement-known targets (RoE scope / discovered hosts).
+    def add_known(self, targets: list[str], ptype: str = "HOST") -> None:
+        """Add engagement-known terms, masked with certainty by exact match.
 
-        These are masked with certainty by exact match — covering identifiers no
-        detector catches (bare Windows hostnames like ``dc01``, NetBIOS names,
-        internal codenames). Re-sorted longest-first so a subdomain is replaced
-        before its parent.
+        Covers what no detector — regex or model — reliably catches: bare Windows
+        hostnames (``dc01``), NetBIOS names, and (with ``ptype="ORG"``) the
+        client / engagement slug that shows up verbatim in workspace paths.
+        Cross-domain PII models score F1 ~0.5 on names; ground truth scores 1.0.
+
+        Re-sorted longest-first so a subdomain is replaced before its parent.
         """
         merged = set(self._known)
-        merged.update(t for t in targets if t)
-        self._known = sorted(merged, key=len, reverse=True)
+        merged.update((t, ptype) for t in targets if t)
+        self._known = sorted(merged, key=lambda kv: len(kv[0]), reverse=True)
 
     def _placeholder(self, value: str, ptype: str) -> str:
         existing = self._map.get(value)
@@ -157,9 +207,12 @@ class Redactor:
         if not text:
             return text
         spans: list[tuple[int, int, str, str]] = []  # (start, end, ptype, value)
-        for target in self._known:
-            for m in re.finditer(re.escape(target), text):
-                spans.append((m.start(), m.end(), "HOST", target))
+        for target, ktype in self._known:
+            # Case-insensitive: a hostname or project slug is written both ways
+            # ("CodeAnt" in prose, "codeant" in a path). The matched TEXT is the
+            # map key, so casing stays stable per spelling.
+            for m in re.finditer(re.escape(target), text, re.IGNORECASE):
+                spans.append((m.start(), m.end(), ktype, m.group(0)))
         for ptype, detect in self._detectors:
             for start, end, value in detect(text):
                 spans.append((start, end, ptype, value))

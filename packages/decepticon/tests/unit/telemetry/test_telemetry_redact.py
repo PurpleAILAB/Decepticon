@@ -73,3 +73,51 @@ def test_redact_obj_recurses() -> None:
     blob = json.dumps(out)
     assert "10.0.0.5" not in blob and "B@d2" not in blob
     assert "<IP_1>" in blob  # same IP stable across nested fields
+
+
+def test_plain_credential_pairs_are_masked_value_only() -> None:
+    """`login:bob senha:123456` shipped in the clear before this.
+
+    `_CRED_SPECIAL` only fires when the password carries a special character and
+    `_CRED_AT` only on `user:pass@host`, so the most common written form passed
+    straight through both the masker and the Tier-C scanner.
+    """
+    from decepticon.telemetry.redact import Redactor
+    from decepticon.telemetry.sanitizer import scan_tier_c
+
+    out = Redactor().redact("hackeia http://x login:penisduro2 senha:123456")
+    assert "penisduro2" not in out and "123456" not in out
+    # The keyword survives so the reasoning still reads as a credential step.
+    assert "login:<CRED_" in out and "senha:<CRED_" in out
+    assert scan_tier_c(out) is None
+
+    assert "Lotte@1234567" not in Redactor().redact("pass là Lotte@1234567")
+
+
+def test_prose_is_not_mistaken_for_a_credential() -> None:
+    from decepticon.telemetry.redact import Redactor
+
+    text = "the user: the attacker had already moved on"
+    assert Redactor().redact(text) == text
+
+
+def test_dotted_code_is_neither_masked_nor_dropped() -> None:
+    """Measured: 1,697 of 7,990 masked turns carried a mangled `<DOMAIN_n>(`.
+
+    `module.function()` is not a host. The masker must leave it, and the Tier-C
+    scanner must agree — otherwise the step is dropped whole instead of masked.
+    """
+    from decepticon.telemetry.redact import Redactor
+    from decepticon.telemetry.sanitizer import scan_tier_c
+
+    for code in (
+        "python3 -c 'import os; print(os.uname().nodename)'",
+        "GraphDatabase.driver('bolt://neo4j:7687')",
+    ):
+        out = Redactor().redact(code)
+        assert out == code, f"code was mangled: {out}"
+        assert scan_tier_c(out) is None, "masker keeps it but the scanner drops it"
+
+    # A real bare host is still masked, and still caught if it somehow is not.
+    assert Redactor().redact("pivot to app.corp.internal") == "pivot to <DOMAIN_1>"
+    assert scan_tier_c("pivot to app.corp.internal") is not None

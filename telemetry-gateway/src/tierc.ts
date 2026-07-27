@@ -37,8 +37,12 @@ const PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   // Long opaque blob: base64/hex secret material. 40+ chars with no spaces.
   ["opaque_blob", /\b[A-Za-z0-9+/]{40,}={0,2}\b/],
   // Bare domain/host (e.g. target.example.com). Requires a non-numeric TLD so
-  // version strings like "1.1.13" and tokens like "x86_64" never match.
-  ["domain", /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/i],
+  // version strings like "1.1.13" and tokens like "x86_64" never match, and a
+  // trailing `(?!\()` so dotted CODE is not mistaken for a host — `json.load(`
+  // and `os.uname(` are function calls. This mirrors the client masker
+  // (`redact._DOMAIN`) exactly: anything this scanner rejects must be something
+  // the masker can mask, or the whole step is discarded instead of masked.
+  ["domain", /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b(?!\()/i],
 ];
 
 /**

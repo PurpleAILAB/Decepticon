@@ -316,8 +316,11 @@ def _make_patch_tool_calls(**_: Any):
     return PatchToolCallsMiddleware()
 
 
-def _make_event_log(**_: Any):
-    return EventLogMiddleware()
+def _make_event_log(*, role: str = "", **_: Any):
+    # Thread the role in: it is the only reliable source of the agent name
+    # (the runtime object has no ``agent_name``), and without it every logged
+    # and telemetered event is unattributable.
+    return EventLogMiddleware(role=role)
 
 
 def _make_budget(**_: Any):

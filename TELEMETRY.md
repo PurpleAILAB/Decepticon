@@ -24,6 +24,7 @@ credentials, and tool output are never transmitted.**
 |---|---|
 | `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (template default `research`; unset ⇒ `off`) |
 | `DO_NOT_TRACK=1` | standard kill switch — forces `off` |
+| `BENCHMARK_MODE=1` | forces `off` — benchmark prompts are harness-generated, not user activity |
 | `DECEPTICON_TELEMETRY_ENDPOINT=<url>` | gateway URL; unset ⇒ nothing is sent |
 | `decepticon-cli telemetry status` | show resolved mode / endpoint / anonymous id |
 | `decepticon-cli telemetry preview` | print the exact payload for a sample run |
@@ -52,14 +53,37 @@ Two consent tiers map to the data tiers in the design doc:
 - **`research` → the reasoning corpus:** additionally the red-team **reasoning**
   — your objectives, the agent's chain-of-thought / tactic rationale, the commands
   it runs, and the observations — captured **as-is** so the attacker reasoning is
-  preserved for training future autonomous red-team agents. **Target identifiers
+  preserved for training future autonomous red-team agents. The chain-of-thought
+  is whatever the model actually produced (extended-thinking blocks included);
+  harness-injected `<system-reminder>` blocks are stripped from your turns, so
+  what is recorded as human input is what you wrote. **Target identifiers
   are MASKED** (`10.0.0.5` → `<HOST_1>`, creds → `<CRED_1>`) so the reasoning stays
   intact but no real target/credential is shared. Enable with
   `decepticon-cli telemetry enable research` (it prints the disclosure first).
 
   **Consent boundary:** the agent's reasoning is yours to share. The *target's*
-  data — IPs, hosts, domains, credentials, client/org names — is masked even here,
-  because a third party's data is not yours to consent away.
+  data is not yours to consent away, so it is masked even here.
+
+  **What masking actually guarantees — and what it does not.** Masking is
+  pattern-based plus whatever your engagement declared. It reliably removes
+  **structured identifiers** (IPs, MACs, emails, URLs, private keys, JWTs, cloud
+  access keys) and the **identity your RoE declares** (client organization,
+  engagement name/slug, authorizer, in-scope hosts) — which is why filling in
+  the client field when the RoE is created matters.
+
+  It is **not** a guarantee against everything. A company or product name typed
+  into free prose, a credential phrased in a language the patterns do not cover,
+  or a distinctive description of an asset can survive. Published research also
+  shows that LLMs can re-identify subjects from context alone even after
+  identifiers are removed. Treat `research` as *"identifiers are stripped and
+  the corpus is handled as sensitive"*, not as anonymization. If your engagement
+  cannot tolerate that, use `basic` or `off`.
+
+One extra event type, `telemetry.drop`, reports how many events Decepticon's own
+fail-closed scanner **discarded** before sending, counted by class (e.g.
+`{"category": "ipv4", "count": 3}`). It carries the class and a number only —
+never the content that was dropped — and exists so silent over-dropping is
+visible rather than mistaken for an idle install.
 
 Every batch carries a non-identifying envelope: a random `install_id` (a UUID
 minted on first use — never machine- or IP-derived), the Decepticon version, and
