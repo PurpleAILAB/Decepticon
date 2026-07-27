@@ -52,6 +52,13 @@ class EngagementContextState(AgentState):
     workspace_path: NotRequired[
         Annotated[str, "Sandbox root for this engagement.", _reduce_workspace_path]
     ]
+    kg_engagement: NotRequired[
+        Annotated[
+            str,
+            "Trusted tenant+engagement attack-graph partition.",
+            reduce_converging_value,
+        ]
+    ]
     # Per-run language override. When set via config.configurable.language,
     # the middleware appends a LANGUAGE_POLICY SystemMessage that supersedes
     # the prompt-time DECEPTICON_LANGUAGE env policy. Multi-tenant launchers
@@ -151,9 +158,20 @@ def _hydrate_engagement_state(state: Any) -> dict[str, Any] | None:
         if isinstance(cfg_lang, str) and cfg_lang:
             updates["language"] = cfg_lang
 
-    if engagement_label:
+    # KGMiddleware and the run launcher carry the authoritative composite
+    # tenant+engagement graph partition in ``kg_engagement``. Keep the human /
+    # workspace-facing ``engagement_name`` unchanged, but make every legacy KG
+    # helper's contextvar resolve to the same composite partition as KGStore.
+    cfg_kg_label = configurable.get("kg_engagement")
+    kg_label = (
+        cfg_kg_label if isinstance(cfg_kg_label, str) and cfg_kg_label else get("kg_engagement")
+    )
+    if isinstance(cfg_kg_label, str) and cfg_kg_label and get("kg_engagement") != cfg_kg_label:
+        updates["kg_engagement"] = cfg_kg_label
+    active_graph_label = kg_label if isinstance(kg_label, str) and kg_label else engagement_label
+    if active_graph_label:
         try:
-            set_active_engagement(engagement_label)
+            set_active_engagement(active_graph_label)
         except ValueError:
             # Invalid engagement label format (e.g. contains slashes or
             # control chars). The contextvar stays unset; downstream

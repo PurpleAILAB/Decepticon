@@ -22,6 +22,7 @@ needs an entry in ``SLOTS_PER_ROLE``.
 
 from __future__ import annotations
 
+import copy
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -281,9 +282,33 @@ class _SafeSummarizationProxy(AgentMiddleware):
     def name(self) -> str:
         return self._inner.name
 
+    def _scoped_inner(self, request: Any) -> AgentMiddleware:
+        """Bind summary generation to this request's already-selected model.
+
+        ProxyKeyOverrideMiddleware is immediately outside this middleware in
+        the canonical stack, so ``request.model`` carries the engagement's
+        LiteLLM virtual key. Deep Agents otherwise calls the process-global
+        model captured at graph construction for summaries. Shallow-copy both
+        middleware layers before rebinding: one shared LangGraph worker can
+        summarize two tenant runs concurrently without either key becoming
+        mutable global state.
+        """
+        # A request without a model (older shapes, and the fallback tests'
+        # stubs) has nothing to rebind — use the inner middleware as-is rather
+        # than raising into the fallback below, which would silently drop
+        # summarization for the turn.
+        model = getattr(request, "model", None)
+        if model is None or model is self._inner.model:
+            return self._inner
+        scoped_inner = copy.copy(self._inner)
+        scoped_helper = copy.copy(self._inner._lc_helper)
+        scoped_helper.model = model
+        scoped_inner._lc_helper = scoped_helper
+        return scoped_inner
+
     def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
         try:
-            return self._inner.wrap_model_call(request, handler)
+            return self._scoped_inner(request).wrap_model_call(request, handler)
         except Exception:
             logger.warning(
                 "Summarization middleware failed; skipping summarization "
@@ -294,7 +319,7 @@ class _SafeSummarizationProxy(AgentMiddleware):
 
     async def awrap_model_call(self, request: Any, handler: Callable[[Any], Awaitable[Any]]) -> Any:
         try:
-            return await self._inner.awrap_model_call(request, handler)
+            return await self._scoped_inner(request).awrap_model_call(request, handler)
         except Exception:
             logger.warning(
                 "Summarization middleware failed; skipping summarization "

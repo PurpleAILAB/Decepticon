@@ -368,7 +368,10 @@ class TestAdcsEsc3Query:
         q = self._esc3_query(store)
         # Enroll right is required on the **agent** template — that's
         # the one the principal uses to mint enrolment-agent certs.
-        assert "(p)-[en {engagement: $engagement}]->(agent)" in q
+        # The principal node carries the scope too, so assert the shape
+        # rather than one exact rendering of it.
+        assert "-[en {engagement: $engagement}]->(agent)" in q
+        assert "(p {engagement: $engagement})" in q
         assert "bh_right = 'Enroll'" in q
 
     def test_via_template_provenance_attached(self) -> None:
