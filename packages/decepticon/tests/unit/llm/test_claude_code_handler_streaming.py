@@ -26,6 +26,11 @@ _FAKE_LITELLM = types.ModuleType("litellm")
 _FAKE_LITELLM.CustomLLM = object
 _FAKE_LITELLM.ModelResponse = object
 _FAKE_OAUTH = types.ModuleType("oauth_token_store")
+# `sys.modules.setdefault` means whichever handler test imports first installs
+# this stub for the others, so it carries the union of every handler's imports.
+_FAKE_OAUTH.DEFAULT_JWT_SKEW_SECONDS = 60
+_FAKE_OAUTH.decode_jwt_payload = lambda *_a, **_kw: {}
+_FAKE_OAUTH.is_jwt_expired = lambda *_a, **_kw: False
 _FAKE_OAUTH.DEFAULT_REFRESH_BUFFER_SECONDS = 300
 _FAKE_OAUTH.FileBackedCache = lambda *_a, **_kw: None
 _FAKE_OAUTH.is_timestamp_expired = lambda *_a, **_kw: False
@@ -40,10 +45,25 @@ _FAKE_HTTP_CLIENT.async_post = lambda *_a, **_kw: None
 _FAKE_HTTP_CLIENT.sync_client = lambda *_a, **_kw: None
 _FAKE_HTTP_CLIENT.async_client = lambda *_a, **_kw: None
 
-sys.modules.setdefault("litellm", _FAKE_LITELLM)
-sys.modules.setdefault("oauth_token_store", _FAKE_OAUTH)
-sys.modules.setdefault("httpx", types.ModuleType("httpx"))
-sys.modules.setdefault("http_client", _FAKE_HTTP_CLIENT)
+
+def _install(name: str, stub: types.ModuleType) -> None:
+    """Install ``stub``, or top up whatever another handler test installed first.
+
+    These stubs are process-global: the first handler test to import wins, and
+    the others inherit its module. Backfilling missing attributes instead of
+    plain ``setdefault`` keeps collection order from deciding whether a handler
+    with different imports can load at all.
+    """
+    existing = sys.modules.setdefault(name, stub)
+    for attr, value in vars(stub).items():
+        if not attr.startswith("__") and not hasattr(existing, attr):
+            setattr(existing, attr, value)
+
+
+_install("litellm", _FAKE_LITELLM)
+_install("oauth_token_store", _FAKE_OAUTH)
+_install("httpx", types.ModuleType("httpx"))
+_install("http_client", _FAKE_HTTP_CLIENT)
 
 _module = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_module)
