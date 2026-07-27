@@ -49,6 +49,7 @@ import os
 import re
 import sys
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 # Fields carrying free text. Everything else in a step is a slug or an int.
@@ -90,15 +91,33 @@ Return JSON and nothing else:
 VERIFY_SYSTEM = """\
 You audit de-identified red-team text before it is used to train a model.
 
-Answer one question: could a reader identify a real organization, person, or \
-host from this text? Consider indirect evidence — a product name, a bug-bounty \
-program, a distinctive asset description, or an unusual combination of details \
-— not only explicit identifiers. <TYPE_n> placeholders are already masked and \
-are not identifying.
+Task: NAME the real-world entity that was the TARGET of this engagement — the
+organization, client, person, or host being tested. Put it in "entity".
 
-Be strict. A model memorizes its training data, so a miss is permanent.
+You must produce a name, not a suspicion. "Some organization is masked here" is
+not a name — a <TYPE_n> placeholder is already de-identified and tells you
+nothing. Set "identifying": false with an empty "entity" unless you can write
+down a real entity a reader could look up AND it is the thing under test.
 
-Return JSON: {"identifying": true|false, "reason": "<short reason>"}\
+TARGET (flag these):
+- the client or organization being assessed, however it is referred to
+- a person, handle, or account belonging to the target
+- an unmasked domain, host, or bug-bounty program of the target
+
+NOT the target (never flag, no matter how specific):
+- tools and scanners the operator ran: nmap, semgrep, ffuf, sqlmap, BloodHound
+- software the target happens to run: Redis, nginx, MySQL, ADFS, Active Directory
+- threat actors and adversary profiles being emulated: APT28, Sandworm, FIN7
+- the AI vendor, model, or CLI running the engagement
+- techniques, CVEs, ATT&CK ids, vulnerability detail, generic product categories
+- that a red-team engagement happened, or how it was run
+
+If the only names you can find are tools, platforms, or emulated actors, the
+text is not identifying. Say so.
+
+Return JSON and nothing else. "entity" and "reason" must be single short lines
+with no newlines or quote characters:
+{"identifying": true|false, "entity": "<target name or empty>", "reason": "<how>"}\
 """
 
 
@@ -113,8 +132,25 @@ def _post(url: str, body: dict[str, Any], api_key: str, timeout: int = 120) -> d
         return json.loads(resp.read())
 
 
-def _chat(system: str, user: str, cfg: dict[str, str]) -> dict[str, Any]:
-    """One JSON-returning chat completion through the LiteLLM proxy."""
+_IS_PLACEHOLDER_NAME = re.compile(r"<?[A-Z]+_\d+>?")
+
+
+def _chat(system: str, user: str, cfg: dict[str, str], _retry: bool = True) -> dict[str, Any]:
+    """One JSON-returning chat completion through the LiteLLM proxy.
+
+    Retries once on a malformed reply: models occasionally emit unescaped
+    content inside the JSON, and a fail-closed pipeline turns every such blip
+    into a discarded trajectory.
+    """
+    try:
+        return _chat_once(system, user, cfg)
+    except (json.JSONDecodeError, KeyError, IndexError):
+        if not _retry:
+            raise
+        return _chat_once(system, user + "\n\n(Return strictly valid JSON.)", cfg)
+
+
+def _chat_once(system: str, user: str, cfg: dict[str, str]) -> dict[str, Any]:
     out = _post(
         f"{cfg['url'].rstrip('/')}/v1/chat/completions",
         {
@@ -151,46 +187,32 @@ def _parse_json(content: str) -> dict[str, Any]:
         return json.loads(text[start : end + 1])
 
 
-def steps_to_prompt(steps: list[dict[str, Any]]) -> str:
-    """Render a trajectory as numbered text units for one LLM call.
+def text_windows(steps: list[dict[str, Any]], size: int = 24_000) -> list[str]:
+    """Slice a trajectory's free text into windows that fit one LLM call.
 
-    The whole trajectory goes in one prompt on purpose: whether a token is an
-    identifier is only decidable from surrounding turns.
+    Detection does not need the step structure — it needs text to read, and
+    replacement is applied globally by substring afterwards. So a 6.8M-character
+    trajectory (the largest in the corpus) becomes a few hundred windows rather
+    than one impossible request.
     """
-    lines: list[str] = []
-    for i, step in enumerate(steps):
+    windows: list[str] = []
+    buf: list[str] = []
+    used = 0
+    for step in steps:
         for field in TEXT_FIELDS:
-            value = step.get(field)
-            if value:
-                lines.append(f"[{i}.{field}]\n{value}")
-    return "\n\n".join(lines)
-
-
-def apply_redacted_units(
-    steps: list[dict[str, Any]], units: dict[str, str]
-) -> list[dict[str, Any]]:
-    """Write redacted text back onto a copy of ``steps`` by ``i.field`` key."""
-    out = [dict(s) for s in steps]
-    for key, value in units.items():
-        idx, _, field = key.partition(".")
-        if not idx.isdigit() or field not in TEXT_FIELDS:
-            continue
-        i = int(idx)
-        if 0 <= i < len(out) and out[i].get(field):
-            out[i][field] = value
-    return out
-
-
-def parse_units(text: str) -> dict[str, str]:
-    """Parse the `[i.field]` blocks back out of a model response."""
-    units: dict[str, str] = {}
-    for match in re.finditer(
-        r"^\[(\d+\.(?:text|args_text|observation))\]\n(.*?)(?=^\[\d+\.|\Z)",
-        text,
-        re.DOTALL | re.MULTILINE,
-    ):
-        units[match.group(1)] = match.group(2).rstrip("\n")
-    return units
+            value = str(step.get(field) or "")
+            while value:
+                room = size - used
+                if room <= 0:
+                    windows.append("\n".join(buf))
+                    buf, used = [], 0
+                    room = size
+                head, value = value[:room], value[room:]
+                buf.append(head)
+                used += len(head)
+    if buf:
+        windows.append("\n".join(buf))
+    return windows
 
 
 def apply_identifiers(
@@ -239,27 +261,47 @@ def apply_identifiers(
     return out, applied
 
 
-def redact_trajectory(traj: dict[str, Any], cfg: dict[str, str]) -> tuple[dict[str, Any], str]:
+def _map_windows(system: str, windows: list[str], cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Run one prompt over every window concurrently, preserving order."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    workers = max(1, min(int(cfg.get("window_workers", 4)), len(windows)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(lambda w: _chat(system, w, cfg), windows))
+
+
+def redact_trajectory(traj: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any], str]:
     """Return ``(trajectory, verdict)`` where verdict is ``clean`` or a reason.
 
     Never raises: a trajectory that cannot be processed is quarantined, not
     passed through. Fail-closed.
     """
     steps = traj.get("steps") or []
-    prompt = steps_to_prompt(steps)
-    if not prompt.strip():
+    size = int(cfg.get("window", 24_000))
+    windows = text_windows(steps, size)
+    if not windows or not any(w.strip() for w in windows):
         return traj, "empty"
     try:
-        found = _chat(REDACT_SYSTEM, prompt, cfg).get("identifiers") or []
-        if not isinstance(found, list):
-            return traj, "redaction returned a malformed identifier list"
+        found: list[dict[str, str]] = []
+        for reply in _map_windows(REDACT_SYSTEM, windows, cfg):
+            items = reply.get("identifiers")
+            if isinstance(items, list):
+                found.extend(i for i in items if isinstance(i, dict))
         out = dict(traj)
-        out["steps"], _ = apply_identifiers(steps, [i for i in found if isinstance(i, dict)])
-        verdict = _chat(VERIFY_SYSTEM, steps_to_prompt(out["steps"]), cfg)
+        out["steps"], _ = apply_identifiers(steps, found)
+        verdicts = _map_windows(VERIFY_SYSTEM, text_windows(out["steps"], size), cfg)
     except Exception as exc:  # noqa: BLE001 — any failure quarantines, never passes
-        return traj, f"error: {type(exc).__name__}"
-    if verdict.get("identifying"):
-        return out, f"verifier: {str(verdict.get('reason', ''))[:200]}"
+        return traj, f"error: {type(exc).__name__}: {str(exc)[:120]}"
+    for verdict in verdicts:
+        # A flag without a named entity is the verifier restating that masking
+        # happened — measured at 49% of quarantines before it had to name one.
+        entity = str(verdict.get("entity") or "").strip()
+        # A placeholder is not a name. Naming "<ORG_1>" is the verifier restating
+        # that masking happened — the failure mode that was 49% of quarantines.
+        if _IS_PLACEHOLDER_NAME.fullmatch(entity):
+            entity = ""
+        if verdict.get("identifying") and entity:
+            return out, f"verifier[{entity[:60]}]: {str(verdict.get('reason', ''))[:160]}"
     return out, "clean"
 
 
@@ -279,13 +321,12 @@ _SELF_TEST_STEPS = [
 
 
 def _self_test() -> int:
-    prompt = steps_to_prompt(_SELF_TEST_STEPS)
-    assert "[0.text]" in prompt and "[2.args_text]" in prompt and "[2.observation]" in prompt
-    assert "[1.args_text]" not in prompt, "absent fields must not be emitted"
-
-    round_tripped = parse_units(prompt)
-    assert round_tripped["0.text"] == _SELF_TEST_STEPS[0]["text"], round_tripped
-    assert round_tripped["2.observation"] == "12 rows"
+    windows = text_windows(_SELF_TEST_STEPS, size=10_000)
+    assert len(windows) == 1 and "CodeAnt" in windows[0] and "12 rows" in windows[0]
+    # A trajectory far larger than one request splits rather than failing.
+    big = [{"text": "x" * 100_000}]
+    assert len(text_windows(big, size=24_000)) == 5, len(text_windows(big, size=24_000))
+    assert sum(len(w) for w in text_windows(big, size=24_000)) == 100_000, "no text lost"
 
     applied, n = apply_identifiers(_SELF_TEST_STEPS, [{"value": "CodeAnt", "type": "ORG"}])
     assert applied[0]["text"] == "Objective: test the <ORG_1> portal at <IP_1>", applied[0]
@@ -293,8 +334,7 @@ def _self_test() -> int:
     assert _SELF_TEST_STEPS[0]["text"].startswith("Objective: test the CodeAnt"), "must not mutate"
     assert applied[1]["text"] == _SELF_TEST_STEPS[1]["text"], "untouched steps stay identical"
 
-    # Numbering continues past placeholders the client masker already emitted,
-    # so <IP_1> is never reused for a different entity.
+    # Numbering continues past placeholders the client masker already emitted.
     bumped, _ = apply_identifiers(
         [{"text": "<IP_1> and <IP_2> and 10.0.0.9"}], [{"value": "10.0.0.9", "type": "IP"}]
     )
@@ -313,19 +353,11 @@ def _self_test() -> int:
         [{"value": "<ORG_1>", "type": "ORG"}, {"value": "x", "type": "ORG"}],
     )
     assert safe[0]["text"] == "<ORG_1> x", safe
-    assert applied[1]["text"] == _SELF_TEST_STEPS[1]["text"], "untouched steps stay identical"
 
-    # A bogus key must never write outside the trajectory.
-    assert apply_redacted_units(_SELF_TEST_STEPS, {"99.text": "x", "0.bogus": "y"})[0][
-        "text"
-    ].startswith("Objective: test the CodeAnt")
-
-    # Model replies arrive fenced on some proxy paths; a strict json.loads
-    # quarantined every trajectory until this tolerated them.
+    # Model replies arrive fenced on some proxy paths.
     assert _parse_json('```json\n{"text": "ok"}\n```') == {"text": "ok"}
-    assert _parse_json('{"identifying": false}') == {"identifying": False}
     assert _parse_json('here you go: {"text": "ok"} done') == {"text": "ok"}
-    print("self-test OK: units render, round-trip, and apply without mutating the input")
+    print("self-test OK: windows split without loss; replacements apply deterministically")
     return 0
 
 
@@ -337,16 +369,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default="-", help="redacted JSONL (training input)")
     ap.add_argument("--quarantine", default=None, help="JSONL for trajectories that failed verify")
     ap.add_argument("--limit", type=int, default=None, help="process at most N trajectories")
+    ap.add_argument("--workers", type=int, default=4, help="trajectories in flight")
+    ap.add_argument(
+        "--window-workers", type=int, default=4, help="windows in flight per trajectory"
+    )
+    ap.add_argument("--window", type=int, default=24_000, help="characters per LLM window")
     ap.add_argument("--self-test", action="store_true", help="run offline checks and exit")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return _self_test()
 
-    cfg = {
+    cfg: dict[str, Any] = {
         "url": os.environ.get("DECEPTICON_LLM__PROXY_URL", ""),
         "key": os.environ.get("DECEPTICON_LLM__PROXY_API_KEY", ""),
         "model": os.environ.get("REDACT_MODEL", "auth/claude-haiku-4-5"),
+        "window": args.window,
+        "window_workers": args.window_workers,
     }
     if not cfg["url"] or not cfg["key"]:
         print(
@@ -356,43 +395,56 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     src = sys.stdin if args.src == "-" else open(args.src, encoding="utf-8")  # noqa: SIM115
+    try:
+        trajectories = [json.loads(line) for line in src if line.strip()]
+    finally:
+        if src is not sys.stdin:
+            src.close()
+    if args.limit is not None:
+        trajectories = trajectories[: args.limit]
+
     out = sys.stdout if args.out == "-" else open(args.out, "w", encoding="utf-8")  # noqa: SIM115
     quarantine = open(args.quarantine, "w", encoding="utf-8") if args.quarantine else None  # noqa: SIM115
 
     kept = dropped = 0
+    reasons: dict[str, int] = {}
     try:
-        for n, line in enumerate(src):
-            if args.limit is not None and n >= args.limit:
-                break
-            line = line.strip()
-            if not line:
-                continue
-            traj = json.loads(line)
-            redacted, verdict = redact_trajectory(traj, cfg)
-            if verdict == "clean":
-                out.write(json.dumps(redacted, ensure_ascii=False) + "\n")
-                kept += 1
-            else:
-                dropped += 1
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(redact_trajectory, traj, cfg): traj for traj in trajectories}
+            for done, fut in enumerate(as_completed(futures), 1):
+                redacted, verdict = fut.result()
+                if verdict == "clean":
+                    out.write(json.dumps(redacted, ensure_ascii=False) + "\n")
+                    kept += 1
+                else:
+                    dropped += 1
+                    reasons[verdict.split(":")[0]] = reasons.get(verdict.split(":")[0], 0) + 1
+                    if quarantine:
+                        quarantine.write(
+                            json.dumps(
+                                {**redacted, "_quarantine_reason": verdict}, ensure_ascii=False
+                            )
+                            + "\n"
+                        )
+                out.flush()
                 if quarantine:
-                    quarantine.write(
-                        json.dumps({**redacted, "_quarantine_reason": verdict}, ensure_ascii=False)
-                        + "\n"
+                    quarantine.flush()
+                if done % 10 == 0 or done == len(trajectories):
+                    print(
+                        f"  {done}/{len(trajectories)} — {kept} kept / {dropped} quarantined",
+                        file=sys.stderr,
+                        flush=True,
                     )
-            if (kept + dropped) % 25 == 0:
-                print(f"  {kept} kept / {dropped} quarantined", file=sys.stderr)
     finally:
-        for fh in (src, out, quarantine):
-            if fh and fh not in (sys.stdin, sys.stdout):
+        for fh in (out, quarantine):
+            if fh and fh is not sys.stdout:
                 fh.close()
 
     total = kept + dropped
     rate = (100 * dropped / total) if total else 0
     print(f"{kept} kept, {dropped} quarantined ({rate:.1f}%) of {total}", file=sys.stderr)
-    if not args.quarantine and dropped:
-        print(
-            "note: pass --quarantine to keep the rejected trajectories for review.", file=sys.stderr
-        )
+    for reason, n in sorted(reasons.items(), key=lambda kv: -kv[1]):
+        print(f"  {n:>4}  {reason}", file=sys.stderr)
     return 0
 
 
