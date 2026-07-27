@@ -26,6 +26,9 @@ _FAKE_OAUTH.write_json_atomic = lambda *_a, **_kw: None
 _FAKE_HTTP_CLIENT = types.ModuleType("http_client")
 _FAKE_HTTP_CLIENT.post = lambda *_a, **_kw: None
 _FAKE_HTTP_CLIENT.async_post = lambda *_a, **_kw: None
+# The streaming paths build their own keep-alive clients.
+_FAKE_HTTP_CLIENT.sync_client = lambda *_a, **_kw: None
+_FAKE_HTTP_CLIENT.async_client = lambda *_a, **_kw: None
 
 sys.modules.setdefault("litellm", _FAKE_LITELLM)
 sys.modules.setdefault("oauth_token_store", _FAKE_OAUTH)
