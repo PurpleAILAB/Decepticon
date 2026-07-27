@@ -16,9 +16,13 @@ on:
         description: "Soak window in days — whole number, clamped to a 7-day floor"
         default: "7"
 
+# Default the workflow to read-only and grant the write scope on the one job
+# that needs it. This workflow has a single job, so the effect is identical —
+# but a top-level `packages: write` would be inherited by any job added later
+# without anyone having to ask for it, and that is what Scorecard's
+# Token-Permissions check flags.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: promote-stable
@@ -28,6 +32,9 @@ jobs:
   promote-stable:
     name: Promote :stable to the newest soaked final
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # gh api reads the release list; no checkout in this job
+      packages: write # retag :stable in GHCR
     steps:
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
