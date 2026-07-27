@@ -120,7 +120,7 @@ free for ad-hoc foreground checks while a heavy scan runs:
 ```
 bash(command="nmap -sV --top-ports 1000 target", session="nmap", background=True, description="Scan the top 1000 ports on the target")
 bash(command="dig target", session="main", description="Resolve the target's DNS records")
-bash(command="curl -sI target", session="main", description="Fetch the target's HTTP response headers")
+bash(command="python3 -c \"from curl_cffi import requests as r; resp=r.get('http://target', impersonate='chrome'); print(resp.status_code, resp.headers)\"", session="main", description="Fetch the target's response headers via curl_cffi")
 # ... continue work — you'll be notified when nmap finishes
 ```
 
@@ -139,15 +139,25 @@ ANSI codes stripped, repetitive lines compressed.
 If a bash command will produce more than ~2KB of output (HTML page, API JSON, file dump, recursive directory listing, multi-host scan), redirect to a file FIRST and then extract only the fragment you need:
 
 ```bash
-# WRONG — 50KB curl output joins the LLM context, causes summarization slowdown
-curl -s "https://target/"
+# WRONG — 50KB page joins the LLM context, causes summarization slowdown
+python3 -c "from curl_cffi import requests as r; print(r.get('https://target/', impersonate='chrome').text)"
 
 # RIGHT — capture once, extract narrowly
-curl -s "https://target/" > /tmp/root.html
+python3 -c "from curl_cffi import requests as r; open('/tmp/root.html','w').write(r.get('https://target/', impersonate='chrome').text)"
 grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
 ```
 
 **Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn — compaction is expensive and disrupts engagement progress. One pre-extraction `grep` fits cleanly; the raw page does not.
+
+**Fetching a web page? Use curl_cffi from the start, never raw `curl`.** Raw
+`curl` sends a fingerprintable TLS/JA3 handshake that WAFs (Cloudflare, Akamai,
+DataDome) block on the very first request — retrying raw `curl` never clears it.
+If you have the `web_fetch` tool, use it: it wraps a curl_cffi
+TLS-impersonation grid + headless-browser fallback and is RoE/SSRF-gated.
+Otherwise fetch with curl_cffi directly in bash:
+`python3 -c "from curl_cffi import requests as r; open('/tmp/p.html','w').write(r.get('https://target/', impersonate='chrome').text)"`
+Reserve raw `curl` only for plain-HTTP localhost / internal APIs where there is
+no TLS fingerprint to defeat.
 
 **Heuristics for what to extract** (instead of dumping):
 
@@ -221,7 +231,7 @@ produce machine-readable output.
 | Pattern | Why it's bad |
 |---------|--------------|
 | `bash <<'EOF' ... EOF` heredocs in tool calls | Often truncated mid-stream, brittle quoting, ambiguous timeout behavior. |
-| Trailing `&` to "parallelize" (`curl ... & curl ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
+| Trailing `&` to "parallelize" (`nmap ... & nmap ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
 | `nohup python3 script.py &` | Functionally identical to `&` backgrounding — process detaches, stdout is lost, cannot be timed out by outer wall-clock. Use `timeout N python3 -u -c '...' \\| tee log.txt` or named-session `background=True` instead. |
 | Unbounded `sleep`, `nc -l`, `tail -f`, `while true` | Hits the wall-clock and burns the entire cycle; never produces useful output. |
 | `timeout 5 bash -c ""` (empty command) | Zero-effect probe, recon-scope-creep tell. |

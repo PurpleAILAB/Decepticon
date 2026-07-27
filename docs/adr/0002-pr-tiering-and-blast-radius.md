@@ -1,6 +1,6 @@
 # 0002. PR tiering by blast radius
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0012](0012-retire-codeowners-merge-gate.md)
 - **Date:** 2026-06-04
 - **Deciders:** @PurpleCHOIms
 - **Related:** [.github/CODEOWNERS](../../.github/CODEOWNERS), [docs/COWORK.md](../COWORK.md), [CONTRIBUTING_AGENT.md](../../CONTRIBUTING_AGENT.md)

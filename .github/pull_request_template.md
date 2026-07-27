@@ -18,17 +18,17 @@ behavior preserved"), and why. Avoid restating the diff in prose.
 
 ## Blast radius
 
-Tick the row that best matches this change. The
-[CODEOWNERS](../.github/CODEOWNERS) file is the ground truth — this
-field is a fast self-classification, not a substitute. See
-[docs/adr/0002-pr-tiering-and-blast-radius.md](../docs/adr/0002-pr-tiering-and-blast-radius.md).
+Tick the row that best matches this change. No branch rule enforces
+this — it sets how much scrutiny you owe the diff and whether to wait
+for a review. See
+[docs/adr/0012-retire-codeowners-merge-gate.md](../docs/adr/0012-retire-codeowners-merge-gate.md).
 
 - [ ] **Tier-auto** — tests, internal refactors, non-policy docs, lockfile-only dep bumps.
 - [ ] **Tier-delegate** — agent prompts, skill bodies, middleware internals, web/CLI features.
-- [ ] **Tier-owner** — anything CODEOWNERS-gated (CI/workflows, package manifests, install script, compose / Dockerfiles, plugin contracts, `.semgrep/**`, `SECURITY.md`, `docs/security/**`, `docs/COWORK.md`, `docs/adr/**`, `CONTRIBUTING_AGENT.md`).
-  - If ticked, paste a **Why this needs an owner change** paragraph below:
+- [ ] **Tier-supply-chain** — CI/workflows, package manifests and lockfiles, install script, compose / Dockerfiles, plugin contracts, `.semgrep/**`. Reaches every OSS user on the next release: request a review and wait for it.
+  - If ticked, paste a **Why this touches a supply-chain surface** paragraph below, and confirm the PR changes that surface and nothing else:
 
-<!-- Why this needs an owner change: ... -->
+<!-- Why this touches a supply-chain surface: ... -->
 
 ## Diff budget
 
