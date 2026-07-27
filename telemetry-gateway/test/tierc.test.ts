@@ -85,3 +85,15 @@ describe("IPv4 glued to a label", () => {
     expect(scanTierC("1.10.10.0.95.7")).toBeNull();
   });
 });
+
+describe("wall-clock time is not IPv6", () => {
+  it("accepts a timestamp the masker correctly leaves alone", () => {
+    // With three groups this rejected whole batches over `21:35:00`.
+    expect(scanTierC('"saved_at": "2026-07-21T21:35:00"')).toBeNull();
+    expect(scanTierC("completed at 21:35:00 UTC")).toBeNull();
+  });
+
+  it("still rejects a real IPv6 address", () => {
+    expect(scanTierC("2001:db8:85a3:8d3:1319:8a2e:370:7348")?.klass).toBe("ipv6");
+  });
+});
