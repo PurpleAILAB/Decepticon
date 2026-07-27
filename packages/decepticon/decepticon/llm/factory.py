@@ -1685,6 +1685,19 @@ class LLMFactory:
             # Per-model cap so large single-call deliverables (finding reports,
             # recon target models) don't truncate at the proxy's 4096 default.
             "max_tokens": _resolve_max_tokens(model),
+            # Stream the completion even when the agent calls ``invoke()``.
+            # LangChain only emits ``on_llm_new_token`` when the underlying
+            # request streams, and LangGraph's "messages" stream mode is built
+            # on those callbacks — without this, every consumer (CLI renderer,
+            # web run console) receives each agent message as one finished
+            # block instead of token deltas.
+            "streaming": True,
+            # Streaming responses omit usage unless it is explicitly requested,
+            # and the measurement/cost path reads ``usage_metadata`` off the
+            # aggregated message (middleware/event_logging.py). Enabling this
+            # alongside ``streaming`` keeps per-run spend + prompt-cache
+            # accounting intact.
+            "stream_usage": True,
         }
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}
