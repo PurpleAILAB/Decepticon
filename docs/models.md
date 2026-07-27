@@ -1,6 +1,6 @@
 # Models
 
-Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, **local Ollama**, plus six subscription OAuth handlers (Claude Code / ChatGPT / Gemini Advanced / Copilot Pro / SuperGrok / Perplexity Pro) behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
+Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, **local Ollama**, **self-hosted vLLM**, plus six subscription OAuth handlers (Claude Code / ChatGPT / Gemini Advanced / Copilot Pro / SuperGrok / Perplexity Pro) behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
 
 You don't pick agent-by-agent models manually. You tell Decepticon which credentials you have, in what order of preference; it builds the chain.
 
@@ -41,7 +41,7 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 
 `ollama_local` collapses across tiers — local GPUs typically run a single model — and the slug is whatever you pulled (e.g. `qwen3-coder:30b`). When a method has no model at the requested tier (MiniMax LOW, Mistral LOW, ...), the resolver skips it and continues with the next method in your priority list.
 
-The matrix above lists the primary tier-mapped providers. Decepticon resolves the same tier × AuthMethod chain for additional providers not shown above: managed cloud platforms (AWS Bedrock, GCP Vertex AI, Azure OpenAI), further direct APIs (Groq, Together, Fireworks, Cohere, Moonshot, Z.ai, DashScope, Cerebras, Xiaomi MiMo, Baidu Qianfan), multi-vendor gateways (GitHub Models, Hugging Face, OpenCode, Vercel AI Gateway, Cloudflare AI Gateway, Venice, NanoGPT, Synthetic, ZenMux), and local / self-hosted OpenAI-compatible servers (Ollama Cloud, LM Studio, llama.cpp, and custom endpoints). `AuthMethod` and `METHOD_MODELS` in `packages/decepticon-core/decepticon_core/types/llm.py` are the authoritative source for the full provider list and each provider's tier→model mapping.
+The matrix above lists the primary tier-mapped providers. Decepticon resolves the same tier × AuthMethod chain for additional providers not shown above: managed cloud platforms (AWS Bedrock, GCP Vertex AI, Azure OpenAI), further direct APIs (Groq, Together, Fireworks, Cohere, Moonshot, Z.ai, DashScope, Cerebras, Xiaomi MiMo, Baidu Qianfan), multi-vendor gateways (GitHub Models, Hugging Face, OpenCode, Vercel AI Gateway, Cloudflare AI Gateway, Venice, NanoGPT, Synthetic, ZenMux), and local / self-hosted OpenAI-compatible servers (vLLM, Ollama Cloud, LM Studio, llama.cpp, and custom endpoints). `AuthMethod` and `METHOD_MODELS` in `packages/decepticon-core/decepticon_core/types/llm.py` are the authoritative source for the full provider list and each provider's tier→model mapping.
 
 ---
 

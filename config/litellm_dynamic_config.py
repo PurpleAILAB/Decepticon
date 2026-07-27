@@ -401,6 +401,39 @@ def _ollama_model_from_env(source: Mapping[str, str]) -> str | None:
     return f"ollama_chat/{model}"
 
 
+def _vllm_model_from_env(source: Mapping[str, str]) -> str | None:
+    """Derive ``hosted_vllm/<model>`` from VLLM_API_BASE / VLLM_MODEL.
+
+    The ``hosted_vllm`` provider already works through the generic
+    ``DECEPTICON_MODEL_<ROLE>=hosted_vllm/<model>`` path, but that requires
+    knowing the prefix exists. This mirrors the ``OLLAMA_MODEL`` shortcut so
+    self-hosting a model is symmetric with running one under Ollama: point at
+    the server, name the model, done.
+
+    The model must match the server's ``--served-model-name``, not the
+    HuggingFace repo — vLLM answers on the served name only, and a mismatch
+    surfaces as a 404 that reads like a routing bug rather than a typo.
+
+    ``vllm/`` is passed through untouched so validate_model_name() can reject
+    it with a hint. It is LiteLLM's deprecated local-SDK provider, not the
+    hosted server, and silently rewriting it would leave a ``VLLM_MODEL`` line
+    that disagrees with the route the proxy actually registered.
+    """
+    base = _clean_model(source.get("VLLM_API_BASE")) or _clean_model(
+        source.get("HOSTED_VLLM_API_BASE")
+    )
+    model = _clean_model(source.get("VLLM_MODEL")) or _clean_model(source.get("HOSTED_VLLM_MODEL"))
+    if base is None or model is None:
+        # Unlike Ollama there is no sensible default model: a vLLM server
+        # serves exactly what it was started with. Registering a guess would
+        # produce a route that 404s on every call.
+        return None
+    lower = model.lower()
+    if lower.startswith("hosted_vllm/") or lower.startswith("vllm/"):
+        return model
+    return f"hosted_vllm/{model}"
+
+
 def collect_requested_models(env: Mapping[str, str] | None = None) -> set[str]:
     """Collect model IDs requested through DECEPTICON_MODEL* env vars.
 
@@ -423,6 +456,10 @@ def collect_requested_models(env: Mapping[str, str] | None = None) -> set[str]:
     ollama_model = _ollama_model_from_env(source)
     if ollama_model is not None:
         models.add(ollama_model)
+
+    vllm_model = _vllm_model_from_env(source)
+    if vllm_model is not None:
+        models.add(vllm_model)
 
     return models
 
@@ -662,7 +699,29 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
             # _NO_API_KEY_PROVIDERS. Replaces the former bedrock / vertex_ai /
             # azure / derived-key elif chain.
             params.update(PROVIDER_EXTRA_PARAMS.get(provider, {}))
-            if provider not in _NO_API_KEY_PROVIDERS:
+            if provider == "hosted_vllm":
+                # The table above points at HOSTED_VLLM_API_BASE, but the
+                # VLLM_MODEL shortcut lets an operator name the server with the
+                # shorter VLLM_API_BASE. Emitting the unset one would resolve to
+                # an empty string at request time and 404 with no clue as to
+                # why, so pin whichever the operator actually set. Same failure
+                # mode the ollama_chat branch guards against.
+                if not os.environ.get("HOSTED_VLLM_API_BASE", "").strip():
+                    if os.environ.get("VLLM_API_BASE", "").strip():
+                        params["api_base"] = "os.environ/VLLM_API_BASE"
+                # Same split for the key: the catalog name is
+                # HOSTED_VLLM_API_KEY, but an operator who used the VLLM_MODEL
+                # shortcut will reach for VLLM_API_KEY. Prefer whichever is
+                # actually set; the catalog name stays the default so the
+                # every-provider-uses-a-verified-key-env invariant holds.
+                if not os.environ.get("HOSTED_VLLM_API_KEY", "").strip():
+                    if os.environ.get("VLLM_API_KEY", "").strip():
+                        params["api_key"] = "os.environ/VLLM_API_KEY"
+                    else:
+                        params["api_key"] = f"os.environ/{_resolve_key_env(provider)}"
+                else:
+                    params["api_key"] = f"os.environ/{_resolve_key_env(provider)}"
+            elif provider not in _NO_API_KEY_PROVIDERS:
                 params["api_key"] = f"os.environ/{_resolve_key_env(provider)}"
 
     return {"model_name": model_name, "litellm_params": params}
