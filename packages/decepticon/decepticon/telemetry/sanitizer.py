@@ -180,8 +180,13 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("user_pass", re.compile(r"\b[\w.-]+:[^\s:@/]{4,}@[\w.-]+")),
     ("opaque_blob", re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b")),
     (
+        # `(?!\()` must mirror redact._DOMAIN exactly: whatever this scanner
+        # rejects, the masker has to be able to mask, or the step is dropped
+        # whole instead of masked. Dotted code (`json.load(`) is not a host.
         "domain",
-        re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b(?!\()", re.IGNORECASE
+        ),
     ),
 )
 

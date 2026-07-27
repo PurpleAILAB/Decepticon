@@ -56,3 +56,19 @@ describe("scanTierC — clean Tier-A content passes", () => {
     });
   }
 });
+
+describe("dotted code is not a host", () => {
+  it("accepts the masked forms the client actually sends", () => {
+    // The gateway only ever sees MASKED text. Measured in production: 1,697 of
+    // 7,990 masked turns carried `<DOMAIN_n>(` — a mangled function call. The
+    // masker now leaves such code alone, so this scanner must accept it too, or
+    // the step is dropped whole instead of masked.
+    expect(scanTierC("json.load(<DOMAIN_1>)")).toBeNull();
+    expect(scanTierC("print(os.uname().nodename)")).toBeNull();
+    expect(scanTierC("GraphDatabase.driver('bolt://neo4j:7687')")).toBeNull();
+  });
+
+  it("still rejects a real bare host", () => {
+    expect(scanTierC("pivot to app.corp.internal")?.klass).toBe("domain");
+  });
+});
