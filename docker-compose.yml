@@ -403,6 +403,12 @@ services:
       # the LiteLLM container's job.
       - ${CLAUDE_CREDENTIALS_VOLUME:-/dev/null}:/root/.claude/.credentials.json:ro
       - ${CODEX_AUTH_VOLUME:-/dev/null}:/root/.codex/auth.json:ro
+      # Telemetry identity. The anonymous install_id is minted under
+      # $DECEPTICON_HOME/telemetry; without this mount it lived only in the
+      # container's writable layer, so every image update minted a NEW id
+      # (measured: 95% of "installs" survived a single day). Persisting it here
+      # also makes the agent and the host CLI agree on one id.
+      - ${DECEPTICON_HOME:-~/.decepticon}/telemetry:/root/.decepticon/telemetry
     # Wait for litellm to be healthy: langgraph has retry logic but the launcher
     # uses `compose up --wait` and needs healthy as the single readiness signal.
     depends_on:

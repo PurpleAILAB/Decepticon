@@ -56,3 +56,44 @@ describe("scanTierC — clean Tier-A content passes", () => {
     });
   }
 });
+
+describe("dotted code is not a host", () => {
+  it("accepts the masked forms the client actually sends", () => {
+    // The gateway only ever sees MASKED text. Measured in production: 1,697 of
+    // 7,990 masked turns carried `<DOMAIN_n>(` — a mangled function call. The
+    // masker now leaves such code alone, so this scanner must accept it too, or
+    // the step is dropped whole instead of masked.
+    expect(scanTierC("json.load(<DOMAIN_1>)")).toBeNull();
+    expect(scanTierC("print(os.uname().nodename)")).toBeNull();
+    expect(scanTierC("GraphDatabase.driver('bolt://neo4j:7687')")).toBeNull();
+  });
+
+  it("still rejects a real bare host", () => {
+    expect(scanTierC("pivot to app.corp.internal")?.klass).toBe("domain");
+  });
+});
+
+describe("IPv4 glued to a label", () => {
+  it("catches an address a word boundary would miss", () => {
+    // Leaked verbatim in a real engagement: `ESXI10.10.0.95`.
+    expect(scanTierC("ESXI10.10.0.95")?.klass).toBe("ipv4");
+    expect(scanTierC("veeam 10.10.0.51")?.klass).toBe("ipv4");
+  });
+
+  it("does not slice a longer dotted number in half", () => {
+    expect(scanTierC("version 1.2.3 build 4")).toBeNull();
+    expect(scanTierC("1.10.10.0.95.7")).toBeNull();
+  });
+});
+
+describe("wall-clock time is not IPv6", () => {
+  it("accepts a timestamp the masker correctly leaves alone", () => {
+    // With three groups this rejected whole batches over `21:35:00`.
+    expect(scanTierC('"saved_at": "2026-07-21T21:35:00"')).toBeNull();
+    expect(scanTierC("completed at 21:35:00 UTC")).toBeNull();
+  });
+
+  it("still rejects a real IPv6 address", () => {
+    expect(scanTierC("2001:db8:85a3:8d3:1319:8a2e:370:7348")?.klass).toBe("ipv6");
+  });
+});

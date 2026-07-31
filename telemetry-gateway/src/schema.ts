@@ -28,6 +28,10 @@ export const EVENT_TYPES = [
   "opplan.update",
   // Research tier: an identifier-masked reasoning/trajectory step.
   "trajectory.step",
+  // Self-observability: how many events the client's own fail-closed Tier-C
+  // scan discarded, by class. Carries `category` + `count` and no content —
+  // without it, silent dropping is indistinguishable from a quiet install.
+  "telemetry.drop",
 ] as const;
 
 /** Masked free text (reasoning/prompt/observation). Bounded; re-scanned for Tier-C. */

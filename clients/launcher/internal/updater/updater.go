@@ -515,9 +515,44 @@ func downloadFile(client *http.Client, url, dst string) error {
 	return os.WriteFile(dst, data, 0o600)
 }
 
+// CleanupOldBinary removes the backup left by a successful Windows update.
+// It is best-effort because the old parent process may still hold the file
+// open during the immediate post-update re-exec; the next launch retries it.
+func CleanupOldBinary() {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	execPath, err := executableFn()
+	if err != nil {
+		return
+	}
+	_ = os.Remove(execPath + ".old")
+}
+
+func replaceExecutable(tmpPath, execPath string) error {
+	if runtime.GOOS != "windows" {
+		return os.Rename(tmpPath, execPath)
+	}
+
+	oldPath := execPath + ".old"
+	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove previous backup: %w", err)
+	}
+	if err := os.Rename(execPath, oldPath); err != nil {
+		return fmt.Errorf("backup running binary: %w", err)
+	}
+	if err := os.Rename(tmpPath, execPath); err != nil {
+		if rollbackErr := os.Rename(oldPath, execPath); rollbackErr != nil {
+			return fmt.Errorf("install new binary: %w (rollback failed: %v)", err, rollbackErr)
+		}
+		return fmt.Errorf("install new binary: %w", err)
+	}
+	return nil
+}
+
 // SelfUpdate downloads and replaces the current binary. The download is
 // verified against “checksums.txt“ (GoReleaser-produced) before the
-// atomic rename — a tampered binary on the GitHub CDN never reaches
+// executable swap — a tampered binary on the GitHub CDN never reaches
 // disk in the executable path. Releases that predate checksum
 // verification (no “checksums.txt“ asset) emit a warning and fall
 // back to the legacy unverified replace.
@@ -585,8 +620,9 @@ func SelfUpdate(release *Release) error {
 		return fmt.Errorf("chmod temp file: %w", err)
 	}
 
-	// Atomic replace
-	if err := os.Rename(tmpPath, execPath); err != nil {
+	// Atomic replace on POSIX. Windows first moves the running image aside
+	// because an executable cannot be overwritten while it is in use.
+	if err := replaceExecutable(tmpPath, execPath); err != nil {
 		os.Remove(tmpPath)
 		return fmt.Errorf("replace binary: %w", err)
 	}

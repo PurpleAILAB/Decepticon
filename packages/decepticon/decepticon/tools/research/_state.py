@@ -100,16 +100,20 @@ class _LegacyStoreShim:
     def query_custom(
         self, query: str, params: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
-        """Raw read-only Cypher passthrough.
+        """Run trusted static Cypher with mandatory engagement scope.
 
-        Engagement scoping is the caller's responsibility — pass
-        ``$engagement`` (auto-injected here as ``_resolve_engagement``)
-        in the query's ``WHERE`` clause if scoping matters. Callers
-        that ignore scoping (e.g. legacy ``chain.py`` Cypher) get the
-        same un-filtered behaviour the old Neo4jStore had.
+        The compatibility layer used to allow an unfiltered query and merely
+        supplied an optional ``engagement`` parameter. Any deployment that
+        serves more than one engagement from one graph — a shared LangGraph
+        plane, a hosted control plane, a team instance — turns that into a
+        cross-engagement read/write primitive. Every raw statement must now
+        reference the trusted ``$engagement`` parameter, and callers cannot
+        override its value.
         """
         engagement = _resolve_engagement()
-        merged: dict[str, Any] = {"engagement": engagement, **(params or {})}
+        if "$engagement" not in query:
+            raise ValueError("raw Neo4j query rejected: missing $engagement scope")
+        merged: dict[str, Any] = {**(params or {}), "engagement": engagement}
         return self._kgstore.execute_read(query, merged, engagement=engagement)
 
     def revision(self) -> float:

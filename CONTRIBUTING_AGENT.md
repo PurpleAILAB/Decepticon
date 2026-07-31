@@ -154,31 +154,36 @@ cheapest way to land your PR.
 
 ### 2.3 Blast-radius classification
 
-Tick the row that best matches your change. The CODEOWNERS file is the
-ground truth — this is a fast self-check, not a substitute.
+Tick the row that best matches your change. Nothing in the repository
+configuration enforces these tiers — `.github/CODEOWNERS` was retired in
+[ADR-0012](docs/adr/0012-retire-codeowners-merge-gate.md). They set how
+much scrutiny **you** owe the diff before you merge it, and whether you
+should be asking someone else to look.
 
 - [ ] **Tier-auto** — tests, internal refactors with no public-API
       change, docs that are not policy docs, dependency bumps in
       `uv.lock` / lockfiles only. Self-merge on green CI is the
       expected path.
 - [ ] **Tier-delegate** — agent prompts, skill bodies, middleware
-      internals, web/CLI features. Expect review from a maintainer or a
-      delegated reviewer; CI green is necessary but not sufficient.
-- [ ] **Tier-owner (CODEOWNERS-gated)** — `.github/workflows/**`,
+      internals, web/CLI features. CI green is necessary but not
+      sufficient; request a review.
+- [ ] **Tier-supply-chain** — `.github/workflows/**`,
       `pyproject.toml` / `uv.lock` / `package*.json` / `go.{mod,sum}`,
       plugin contracts under `packages/decepticon-core/.../contracts/**`,
       `scripts/install.sh`, `docker-compose.yml`,
-      `containers/*.Dockerfile`, `.semgrep/**`, `SECURITY.md`,
-      `docs/security/**`, `docs/COWORK.md`, `docs/adr/**`,
-      `CONTRIBUTING_AGENT.md`. **You will wait for owner review.** Do
-      not ping for a faster turnaround; the owner gate exists because
-      these surfaces have outsized blast radius.
+      `containers/*.Dockerfile`, `.semgrep/**`. A mistake here reaches
+      every OSS user on the next release. **Ask for a review and wait
+      for it**, even though you can merge without one.
 
-If you ticked Tier-owner, also confirm:
+If you ticked Tier-supply-chain, also confirm:
 
-- [ ] The PR body has a section titled **Why this needs an owner
-      change**, naming the surface and the specific invariant being
-      touched. Generic "improving X" descriptions are not enough.
+- [ ] The PR body has a section titled **Why this touches a
+      supply-chain surface**, naming the surface and the specific
+      invariant being changed. Generic "improving X" descriptions are
+      not enough.
+- [ ] The PR changes that surface **and nothing else**. A workflow or
+      manifest edit bundled with the feature it enables is the one
+      anti-pattern no gate in this repo can catch.
 
 ### 2.4 Verification
 
@@ -220,7 +225,7 @@ catching them yourself first.
 |---|---|
 | Adding a `try/except Exception: pass` to "make a test pass" | Hides real failures in sandbox / network / LLM call paths where flakes are signal. |
 | Inserting `if not …: return None` defaults instead of raising | RoE / OPPLAN code that silently returns `None` produces ghost objectives downstream. Fail loud. |
-| "Helpfully" widening a function's signature with a new optional kwarg | Public-API surface change; needs a CODEOWNERS review on plugin contracts. |
+| "Helpfully" widening a function's signature with a new optional kwarg | Public-API surface change on the plugin contracts downstream authors build against. Justify it or drop it. |
 | Replacing `assert` with `if ... raise ...` *everywhere* | Already covered by `decepticon-no-assert-in-prod` for the right paths. Do not bulk-rewrite. |
 | Adding a new dependency to fix a small thing | Supply-chain change. Justify in the PR body or remove the dep and inline the small thing. |
 | Generating a long Mermaid diagram or architecture doc as part of a code PR | Land docs separately. Mixed PRs make review pathological. |

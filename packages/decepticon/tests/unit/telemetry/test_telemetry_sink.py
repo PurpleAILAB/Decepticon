@@ -210,3 +210,24 @@ def test_preview_returns_exact_payload() -> None:
     env = sink.preview(sample)
     assert len(env["events"]) == 1  # the leaky one is filtered from the preview
     assert env["events"][0]["tool"] == "nmap"
+
+
+def test_session_id_is_scoped_to_the_install(monkeypatch) -> None:
+    """Two machines running the same engagement name must not share a session.
+
+    Measured in production before this: sha256("test") was shared by 37
+    installs and sha256("default-engagement") by 27 — 28.3% of all events sat
+    in a session that merged unrelated people's work.
+    """
+    from decepticon.telemetry import sink as sink_mod
+
+    monkeypatch.setattr(sink_mod, "_session_salt", lambda: "install-A")
+    a = sink_mod.session_id_for("test")
+    assert a == sink_mod.session_id_for("test")  # stable for one install
+
+    monkeypatch.setattr(sink_mod, "_session_salt", lambda: "install-B")
+    b = sink_mod.session_id_for("test")
+    assert a != b  # same engagement name, different machine -> different session
+
+    # The raw name is still not recoverable from the id.
+    assert "test" not in a and len(a) == 16

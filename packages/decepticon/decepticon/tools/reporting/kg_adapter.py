@@ -125,7 +125,9 @@ def load_engagement_graph(engagement: str) -> KnowledgeGraph:
 
         edge_rows = store.execute_read(
             (
-                "MATCH (a)-[r]->(b) WHERE r.engagement = $engagement "
+                "MATCH (a)-[r]->(b) "
+                "WHERE a.engagement = $engagement AND r.engagement = $engagement "
+                "  AND b.engagement = $engagement "
                 "RETURN labels(a)[0] AS src_kind, "
                 "       a.key AS src_key, "
                 "       labels(b)[0] AS dst_kind, "

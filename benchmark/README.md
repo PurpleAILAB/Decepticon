@@ -64,7 +64,7 @@ uv run python -m benchmark
 | `--batch-size` | `-b` | Reporting batch size | 10 |
 | `--timeout` | | Per-challenge timeout, seconds | 1800 (30 min) |
 | `--parallel` | `-p` | Max concurrent challenges (`1` = sequential) | 1 |
-| `--provider` | | Provider name: `xbow` (default) or `exploitbench` | xbow |
+| `--provider` | | Provider: `xbow` (default), `exploitbench`, `mhbench`, `cybench` ([guide](./README-cybench.md)), or `cybergym` ([guide](./README-cybergym.md)) | xbow |
 | `--exploitbench-config` | | Path to an ExploitBench-style YAML spec (required when `--provider exploitbench`) | none |
 | `--exploitbench-bridge` | | Stdio→TCP MCP bridge runtime: `mcp-proxy` (default) or `socat` | mcp-proxy |
 

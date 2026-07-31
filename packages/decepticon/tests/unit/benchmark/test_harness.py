@@ -16,7 +16,7 @@ import pytest
 
 from benchmark.config import BenchmarkConfig
 from benchmark.harness import AgentResponse, Harness, _ActiveRun
-from benchmark.schemas import Challenge, SetupResult
+from benchmark.schemas import Challenge, ChallengeResult, SetupResult
 
 pytestmark = pytest.mark.slow
 
@@ -53,6 +53,18 @@ def _make_provider() -> MagicMock:
         success=True,
     )
     provider.teardown.return_value = None
+    # The harness now consults provider.evaluate on the timeout path too
+    # (a run may have met the win condition before the deadline) and keeps
+    # its result, so the default mock returns a real not-passed
+    # ChallengeResult (a truthy MagicMock.error would break the
+    # timeout-error synthesis). Tests that assert a pass override this.
+    provider.evaluate.return_value = ChallengeResult(
+        challenge_id="test",
+        challenge_name="test",
+        level=1,
+        tags=[],
+        passed=False,
+    )
     return provider
 
 

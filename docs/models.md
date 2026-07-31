@@ -1,6 +1,6 @@
 # Models
 
-Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, **local Ollama**, plus six subscription OAuth handlers (Claude Code / ChatGPT / Gemini Advanced / Copilot Pro / SuperGrok / Perplexity Pro) behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
+Decepticon routes every LLM call through a [LiteLLM](https://github.com/BerriAI/litellm) proxy that abstracts Anthropic, OpenAI, Google, MiniMax, DeepSeek, xAI, Mistral, OpenRouter, Nvidia NIM, **local Ollama**, **self-hosted vLLM**, plus six subscription OAuth handlers (Claude Code / ChatGPT / Gemini Advanced / Copilot Pro / SuperGrok / Perplexity Pro) behind a single endpoint. The model assigned to each agent — and the model that takes over when the primary fails — is computed at startup from your **credentials inventory** plus the active **profile**.
 
 You don't pick agent-by-agent models manually. You tell Decepticon which credentials you have, in what order of preference; it builds the chain.
 
@@ -22,8 +22,8 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 
 |                       | **HIGH**                                  | **MID**                                       | **LOW**                                       |
 |-----------------------|-------------------------------------------|-----------------------------------------------|-----------------------------------------------|
-| `anthropic_api`       | `anthropic/claude-opus-4-7`               | `anthropic/claude-sonnet-4-6`                 | `anthropic/claude-haiku-4-5`                  |
-| `anthropic_oauth`     | `auth/claude-opus-4-7`                    | `auth/claude-sonnet-4-6`                      | `auth/claude-haiku-4-5`                       |
+| `anthropic_api`       | `anthropic/claude-opus-4-8`               | `anthropic/claude-sonnet-5`                   | `anthropic/claude-haiku-4-5`                  |
+| `anthropic_oauth`     | `auth/claude-opus-4-8`                    | `auth/claude-sonnet-5`                        | `auth/claude-haiku-4-5`                       |
 | `openai_api`          | `openai/gpt-5.5`                          | `openai/gpt-5.4`                              | `openai/gpt-5-nano`                           |
 | `openai_oauth`        | `auth/gpt-5.5`                            | `auth/gpt-5.4`                                | `auth/gpt-5.4-mini`                           |
 | `google_api`          | `gemini/gemini-2.5-pro`                   | `gemini/gemini-2.5-flash`                     | `gemini/gemini-2.5-flash-lite`                |
@@ -33,13 +33,15 @@ For each agent, Decepticon resolves a tier (from the profile) and walks your Aut
 | `xai_api`             | `xai/grok-4.3`                            | `xai/grok-4-1-fast-reasoning`                 | — *(falls through)*                           |
 | `grok_oauth`          | `grok-sub/grok-4.3`                       | `grok-sub/grok-4-1-fast-reasoning`            | — *(falls through)*                           |
 | `mistral_api`         | `mistral/mistral-large-latest`            | `mistral/codestral-latest`                    | — *(falls through)*                           |
-| `openrouter_api`      | `openrouter/anthropic/claude-opus-4-7`    | `openrouter/anthropic/claude-sonnet-4-6`      | `openrouter/anthropic/claude-haiku-4-5`       |
+| `openrouter_api`      | `openrouter/anthropic/claude-opus-4-8`    | `openrouter/anthropic/claude-sonnet-4-6`      | `openrouter/anthropic/claude-haiku-4-5`       |
 | `nvidia_api`          | `nvidia_nim/meta/llama-3.3-70b-instruct`  | `nvidia_nim/nvidia/llama-3.1-nemotron-70b-instruct` | `nvidia_nim/meta/llama-3.2-3b-instruct` |
 | `copilot_oauth`       | `copilot/gpt-5.5`                         | `copilot/claude-sonnet-4-6`                   | `copilot/gpt-5.4-mini`                        |
 | `perplexity_oauth`    | `pplx-sub/sonar-pro`                      | `pplx-sub/sonar`                              | — *(falls through)*                           |
 | `ollama_local`        | `ollama_chat/<OLLAMA_MODEL>`              | `ollama_chat/<OLLAMA_MODEL>`                  | `ollama_chat/<OLLAMA_MODEL>`                  |
 
 `ollama_local` collapses across tiers — local GPUs typically run a single model — and the slug is whatever you pulled (e.g. `qwen3-coder:30b`). When a method has no model at the requested tier (MiniMax LOW, Mistral LOW, ...), the resolver skips it and continues with the next method in your priority list.
+
+The matrix above lists the primary tier-mapped providers. Decepticon resolves the same tier × AuthMethod chain for additional providers not shown above: managed cloud platforms (AWS Bedrock, GCP Vertex AI, Azure OpenAI), further direct APIs (Groq, Together, Fireworks, Cohere, Moonshot, Z.ai, DashScope, Cerebras, Xiaomi MiMo, Baidu Qianfan), multi-vendor gateways (GitHub Models, Hugging Face, OpenCode, Vercel AI Gateway, Cloudflare AI Gateway, Venice, NanoGPT, Synthetic, ZenMux), and local / self-hosted OpenAI-compatible servers (vLLM, Ollama Cloud, LM Studio, llama.cpp, and custom endpoints). `AuthMethod` and `METHOD_MODELS` in `packages/decepticon-core/decepticon_core/types/llm.py` are the authoritative source for the full provider list and each provider's tier→model mapping.
 
 ---
 
@@ -54,8 +56,8 @@ Each agent runs at the tier suited to its workload:
 | Tier  | Agents                                                                                          |
 |-------|-------------------------------------------------------------------------------------------------|
 | HIGH  | `decepticon`, `exploit`, `exploiter`, `patcher`, `contract_auditor`, `analyst`, `vulnresearch`   |
-| MID   | `detector`, `verifier`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser`, `phisher`, `mobile_operator` |
-| LOW   | `soundwave`, `recon`, `scanner`, `wireless_operator`                                            |
+| MID   | `detector`, `verifier`, `blue_cell`, `postexploit`, `ad_operator`, `cloud_hunter`, `reverser`, `phisher`, `mobile_operator`, `iot_operator`, `ics_operator`, `forensicator`, `supply_chain_operator` |
+| LOW   | `soundwave`, `recon`, `scanner`, `wireless_operator`, `osint_operator`                          |
 
 ### `max` — every agent on HIGH
 

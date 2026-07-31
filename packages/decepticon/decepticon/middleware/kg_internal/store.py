@@ -178,6 +178,14 @@ class KGStore:
 
     # ── Generic Cypher execution ───────────────────────────────────────
 
+    @staticmethod
+    def _check_scoped_cypher(cypher: str, engagement: str) -> None:
+        # Schema migrations legitimately contain DDL without a row-level scope.
+        # Every runtime graph operation must bind the trusted partition into the
+        # statement itself; merely validating an unused keyword is not isolation.
+        if engagement != "schema" and "$engagement" not in cypher:
+            raise ValueError("Neo4j query rejected: missing $engagement scope")
+
     def execute_read(
         self,
         cypher: str,
@@ -186,12 +194,17 @@ class KGStore:
         engagement: str,
     ) -> list[dict[str, Any]]:
         """Run a read transaction. ``engagement`` must be injected into
-        the Cypher by the caller — this method only enforces that the
-        scope label is set."""
+        the Cypher by the caller — this method enforces that the scope
+        label is set, that the statement actually binds ``$engagement``,
+        and that the caller's params cannot replace that value."""
         self._check_engagement(engagement)
+        self._check_scoped_cypher(cypher, engagement)
+        # The method argument is authoritative. A legacy/raw caller cannot
+        # replace it by smuggling a second value in ``params``.
+        scoped_params = {**(params or {}), "engagement": engagement}
         with self._driver.session(database=self._database) as session:
             return session.execute_read(
-                lambda tx: [dict(record) for record in tx.run(cypher, **(params or {}))]
+                lambda tx: [dict(record) for record in tx.run(cypher, **scoped_params)]
             )
 
     def execute_write(
@@ -203,9 +216,11 @@ class KGStore:
     ) -> list[dict[str, Any]]:
         """Run a write transaction. Driver retries deadlock errors."""
         self._check_engagement(engagement)
+        self._check_scoped_cypher(cypher, engagement)
+        scoped_params = {**(params or {}), "engagement": engagement}
         with self._driver.session(database=self._database) as session:
             return session.execute_write(
-                lambda tx: [dict(record) for record in tx.run(cypher, **(params or {}))]
+                lambda tx: [dict(record) for record in tx.run(cypher, **scoped_params)]
             )
 
     # ── AttackGraphProtocol implementation ─────────────────────────────
@@ -241,6 +256,7 @@ class KGStore:
         edge_cypher = (
             "MATCH (s)-[r]->(d) "
             "WHERE s.engagement = $engagement AND d.engagement = $engagement "
+            "  AND r.engagement = $engagement "
             "RETURN s.key AS src_key, d.key AS dst_key, type(r) AS kind, "
             "       labels(s) AS src_labels, labels(d) AS dst_labels, "
             "       s.label AS src_label, d.label AS dst_label, "

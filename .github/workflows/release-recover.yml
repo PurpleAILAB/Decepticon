@@ -13,15 +13,20 @@ on:
         default: true
         type: boolean
 
+# Read-only by default; the write scopes live on the job that uses them. Single
+# job today, so behaviour is unchanged — the point is that a job added later
+# does not silently inherit `contents: write` + `packages: write`.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   finalize:
     name: Verify images & promote release
     runs-on: ubuntu-latest
     environment: pypi-release
+    permissions:
+      contents: write # gh release edit --draft=false / --prerelease
+      packages: write # retag GHCR images to :latest
     steps:
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
