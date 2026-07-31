@@ -30,15 +30,29 @@ const PATTERNS: ReadonlyArray<readonly [string, RegExp]> = [
   ["aws_access_key", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["email", /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/],
   ["url", /\bhttps?:\/\/[^\s/$.?#][^\s]*/i],
-  ["ipv4", /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/],
-  ["ipv6", /\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,7}:\b/],
+  // `(?<![\d.])` rather than `\b`: a letter directly before a digit is not a
+  // word boundary, so `ESXI10.10.0.95` slipped past both this scanner and the
+  // client masker in a real engagement. Mirrors `redact._IP_GLUED`.
+  [
+    "ipv4",
+    /(?<![\d.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\d.])/,
+  ],
+  // Four groups minimum, mirroring `redact._IP6`: three colon-separated groups
+  // is a wall-clock time, and tool output is full of timestamps. With `{2,7}`
+  // this scanner rejected a batch over `21:35:00` that the masker — correctly —
+  // had left alone.
+  ["ipv6", /\b(?:[A-Fa-f0-9]{1,4}:){3,7}[A-Fa-f0-9]{1,4}\b|\b(?:[A-Fa-f0-9]{1,4}:){1,7}:\b/],
   ["mac", /\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b/],
   ["user_pass", /\b[\w.-]+:[^\s:@/]{4,}@[\w.-]+/],
   // Long opaque blob: base64/hex secret material. 40+ chars with no spaces.
   ["opaque_blob", /\b[A-Za-z0-9+/]{40,}={0,2}\b/],
   // Bare domain/host (e.g. target.example.com). Requires a non-numeric TLD so
-  // version strings like "1.1.13" and tokens like "x86_64" never match.
-  ["domain", /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b/i],
+  // version strings like "1.1.13" and tokens like "x86_64" never match, and a
+  // trailing `(?!\()` so dotted CODE is not mistaken for a host — `json.load(`
+  // and `os.uname(` are function calls. This mirrors the client masker
+  // (`redact._DOMAIN`) exactly: anything this scanner rejects must be something
+  // the masker can mask, or the whole step is discarded instead of masked.
+  ["domain", /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b(?!\()/i],
 ];
 
 /**

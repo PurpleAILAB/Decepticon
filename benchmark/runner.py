@@ -10,6 +10,8 @@ import typer
 from benchmark.config import BenchmarkConfig
 from benchmark.harness import Harness
 from benchmark.providers.base import BaseBenchmarkProvider
+from benchmark.providers.cybench import CybenchProvider
+from benchmark.providers.cybergym import CyberGymProvider
 from benchmark.providers.exploitbench import ExploitBenchProvider
 from benchmark.providers.mhbench import MHBenchProvider
 from benchmark.providers.xbow import XBOWProvider
@@ -19,7 +21,7 @@ from benchmark.scorer import Scorer
 
 # --provider literal — extend here when adding new providers. Kept narrow
 # so a typo on the CLI fails loudly instead of falling back to xbow.
-_PROVIDER_CHOICES = ("xbow", "exploitbench", "mhbench")
+_PROVIDER_CHOICES = ("xbow", "exploitbench", "mhbench", "cybench", "cybergym")
 
 log = logging.getLogger(__name__)
 app = typer.Typer(name="benchmark", help="Decepticon Benchmark Runner")
@@ -40,6 +42,12 @@ def _build_provider(config: BenchmarkConfig) -> BaseBenchmarkProvider:
         )
     if config.provider == "mhbench":
         return MHBenchProvider(config_path=config.mhbench_config_path)
+    if config.provider == "cybench":
+        return CybenchProvider(benchmarks_dir=config.cybench_benchmarks_dir)
+    if config.provider == "cybergym":
+        if config.cybergym_config_path is None:
+            raise typer.BadParameter("--cybergym-config is required when --provider cybergym")
+        return CyberGymProvider(spec_path=config.cybergym_config_path)
     raise typer.BadParameter(
         f"Unknown provider {config.provider!r}; expected one of {_PROVIDER_CHOICES}"
     )
@@ -81,6 +89,16 @@ def run(
         "--mhbench-config",
         help="Path to MHBench config.json (required when --provider mhbench)",
     ),
+    cybench_dir: Path | None = typer.Option(
+        None,
+        "--cybench-dir",
+        help="Path to the Cybench tasks dir (default benchmark/cybench/benchmark)",
+    ),
+    cybergym_config: Path | None = typer.Option(
+        None,
+        "--cybergym-config",
+        help="Path to a CyberGym YAML spec (required when --provider cybergym)",
+    ),
 ) -> None:
     """Run the benchmark suite against loaded challenges."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -106,6 +124,8 @@ def run(
         exploitbench_config_path=exploitbench_config,
         exploitbench_bridge_runtime=exploitbench_bridge,
         mhbench_config_path=mhbench_config,
+        cybench_benchmarks_dir=cybench_dir,
+        cybergym_config_path=cybergym_config,
     )
 
     provider = _build_provider(config)

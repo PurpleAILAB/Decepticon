@@ -393,6 +393,10 @@ func TestSelfUpdate_WritesAndRenames(t *testing.T) {
 
 	dir := t.TempDir()
 	fakeBin := filepath.Join(dir, "decepticon")
+	previousContent := []byte("previous binary content")
+	if err := os.WriteFile(fakeBin, previousContent, 0o755); err != nil {
+		t.Fatalf("seed current binary: %v", err)
+	}
 
 	// Redirect executableFn so SelfUpdate writes into our temp dir instead
 	// of clobbering the running test binary. Matches the isWSLFn pattern.
@@ -419,6 +423,67 @@ func TestSelfUpdate_WritesAndRenames(t *testing.T) {
 	// The temp file must be cleaned up by the rename.
 	if _, statErr := os.Stat(fakeBin + ".tmp"); !os.IsNotExist(statErr) {
 		t.Error(".tmp file should not exist after a successful rename")
+	}
+	if runtime.GOOS == "windows" {
+		previous, readErr := os.ReadFile(fakeBin + ".old")
+		if readErr != nil {
+			t.Fatalf("read Windows backup: %v", readErr)
+		}
+		if string(previous) != string(previousContent) {
+			t.Errorf("Windows backup content = %q, want %q", previous, previousContent)
+		}
+	}
+}
+
+func TestReplaceExecutable_WindowsRollsBackFailedInstall(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows executable replacement only")
+	}
+
+	dir := t.TempDir()
+	execPath := filepath.Join(dir, "decepticon.exe")
+	previousContent := []byte("previous binary content")
+	if err := os.WriteFile(execPath, previousContent, 0o755); err != nil {
+		t.Fatalf("seed current binary: %v", err)
+	}
+
+	err := replaceExecutable(filepath.Join(dir, "missing.tmp"), execPath)
+	if err == nil {
+		t.Fatal("replaceExecutable with missing temp file: expected error, got nil")
+	}
+
+	current, readErr := os.ReadFile(execPath)
+	if readErr != nil {
+		t.Fatalf("read current binary after rollback: %v", readErr)
+	}
+	if string(current) != string(previousContent) {
+		t.Errorf("current binary after rollback = %q, want %q", current, previousContent)
+	}
+	if _, statErr := os.Stat(execPath + ".old"); !os.IsNotExist(statErr) {
+		t.Errorf("backup should be restored after a failed install; stat error = %v", statErr)
+	}
+}
+
+func TestCleanupOldBinary_WindowsRemovesStaleBackup(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows executable cleanup only")
+	}
+
+	dir := t.TempDir()
+	fakeBin := filepath.Join(dir, "decepticon.exe")
+	oldPath := fakeBin + ".old"
+	if err := os.WriteFile(oldPath, []byte("stale binary"), 0o755); err != nil {
+		t.Fatalf("seed stale backup: %v", err)
+	}
+
+	orig := executableFn
+	executableFn = func() (string, error) { return fakeBin, nil }
+	t.Cleanup(func() { executableFn = orig })
+
+	CleanupOldBinary()
+
+	if _, statErr := os.Stat(oldPath); !os.IsNotExist(statErr) {
+		t.Errorf("stale backup should be removed; stat error = %v", statErr)
 	}
 }
 

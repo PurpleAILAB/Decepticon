@@ -140,7 +140,9 @@ class _StubStore:
             return self._responses.get("stats", [{"nodes": 0, "edges": 0}])
         if "(v:Vulnerability)" in cypher:
             return self._responses.get("vulns", [])
-        if "(e:Entrypoint)" in cypher and "NOT (e)-[:HAS_VULN]" in cypher:
+        # Match the relationship type only: the scope predicate inside the
+        # pattern is an implementation detail this stub should not pin.
+        if "(e:Entrypoint)" in cypher and "NOT (e)-[:HAS_VULN" in cypher:
             return self._responses.get("entrypoints", [])
         if "(c:CrownJewel)" in cypher:
             return self._responses.get("crown_jewels", [])

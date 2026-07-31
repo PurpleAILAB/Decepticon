@@ -15,7 +15,7 @@
 | `decepticon remove` | Uninstall Decepticon completely |
 | `decepticon --version` | Show installed version |
 
-> **Web dashboard** is included in the default stack. After `decepticon` starts, the dashboard is available at `http://localhost:3000` (configurable via `WEB_PORT` in `.env`).
+> **Web dashboard** is *dynamic-spawn* — it does **not** come up with the default stack. Start it from inside the CLI with the `/web` slash command (which runs `docker compose --profile web up -d web`), then open `http://localhost:3000` (configurable via `WEB_PORT` in `.env`). See [Web Dashboard](web-dashboard.md).
 
 ### `decepticon logs` — Service names
 
@@ -76,10 +76,15 @@ Available inside the interactive terminal UI:
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
-| `/help` | `/?` | Show available commands and keyboard shortcuts |
+| `/help` | `/?` | Show available commands and shortcuts |
 | `/clear` | | Clear conversation history |
-| `/resume [message]` | `/r` | Resume a paused run or continue previous session |
-| `/quit` | | Exit the CLI |
+| `/file <path>` | `/f` | Load a prompt from a file and send it |
+| `/resume [message]` | `/r`, `/continue` | Resume a paused run or continue previous session |
+| `/model` | | Show or change the LLM model for this session |
+| `/agent` | | Show or switch the active orchestrator for this session |
+| `/plugins` | `/plugin` | List or toggle agent plugin bundles |
+| `/web [up\|down\|url]` | `/dashboard` | Start, stop, or print the URL of the web dashboard |
+| `/quit` | `/exit` | Exit the CLI |
 
 ---
 

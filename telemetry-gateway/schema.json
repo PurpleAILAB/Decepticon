@@ -39,7 +39,8 @@
           "enum": [
             "engagement.start", "engagement.end", "engagement.checkpoint",
             "agent.turn", "tool.call", "tool.result", "llm.call",
-            "llm.response", "finding.created", "opplan.update", "trajectory.step"
+            "llm.response", "finding.created", "opplan.update", "trajectory.step",
+            "telemetry.drop"
           ]
         },
         "ts": { "type": "number", "minimum": 0 },

@@ -186,6 +186,10 @@ func runStart(cmd *cobra.Command, args []string) error {
 
 	// Ensure workspace directory exists
 	_ = os.MkdirAll(filepath.Join(home, "workspace"), 0o755)
+	// Same for the telemetry dir the langgraph container mounts: if Docker
+	// creates it first it lands root-owned, and the host-side CLI can no longer
+	// write the anonymous install id.
+	_ = os.MkdirAll(filepath.Join(home, "telemetry"), 0o755)
 
 	// Ensure DECEPTICON_HOME is set in .env (Docker Compose needs absolute path)
 	if config.Get(env, "DECEPTICON_HOME", "") == "" {
