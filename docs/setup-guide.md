@@ -322,6 +322,7 @@ default fallback chain; pick a specific route at runtime with `/model`
 | NanoGPT | `NANOGPT_API_KEY` | [nano-gpt.com](https://nano-gpt.com) |
 | Synthetic | `SYNTHETIC_API_KEY` | [synthetic.new](https://synthetic.new) |
 | ZenMux | `ZENMUX_API_KEY` | [zenmux.ai](https://zenmux.ai) |
+| OrcaRouter | `ORCAROUTER_API_KEY` | [orcarouter.ai](https://www.orcarouter.ai) |
 | Baidu Qianfan (ERNIE) | `QIANFAN_API_KEY` | [console.bce.baidu.com/qianfan](https://console.bce.baidu.com/qianfan) |
 | Cloudflare AI Gateway | `CLOUDFLARE_AI_GATEWAY_API_KEY` + `CLOUDFLARE_AI_GATEWAY_API_BASE` | [dash.cloudflare.com](https://dash.cloudflare.com) |
 

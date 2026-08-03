@@ -236,6 +236,7 @@ class TestGatewayChains:
         AuthMethod.ZENMUX_API,
         AuthMethod.QIANFAN_API,
         AuthMethod.CLOUDFLARE_GATEWAY_API,
+        AuthMethod.ORCAROUTER_API,
     )
 
     def test_opencode_high_resolves_to_prefixed_alias(self):
@@ -266,6 +267,7 @@ class TestGatewayChains:
             AuthMethod.ZENMUX_API: "zenmux/",
             AuthMethod.QIANFAN_API: "qianfan/",
             AuthMethod.CLOUDFLARE_GATEWAY_API: "cfgateway/",
+            AuthMethod.ORCAROUTER_API: "orcarouter/",
         }
         for method, prefix in expected_prefix.items():
             creds = Credentials(methods=[method])

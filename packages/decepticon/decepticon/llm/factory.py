@@ -232,6 +232,7 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.HUGGINGFACE_API,
     AuthMethod.QIANFAN_API,
     AuthMethod.CLOUDFLARE_GATEWAY_API,
+    AuthMethod.ORCAROUTER_API,
     AuthMethod.OLLAMA_LOCAL,
     AuthMethod.OLLAMA_CLOUD,
 )
@@ -283,6 +284,7 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.ZENMUX_API: "ZENMUX_API_KEY",
     AuthMethod.QIANFAN_API: "QIANFAN_API_KEY",
     AuthMethod.CLOUDFLARE_GATEWAY_API: "CLOUDFLARE_AI_GATEWAY_API_KEY",
+    AuthMethod.ORCAROUTER_API: "ORCAROUTER_API_KEY",
 }
 
 _OAUTH_METHOD_ENV: dict[AuthMethod, str] = {
@@ -308,6 +310,7 @@ _KEY_PREFIX_HINTS: dict[AuthMethod, tuple[str, ...]] = {
     AuthMethod.NVIDIA_API: ("nvapi-",),
     AuthMethod.DEEPSEEK_API: ("sk-",),
     AuthMethod.GITHUB_MODELS_API: ("ghp_", "github_pat_", "gho_", "ghs_"),
+    AuthMethod.ORCAROUTER_API: ("sk-orca-",),
 }
 
 # Substring tokens that mark a value as obviously not a real key.
@@ -735,6 +738,7 @@ _METHOD_LABEL: dict[AuthMethod, str] = {
     AuthMethod.ZENMUX_API: "ZenMux — API key",
     AuthMethod.QIANFAN_API: "Baidu Qianfan (ERNIE) — API key",
     AuthMethod.CLOUDFLARE_GATEWAY_API: "Cloudflare AI Gateway — API key + base URL",
+    AuthMethod.ORCAROUTER_API: "OrcaRouter — API key",
     AuthMethod.COPILOT_OAUTH: "GitHub Copilot — Pro subscription",
     AuthMethod.GROK_OAUTH: "xAI SuperGrok — X Premium+",
     AuthMethod.PERPLEXITY_OAUTH: "Perplexity — Pro subscription",
