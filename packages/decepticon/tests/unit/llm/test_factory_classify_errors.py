@@ -31,6 +31,17 @@ def _exc_with_status(name: str, status: int, msg: str = "") -> Exception:
     return exc
 
 
+def _exc_with_malformed_status_and_response(
+    name: str, nested_status: int, msg: str = ""
+) -> Exception:
+    cls = type(name, (Exception,), {})
+    exc = cls(msg or "provider request failed")
+    exc.status_code = "unknown"  # type: ignore[attr-defined]
+    response_cls = type("ProviderResponse", (), {"status_code": nested_status})
+    exc.response = response_cls()  # type: ignore[attr-defined]
+    return exc
+
+
 class TestClassifyProviderErrorRetryable:
     """Transient failures the agent (or LiteLLM retry layer) can recover from."""
 
@@ -81,6 +92,10 @@ class TestClassifyProviderErrorFatal:
         exc = Exception("Error code: 400 - parameter 'temperature' is deprecated")
         assert _classify_provider_error(exc) == "fatal"
 
+    def test_malformed_top_level_status_falls_back_to_nested_400(self):
+        exc = _exc_with_malformed_status_and_response("APIStatusError", 400)
+        assert _classify_provider_error(exc) == "fatal"
+
 
 class TestActionableMessageFatalLabel:
     """Integration with ``_reraise_with_actionable_message``: fatal classes
@@ -121,6 +136,19 @@ class TestActionableMessageFatalLabel:
         assert "/v1/models" in msg
         assert "ROUTELEAKTOKEN12345" not in msg
         assert "[REDACTED]" in msg
+
+    def test_nested_400_with_malformed_top_level_status_reports_invalid_model(self):
+        exc = _exc_with_malformed_status_and_response(
+            "APIStatusError",
+            400,
+            "Invalid model name passed in model=custom/kimi-k2.7-code",
+        )
+        with pytest.raises(RuntimeError) as info:
+            _reraise_with_actionable_message(exc, "custom/kimi-k2.7-code")
+
+        msg = str(info.value)
+        assert "non-retryable provider error" in msg
+        assert "not available through the LiteLLM proxy" in msg
 
     def test_503_invalid_model_text_is_not_reclassified_as_a_route_error(self):
         exc = _exc_with_status(
