@@ -169,3 +169,67 @@ def test_resolve_config_populates_arch_and_py(tmp_path) -> None:
     import re
 
     assert cfg.arch == "" or re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", cfg.arch)
+
+
+# ── the corpus captures what it claims to capture ────────────────────────────
+#
+# Every assertion below pins a field that shipped DEAD in production: measured
+# over 536k live events, `role=agent` was 0, `agent` was always null, `model`
+# was the literal string "none", and `step` collided 71% of the time.
+
+
+def test_absent_field_is_dropped_not_shipped_as_the_string_none() -> None:
+    from decepticon.telemetry.sanitizer import event_to_tier_a, slug
+
+    assert slug(None) is None
+    assert slug("") is None
+    ev = event_to_tier_a({"type": "llm.call", "ts": 1.0, "payload": {"messages": 3}})
+    assert ev is not None
+    assert "model" not in ev  # not "none"
+
+
+def test_trajectory_step_carries_the_model_that_produced_it() -> None:
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.RESEARCH), transport=lambda _u, b: sent.append(json.loads(b))
+    )
+    sink.record_step(
+        {"role": "agent", "session_id": "s1", "step": 0, "text": "try SQLi"},
+        "exploit",
+        model="anthropic/claude-opus-4-8",
+    )
+    sink.close()
+    ev = _events(sent)[0]
+    # Slugified: the raw id carries "/", which the gateway's Slug pattern rejects.
+    assert ev["model"] == "anthropic-claude-opus-4-8"
+    assert ev["agent"] == "exploit"
+
+
+def test_step_counter_is_shared_across_agents_in_one_engagement() -> None:
+    sink = TelemetrySink(_cfg(TelemetryMode.RESEARCH), transport=lambda _u, _b: None)
+    # Two agents, one engagement: indices must not restart per agent.
+    assert [sink.next_step("sid-a") for _ in range(3)] == [0, 1, 2]
+    assert sink.next_step("sid-a") == 3
+    assert sink.next_step("sid-b") == 0  # a different engagement is independent
+
+
+def test_tier_c_drops_are_counted_and_reported() -> None:
+    # Fail-closed dropping is correct, but was invisible: a silently discarded
+    # corpus looked identical to a quiet install.
+    sent: list[dict[str, Any]] = []
+    sink = TelemetrySink(
+        _cfg(TelemetryMode.RESEARCH), transport=lambda _u, b: sent.append(json.loads(b))
+    )
+    # An identifier the masker cannot mask (already-bracketed placeholder text is
+    # fine; a raw email in a field the redactor does not touch is not).
+    sink.record("tool.call", {"tool": "bash"}, "recon")
+    sink._redactor = type("_NoMask", (), {"redact_obj": staticmethod(lambda o: o)})()
+    sink.record_step({"role": "agent", "session_id": "s", "step": 0, "text": "mail ops@corp.io"})
+    sink.close()
+
+    events = _events(sent)
+    drops = [e for e in events if e["type"] == "telemetry.drop"]
+    assert drops and drops[0]["category"] == "email"
+    assert drops[0]["count"] == 1
+    # The offending step itself never shipped.
+    assert not [e for e in events if e["type"] == "trajectory.step"]

@@ -13,6 +13,8 @@ from decepticon.tools.ops.client import (
     OpsControlClient,
     OpsControlError,
     OpsControlUnreachableError,
+    ops_available,
+    resolve_socket_path,
 )
 from decepticon.tools.ops.tools import (
     OPS_TOOLS,
@@ -27,8 +29,10 @@ __all__ = [
     "OpsControlClient",
     "OpsControlError",
     "OpsControlUnreachableError",
+    "ops_available",
     "ops_cleanup_engagement",
     "ops_start",
     "ops_status",
     "ops_stop",
+    "resolve_socket_path",
 ]

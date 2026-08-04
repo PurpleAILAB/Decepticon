@@ -147,17 +147,17 @@ def plan_chains(
 
     # Build entry/goal filters
     if entrypoint_ids:
-        entry_clause = "WHERE entry.id IN $entry_ids"
+        entry_clause = "WHERE entry.engagement = $engagement AND entry.id IN $entry_ids"
         params: dict[str, Any] = {"entry_ids": entrypoint_ids}
     else:
-        entry_clause = ""
+        entry_clause = "WHERE entry.engagement = $engagement"
         params = {}
 
     if crown_jewel_ids:
-        goal_clause = "WHERE crown.id IN $crown_ids"
+        goal_clause = "WHERE crown.engagement = $engagement AND crown.id IN $crown_ids"
         params["crown_ids"] = crown_jewel_ids
     else:
-        goal_clause = ""
+        goal_clause = "WHERE crown.engagement = $engagement"
 
     params["max_cost"] = max_cost
 
@@ -168,6 +168,8 @@ def plan_chains(
     CALL apoc.algo.dijkstra(entry, crown, '{_ATTACK_REL_TYPES}', 'cost')
     YIELD path, weight
     WHERE weight <= $max_cost AND length(path) <= {max_depth}
+      AND all(n IN nodes(path) WHERE n.engagement = $engagement)
+      AND all(r IN relationships(path) WHERE r.engagement = $engagement)
     RETURN entry.id AS entry_id,
            entry.label AS entry_label,
            crown.id AS crown_id,
@@ -187,6 +189,8 @@ def plan_chains(
     WITH entry, crown, path,
          reduce(c = 0.0, r IN relationships(path) | c + coalesce(r.cost, 1.0)) AS total_cost
     WHERE total_cost <= $max_cost
+      AND all(n IN nodes(path) WHERE n.engagement = $engagement)
+      AND all(r IN relationships(path) WHERE r.engagement = $engagement)
     RETURN entry.id AS entry_id,
            entry.label AS entry_label,
            crown.id AS crown_id,
@@ -259,7 +263,7 @@ def promote_chain(chain: Chain) -> str:
     ]
 
     query = """
-    MERGE (ap:AttackPath {id: $id})
+    MERGE (ap:AttackPath {id: $id, engagement: $engagement})
     SET ap.key = $key,
         ap.label = $label,
         ap.kind = 'AttackPath',
@@ -271,13 +275,13 @@ def promote_chain(chain: Chain) -> str:
 
     WITH ap
 
-    MATCH (entry {id: $entry_id})
-    MERGE (ap)-[:STARTS_AT]->(entry)
+    MATCH (entry {id: $entry_id, engagement: $engagement})
+    MERGE (ap)-[:STARTS_AT {engagement: $engagement}]->(entry)
 
     WITH ap
 
-    MATCH (crown {id: $crown_id})
-    MERGE (ap)-[:REACHES]->(crown)
+    MATCH (crown {id: $crown_id, engagement: $engagement})
+    MERGE (ap)-[:REACHES {engagement: $engagement}]->(crown)
     """
 
     import time
@@ -298,8 +302,9 @@ def promote_chain(chain: Chain) -> str:
     # Add STEP relationships to intermediate nodes
     for i, step in enumerate(chain.steps):
         step_query = """
-        MATCH (ap:AttackPath {id: $ap_id}), (n {id: $node_id})
-        MERGE (ap)-[s:STEP {order: $order}]->(n)
+        MATCH (ap:AttackPath {id: $ap_id, engagement: $engagement}),
+              (n {id: $node_id, engagement: $engagement})
+        MERGE (ap)-[s:STEP {order: $order, engagement: $engagement}]->(n)
         """
         store.query_custom(
             step_query,
@@ -327,7 +332,7 @@ def critical_path_score(chain: Chain) -> float:
     if vuln_ids:
         query = """
         UNWIND $ids AS nid
-        MATCH (v:Vulnerability {id: nid})
+        MATCH (v:Vulnerability {id: nid, engagement: $engagement})
         RETURN coalesce(v.severity, 'info') AS severity
         """
         try:
@@ -357,13 +362,15 @@ def impact_analysis(node_id: str, max_depth: int = 4) -> list[dict[str, Any]]:
     store = get_store()
 
     query = f"""
-    MATCH (start {{id: $node_id}})
+    MATCH (start {{id: $node_id, engagement: $engagement}})
     CALL apoc.path.expandConfig(start, {{
       relationshipFilter: '{_ATTACK_REL_TYPES}',
       maxLevel: {max_depth},
       uniqueness: 'NODE_GLOBAL'
     }})
     YIELD path
+    WHERE all(n IN nodes(path) WHERE n.engagement = $engagement)
+      AND all(r IN relationships(path) WHERE r.engagement = $engagement)
     WITH last(nodes(path)) AS reachable, length(path) AS depth
     RETURN DISTINCT reachable.id AS id,
            labels(reachable)[0] AS type,
@@ -384,8 +391,11 @@ def unexplored_surface() -> list[dict[str, Any]]:
     store = get_store()
 
     query = """
-    MATCH (h:Host)-[:HOSTS]->(s:Service)
-    WHERE NOT (s)-[:HAS_VULN]->()
+    MATCH (h:Host)-[hosts:HOSTS]->(s:Service)
+    WHERE h.engagement = $engagement
+      AND s.engagement = $engagement
+      AND hosts.engagement = $engagement
+      AND NOT (s)-[:HAS_VULN {engagement: $engagement}]->()
       AND h.explored = false
     RETURN h.id AS host_id,
            h.ip AS ip,
@@ -406,9 +416,13 @@ def credential_reachability(credential_id: str) -> list[dict[str, Any]]:
     store = get_store()
 
     query = """
-    MATCH (cred:Credential {id: $cred_id})-[:AUTHENTICATES_TO]->(u:User)
-    OPTIONAL MATCH (u)-[:CAN_ACCESS|ADMIN_TO]->(target)
-    OPTIONAL MATCH (u)-[:HAS_SESSION]->(session_host:Host)
+    MATCH (cred:Credential {id: $cred_id, engagement: $engagement})
+          -[:AUTHENTICATES_TO {engagement: $engagement}]->
+          (u:User {engagement: $engagement})
+    OPTIONAL MATCH (u)-[:CAN_ACCESS|ADMIN_TO {engagement: $engagement}]->
+          (target {engagement: $engagement})
+    OPTIONAL MATCH (u)-[:HAS_SESSION {engagement: $engagement}]->
+          (session_host:Host {engagement: $engagement})
     RETURN cred.id AS cred_id,
            u.username AS identity,
            collect(DISTINCT {type: labels(target)[0], name: coalesce(target.ip, target.label, '')}) AS accessible_targets,

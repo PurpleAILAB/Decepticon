@@ -676,6 +676,12 @@ def _fetch_core(
 
     # If a terminal-nonsuccess (404/auth/429) stopped us, browser won't help.
     skip_browser = stop_reason in _TERMINAL_NONSUCCESS_VALUES
+    # Curl transport already refused a private/internal redirect hop. Do not
+    # re-try the same attacker-controlled URL with the browser tier, which would
+    # otherwise follow that redirect outside the curl SSRF guard.
+    if any((a.error or "").startswith("ssrf_redirect_blocked:") for a in trace):
+        skip_browser = True
+        stop_reason = stop_reason or "ssrf_redirect_blocked"
 
     # -------- Phase 3: Playwright fallback ----------------------------------
     if enable_playwright and not skip_browser:
@@ -697,6 +703,7 @@ def _fetch_core(
                     device_class=device_class,
                     force_executor=fb_name,
                     timeout=timeout if timeout and timeout > 30 else 90,
+                    scope_check=scope_check,
                 )
                 trace.append(pw_attempt)
                 browser_used += 1

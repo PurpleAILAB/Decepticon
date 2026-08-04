@@ -241,6 +241,11 @@ def test_merge_dynamic_models_registers_only_supported_chatgpt_oauth_routes() ->
     # provider because the ``gpt-*`` slug collides with OpenAI's aliases.
     entries = {entry["model_name"]: entry["litellm_params"] for entry in merged["model_list"]}
     assert entries == {
+        # GPT-5.6-family frontier checkpoints served on the Codex subscription
+        # (all verified 2026-07-13; plain gpt-5.6 400s on the Codex account).
+        "auth/gpt-5.6-sol": {"model": "codex-oauth/oauth-gpt-5.6-sol"},
+        "auth/gpt-5.6-terra": {"model": "codex-oauth/oauth-gpt-5.6-terra"},
+        "auth/gpt-5.6-luna": {"model": "codex-oauth/oauth-gpt-5.6-luna"},
         "auth/gpt-5.5": {"model": "codex-oauth/oauth-gpt-5.5"},
         "auth/gpt-5.4": {"model": "codex-oauth/oauth-gpt-5.4"},
         "auth/gpt-5.4-mini": {"model": "codex-oauth/oauth-gpt-5.4-mini"},
@@ -692,3 +697,68 @@ def test_every_catalog_prefix_is_allowed_or_rejected() -> None:
         if prefix in _REJECTED_CATALOG_PREFIXES:
             continue
         assert provider in ALLOWED_DYNAMIC_PROVIDERS, prefix
+
+
+def test_collect_requested_models_picks_up_vllm_shortcut(monkeypatch) -> None:
+    """VLLM_MODEL + VLLM_API_BASE registers a route without knowing the prefix.
+
+    Parity with the OLLAMA_MODEL shortcut: self-hosting a model should not
+    require learning that ``hosted_vllm/`` is the LiteLLM provider name.
+    """
+    env = {"VLLM_API_BASE": "http://gpu:8000/v1", "VLLM_MODEL": "qwen3-coder-30b"}
+    assert "hosted_vllm/qwen3-coder-30b" in collect_requested_models(env)
+
+
+def test_collect_requested_models_vllm_needs_both_vars() -> None:
+    """A base URL alone must not register a route.
+
+    Unlike Ollama there is no defensible default model — a vLLM server serves
+    exactly what it was started with, so a guessed slug would 404 on every call.
+    """
+    assert collect_requested_models({"VLLM_API_BASE": "http://gpu:8000/v1"}) == set()
+    assert collect_requested_models({"VLLM_MODEL": "qwen3-coder-30b"}) == set()
+
+
+def test_collect_requested_models_vllm_passes_through_qualified_id() -> None:
+    """An already-prefixed value is left alone, including the deprecated one.
+
+    ``vllm/`` is LiteLLM's local-SDK provider, not the hosted server. It is
+    passed through so validate_model_name can reject it with a hint; rewriting
+    it silently would leave the operator's env disagreeing with the route.
+    """
+    env = {"VLLM_API_BASE": "http://gpu:8000/v1", "VLLM_MODEL": "hosted_vllm/m"}
+    assert "hosted_vllm/m" in collect_requested_models(env)
+    env["VLLM_MODEL"] = "vllm/m"
+    assert "vllm/m" in collect_requested_models(env)
+
+
+def test_build_model_entry_vllm_uses_the_base_url_that_is_set(monkeypatch) -> None:
+    """The emitted api_base must name whichever env var the operator set.
+
+    Emitting the unset one resolves to an empty string at request time and
+    404s with nothing pointing at the cause.
+    """
+    monkeypatch.delenv("HOSTED_VLLM_API_BASE", raising=False)
+    monkeypatch.setenv("VLLM_API_BASE", "http://gpu:8000/v1")
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
+    monkeypatch.delenv("HOSTED_VLLM_API_KEY", raising=False)
+    entry = build_model_entry("hosted_vllm/qwen3-coder-30b")
+    assert entry["litellm_params"]["api_base"] == "os.environ/VLLM_API_BASE"
+
+
+def test_build_model_entry_vllm_uses_the_key_env_that_is_set(monkeypatch) -> None:
+    """The key follows the same shortcut split as the base URL.
+
+    An operator who set VLLM_API_BASE will reach for VLLM_API_KEY, not the
+    catalog name. The catalog name stays the default so the
+    every-provider-uses-a-verified-key-env invariant still holds.
+    """
+    monkeypatch.setenv("VLLM_API_BASE", "http://gpu:8000/v1")
+    monkeypatch.delenv("HOSTED_VLLM_API_KEY", raising=False)
+    monkeypatch.setenv("VLLM_API_KEY", "sk-local")
+    entry = build_model_entry("hosted_vllm/qwen3-coder-30b")
+    assert entry["litellm_params"]["api_key"] == "os.environ/VLLM_API_KEY"
+
+    monkeypatch.setenv("HOSTED_VLLM_API_KEY", "sk-catalog")
+    entry = build_model_entry("hosted_vllm/qwen3-coder-30b")
+    assert entry["litellm_params"]["api_key"] == "os.environ/HOSTED_VLLM_API_KEY"

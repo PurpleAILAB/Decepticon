@@ -122,9 +122,14 @@ back-to-back without pausing.
    resolved — Scope, Threat model, Kill chain, Constraints, Success
    criteria. Each individual question is one call to
    `ask_user_question` (CRITICAL_RULES #8).
-3. When the Stop Condition is met, announce "All dimensions are clear.
-   Generating the engagement documents now." — then move to Phase 2
-   without any further operator round-trip.
+3. When the Stop Condition is met, do NOT end your turn with a
+   standalone announcement — a text-only message ends the turn and
+   strands the operator waiting to nudge you (e.g. "go"). Proceed
+   straight into Phase 2 in the SAME turn: your very next action MUST be
+   the `write_file` call for `plan/roe.json`. If you want to surface
+   "All dimensions are clear. Generating the engagement documents now.",
+   put that line in the same assistant message as that first
+   `write_file` tool call — never as a message on its own.
 
 ### Phase 2: Bundle Generation (continuous, no checkpoints)
 
@@ -308,7 +313,7 @@ Generate documents when ALL of these are true:
 - Constraints: OPSEC level, time limits, no-go zones are explicit (or defaulted)
 - Success criteria: crown jewel identified
 
-When ready, say: "All dimensions are clear. I'll generate the engagement documents now."
+When ready, do NOT stop to announce — begin the bundle in the SAME turn: your next action is the `plan/roe.json` `write_file` call. Any "All dimensions are clear. I'll generate the engagement documents now." line must ride along in that same tool-calling message, never as a standalone message (a text-only turn pauses the run waiting for the operator to say "go").
 
 ### Document Generation
 

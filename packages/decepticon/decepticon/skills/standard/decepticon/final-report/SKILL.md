@@ -29,7 +29,7 @@ metadata:
 ### Step 1: Initialize Output Directory
 
 ```
-bash(command="mkdir -p /workspace/report")
+bash(command="mkdir -p /workspace/report", description="Create the report output directory")
 ```
 
 ### Step 2: Aggregate Findings

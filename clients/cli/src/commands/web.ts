@@ -62,8 +62,7 @@ function startWeb(context: CommandContext): Promise<void> {
     {
       pending: "Starting web dashboard…",
       success: () => `✅ Web dashboard up: ${url()}`,
-      failure: (code, stderr) =>
-        `❌ Failed to start web (exit ${code}): ${stderr.slice(0, 400)}`,
+      failure: (code, stderr) => formatComposeFailure("start", code, stderr),
     },
   );
 }
@@ -75,8 +74,7 @@ function stopWeb(context: CommandContext): Promise<void> {
     {
       pending: "Stopping web dashboard…",
       success: () => "✅ Web dashboard stopped (container kept for fast re-up)",
-      failure: (code, stderr) =>
-        `❌ Failed to stop web (exit ${code}): ${stderr.slice(0, 400)}`,
+      failure: (code, stderr) => formatComposeFailure("stop", code, stderr),
     },
   );
 }
@@ -124,4 +122,10 @@ function runDockerCompose(
       resolve();
     });
   });
+}
+
+export function formatComposeFailure(action: "start" | "stop", code: number | null, stderr: string): string {
+  const output = stderr.trim();
+  const tail = output.length > 1200 ? `…\n${output.slice(-1200)}` : output;
+  return `❌ Failed to ${action} web (exit ${code}): ${tail}`;
 }

@@ -67,8 +67,8 @@ class PostProcessStats:
 # Same trick the node-write path in ``record_observations`` uses.
 
 _DCSYNC_QUERY = (
-    "MATCH (p)-[gc:GET_CHANGES {engagement: $engagement}]->(d:Domain {engagement: $engagement}) "
-    "MATCH (p)-[gca:GET_CHANGES_ALL {engagement: $engagement}]->(d) "
+    "MATCH (p {engagement: $engagement})-[gc:GET_CHANGES {engagement: $engagement}]->(d:Domain {engagement: $engagement}) "
+    "MATCH (p {engagement: $engagement})-[gca:GET_CHANGES_ALL {engagement: $engagement}]->(d) "
     "MERGE (p)-[r:DCSYNC {engagement: $engagement}]->(d) "
     "ON CREATE SET r.firstseen = $now, "
     "              r.created_by = $created_by, "
@@ -83,7 +83,7 @@ _DCSYNC_QUERY = (
 )
 
 _GOLDEN_CERT_QUERY = (
-    "MATCH (p)-[r:OWNS|WRITE_OWNER|MANAGE_CA {engagement: $engagement}]->"
+    "MATCH (p {engagement: $engagement})-[r:OWNS|WRITE_OWNER|MANAGE_CA {engagement: $engagement}]->"
     "(ca:ADEnterpriseCA {engagement: $engagement}) "
     "WITH DISTINCT p, ca "
     "MERGE (p)-[gc:GOLDEN_CERT {engagement: $engagement}]->(ca) "
@@ -130,7 +130,7 @@ _ADCS_ESC1_QUERY = (
     "  AND ct.enrolleesuppliessubject = true "
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, ct "
     "MERGE (p)-[r:ADCS_ESC1 {engagement: $engagement}]->(eca) "
@@ -185,7 +185,7 @@ _ADCS_ESC3_QUERY = (
     "WHERE '1.3.6.1.4.1.311.20.2.1' IN agent.applicationpolicies "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(auth) "
     "MATCH (eca)-[:PUBLISHED_TO {engagement: $engagement}]->(agent) "
-    "MATCH (p)-[en {engagement: $engagement}]->(agent) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(agent) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, auth, agent "
     "MERGE (p)-[r:ADCS_ESC3 {engagement: $engagement}]->(eca) "
@@ -218,7 +218,7 @@ _ADCS_ESC3_QUERY = (
 # on the edge as ``via_template`` provenance.
 
 _ADCS_ESC4_QUERY = (
-    "MATCH (p)-[r:GENERIC_ALL|GENERIC_WRITE|WRITE_DACL|WRITE_OWNER|OWNS"
+    "MATCH (p {engagement: $engagement})-[r:GENERIC_ALL|GENERIC_WRITE|WRITE_DACL|WRITE_OWNER|OWNS"
     "|OWNS_LIMITED_RIGHTS|WRITE_OWNER_LIMITED_RIGHTS {engagement: $engagement}]->"
     "(ct:ADCertTemplate {engagement: $engagement}) "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
@@ -276,7 +276,7 @@ _ADCS_ESC6A_QUERY = (
     "MATCH (eca)-[:PUBLISHED_TO {engagement: $engagement}]->(ct:ADCertTemplate {engagement: $engagement}) "
     "WHERE ct.authenticationenabled = true "
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, ct "
     "MERGE (p)-[r:ADCS_ESC6A {engagement: $engagement}]->(eca) "
@@ -300,7 +300,7 @@ _ADCS_ESC6B_QUERY = (
     "WHERE ct.authenticationenabled = true "
     "  AND ct.nosecurityextension = true "
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, ct "
     "MERGE (p)-[r:ADCS_ESC6B {engagement: $engagement}]->(eca) "
@@ -325,7 +325,7 @@ _ADCS_ESC9A_QUERY = (
     "  AND ct.subjectaltrequireupn = true "
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, ct "
     "MERGE (p)-[r:ADCS_ESC9A {engagement: $engagement}]->(eca) "
@@ -368,11 +368,12 @@ _ADCS_ESC13_QUERY = (
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
     "  AND ct.issuancepolicies IS NOT NULL "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "MATCH (pol:ADIssuancePolicy {engagement: $engagement}) "
     "WHERE pol.certtemplateoid IN ct.issuancepolicies "
-    "MATCH (pol)-[:OID_GROUP_LINK {engagement: $engagement}]->(g) "
+    "MATCH (pol)-[:OID_GROUP_LINK {engagement: $engagement}]->"
+    "(g {engagement: $engagement}) "
     "WITH DISTINCT p, g, ct, pol "
     "MERGE (p)-[r:ADCS_ESC13 {engagement: $engagement}]->(g) "
     "ON CREATE SET r.firstseen = $now, "
@@ -397,7 +398,7 @@ _ADCS_ESC9B_QUERY = (
     "  AND ct.subjectaltrequiredns = true "
     "  AND coalesce(ct.requiresmanagerapproval, false) = false "
     "MATCH (eca:ADEnterpriseCA {engagement: $engagement})-[:PUBLISHED_TO {engagement: $engagement}]->(ct) "
-    "MATCH (p)-[en {engagement: $engagement}]->(ct) "
+    "MATCH (p {engagement: $engagement})-[en {engagement: $engagement}]->(ct) "
     "WHERE en.bh_right = 'Enroll' "
     "WITH DISTINCT p, eca, ct "
     "MERGE (p)-[r:ADCS_ESC9B {engagement: $engagement}]->(eca) "

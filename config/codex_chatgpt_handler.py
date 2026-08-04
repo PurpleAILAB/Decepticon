@@ -31,6 +31,7 @@ from typing import Any
 
 import httpx
 import litellm
+from http_client import async_client, sync_client
 from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
@@ -330,8 +331,20 @@ def _request_body(
         body["tools"] = tools
     if opts.get("tool_choice"):
         body["tool_choice"] = opts["tool_choice"]
+
+    # Reasoning — GPT-5.x are reasoning models (effort none|low|medium|high|
+    # xhigh). Caller-supplied ``reasoning`` (Responses shape) wins; else honor
+    # the OpenAI-style ``reasoning_effort`` alias; else default to ``medium``
+    # (the vendor's balanced starting point) so requests get consistent depth.
+    # NOTE: the ChatGPT Codex backend REJECTS ``max_output_tokens`` ("Unsupported
+    # parameter", verified 2026-07-13 against gpt-5.5 and gpt-5.6-sol) — do not
+    # add it here. Output length is governed by the effort level, not a cap.
     if opts.get("reasoning"):
         body["reasoning"] = opts["reasoning"]
+    elif opts.get("reasoning_effort"):
+        body["reasoning"] = {"effort": opts["reasoning_effort"]}
+    else:
+        body["reasoning"] = {"effort": os.environ.get("DECEPTICON_GPT_EFFORT", "medium")}
     return body
 
 
@@ -456,6 +469,214 @@ def _completed_payload(resp: httpx.Response) -> dict[str, Any]:
         model="auth",
         llm_provider="auth",
     )
+
+
+def _raise_for_stream_status(resp: httpx.Response, model: str) -> None:
+    """Mirror the buffered path's typed errors for a streaming response."""
+    if resp.status_code < 400:
+        return
+    resp.read()
+    _raise_stream_error(resp.status_code, resp.text, model)
+
+
+async def _araise_for_stream_status(resp: httpx.Response, model: str) -> None:
+    """Async twin of :func:`_raise_for_stream_status`."""
+    if resp.status_code < 400:
+        return
+    await resp.aread()
+    _raise_stream_error(resp.status_code, resp.text, model)
+
+
+def _raise_stream_error(status_code: int, text: str, model: str) -> None:
+    if status_code == 401:
+        raise litellm.AuthenticationError(
+            message=(
+                "Codex ChatGPT authentication was rejected. Run 'codex logout' "
+                f"and 'codex login'. Underlying: {text}"
+            ),
+            model=model,
+            llm_provider="auth",
+        )
+    raise litellm.APIError(
+        status_code=status_code,
+        message=f"ChatGPT Codex API error: {text}",
+        model=model,
+        llm_provider="auth",
+    )
+
+
+class _CodexSseAccumulator:
+    """Responses-API SSE → GenericStreamingChunk translator.
+
+    The buffered path already walks this same event stream (see
+    :func:`_completed_payload`) but only after ``resp.text`` has pulled the
+    whole body, so the deltas it aggregates have all arrived before the first
+    chunk is emitted. This is the same walk driven incrementally: text deltas
+    are forwarded as they land, and function-call arguments are still
+    reassembled from their fragments before the tool chunk is released.
+
+    Pure state machine over decoded lines — no network — so the wire format is
+    unit-testable. Chunk shape matches
+    :meth:`CodexChatGPTCustomHandler._response_to_chunks`.
+    """
+
+    def __init__(self, model: str) -> None:
+        self._model = model
+        # item_id → in-flight function_call. The Responses API streams a call's
+        # name on `output_item.added` and its arguments as later fragments.
+        self._calls: dict[str, dict[str, Any]] = {}
+        self._emitted = 0
+        self._usage: dict[str, Any] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        self._finished = False
+        self._error: str | None = None
+
+    def push(self, line: str) -> list[dict[str, Any]]:
+        line = line.strip()
+        if not line.startswith("data:"):
+            return []
+        data = line.removeprefix("data:").strip()
+        if not data or data == "[DONE]":
+            return []
+        try:
+            event = json.loads(data)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(event, dict):
+            return []
+        return self._dispatch(event)
+
+    def close(self) -> list[dict[str, Any]]:
+        if self._error is not None:
+            raise litellm.APIError(
+                status_code=500,
+                message=self._error,
+                model=self._model,
+                llm_provider="auth",
+            )
+        if self._finished:
+            return []
+        return [self._final_chunk()]
+
+    # ── internals ────────────────────────────────────────────────────
+    def _dispatch(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        kind = event.get("type")
+
+        if kind == "response.output_text.delta":
+            delta = event.get("delta")
+            if not isinstance(delta, str) or not delta:
+                return []
+            return [
+                {
+                    "text": delta,
+                    "is_finished": False,
+                    "finish_reason": "",
+                    "index": 0,
+                    "tool_use": None,
+                    "usage": None,
+                }
+            ]
+
+        if kind == "response.output_item.added":
+            item = event.get("item") or {}
+            if isinstance(item, dict) and item.get("type") == "function_call":
+                item_id = item.get("id") or item.get("call_id") or "tool_call"
+                self._calls[item_id] = {
+                    "call_id": item.get("call_id") or item_id,
+                    "name": item.get("name") or "",
+                    "arguments": item.get("arguments") or "",
+                }
+            return []
+
+        if kind == "response.function_call_arguments.delta":
+            item_id = event.get("item_id") or event.get("call_id") or "tool_call"
+            entry = self._calls.setdefault(
+                item_id,
+                {"call_id": item_id, "name": event.get("name") or "", "arguments": ""},
+            )
+            delta = event.get("delta")
+            if isinstance(delta, str):
+                entry["arguments"] += delta
+            return []
+
+        if kind == "response.output_item.done":
+            return self._on_item_done(event)
+
+        if kind == "response.completed":
+            payload = event.get("response")
+            if isinstance(payload, dict):
+                self._absorb_usage(payload.get("usage"))
+            self._finished = True
+            return [self._final_chunk()]
+
+        if kind in {"response.failed", "error"}:
+            err = event.get("error") or (event.get("response") or {}).get("error")
+            if isinstance(err, dict):
+                self._error = err.get("message") or json.dumps(err)
+            elif err:
+                self._error = str(err)
+            else:
+                self._error = "ChatGPT Codex stream reported an error"
+            return []
+
+        return []
+
+    def _on_item_done(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        item = event.get("item") or {}
+        if not isinstance(item, dict) or item.get("type") != "function_call":
+            return []
+        item_id = item.get("id") or item.get("call_id") or "tool_call"
+        entry = self._calls.pop(
+            item_id,
+            {"call_id": item.get("call_id") or item_id, "name": "", "arguments": ""},
+        )
+        # `done` is authoritative. Its explicit ``call_id`` wins over the entry's:
+        # a `function_call_arguments.delta` that arrives without one seeds the
+        # entry with the ITEM id, and returning that as the tool-call id breaks
+        # tool-result linking (the API matches results on ``call_id``).
+        name = item.get("name") or entry.get("name") or ""
+        call_id = item.get("call_id") or entry.get("call_id") or item_id
+        arguments = entry.get("arguments") or item.get("arguments") or "{}"
+        chunk = {
+            "text": "",
+            "is_finished": False,
+            "finish_reason": "",
+            "index": 0,
+            "tool_use": {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+                "index": self._emitted,
+            },
+            "usage": None,
+        }
+        self._emitted += 1
+        return [chunk]
+
+    def _absorb_usage(self, usage: Any) -> None:
+        if not isinstance(usage, dict):
+            return
+        input_tokens = usage.get("input_tokens") or 0
+        output_tokens = usage.get("output_tokens") or 0
+        self._usage = {
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": usage.get("total_tokens") or (input_tokens + output_tokens),
+        }
+
+    def _final_chunk(self) -> dict[str, Any]:
+        self._finished = True
+        return {
+            "text": "",
+            "is_finished": True,
+            "finish_reason": "tool_calls" if self._emitted else "stop",
+            "index": 0,
+            "tool_use": None,
+            "usage": self._usage,
+        }
 
 
 def _model_response(model: str, payload: dict[str, Any]) -> ModelResponse:
@@ -620,13 +841,87 @@ class CodexChatGPTCustomHandler(CustomLLM):
             }
         ]
 
-    def streaming(self, *args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
-        yield from self._response_to_chunks(self.completion(*args, **kwargs))
+    def streaming(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_base: str | None = None,
+        custom_prompt_dict: dict[str, Any] | None = None,
+        model_response: ModelResponse | None = None,
+        print_verbose: Any = None,
+        encoding: Any = None,
+        logging_obj: Any = None,
+        optional_params: dict[str, Any] | None = None,
+        acompletion: bool | None = None,
+        timeout: float | None = None,
+        litellm_params: dict[str, Any] | None = None,
+        logger_fn: Any = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Iterator[dict[str, Any]]:
+        """Sync token streaming off the Responses API SSE."""
+        body = _request_body(model, messages, optional_params)
+        api_root = (api_base or os.environ.get("CHATGPT_API_BASE") or CHATGPT_API_BASE).rstrip("/")
+        with sync_client(timeout=timeout or 600) as client:
+            for force_refresh in (False, True):
+                access_token, account_id = get_codex_access_token(force_refresh=force_refresh)
+                with client.stream(
+                    "POST",
+                    f"{api_root}/responses",
+                    json=body,
+                    headers={**_headers(access_token, account_id), **(headers or {})},
+                ) as resp:
+                    if resp.status_code == 401 and not force_refresh:
+                        resp.read()
+                        continue
+                    _raise_for_stream_status(resp, model)
+                    accumulator = _CodexSseAccumulator(model)
+                    for line in resp.iter_lines():
+                        yield from accumulator.push(line)
+                    yield from accumulator.close()
+                    return
 
-    async def astreaming(self, *args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        response = await self.acompletion(*args, **kwargs)
-        for chunk in self._response_to_chunks(response):
-            yield chunk
+    async def astreaming(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_base: str | None = None,
+        custom_prompt_dict: dict[str, Any] | None = None,
+        model_response: ModelResponse | None = None,
+        print_verbose: Any = None,
+        encoding: Any = None,
+        logging_obj: Any = None,
+        optional_params: dict[str, Any] | None = None,
+        acompletion: bool | None = None,
+        timeout: float | None = None,
+        litellm_params: dict[str, Any] | None = None,
+        logger_fn: Any = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Async token streaming off the Responses API SSE."""
+        body = _request_body(model, messages, optional_params)
+        api_root = (api_base or os.environ.get("CHATGPT_API_BASE") or CHATGPT_API_BASE).rstrip("/")
+        async with async_client(timeout=timeout or 600) as client:
+            for force_refresh in (False, True):
+                access_token, account_id = get_codex_access_token(force_refresh=force_refresh)
+                async with client.stream(
+                    "POST",
+                    f"{api_root}/responses",
+                    json=body,
+                    headers={**_headers(access_token, account_id), **(headers or {})},
+                ) as resp:
+                    if resp.status_code == 401 and not force_refresh:
+                        await resp.aread()
+                        continue
+                    await _araise_for_stream_status(resp, model)
+                    accumulator = _CodexSseAccumulator(model)
+                    async for line in resp.aiter_lines():
+                        for chunk in accumulator.push(line):
+                            yield chunk
+                    for chunk in accumulator.close():
+                        yield chunk
+                    return
 
 
 codex_chatgpt_handler_instance = CodexChatGPTCustomHandler()

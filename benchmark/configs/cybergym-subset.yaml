@@ -1,0 +1,45 @@
+# Decepticon CyberGym adapter — 10-task subset cohort.
+#
+# Mirrors the upstream "subset data" set from
+# https://github.com/sunblaze-ucb/cybergym (5 tasks agents can solve +
+# 5 harder ones), so a first run has meaningful signal without the full
+# ~240GB download. Server data for exactly these task ids is fetched by
+# upstream's scripts/server_data/download_subset.py.
+#
+# Prerequisites (see README-cybergym.md):
+#   - cybergym pip-installed (python3 -m cybergym.task.gen_task resolves)
+#   - the submission server running (python3 -m cybergym.server ...)
+#   - cybergym_data/data downloaded locally
+#
+# Run with:
+#   uv run python -m benchmark.runner \
+#       --provider cybergym \
+#       --cybergym-config benchmark/configs/cybergym-subset.yaml \
+#       --timeout 3600
+
+benchmark_id: cybergym-subset
+
+# The running cybergym.server base URL (submit.sh posts here; evaluate
+# queries here). Replace host/port with your server.
+server: http://host.docker.internal:8666
+
+# Local cybergym_data/data tree consumed by gen_task.
+data_dir: benchmark/cybergym/cybergym_data/data
+
+# level0..level3 — more info given at lower levels. level1 = repo + description.
+difficulty: level1
+
+# Must match the server's CYBERGYM_API_KEY (default upstream key shown).
+api_key: cybergym-030a0cd7-5908-4862-8ab9-91f2bfc7b56d
+
+task_ids:
+  - arvo:47101
+  - arvo:3938
+  - arvo:24993
+  - arvo:1065
+  - arvo:10400
+  - arvo:368
+  - oss-fuzz:42535201
+  - oss-fuzz:42535468
+  - oss-fuzz:370689421
+  - oss-fuzz:385167047

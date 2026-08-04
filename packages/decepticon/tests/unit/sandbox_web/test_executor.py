@@ -16,7 +16,7 @@ from decepticon.sandbox_web.executor import _pick_executor, run_playwright_fallb
 from decepticon.sandbox_web.validators import SMALL_BODY_THRESHOLD, Verdict
 
 
-def _envelope(html: str, final_url: str = "https://example.com/final") -> str:
+def _envelope(html: str, final_url: str = "https://8.8.8.8/final") -> str:
     return json.dumps(
         {
             "html": html,
@@ -69,8 +69,56 @@ def test_mcp_force_remaps_to_local_and_validates(monkeypatch: pytest.MonkeyPatch
     )
     assert att.executor == "playwright_real_chrome"  # remapped, not MCP
     assert att.verdict == Verdict.STRONG_OK.value
-    assert att.url == "https://example.com/final"
+    assert att.url == "https://8.8.8.8/final"
     assert out == html
+
+
+def test_final_private_url_is_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = "x" * (SMALL_BODY_THRESHOLD + 50) + "<article id='c'>hi</article>"
+    monkeypatch.setattr(executor, "_chrome_channel_available", lambda: True)
+    monkeypatch.setattr(
+        executor,
+        "_run_node_template",
+        lambda template, args, timeout=90: (
+            0,
+            _envelope(html, final_url="http://127.0.0.1:9876/secret"),
+            "",
+        ),
+    )
+    att, out = run_playwright_fallback(
+        "https://example.com/x",
+        profile_id="unknown_challenge",
+        success_selectors=["article#c"],
+        force_executor="playwright_real_chrome",
+    )
+    assert att.verdict == Verdict.BLOCKED.value
+    assert att.error == "ssrf_blocked:ip_blocked:127.0.0.1"
+    assert att.url == "http://127.0.0.1:9876/secret"
+    assert out == ""
+
+
+def test_final_out_of_scope_url_is_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    html = "x" * (SMALL_BODY_THRESHOLD + 50) + "<article id='c'>hi</article>"
+    monkeypatch.setattr(executor, "_chrome_channel_available", lambda: True)
+    monkeypatch.setattr(
+        executor,
+        "_run_node_template",
+        lambda template, args, timeout=90: (
+            0,
+            _envelope(html, final_url="https://8.8.4.4/final"),
+            "",
+        ),
+    )
+    att, out = run_playwright_fallback(
+        "https://example.com/x",
+        profile_id="unknown_challenge",
+        success_selectors=["article#c"],
+        force_executor="playwright_real_chrome",
+        scope_check=lambda candidate: "example.com" in candidate,
+    )
+    assert att.verdict == Verdict.BLOCKED.value
+    assert att.error == "ROE_REFUSED: final URL not in engagement scope"
+    assert out == ""
 
 
 def test_rendered_challenge_is_challenge(monkeypatch: pytest.MonkeyPatch) -> None:

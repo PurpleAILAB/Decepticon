@@ -26,13 +26,14 @@ from __future__ import annotations
 import json
 import os
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterable, Iterator
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 import litellm
+from http_client import async_client, sync_client
 from http_client import post as _http_post
 from litellm import CustomLLM, ModelResponse
 from oauth_token_store import (
@@ -235,6 +236,77 @@ REQUIRED_BETAS = [
     "interleaved-thinking-2025-05-14",
 ]
 
+# Reasoning defaults for Anthropic thinking models (opus 4.x, sonnet 5).
+# These models support adaptive thinking + ``output_config.effort`` (effort
+# levels low|medium|high|xhigh|max). Effort follows the vendor's agentic
+# guidance — opus at xhigh, sonnet-5 at medium — and is applied ONLY when the
+# caller passes no ``thinking`` / effort of its own (optional_params win).
+# haiku-4.5 and sonnet-4.6 are omitted: haiku errors on ``output_config.effort``
+# and neither is a reasoning default here. Thinking tokens count toward
+# ``max_tokens``, so the default output cap below is generous enough for
+# reasoning + tool calls (the prior 4096 default truncated adaptive thinking
+# before it could emit tool_use, yielding empty ``max_tokens``-stopped turns).
+# Per-model env override: ``DECEPTICON_CLAUDE_EFFORT_<MODEL>`` where <MODEL> is
+# the slug upper-cased with -/. → _ (e.g. DECEPTICON_CLAUDE_EFFORT_CLAUDE_SONNET_5=high).
+_REASONING_EFFORT_DEFAULTS: dict[str, str] = {
+    "claude-opus-4-8": "xhigh",
+    "claude-opus-4-7": "xhigh",
+    "claude-sonnet-5": "medium",
+}
+
+# Per-model max output tokens (Anthropic's published caps). Used as the default
+# when the caller sends no ``max_tokens`` — e.g. deepagents summarization
+# sub-calls, which previously defaulted to 4096 and truncated an adaptive
+# thinking pass before it could emit ``tool_use``. ``max_tokens`` is a CEILING
+# billed on actual output, not a target (a scoping turn uses ~3K), so handing
+# each model its full budget removes truncation risk at no extra cost.
+_MODEL_MAX_OUTPUT: dict[str, int] = {
+    "claude-opus-4-8": 128000,
+    "claude-opus-4-7": 128000,
+    "claude-sonnet-5": 128000,
+    "claude-sonnet-4-6": 128000,
+    "claude-haiku-4-5": 64000,
+}
+_FALLBACK_MAX_TOKENS = 64000  # <= every known model's cap, safe for unknowns
+
+
+def _reasoning_params(actual_model: str, opts: dict[str, Any]) -> dict[str, Any]:
+    """Anthropic ``thinking`` + ``output_config.effort`` for a request.
+
+    Caller-supplied ``thinking`` wins; otherwise adaptive thinking is enabled
+    for the reasoning models in ``_REASONING_EFFORT_DEFAULTS``. Effort accepts
+    the Anthropic-native ``output_config.effort`` or the OpenAI-style
+    ``reasoning_effort`` alias, falling back to the per-model default
+    (env-overridable via ``DECEPTICON_CLAUDE_EFFORT_<MODEL>``). Effort is only
+    emitted when thinking is on — it controls thinking depth. Returns the keys
+    to merge into the request body ( ``{}`` when the model isn't a reasoner and
+    the caller passed nothing).
+    """
+    out: dict[str, Any] = {}
+    thinking = opts.get("thinking")
+    if thinking:
+        out["thinking"] = thinking
+    elif actual_model in _REASONING_EFFORT_DEFAULTS:
+        out["thinking"] = {"type": "adaptive"}
+
+    if "thinking" not in out:
+        return out
+
+    effort = None
+    output_config = opts.get("output_config")
+    if isinstance(output_config, dict):
+        effort = output_config.get("effort")
+    effort = effort or opts.get("reasoning_effort")
+    if not effort and actual_model in _REASONING_EFFORT_DEFAULTS:
+        env_key = (
+            "DECEPTICON_CLAUDE_EFFORT_" + actual_model.replace("-", "_").replace(".", "_").upper()
+        )
+        effort = os.environ.get(env_key, _REASONING_EFFORT_DEFAULTS[actual_model])
+    if effort:
+        out["output_config"] = {"effort": effort}
+    return out
+
+
 BASE_HEADERS = {
     "anthropic-version": "2023-06-01",
     "anthropic-dangerous-direct-browser-access": "true",
@@ -291,6 +363,36 @@ def _cap_cache_control(system_blocks: list[dict[str, Any]], max_blocks: int = 4)
             del block["cache_control"]
 
 
+def _add_conversation_cache_control(
+    api_messages: list[dict[str, Any]], max_breakpoints: int = 1
+) -> None:
+    """Cache the conversation prefix (tool-result / history bulk), not just the
+    system prompt. Stamp ``cache_control`` on the last content block of the
+    final message: one tail breakpoint is enough because Anthropic's ≤20-block
+    lookback matches the previous turn's prefix and serves it at 0.1×, writing
+    only the new delta (incremental / auto-advancing caching). Strings are
+    promoted to a text block (Anthropic ignores message-level cache_control on
+    string content). Stays within the global 4-breakpoint budget — the system
+    prompt is capped to leave room (see the call site)."""
+    stamped = 0
+    for msg in reversed(api_messages):
+        if stamped >= max_breakpoints:
+            break
+        content = msg.get("content")
+        if isinstance(content, str):
+            if not content:
+                continue
+            msg["content"] = [
+                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+            ]
+            stamped += 1
+        elif isinstance(content, list) and content:
+            last_blk = content[-1]
+            if isinstance(last_blk, dict):
+                last_blk["cache_control"] = {"type": "ephemeral"}
+                stamped += 1
+
+
 class ClaudeCodeCustomHandler(CustomLLM):
     """LiteLLM custom handler that routes requests through Claude Code OAuth.
 
@@ -298,29 +400,20 @@ class ClaudeCodeCustomHandler(CustomLLM):
     The part after the ``/`` maps to the actual Anthropic model ID.
     """
 
-    def completion(
+    def _build_anthropic_request(
         self,
         model: str,
         messages: list[dict[str, Any]],
-        api_base: str | None = None,
-        custom_prompt_dict: dict[str, Any] | None = None,
-        model_response: ModelResponse | None = None,
-        print_verbose: Any = None,
-        encoding: Any = None,
-        logging_obj: Any = None,
-        optional_params: dict[str, Any] | None = None,
-        acompletion: bool | None = None,
-        timeout: float | None = None,
-        litellm_params: dict[str, Any] | None = None,
-        logger_fn: Any = None,
-        headers: dict[str, str] | None = None,
-        **kwargs: Any,
-    ) -> ModelResponse:
-        """Route completion directly to Anthropic Messages API with OAuth.
+        optional_params: dict[str, Any] | None,
+        api_base: str | None,
+        *,
+        stream: bool = False,
+    ) -> tuple[str, str, str]:
+        """Build the Anthropic Messages API request.
 
-        Unlike API-key auth (x-api-key header), OAuth uses
-        Authorization: Bearer header + Claude Code spoofing headers.
-        This makes the request indistinguishable from a real Claude Code session.
+        Shared by the buffered (``completion``) and token-streaming
+        (``streaming`` / ``astreaming``) paths so both send the same body.
+        Returns ``(body_str, api_url, actual_model)``.
         """
         # Extract actual Anthropic model ID
         # "auth/claude-sonnet-4-6" -> "claude-sonnet-4-6"
@@ -463,13 +556,18 @@ class ClaudeCodeCustomHandler(CustomLLM):
 
         # Build Anthropic Messages API request body
         opts = optional_params or {}
-        _cap_cache_control(system_blocks)
+        # Global cap is 4 cache_control breakpoints. Reserve 1 for the
+        # conversation tail (below) so the 58:1 tool-result/history bulk gets
+        # cached, not just the system prompt; cap the system to the other 3.
+        _cap_cache_control(system_blocks, max_blocks=3)
+        _add_conversation_cache_control(api_messages, max_breakpoints=1)
 
         request_body: dict[str, Any] = {
             "model": actual_model,
             "messages": api_messages,
             "system": system_blocks,
-            "max_tokens": opts.get("max_tokens", 4096),
+            "max_tokens": opts.get("max_tokens")
+            or _MODEL_MAX_OUTPUT.get(actual_model, _FALLBACK_MAX_TOKENS),
         }
         if "temperature" in opts:
             request_body["temperature"] = opts["temperature"]
@@ -477,6 +575,8 @@ class ClaudeCodeCustomHandler(CustomLLM):
             request_body["top_p"] = opts["top_p"]
         if "stop" in opts:
             request_body["stop_sequences"] = opts["stop"]
+
+        request_body.update(_reasoning_params(actual_model, opts))
 
         # Tools — convert from OpenAI format to Anthropic format
         openai_tools = opts.get("tools")
@@ -509,11 +609,46 @@ class ClaudeCodeCustomHandler(CustomLLM):
                     "name": tool_choice["function"]["name"],
                 }
 
+        # Streaming is a per-request flag on the same body — the buffered and
+        # streaming paths must otherwise send byte-identical requests so prompt
+        # caching hits the same prefix.
+        if stream:
+            request_body["stream"] = True
+
         body_str = json.dumps(request_body)
 
         # Direct HTTP call to Anthropic Messages API. Never honor arbitrary
         # api_base values here: this request carries an OAuth bearer token.
         api_url = _resolve_anthropic_api_base(api_base)
+        return body_str, api_url, actual_model
+
+    def completion(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_base: str | None = None,
+        custom_prompt_dict: dict[str, Any] | None = None,
+        model_response: ModelResponse | None = None,
+        print_verbose: Any = None,
+        encoding: Any = None,
+        logging_obj: Any = None,
+        optional_params: dict[str, Any] | None = None,
+        acompletion: bool | None = None,
+        timeout: float | None = None,
+        litellm_params: dict[str, Any] | None = None,
+        logger_fn: Any = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        """Route completion directly to Anthropic Messages API with OAuth.
+
+        Unlike API-key auth (x-api-key header), OAuth uses
+        Authorization: Bearer header + Claude Code spoofing headers.
+        This makes the request indistinguishable from a real Claude Code session.
+        """
+        body_str, api_url, actual_model = self._build_anthropic_request(
+            model, messages, optional_params, api_base, stream=False
+        )
 
         def _send(force_refresh: bool) -> httpx.Response:
             access_token = get_access_token(force_refresh=force_refresh)
@@ -629,6 +764,13 @@ class ClaudeCodeCustomHandler(CustomLLM):
         usage_data = data.get("usage") or {}
         input_tokens = usage_data.get("input_tokens") or 0
         output_tokens = usage_data.get("output_tokens") or 0
+        # Anthropic reports *non-cached* input in ``input_tokens``; cached-prefix
+        # reads and cache writes are separate buckets. LiteLLM's cost path derives
+        # text_tokens = prompt_tokens − cache buckets, so prompt_tokens MUST include
+        # them or cache tokens are dropped from spend logs and cost clamps wrong.
+        cache_creation_tokens = usage_data.get("cache_creation_input_tokens") or 0
+        cache_read_tokens = usage_data.get("cache_read_input_tokens") or 0
+        prompt_tokens = input_tokens + cache_creation_tokens + cache_read_tokens
 
         # Map finish_reason: tool_use → tool_calls (OpenAI convention)
         stop_reason = data.get("stop_reason", "end_turn")
@@ -648,9 +790,14 @@ class ClaudeCodeCustomHandler(CustomLLM):
                 }
             ],
             usage={
-                "prompt_tokens": input_tokens,
+                # ``Usage(**usage)`` maps these top-level Anthropic cache fields
+                # onto ``prompt_tokens_details`` + top-level attrs, so LiteLLM's
+                # generic cost path prices cache reads (0.1×) / writes (1.25×).
+                "prompt_tokens": prompt_tokens,
                 "completion_tokens": output_tokens,
-                "total_tokens": input_tokens + output_tokens,
+                "total_tokens": prompt_tokens + output_tokens,
+                "cache_creation_input_tokens": cache_creation_tokens,
+                "cache_read_input_tokens": cache_read_tokens,
             },
         )
 
@@ -744,11 +891,20 @@ class ClaudeCodeCustomHandler(CustomLLM):
                     }
                 )
 
-        usage = {
+        usage: dict[str, Any] = {
             "completion_tokens": response.usage.completion_tokens if response.usage else 0,
             "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
             "total_tokens": response.usage.total_tokens if response.usage else 0,
         }
+        # Propagate cache buckets so litellm's stream_chunk_builder records + prices
+        # them on the completed streaming response (it reads these keys directly).
+        if response.usage is not None:
+            _cc = getattr(response.usage, "cache_creation_input_tokens", None)
+            _cr = getattr(response.usage, "cache_read_input_tokens", None)
+            if _cc:
+                usage["cache_creation_input_tokens"] = _cc
+            if _cr:
+                usage["cache_read_input_tokens"] = _cr
 
         chunks: list[dict[str, Any]] = []
 
@@ -792,16 +948,302 @@ class ClaudeCodeCustomHandler(CustomLLM):
 
         return chunks
 
-    def streaming(self, *args: Any, **kwargs: Any) -> Iterator[dict[str, Any]]:
-        """Sync streaming — call completion and yield as chunks."""
-        response = self.completion(*args, **kwargs)
-        yield from self._response_to_chunks(response)
+    def streaming(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_base: str | None = None,
+        custom_prompt_dict: dict[str, Any] | None = None,
+        model_response: ModelResponse | None = None,
+        print_verbose: Any = None,
+        encoding: Any = None,
+        logging_obj: Any = None,
+        optional_params: dict[str, Any] | None = None,
+        acompletion: bool | None = None,
+        timeout: float | None = None,
+        litellm_params: dict[str, Any] | None = None,
+        logger_fn: Any = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> Iterator[dict[str, Any]]:
+        """Sync token streaming, straight off the Anthropic SSE response."""
+        body_str, api_url, _ = self._build_anthropic_request(
+            model, messages, optional_params, api_base, stream=True
+        )
+        with sync_client(timeout=timeout or 600) as client:
+            for force_refresh in (False, True):
+                req_headers = _build_headers(get_access_token(force_refresh=force_refresh))
+                with client.stream(
+                    "POST",
+                    f"{api_url}/v1/messages?beta=true",
+                    content=body_str,
+                    headers=req_headers,
+                ) as resp:
+                    if resp.status_code == 401 and not force_refresh:
+                        resp.read()
+                        continue
+                    _raise_for_stream_status(resp, model)
+                    yield from _anthropic_sse_to_chunks(resp.iter_lines())
+                    return
 
-    async def astreaming(self, *args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        """Async streaming — call acompletion and yield as chunks."""
-        response = await self.acompletion(*args, **kwargs)
-        for chunk in self._response_to_chunks(response):
-            yield chunk
+    async def astreaming(
+        self,
+        model: str,
+        messages: list[dict[str, Any]],
+        api_base: str | None = None,
+        custom_prompt_dict: dict[str, Any] | None = None,
+        model_response: ModelResponse | None = None,
+        print_verbose: Any = None,
+        encoding: Any = None,
+        logging_obj: Any = None,
+        optional_params: dict[str, Any] | None = None,
+        acompletion: bool | None = None,
+        timeout: float | None = None,
+        litellm_params: dict[str, Any] | None = None,
+        logger_fn: Any = None,
+        headers: dict[str, str] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Async token streaming, straight off the Anthropic SSE response."""
+        body_str, api_url, _ = self._build_anthropic_request(
+            model, messages, optional_params, api_base, stream=True
+        )
+        async with async_client(timeout=timeout or 600) as client:
+            for force_refresh in (False, True):
+                req_headers = _build_headers(get_access_token(force_refresh=force_refresh))
+                async with client.stream(
+                    "POST",
+                    f"{api_url}/v1/messages?beta=true",
+                    content=body_str,
+                    headers=req_headers,
+                ) as resp:
+                    if resp.status_code == 401 and not force_refresh:
+                        await resp.aread()
+                        continue
+                    await _araise_for_stream_status(resp, model)
+                    # The SSE parser is a pure sync generator over decoded lines;
+                    # drive it by feeding one line at a time so nothing buffers.
+                    feed = _AnthropicSseAccumulator()
+                    async for line in resp.aiter_lines():
+                        for chunk in feed.push(line):
+                            yield chunk
+                    for chunk in feed.close():
+                        yield chunk
+                    return
+
+
+def _raise_for_stream_status(resp: httpx.Response, model: str) -> None:
+    """Translate a non-200 streaming response into the same typed errors the
+    buffered path raises. Reads the body first — it is still unread here."""
+    if resp.status_code == 200:
+        return
+    resp.read()
+    _raise_stream_error(resp.status_code, resp.text, model)
+
+
+async def _araise_for_stream_status(resp: httpx.Response, model: str) -> None:
+    """Async twin of :func:`_raise_for_stream_status`."""
+    if resp.status_code == 200:
+        return
+    await resp.aread()
+    _raise_stream_error(resp.status_code, resp.text, model)
+
+
+def _raise_stream_error(status_code: int, text: str, model: str) -> None:
+    if status_code == 401:
+        raise litellm.AuthenticationError(
+            message=(
+                "Claude Code authentication was rejected. Run 'claude /login' "
+                f"and retry. Underlying: {text}"
+            ),
+            model=model,
+            llm_provider="auth",
+        )
+    if status_code == 429:
+        raise litellm.RateLimitError(
+            message=f"Rate limit exceeded: {text}",
+            model=model,
+            llm_provider="auth",
+            response=httpx.Response(status_code=429),
+        )
+    raise litellm.APIError(
+        status_code=status_code,
+        message=f"Anthropic API error: {text}",
+        model=model,
+        llm_provider="auth",
+    )
+
+
+class _AnthropicSseAccumulator:
+    """Incremental Anthropic Messages SSE → GenericStreamingChunk translator.
+
+    Pure state machine over decoded SSE lines — no network, no httpx — so the
+    wire format is unit-testable. ``push`` returns the chunks a line produced
+    (usually zero or one); ``close`` flushes the terminating chunk if the
+    stream ended without an explicit ``message_stop``.
+
+    Chunk shape matches :meth:`ClaudeCodeCustomHandler._response_to_chunks` so
+    LiteLLM's stream wrapper sees one contract from both paths.
+    """
+
+    def __init__(self) -> None:
+        self._usage: dict[str, Any] = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+        }
+        # index → in-flight tool_use block (Anthropic streams its arguments as
+        # `input_json_delta` fragments that only parse once concatenated).
+        self._tool_blocks: dict[int, dict[str, Any]] = {}
+        self._tool_count = 0
+        self._stop_reason = ""
+        self._finished = False
+
+    def push(self, line: str) -> list[dict[str, Any]]:
+        line = line.strip()
+        if not line.startswith("data:"):
+            return []
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            return []
+        try:
+            event = json.loads(payload)
+        except (json.JSONDecodeError, ValueError):
+            return []
+        if not isinstance(event, dict):
+            return []
+        return self._dispatch(event)
+
+    def close(self) -> list[dict[str, Any]]:
+        if self._finished:
+            return []
+        return [self._final_chunk()]
+
+    # ── internals ────────────────────────────────────────────────────
+    def _dispatch(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        kind = event.get("type")
+
+        if kind == "message_start":
+            self._absorb_usage((event.get("message") or {}).get("usage"))
+            return []
+
+        if kind == "content_block_start":
+            block = event.get("content_block") or {}
+            if block.get("type") == "tool_use":
+                self._tool_blocks[int(event.get("index", 0))] = {
+                    "id": block.get("id", ""),
+                    "name": block.get("name", ""),
+                    "json": [],
+                }
+            return []
+
+        if kind == "content_block_delta":
+            return self._on_delta(event)
+
+        if kind == "content_block_stop":
+            return self._on_block_stop(int(event.get("index", 0)))
+
+        if kind == "message_delta":
+            stop = (event.get("delta") or {}).get("stop_reason")
+            if isinstance(stop, str):
+                self._stop_reason = stop
+            self._absorb_usage(event.get("usage"))
+            return []
+
+        if kind == "message_stop":
+            self._finished = True
+            return [self._final_chunk()]
+
+        # ping / error / unknown event types carry no chunk.
+        return []
+
+    def _on_delta(self, event: dict[str, Any]) -> list[dict[str, Any]]:
+        delta = event.get("delta") or {}
+        dtype = delta.get("type")
+        if dtype == "text_delta":
+            text = delta.get("text")
+            if not isinstance(text, str) or not text:
+                return []
+            return [
+                {
+                    "text": text,
+                    "is_finished": False,
+                    "finish_reason": "",
+                    "index": 0,
+                    "tool_use": None,
+                    "usage": None,
+                }
+            ]
+        if dtype == "input_json_delta":
+            block = self._tool_blocks.get(int(event.get("index", 0)))
+            fragment = delta.get("partial_json")
+            if block is not None and isinstance(fragment, str):
+                block["json"].append(fragment)
+            return []
+        # thinking_delta / signature_delta are not surfaced as assistant text.
+        return []
+
+    def _on_block_stop(self, index: int) -> list[dict[str, Any]]:
+        block = self._tool_blocks.pop(index, None)
+        if block is None:
+            return []
+        arguments = "".join(block["json"]) or "{}"
+        chunk = {
+            "text": "",
+            "is_finished": False,
+            "finish_reason": "",
+            "index": 0,
+            "tool_use": {
+                "id": block["id"],
+                "type": "function",
+                "function": {"name": block["name"], "arguments": arguments},
+                "index": self._tool_count,
+            },
+            "usage": None,
+        }
+        self._tool_count += 1
+        return [chunk]
+
+    def _absorb_usage(self, usage: Any) -> None:
+        if not isinstance(usage, dict):
+            return
+        # Anthropic reports input tokens on message_start and output tokens on
+        # message_delta, so both are merged in rather than overwritten.
+        if isinstance(usage.get("input_tokens"), int):
+            self._usage["prompt_tokens"] = usage["input_tokens"]
+        if isinstance(usage.get("output_tokens"), int):
+            self._usage["completion_tokens"] = usage["output_tokens"]
+        # Cache buckets ride through untouched — litellm's stream_chunk_builder
+        # reads these keys to price a cached streaming response correctly.
+        for key in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+            if usage.get(key):
+                self._usage[key] = usage[key]
+        self._usage["total_tokens"] = (
+            self._usage["prompt_tokens"] + self._usage["completion_tokens"]
+        )
+
+    def _final_chunk(self) -> dict[str, Any]:
+        self._finished = True
+        if self._tool_count:
+            finish_reason = "tool_calls"
+        else:
+            finish_reason = _map_stop_reason(self._stop_reason) if self._stop_reason else "stop"
+        return {
+            "text": "",
+            "is_finished": True,
+            "finish_reason": finish_reason,
+            "index": 0,
+            "tool_use": None,
+            "usage": self._usage,
+        }
+
+
+def _anthropic_sse_to_chunks(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
+    """Drive :class:`_AnthropicSseAccumulator` over a sync line iterator."""
+    accumulator = _AnthropicSseAccumulator()
+    for line in lines:
+        yield from accumulator.push(line)
+    yield from accumulator.close()
 
 
 def _map_stop_reason(anthropic_reason: str) -> str:

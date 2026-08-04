@@ -5,9 +5,12 @@ Phase 1a (Amendment v0.2.2) boot sequence:
 1. Build a ``Neo4jBackend`` against the configured Bolt URI (waits for
    the graph to be reachable; the compose ``depends_on: neo4j (healthy)``
    gating means it should already be up).
-2. Optionally ingest the CI-built ``skills.cypher`` dump into Neo4j so
-   a fresh container boot ends up with the corpus loaded (idempotent —
-   the builder emits only ``MERGE`` statements).
+2. Seed the CI-built ``skills.cypher`` dump into Neo4j **only when the
+   graph is empty** — a fresh/first-boot database self-heals, and a
+   persistent one (a managed Neo4j, or a compose volume) is left
+   untouched instead of re-MERGEing the whole corpus on every boot.
+   Corpus changes (a new SKILL.md) are an out-of-band incremental
+   ingest, not a boot concern.
 3. Start the FastAPI REST app on ``$SKILLOGY_REST_PORT``.
 
 Environment variables:
@@ -15,8 +18,9 @@ Environment variables:
   SKILLOGY_NEO4J_URI          (default ``bolt://neo4j:7687``)
   SKILLOGY_NEO4J_USER         (default ``neo4j``)
   SKILLOGY_NEO4J_PASSWORD     (default ``decepticon-graph``)
+  SKILLOGY_NEO4J_DATABASE     (default ``neo4j``; managed backends e.g. Aura
+                              name the database after the instance id)
   SKILLOGY_CYPHER_PATH        (default ``/app/skills.cypher`` — baked into the image)
-  SKILLOGY_AUTO_INGEST        (default ``1``; set ``0`` to skip the bulk load)
   SKILLOGY_API_KEY            (optional Bearer-token auth for the protected endpoints)
 """
 
@@ -54,17 +58,27 @@ def _build_backend() -> Neo4jBackend:
         uri=os.environ.get("SKILLOGY_NEO4J_URI", "bolt://neo4j:7687"),
         user=os.environ.get("SKILLOGY_NEO4J_USER", "neo4j"),
         password=os.environ.get("SKILLOGY_NEO4J_PASSWORD", "decepticon-graph"),
+        database=os.environ.get("SKILLOGY_NEO4J_DATABASE", "neo4j"),
     )
 
 
-def _maybe_ingest(backend: Neo4jBackend) -> None:
-    if os.environ.get("SKILLOGY_AUTO_INGEST", "1").strip().lower() not in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        log.info("SKILLOGY_AUTO_INGEST disabled; skipping cypher load")
+def _seed_if_empty(backend: Neo4jBackend) -> None:
+    """Seed ``skills.cypher`` into Neo4j only when the graph is empty.
+
+    The skill graph is persistent (a managed Neo4j, or a self-hosted
+    instance with a data volume), so re-running the full corpus on every
+    boot is wasted work — the builder's ``MERGE`` statements re-touch
+    thousands of already-present nodes for no net change. Instead we seed
+    once: a fresh/empty database self-heals on first boot, and a populated
+    one is left untouched. Adding a skill is a separate incremental ingest
+    run out of band (rebuild the cypher for the new SKILL.md and apply it),
+    not something a boot re-derives.
+
+    The seed is idempotent MERGE, so if two replicas race on a cold empty
+    database the double-write is harmless.
+    """
+    if backend.health()["skill_count"] > 0:
+        log.info("skill graph already populated; skipping seed")
         return
     cypher_path = Path(os.environ.get("SKILLOGY_CYPHER_PATH", "/app/skills.cypher"))
     if not cypher_path.exists():
@@ -76,7 +90,7 @@ def _maybe_ingest(backend: Neo4jBackend) -> None:
         return
     cypher_text = cypher_path.read_text(encoding="utf-8")
     n = backend.bulk_ingest_cypher(cypher_text)
-    log.info("ingested %d Cypher statements from %s", n, cypher_path)
+    log.info("seeded %d Cypher statements from %s", n, cypher_path)
 
     # Hybrid retrieval (ADR-0011): once the corpus is loaded, create the
     # vector index and embed each skill through the litellm proxy. The dump
@@ -105,27 +119,27 @@ def _start_rest(backend: Neo4jBackend, port: int, started_at: float) -> None:
 
 
 def _ingest_in_background(backend: Neo4jBackend) -> None:
-    """Run the boot-time cypher ingest off the main thread.
+    """Run the first-boot seed off the main thread.
 
-    On a cold container the bundled ``skills.cypher`` is ~3.7 MB and
-    Neo4j MERGEs ~6000 statements over the bolt driver — that takes
-    several minutes on the first boot. Running it on the main thread
-    blocks ``uvicorn.run()`` from binding the listener until the
-    ingest finishes, which leaves ``/v1/health`` unreachable and
-    Docker's healthcheck flapping past ``start_period``. We move the
-    ingest to a daemon thread so the REST server comes up first and
-    the healthcheck passes immediately; the corpus then loads in the
-    background and the existing ``skill_count`` field in
-    ``/v1/health`` reports its progress.
+    On a cold container with an empty database the bundled
+    ``skills.cypher`` is ~3.7 MB and Neo4j MERGEs ~6000 statements over
+    the bolt driver — that takes several minutes. Running it on the main
+    thread blocks ``uvicorn.run()`` from binding the listener until the
+    seed finishes, which leaves ``/v1/health`` unreachable and Docker's
+    healthcheck flapping past ``start_period``. We move it to a daemon
+    thread so the REST server comes up first and the healthcheck passes
+    immediately; the corpus then loads in the background and the existing
+    ``skill_count`` field in ``/v1/health`` reports its progress. When the
+    graph is already populated the seed is a cheap no-op count check.
     """
     try:
-        _maybe_ingest(backend)
+        _seed_if_empty(backend)
     except Exception as exc:  # noqa: BLE001
-        # Failing to ingest is loud but not fatal — the operator may
+        # Failing to seed is loud but not fatal — the operator may
         # be running against a Neo4j that was pre-loaded out of band
         # (a different cypher file, or a manual seed). REST stays up
         # so health probes can report the situation.
-        log.error("cypher ingest failed: %r — continuing without it", exc)
+        log.error("cypher seed failed: %r — continuing without it", exc)
 
 
 def main() -> int:

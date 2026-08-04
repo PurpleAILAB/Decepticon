@@ -21,10 +21,9 @@ onward are reference for when something specific comes up.
 Decepticon is developed on a **single trunk (`main`)** using **GitHub
 Flow** — short-lived feature branches, pull requests into `main`, no
 permanent `dev` / `staging` / `release-x` branches. Contributors with
-write access can self-merge their PRs once required CI status checks pass
-and any CODEOWNERS-protected paths have been reviewed by a maintainer.
-**External publishing (PyPI, GHCR, GitHub Releases) is the only step that
-always requires explicit maintainer approval**, gated by the
+write access can self-merge their PRs once the required CI status check
+passes. **External publishing (PyPI, GHCR, GitHub Releases) is the only
+step that always requires explicit maintainer approval**, gated by the
 `pypi-release` GitHub Environment.
 
 This keeps day-to-day velocity high while preserving a hard human gate
@@ -36,10 +35,10 @@ between code landing on `main` and code reaching downstream users.
 
 We do not maintain a separate roles file. The effective roles are:
 
-- **Maintainers** — listed in [.github/CODEOWNERS](../.github/CODEOWNERS).
-  Responsible for reviewing supply-chain-critical paths and approving
-  release deployments. They are the required reviewer for the
-  `pypi-release` environment.
+- **Maintainers** — the reviewers configured on the `pypi-release`
+  GitHub Environment (`@PurpleCHOIms` today). Responsible for approving
+  release deployments; that environment's reviewer list is the canonical
+  definition of the role.
 - **Write contributors** — collaborators with write access on the repo.
   May open branches directly on the repo, open PRs, self-merge PRs into
   `main` once CI is green, and trigger releases by pushing `v*` tags.
@@ -97,41 +96,44 @@ the same way regardless.
 
 ### 4.2 What CI runs
 
-Required status checks for `main` (enforced by repository ruleset):
+`main` requires exactly one status check: **`CI OK (required status)`**.
+It is an aggregator job in `.github/workflows/ci.yml` that fails if any
+of the lanes it needs failed or was cancelled:
 
 - **Python (lint + typecheck + test)** — `make ci-lint` + `make ci-test`
 - **CLI (ubuntu-latest)** / **CLI (macos-latest)** — typecheck + build +
   test for the Ink CLI
 - **Web (lint + build)** — Prisma generate, ESLint, Next.js build
+- **Launcher** — `go vet` + `go test`
+- **Compose validate**, **Docker build** (amd64 + arm64)
 - **Security (pip-audit + gitleaks)** — dependency CVE scan + leaked
   secret detection
+- **actionlint** — workflow syntax
 
-If any of these fail, the PR cannot merge. If any are flaky, fix the
-flake — do not paper over it by re-running.
+Adding a new CI job means adding it to `ci-ok`'s `needs:` list; the
+ruleset itself does not need to change. If a lane fails, the PR cannot
+merge. If a lane is flaky, fix the flake — do not paper over it by
+re-running.
 
-### 4.3 Review and CODEOWNERS
+### 4.3 Review
 
-Most PRs are **self-mergeable once CI is green** — no formal review
-required. This is intentional: it keeps day-to-day work fast.
+**PRs are self-mergeable once CI is green.** There is no per-path review
+requirement: `.github/CODEOWNERS` was retired in
+[ADR-0012](adr/0012-retire-codeowners-merge-gate.md), which explains why
+(the gate was configured in a way that never blocked a merge, and
+enforcing it is self-blocking while there is a single code owner).
 
-`.github/CODEOWNERS` carves out a small set of paths where a maintainer
-review **is** required because the blast radius of a mistake is large.
-Today those are:
+Review is therefore a convention, not a branch rule. Ask for one when
+the change is one you would want a second pair of eyes on — and
+supply-chain surfaces are still where that pays off most:
+`.github/workflows/**`, `scripts/install.sh`, `docker-compose.yml` and
+`containers/*.Dockerfile`, package manifests and lockfiles, and the
+plugin contracts under `packages/decepticon-core/decepticon_core/`. The
+*Blast radius* section of the PR template exists to make you name which
+of those you are touching.
 
-| Path | Why it needs maintainer review |
-|------|--------------------------------|
-| `.github/workflows/**`, `.github/actions/**`, `.github/CODEOWNERS` | These files define what happens in CI and what gates a release; a malicious or careless change here can disable every other gate in the repo. |
-| `pyproject.toml`, `packages/*/pyproject.toml`, `uv.lock`, `package.json`, `package-lock.json`, `go.mod`, `go.sum`, `.goreleaser.yaml` | These control what ends up published to PyPI, npm, and the launcher binaries. A pinned-dep change is a supply-chain change. |
-| `packages/decepticon-core/decepticon_core/contracts/**`, `protocols/**`, `registry/**` | The public plugin API surface. Plugin authors build against these; breakages cascade. |
-| `scripts/install.sh` | Executed by users with `curl \| bash`. One-shot RCE surface. |
-| `docker-compose.yml`, `containers/*.Dockerfile` | Defines the runtime stack every user spins up. |
-
-If your PR touches one of these paths, expect to wait for a maintainer
-review. Everything else can land on green CI.
-
-The `dismiss_stale_reviews_on_push` policy means **any new commit
-invalidates prior approvals** — review is on the exact tree being merged,
-not on an earlier version.
+The hard human gate has not moved: nothing you merge reaches a user
+until a maintainer approves the `pypi-release` deployment (§5).
 
 ### 4.4 Merging
 
@@ -160,8 +162,13 @@ past, not as theoretical hygiene.
   your own identity.
 - **Skipping hooks** (`--no-verify`, `--no-gpg-sign`) without explicit
   maintainer agreement. If a hook fails, fix the underlying issue.
-- **Bypassing CI** by editing or removing required checks in the same PR.
-  CI / workflow changes go in a CODEOWNERS-reviewed PR of their own.
+- **Bypassing CI** by editing or removing required checks in the same PR
+  — weakening `ci-ok`'s `needs:` list, or making a lane pass
+  unconditionally, alongside the change it would have caught. Workflow
+  changes go in a PR of their own so the diff is reviewable on its own
+  terms. Nothing in the repository configuration blocks this; it is the
+  one anti-pattern the gates cannot catch for us
+  (see [ADR-0012](adr/0012-retire-codeowners-merge-gate.md) §Consequences).
 
 ---
 
@@ -186,9 +193,10 @@ declares `environment: pypi-release`:
 - `publish-release` — promotes `:<version>` → `:latest` and undrafts the
   GitHub Release
 
-The `pypi-release` environment requires approval from a maintainer
-(`PurpleCHOIms` today; see CODEOWNERS for the canonical list) before any
-of these jobs can start their `runs-on` block. The deployment branch
+The `pypi-release` environment requires approval from one of its
+configured reviewers (`PurpleCHOIms` today — the environment's reviewer
+list is the canonical definition, see §2) before any of these jobs can
+start their `runs-on` block. The deployment branch
 policy on this environment is restricted to `refs/tags/v*`, so the
 environment cannot be invoked from `workflow_dispatch` on `main` or any
 non-tag ref.
@@ -255,8 +263,10 @@ but you should know they exist so you can verify a release artifact:
 
 ## 7. Changing This Document
 
-This file is `.github/CODEOWNERS`-protected indirectly — it lives outside
-the protected paths, so any contributor can propose a change. But because
-it codifies how the project is operated, please open the change as a PR
-with a description that explains what is changing and why, and tag a
-maintainer for review even though it is not strictly required.
+Any contributor can propose a change to this file; no branch rule gates
+it. But because it codifies how the project is operated, open the change
+as a PR with a description that explains what is changing and why, and
+tag a maintainer for review even though nothing requires you to. If the
+change reverses a decision rather than clarifying one, it wants an ADR
+(see [docs/adr/README.md](adr/README.md)) — this document describes
+current practice; ADRs record why it changed.

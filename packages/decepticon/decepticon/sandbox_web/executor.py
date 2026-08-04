@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from .fetch_chain import Attempt
 from .validators import Verdict, validate
@@ -134,6 +134,7 @@ def run_playwright_fallback(
     timeout: int = 90,
     profile_dir: Optional[str] = None,
     force_executor: Optional[str] = None,
+    scope_check: Optional[Callable[[str], bool]] = None,
 ) -> tuple[Attempt, str]:
     """Invoke the appropriate Playwright executor.
 
@@ -195,6 +196,7 @@ def run_playwright_fallback(
         # template runs without xvfb; set INSANE_HEADLESS=0 (with xvfb present)
         # to run headful, which evades headless-detecting WAFs (Akamai/DataDome).
         "headless": os.environ.get("INSANE_HEADLESS", "1") not in ("0", "false", "no"),
+        "allowPrivate": False,
     }
     if choice == "playwright_mobile_chrome":
         args["device"] = "iPhone 13 Pro"
@@ -213,13 +215,34 @@ def run_playwright_fallback(
     # Fall back to treating raw stdout as HTML for forward/backward compat.
     html, final_url, status, cookies, user_agent, automation = _parse_envelope(stdout, url)
 
+    from . import safety
+
+    final_url = final_url or url
+    ok, reason = safety.classify_url(final_url, allow_private=safety.allow_private_default())
+    if not ok:
+        att.status = status
+        att.body_size = len(html)
+        att.verdict = Verdict.BLOCKED.value
+        att.reasons = [f"ssrf_blocked:{reason}"]
+        att.error = f"ssrf_blocked:{reason}"
+        att.url = final_url
+        return att, ""
+    if scope_check is not None and not scope_check(final_url):
+        att.status = status
+        att.body_size = len(html)
+        att.verdict = Verdict.BLOCKED.value
+        att.reasons = ["roe_out_of_scope"]
+        att.error = "ROE_REFUSED: final URL not in engagement scope"
+        att.url = final_url
+        return att, ""
+
     resp = _FakeResp(html, status=status, final_url=final_url)
     vr = validate(resp, success_selectors=success_selectors)
     att.status = status
     att.body_size = len(html)
     att.verdict = vr.verdict.value
     att.reasons = list(vr.reasons) + ([f"automation:{automation}"] if automation else [])
-    att.url = final_url or url
+    att.url = final_url
 
     # Cookie bridge: a browser that cleared a JS challenge yields exactly the
     # cookies + UA a plain HTTP client needs. Seed the curl_cffi pool so

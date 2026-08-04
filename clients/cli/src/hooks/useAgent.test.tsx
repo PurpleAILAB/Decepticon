@@ -256,6 +256,46 @@ describe("useAgent — engagement handoff lifecycle", () => {
     expect(result.current.assistantId).toBe("soundwave");
   });
 
+  it("recovers after thread creation retries are exhausted", async () => {
+    const mc = mockState.client!;
+    const createThread = mc.threads.create as Mock;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      createThread.mockRejectedValueOnce(new Error("server unavailable"));
+    }
+    createThread.mockResolvedValueOnce({ thread_id: "thread-recovered" });
+    (mc.runs.stream as Mock).mockReturnValueOnce(createMockStream([noopValuesEvent]));
+
+    const { result } = renderHook(() => useAgent());
+
+    act(() => {
+      result.current.submit("first attempt");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(createThread).toHaveBeenCalledTimes(5);
+    expect(result.current.runState).toBe("idle");
+    expect(result.current.error).toBe("Connection failed: server unavailable");
+    expect(result.current.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "system",
+        content: "Connection failed: server unavailable",
+      }),
+    ]));
+
+    act(() => {
+      result.current.submit("retry");
+    });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(createThread).toHaveBeenCalledTimes(6);
+    expect(mc.runs.stream).toHaveBeenCalledTimes(1);
+    expect(result.current.runState).toBe("idle");
+  });
+
   // ── 5. engagement_ready alone does not clear queuedMessage ───────────────
   it("keeps queuedMessage intact after engagement_ready — only handleStreamComplete handoff branch clears it", async () => {
     const firstStream = createControllableStream();

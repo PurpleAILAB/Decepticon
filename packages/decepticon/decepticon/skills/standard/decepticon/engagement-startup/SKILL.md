@@ -16,7 +16,7 @@ metadata:
 ## Step 1: Discover Existing Engagements
 
 ```
-bash(command="ls -1 /workspace/ 2>/dev/null || echo '[empty]'")
+bash(command="ls -1 /workspace/ 2>/dev/null || echo '[empty]'", description="List existing engagement workspaces")
 ```
 
 ## Step 2: Present Options to Operator
@@ -70,7 +70,7 @@ and planning documents already exist.
 
 1. Verify documents exist:
    ```
-   bash(command="ls plan/roe.json plan/conops.json plan/deconfliction.json")
+   bash(command="ls plan/roe.json plan/conops.json plan/deconfliction.json", description="Verify the planning documents exist")
    ```
    If any are missing, delegate to `soundwave` to regenerate:
    ```
@@ -78,7 +78,7 @@ and planning documents already exist.
    ```
 2. **Check C2 Infrastructure**:
    ```
-   bash(command="nc -z c2-sliver 31337 2>/dev/null && echo 'C2_REACHABLE' || echo 'C2_UNREACHABLE'")
+   bash(command="nc -z c2-sliver 31337 2>/dev/null && echo 'C2_REACHABLE' || echo 'C2_UNREACHABLE'", description="Check whether the C2 server is reachable")
    ```
    - If `C2_REACHABLE` → C2 framework is **Sliver** (server: `c2-sliver`, gRPC port 31337). Include this in ALL sub-agent delegations.
    - If `C2_UNREACHABLE` → C2 server is not available, skip C2-dependent objectives

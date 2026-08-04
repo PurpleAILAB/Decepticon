@@ -160,12 +160,18 @@ def create_decepticon_agent(
         # so a compromised sub-agent cannot spin up unrelated
         # infrastructure). Sub-agents see neither these tools nor the
         # underlying daemon socket.
-        from decepticon.tools.ops import OPS_TOOLS
+        #
+        # Register ``ops_*`` ONLY when the opscontrol daemon socket is
+        # present (``decepticon start`` topology). Daemon-less topologies —
+        # ``make dev`` / ``make smoke``, and hosted deployments that manage
+        # workload teardown externally — have no socket, so offering these
+        # tools would only let the orchestrator call something that returns
+        # ``opscontrol_unreachable``. Gating keeps the toolset honest per
+        # topology instead of relying on the model to avoid an unusable tool.
+        from decepticon.tools.ops import OPS_TOOLS, ops_available
 
-        tools = build_tools(
-            role=_ROLE,
-            standard_tools={t.name: t for t in OPS_TOOLS},
-        )
+        standard_tools = {t.name: t for t in OPS_TOOLS} if ops_available() else {}
+        tools = build_tools(role=_ROLE, standard_tools=standard_tools)
     if middleware is None:
         middleware = build_middleware(
             role=_ROLE,

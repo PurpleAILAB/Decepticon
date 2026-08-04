@@ -15,9 +15,13 @@ import httpx
 import pytest
 
 from decepticon.tools.ops.client import (
+    DEFAULT_SOCKET_PATH,
+    SOCKET_PATH_ENV,
     OpsControlClient,
     OpsControlError,
     OpsControlUnreachableError,
+    ops_available,
+    resolve_socket_path,
 )
 
 
@@ -106,3 +110,44 @@ def test_unreachable_when_socket_missing(tmp_path) -> None:
     client = OpsControlClient(socket_path=str(bogus))
     with pytest.raises(OpsControlUnreachableError):
         client.health()
+
+
+def test_resolve_socket_path_default_and_env(monkeypatch) -> None:
+    monkeypatch.delenv(SOCKET_PATH_ENV, raising=False)
+    assert resolve_socket_path() == DEFAULT_SOCKET_PATH
+    monkeypatch.setenv(SOCKET_PATH_ENV, "/run/custom-ops.sock")
+    assert resolve_socket_path() == "/run/custom-ops.sock"
+
+
+def test_ops_available_false_when_socket_absent(tmp_path, monkeypatch) -> None:
+    # Daemon-less topology (make dev / smoke / hosted) — no socket file.
+    monkeypatch.setenv(SOCKET_PATH_ENV, str(tmp_path / "absent.sock"))
+    assert ops_available() is False
+
+
+def test_ops_available_false_when_socket_node_but_no_daemon(tmp_path, monkeypatch) -> None:
+    # A stale/leftover node at the path (or an unrelated file in a hosted
+    # container) must NOT count: no daemon is accepting, so a connect fails and
+    # the ops_* tools must stay unregistered. This is the hosted-SaaS case where
+    # a bare os.path.exists wrongly registered the tools and they then failed at
+    # call time with opscontrol_unreachable.
+    present = tmp_path / "present.sock"
+    present.write_text("")  # a plain file — exists, but nothing listens
+    monkeypatch.setenv(SOCKET_PATH_ENV, str(present))
+    assert ops_available() is False
+
+
+def test_ops_available_true_when_daemon_accepting(tmp_path, monkeypatch) -> None:
+    # `decepticon start` topology — a live daemon is bound to + accepting on the
+    # socket. Only a successful connect flips this True.
+    import socket as _socket
+
+    sock_path = tmp_path / "live.sock"
+    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+    try:
+        server.bind(str(sock_path))
+        server.listen(1)
+        monkeypatch.setenv(SOCKET_PATH_ENV, str(sock_path))
+        assert ops_available() is True
+    finally:
+        server.close()

@@ -10,8 +10,8 @@ Agent tool surface (Phase 1a, three tools — see Amendment v0.2.2)
   Returns each match's name, path, subdomain, description, plus the
   matched MITRE IDs and tags so the agent sees *why* the skill came
   back.
-- ``load_skill(name_or_path)`` — fetch the full body + frontmatter of
-  one ``:Skill`` node. Accepts either a unique ``name`` or the
+- ``load_skill(name_or_path)`` — fetch the body of one ``:Skill`` node
+  (metadata is search-side, returned by ``find_skill``). Accepts either a unique ``name`` or the
   canonical ``/skills/.../SKILL.md`` path.
 - ``traverse(from_path, edge_types?, depth=2)`` — explicit graph
   walking from a Skill seed along a whitelisted edge set.
@@ -88,8 +88,10 @@ Three tools:
         query     → substring on name / description / when_to_use
       Returns name, path, subdomain, description, matched_mitre, matched_tags.
   • load_skill(name_or_path)
-      Fetch one SKILL.md's body + frontmatter. Accept a unique frontmatter
-      `name` (e.g. 'kerberoasting') or the canonical '/skills/.../SKILL.md' path.
+      Fetch one SKILL.md's body (the content only — metadata like subdomain /
+      tags / when_to_use is search-side, surfaced by find_skill). Accept a
+      unique frontmatter `name` (e.g. 'kerberoasting') or the canonical
+      '/skills/.../SKILL.md' path.
   • traverse(from_path, edge_types?, depth=2)
       BFS from a Skill seed along the edge whitelist
       (IN_PHASE, IMPLEMENTS, TAGGED, BELONGS_TO, RELATED_TO,
@@ -187,11 +189,16 @@ def _make_load_skill_tool(backend, allowed_path_prefixes: list[str] | None = Non
 
     @tool
     def load_skill(name_or_path: str) -> str:
-        """Fetch one SKILL.md's body + metadata from the skillogy graph.
+        """Fetch one SKILL.md's body from the skillogy graph.
 
         Accepts either a unique frontmatter ``name`` (e.g. 'kerberoasting')
-        or the canonical ``/skills/.../SKILL.md`` path. Returns the full
-        body + frontmatter fields as JSON.
+        or the canonical ``/skills/.../SKILL.md`` path. Returns the skill
+        BODY with a minimal name/path header — the other node properties
+        (subdomain, when_to_use, tags, MITRE/aatmf, allowed_tools …) exist to
+        FIND the skill via ``find_skill``; once it is loaded the agent only
+        needs the content, so they are omitted to keep the reading context
+        lean. Mirrors the filesystem ``load_skill`` (which strips frontmatter
+        and returns the body) so both backends read identically.
         """
         try:
             if name_or_path.startswith("/skills/"):
@@ -209,7 +216,18 @@ def _make_load_skill_tool(backend, allowed_path_prefixes: list[str] | None = Non
                 props = backend.load_skill(exact[0]["path"], **_acl_kwargs)
             if props is None:
                 return json.dumps({"error": f"no Skill at path {name_or_path!r}"})
-            return json.dumps(props, ensure_ascii=False, default=str)
+            # Body only (+ minimal header). Metadata props are search-side
+            # (find_skill); dumping them into the agent's context on every load
+            # is noise. Header mirrors the filesystem load_skill's format.
+            body = str(props.get("body") or "")
+            path = str(props.get("path") or name_or_path)
+            base_dir = path.rsplit("/", 1)[0] if "/" in path else "/"
+            name = str(props.get("name") or "")
+            description = str(props.get("description") or "").strip()
+            header = f"Base directory for this skill: {base_dir}\nSkill: {name}" + (
+                f" — {description}" if description else ""
+            )
+            return f"{header}\n\n{body.rstrip()}\n"
         except Exception as exc:  # noqa: BLE001 — surface as ToolMessage payload
             return json.dumps({"error": f"load_skill failed: {exc!r}"})
 

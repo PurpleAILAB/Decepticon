@@ -112,6 +112,14 @@ class TestSyncTerminalGuard:
         assert "scanner" in text
         assert str(MAX_SUBAGENT_CONSECUTIVE_FAILURES) in text
 
+    def test_failures_survive_deepagents_with_config_rewrap(self, renderer: None) -> None:
+        wrapper = StreamingRunnable(_ToggleRunnable(), "scanner")
+        out: Any = None
+        for _ in range(MAX_SUBAGENT_CONSECUTIVE_FAILURES):
+            wrapper = wrapper.with_config({"metadata": {"name": "scanner"}, "run_name": "scanner"})
+            out = wrapper.invoke(_hm())
+        assert TERMINAL_MARKER in _last_text(out)
+
     def test_success_resets_counter(self, renderer: None) -> None:
         toggle = _ToggleRunnable(should_fail=True)
         wrapper = StreamingRunnable(toggle, "scanner")

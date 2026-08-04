@@ -758,7 +758,7 @@ class TmuxSessionManager:
         return (
             f"[TIMEOUT] Command exceeded {timeout}s limit.\n"
             f"Session '{self.session}' is still running. "
-            f'Send input with bash(command="<input>", is_input=True, session="{self.session}").\n'
+            f'Send input with bash(command="<input>", is_input=True, session="{self.session}", description="<what you are sending>").\n'
             f'Read partial output with bash_output(session="{self.session}").\n'
             f"--- screen preview ---\n{screen_preview}"
         )
@@ -981,7 +981,7 @@ class TmuxSessionManager:
         return (
             f"[TIMEOUT] Command exceeded {timeout}s limit.\n"
             f"Session '{self.session}' is still running. "
-            f'Send input with bash(command="<input>", is_input=True, session="{self.session}").\n'
+            f'Send input with bash(command="<input>", is_input=True, session="{self.session}", description="<what you are sending>").\n'
             f'Read partial output with bash_output(session="{self.session}").\n'
             f"--- screen preview ---\n{screen_preview}"
         )

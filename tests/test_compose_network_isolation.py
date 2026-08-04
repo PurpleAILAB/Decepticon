@@ -68,12 +68,25 @@ OPERATIONAL_ONLY: frozenset[str] = frozenset(
 )
 
 # The only services permitted on BOTH networks. Adding a third
-# requires an ADR + a deliberate update here. See
-# docs/adr/0002-pr-tiering-and-blast-radius.md.
+# requires an ADR + a deliberate update here.
 DUAL_HOMED_SERVICES: frozenset[str] = frozenset(
     {
         "neo4j",
         "langgraph",
+    }
+)
+
+# The only services permitted to mount the host docker socket. `cli` needs
+# it for the /web slash command, which shells out to
+# `docker compose --profile web up -d web` against the host daemon (#625).
+# It is a client, not an agent: it executes operator keystrokes, never
+# model-directed commands, so it is not the container-escape surface this
+# guard exists for. Multi-tenant deployments drop the mount via a compose
+# overlay. Adding a service that *does* run agent code here is not a
+# deliberate update — it is the regression this test catches.
+DOCKER_SOCKET_SERVICES: frozenset[str] = frozenset(
+    {
+        "cli",
     }
 )
 
@@ -201,27 +214,36 @@ def test_no_service_uses_host_networking():
     )
 
 
-def test_no_service_mounts_docker_socket():
-    """``/var/run/docker.sock`` was removed deliberately.
+def test_only_allowlisted_services_mount_docker_socket():
+    """``/var/run/docker.sock`` is confined to DOCKER_SOCKET_SERVICES.
 
     The HTTP-only sandbox migration replaced ``docker exec`` with a
     FastAPI daemon on port 9999 inside the sandbox container. Mounting
-    the docker socket anywhere reintroduces a container-escape path —
-    a compromised process inside the mounted container can spawn or
+    the docker socket into a service that runs agent code reintroduces a
+    container-escape path — a compromised process there can spawn or
     modify peer containers, including the management plane.
     """
     services = _rendered_compose()["services"]
-    violations: list[str] = []
+    actual: set[str] = set()
     for name, svc in services.items():
-        for src in _service_volumes(svc):
-            if "docker.sock" in src:
-                violations.append(f"{name}: {src}")
-    assert not violations, (
-        "services mounting docker.sock (forbidden):\n  "
-        + "\n  ".join(violations)
-        + "\n\nFix: use the sandbox HTTP daemon (port 9999) instead "
-        "of docker exec. See packages/decepticon/decepticon/backends/."
-    )
+        if any("docker.sock" in src for src in _service_volumes(svc)):
+            actual.add(name)
+    unexpected = actual - DOCKER_SOCKET_SERVICES
+    stale = DOCKER_SOCKET_SERVICES - actual
+    msgs: list[str] = []
+    if unexpected:
+        msgs.append(
+            f"services mounting docker.sock without an allowlist entry: {sorted(unexpected)}\n"
+            "Fix: use the sandbox HTTP daemon (port 9999) instead of docker exec "
+            "(see packages/decepticon/decepticon/backends/), or — if the service runs "
+            "no agent code — add it to DOCKER_SOCKET_SERVICES with the reason."
+        )
+    if stale:
+        msgs.append(
+            f"DOCKER_SOCKET_SERVICES lists services that no longer mount it: {sorted(stale)}\n"
+            "Fix: drop the stale entry so the allowlist stays honest."
+        )
+    assert not msgs, "\n\n".join(msgs)
 
 
 def test_published_ports_bind_to_loopback():
@@ -278,8 +300,7 @@ def test_dual_homed_services_are_allowlisted():
     new place where prompt-injection or process compromise can pivot
     across the boundary.
 
-    Adding to DUAL_HOMED_SERVICES requires an ADR + maintainer review
-    (docs/adr/** is CODEOWNERS-gated).
+    Adding to DUAL_HOMED_SERVICES requires an ADR + maintainer review.
     """
     services = _rendered_compose()["services"]
     actual_dual_homed: set[str] = set()

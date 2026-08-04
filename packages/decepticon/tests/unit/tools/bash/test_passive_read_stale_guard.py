@@ -76,9 +76,15 @@ def test_bash_empty_command_passive_read_emits_stale_hint():
     set_sandbox(sandbox)
 
     for _ in range(_STALE_PASSIVE_READS - 1):
-        result = asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+        result = asyncio.run(
+            bash.ainvoke(
+                {"command": "", "session": "scan", "description": "Read the current screen"}
+            )
+        )
         assert "[STALE]" not in result
-    result = asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+    result = asyncio.run(
+        bash.ainvoke({"command": "", "session": "scan", "description": "Read the current screen"})
+    )
     assert "[STALE]" in result
 
 
@@ -88,13 +94,21 @@ def test_bash_non_empty_command_resets_counter():
     set_sandbox(sandbox)
 
     for _ in range(_STALE_PASSIVE_READS):
-        asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+        asyncio.run(
+            bash.ainvoke(
+                {"command": "", "session": "scan", "description": "Read the current screen"}
+            )
+        )
     # Reset via real command
     sandbox.execute_tmux_async = AsyncMock(return_value="fresh output")
-    asyncio.run(bash.ainvoke({"command": "ls", "session": "scan"}))
+    asyncio.run(
+        bash.ainvoke({"command": "ls", "session": "scan", "description": "List the directory"})
+    )
     # Subsequent passive read should NOT fire (counter cleared)
     sandbox.execute_tmux_async = AsyncMock(return_value="idle prompt")
-    result = asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+    result = asyncio.run(
+        bash.ainvoke({"command": "", "session": "scan", "description": "Read the current screen"})
+    )
     assert "[STALE]" not in result
 
 
@@ -138,10 +152,16 @@ def test_bash_kill_resets_counter():
     set_sandbox(sandbox)
 
     for _ in range(_STALE_PASSIVE_READS):
-        asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+        asyncio.run(
+            bash.ainvoke(
+                {"command": "", "session": "scan", "description": "Read the current screen"}
+            )
+        )
     asyncio.run(bash_kill.ainvoke({"session": "scan"}))
     # After kill, fresh passive read should not fire
-    result = asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+    result = asyncio.run(
+        bash.ainvoke({"command": "", "session": "scan", "description": "Read the current screen"})
+    )
     assert "[STALE]" not in result
 
 
@@ -152,7 +172,22 @@ def test_background_launch_resets_counter():
     set_sandbox(sandbox)
 
     for _ in range(_STALE_PASSIVE_READS):
-        asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
-    asyncio.run(bash.ainvoke({"command": "sleep 30", "session": "scan", "background": True}))
-    result = asyncio.run(bash.ainvoke({"command": "", "session": "scan"}))
+        asyncio.run(
+            bash.ainvoke(
+                {"command": "", "session": "scan", "description": "Read the current screen"}
+            )
+        )
+    asyncio.run(
+        bash.ainvoke(
+            {
+                "command": "sleep 30",
+                "session": "scan",
+                "background": True,
+                "description": "Sleep in the background",
+            }
+        )
+    )
+    result = asyncio.run(
+        bash.ainvoke({"command": "", "session": "scan", "description": "Read the current screen"})
+    )
     assert "[STALE]" not in result

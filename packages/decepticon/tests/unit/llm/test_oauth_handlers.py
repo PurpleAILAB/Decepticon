@@ -501,3 +501,74 @@ class TestCodexCompletedPayloadErrors:
         with pytest.raises(codex.litellm.APIError) as exc:
             codex._completed_payload(resp)
         assert "completed" in exc.value.message.lower()
+
+
+# ── Reasoning params: adaptive thinking + effort + output caps ──────────
+
+
+class TestClaudeReasoningParams:
+    def test_opus_default_adaptive_xhigh(self) -> None:
+        out = claude._reasoning_params("claude-opus-4-8", {})
+        assert out["thinking"] == {"type": "adaptive"}
+        assert out["output_config"] == {"effort": "xhigh"}
+
+    def test_sonnet5_default_adaptive_medium(self) -> None:
+        out = claude._reasoning_params("claude-sonnet-5", {})
+        assert out["thinking"] == {"type": "adaptive"}
+        assert out["output_config"] == {"effort": "medium"}
+
+    def test_non_reasoner_gets_nothing(self) -> None:
+        # haiku errors on output_config.effort — must stay thinking-off.
+        assert claude._reasoning_params("claude-haiku-4-5", {}) == {}
+
+    def test_caller_thinking_wins(self) -> None:
+        out = claude._reasoning_params("claude-sonnet-5", {"thinking": {"type": "disabled"}})
+        assert out["thinking"] == {"type": "disabled"}
+
+    def test_reasoning_effort_alias_overrides_default(self) -> None:
+        out = claude._reasoning_params("claude-opus-4-8", {"reasoning_effort": "low"})
+        assert out["output_config"] == {"effort": "low"}
+
+    def test_output_config_effort_overrides_default(self) -> None:
+        out = claude._reasoning_params("claude-sonnet-5", {"output_config": {"effort": "high"}})
+        assert out["output_config"] == {"effort": "high"}
+
+    def test_env_override(self, monkeypatch) -> None:
+        monkeypatch.setenv("DECEPTICON_CLAUDE_EFFORT_CLAUDE_SONNET_5", "high")
+        out = claude._reasoning_params("claude-sonnet-5", {})
+        assert out["output_config"] == {"effort": "high"}
+
+    def test_caller_thinking_on_non_reasoner_sets_effort_default_absent(self) -> None:
+        # An explicit thinking on a non-mapped model: thinking honored, no
+        # per-model effort default to apply.
+        out = claude._reasoning_params("claude-sonnet-4-6", {"thinking": {"type": "adaptive"}})
+        assert out["thinking"] == {"type": "adaptive"}
+        assert "output_config" not in out
+
+
+class TestCodexReasoningBody:
+    def _body(self, opts):
+        return codex._request_body("auth/gpt-5.5", [{"role": "user", "content": "hi"}], opts)
+
+    def test_default_reasoning_medium(self) -> None:
+        body = self._body({})
+        assert body["reasoning"] == {"effort": "medium"}
+
+    def test_no_max_output_tokens(self) -> None:
+        # The ChatGPT Codex backend rejects ``max_output_tokens`` (400
+        # "Unsupported parameter", verified 2026-07-13) — the handler must
+        # never send it, even when the caller supplies ``max_tokens``.
+        assert "max_output_tokens" not in self._body({})
+        assert "max_output_tokens" not in self._body({"max_tokens": 8000})
+
+    def test_caller_reasoning_object_wins(self) -> None:
+        body = self._body({"reasoning": {"effort": "high"}})
+        assert body["reasoning"] == {"effort": "high"}
+
+    def test_reasoning_effort_alias(self) -> None:
+        body = self._body({"reasoning_effort": "xhigh"})
+        assert body["reasoning"] == {"effort": "xhigh"}
+
+    def test_env_effort_override(self, monkeypatch) -> None:
+        monkeypatch.setenv("DECEPTICON_GPT_EFFORT", "low")
+        assert self._body({})["reasoning"] == {"effort": "low"}

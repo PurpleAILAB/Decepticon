@@ -6,13 +6,16 @@ import logging
 import pytest
 
 from decepticon.llm.factory import (
+    LLM_MAX_TOKENS_ENV,
     LLMFactory,
     _is_real_key,
     _llamacpp_local_configured,
     _method_is_configured,
+    _model_max_output_tokens,
     _oauth_credentials_present,
     _oauth_env_credentials_present,
     _resolve_credentials,
+    _resolve_max_tokens,
 )
 from decepticon_core.types.llm import (
     AuthMethod,
@@ -161,6 +164,34 @@ class TestOAuthEnvCredentials:
         # Codex authenticates only from its file; no env-token override exists.
         monkeypatch.setenv("CODEX_ACCESS_TOKEN", "should-not-count")
         assert _oauth_env_credentials_present(AuthMethod.OPENAI_OAUTH) is False
+
+
+class TestMaxTokensResolution:
+    """Per-model output-token ceiling (fixes write_file truncation)."""
+
+    def test_opus_and_sonnet_get_128k(self) -> None:
+        assert _model_max_output_tokens("anthropic/claude-opus-4-8") == 128000
+        assert _model_max_output_tokens("auth/claude-opus-4-8") == 128000
+        assert _model_max_output_tokens("openrouter/anthropic/claude-sonnet-4-6") == 128000
+
+    def test_haiku_gets_64k(self) -> None:
+        assert _model_max_output_tokens("anthropic/claude-haiku-4-5") == 64000
+
+    def test_unknown_model_falls_back_to_safe_default(self) -> None:
+        assert _model_max_output_tokens("openai/gpt-5-nano") == 64000
+
+    def test_env_override_wins(self, monkeypatch) -> None:
+        monkeypatch.setenv(LLM_MAX_TOKENS_ENV, "8192")
+        # Override wins even for a model whose own ceiling is higher.
+        assert _resolve_max_tokens("anthropic/claude-opus-4-8") == 8192
+
+    def test_invalid_env_falls_back_to_per_model(self, monkeypatch) -> None:
+        monkeypatch.setenv(LLM_MAX_TOKENS_ENV, "not-a-number")
+        assert _resolve_max_tokens("anthropic/claude-opus-4-8") == 128000
+
+    def test_no_env_uses_per_model(self, monkeypatch) -> None:
+        monkeypatch.delenv(LLM_MAX_TOKENS_ENV, raising=False)
+        assert _resolve_max_tokens("anthropic/claude-haiku-4-5") == 64000
 
 
 class TestLLMFactory:

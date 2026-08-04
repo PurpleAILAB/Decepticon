@@ -6,6 +6,82 @@ follows [Semantic Versioning](https://semver.org/) from `1.0.0`
 onward (the `0.x` cycle is pre-stable per the core/framework/sdk split
 design spec, §13.4).
 
+## [1.1.40] — 2026-07-27
+
+### Fixed
+
+- **Engagement scope is a boundary again, not a convention.** `KGStore` was
+  engagement-scoped but the legacy attack-graph helpers around it were not, and
+  the scope that did exist could be overridden by the caller — a raw statement
+  that omitted the predicate read every engagement's nodes, and
+  `params={"engagement": …}` replaced the value the store had resolved (a
+  dict-merge order bug: the caller's spread landed on top of the trusted value).
+  Both were reachable from an agent tool, since `plan_attack_chains` issues raw
+  Cypher through `query_custom`. Anywhere one graph holds more than one
+  engagement — a shared LangGraph plane, a hosted control plane, a team
+  instance — those were cross-engagement read/write primitives.
+  `execute_read`/`execute_write` now reject a statement that does not bind
+  `$engagement` and build their params so the resolved value always wins;
+  schema migrations stay exempt. The in-repo callers (`chain.py`, `summary.py`,
+  `kg_adapter.py`, `adcs_post.py`, the snapshot path) carry the scope rather
+  than being left to fail. Summarization also binds the model selected for the
+  current request instead of the deployment-keyed one captured at process boot,
+  so concurrent runs stop summarizing through each other's model. (#790)
+
+  **Breaking for raw Cypher:** a statement without `$engagement` now raises
+  instead of returning unscoped rows. `$engagement` is already injected into the
+  params, so an external caller adds a `WHERE` predicate, not new plumbing.
+
+## [1.1.39] — 2026-07-27
+
+Released as a patch by maintainer decision: the one `feat:` in the range
+(#773, a benchmark-provider addition) changes no runtime behaviour for
+existing users, so the SemVer minor bump the auto-tag rules would have
+computed was overridden.
+
+> **Note on the sections below.** The `[1.1.8] — Unreleased` heading that
+> follows has not been rotated since 2026-06-01, so releases 1.1.9 through
+> 1.1.38 are absent from this file. That backlog is untouched here rather
+> than reconstructed from git; this section covers only 1.1.38 → 1.1.39.
+
+### Fixed
+
+- **LLM responses stream again — they never actually did.** Two independent
+  causes, either sufficient on its own. The Claude Code OAuth handler's
+  `streaming`/`astreaming` awaited the *buffered* completion and chopped the
+  finished answer into chunks, never sending `"stream": true` upstream; and
+  `_create_chat_model` built `ChatOpenAI` without `streaming`, so `.invoke()`
+  issued a non-streaming request and LangChain never fired
+  `on_llm_new_token` — which is what LangGraph's `messages` stream mode is
+  built on. Both handlers now translate their upstream SSE directly, and
+  `stream_usage=True` accompanies `streaming=True` so the measurement path
+  still sees `usage_metadata`. The Codex ChatGPT lane had the same symptom
+  from a third angle (it asked to stream, then read `resp.text` before
+  walking the events) and is fixed alongside. (#786)
+- **Telemetry fields that shipped empty or constant.** `wrap_model_call`
+  returns a `ModelResponse` wrapper, not an `AIMessage`, so reasoning,
+  tokens and stop reason were read off attributes that do not exist; and
+  `_slug(None)` returned the literal `"none"`, poisoning four columns with a
+  real-looking value. Redaction also gains credential-KV and opaque-blob
+  detectors, and stops mangling dotted code as domains. (#785)
+- **`bash` prompt steers to `curl_cffi` over raw `curl`** for web fetches —
+  raw `curl`'s TLS/JA3 fingerprint is blocked by WAFs on the first request,
+  and retrying never clears it. (#777)
+- **Windows launcher self-update** moves the running image aside instead of
+  renaming over it (an executable cannot be overwritten while in use), with
+  rollback on failure and best-effort cleanup on the next launch. (#775)
+- **CLI recovers after thread-creation retries are exhausted** instead of
+  leaving the run state stuck. (#774)
+
+### Documentation
+
+- Model catalog, tier table and CLI slash-command reference synced with the
+  code — MID is `claude-sonnet-5`, HIGH is `claude-opus-4-8`, and the web
+  dashboard is dynamic-spawn (`/web`), not part of the default stack. (#778)
+
+[1.1.40]: https://github.com/PurpleAILAB/Decepticon/compare/v1.1.39...v1.1.40
+[1.1.39]: https://github.com/PurpleAILAB/Decepticon/compare/v1.1.38...v1.1.39
+
 ## [1.1.8] — Unreleased
 
 The agent-driven dynamic infrastructure release. Specialist workloads

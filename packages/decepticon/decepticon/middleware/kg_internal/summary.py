@@ -63,7 +63,9 @@ def _stats(store: KGStore, *, engagement: str) -> dict[str, int]:
         (
             "MATCH (n) WHERE n.engagement = $engagement "
             "WITH count(n) AS nodes "
-            "OPTIONAL MATCH ()-[r]->() WHERE r.engagement = $engagement "
+            "OPTIONAL MATCH (s)-[r]->(d) "
+            "WHERE s.engagement = $engagement AND r.engagement = $engagement "
+            "  AND d.engagement = $engagement "
             "RETURN nodes, count(r) AS edges"
         ),
         {"engagement": engagement},
@@ -102,7 +104,8 @@ def _open_entrypoints(store: KGStore, *, engagement: str) -> list[dict[str, Any]
     rows = store.execute_read(
         (
             "MATCH (e:Entrypoint) WHERE e.engagement = $engagement "
-            "AND NOT (e)-[:HAS_VULN]->() "
+            "AND NOT (e)-[:HAS_VULN {engagement: $engagement}]->"
+            "(:Vulnerability {engagement: $engagement}) "
             "RETURN e.key AS key, e.label AS label "
             "LIMIT $cap"
         ),
@@ -119,6 +122,8 @@ def _crown_jewels(store: KGStore, *, engagement: str) -> list[dict[str, Any]]:
             "MATCH (c:CrownJewel) WHERE c.engagement = $engagement "
             "OPTIONAL MATCH p=(e:Entrypoint)-[*1..6]->(c) "
             "WHERE e.engagement = $engagement "
+            "  AND all(n IN nodes(p) WHERE n.engagement = $engagement) "
+            "  AND all(r IN relationships(p) WHERE r.engagement = $engagement) "
             "WITH c, count(DISTINCT p) AS paths "
             "RETURN c.key AS key, c.label AS label, paths "
             "LIMIT $cap"

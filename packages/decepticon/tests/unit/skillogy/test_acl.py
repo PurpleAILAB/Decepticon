@@ -208,12 +208,16 @@ def test_maybe_install_no_role_keeps_acl_unset(monkeypatch):
 # ── tool surface output shape unchanged ──
 
 
-@pytest.mark.parametrize("tool_name", ["find_skill", "load_skill", "traverse"])
+# find_skill / traverse stay JSON (structured search results). load_skill is the
+# exception since the body-only follow-up: it returns the skill BODY as plain
+# markdown (header + content), not a JSON envelope — see
+# test_middleware_load_skill_tool_returns_body. So it is intentionally NOT in
+# this JSON-shape parametrization.
+@pytest.mark.parametrize("tool_name", ["find_skill", "traverse"])
 def test_tool_output_shape_still_json(tool_name):
-    """ADR-0008 changes who-can-see-what but not the wire format. The
-    PR-B markdown follow-up will revisit this; until then, tool results
-    must still parse as JSON so existing agent-side post-processing
-    keeps working."""
+    """ADR-0008 changes who-can-see-what but not the wire format for the
+    search-shaped tools: find_skill / traverse results must still parse as JSON
+    so existing agent-side post-processing keeps working."""
     backend = _RecordingBackend()
     mw = SkillogyMiddleware(
         backend=backend,
@@ -223,8 +227,6 @@ def test_tool_output_shape_still_json(tool_name):
     tools = _tools_by_name(mw)
     if tool_name == "find_skill":
         result = tools[tool_name].invoke({"subdomain": "x"})
-    elif tool_name == "load_skill":
-        result = tools[tool_name].invoke({"name_or_path": "/skills/standard/recon/demo/SKILL.md"})
     else:
         result = tools[tool_name].invoke({"from_path": "/skills/standard/recon/demo/SKILL.md"})
     json.loads(result)  # raises if the closure broke the JSON envelope

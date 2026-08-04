@@ -19,17 +19,25 @@ active engagement workspace supplied by the launcher.
 ### bash() — execute a command
 
 ```
-bash(command, session="main", background=False, timeout=120, is_input=False, description="")
+bash(command, description, session="main", background=False, timeout=120, is_input=False)
 ```
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
 | `command` | `""` | Shell command. Empty = read current screen |
+| `description` | **REQUIRED** | One-line summary of what the command does and why. See the rule below |
 | `session` | `"main"` | Different names = parallel sessions. Use a dedicated name for background jobs |
 | `background` | `False` | Start without waiting. Returns `[BACKGROUND]` immediately |
 | `timeout` | `120` | Upper bound on blocking. Foreground commands **auto-background at 60s**, so values >60 never take effect; only set <60 to give up sooner |
 | `is_input` | `False` | True ONLY when sending input to a waiting interactive process |
-| `description` | `""` | Short UI label |
+
+**`description` is REQUIRED on EVERY `bash()` call.** It is a short, one-line
+summary of what the command does and why you are running it (e.g.
+`description="Scan the top 1000 ports on the target"`). It drives the operator
+UI's "Run <description>" line, so write it for a human reading the engagement
+feed — not the raw command. Because it is now a required schema argument,
+omitting it fails validation and wastes the entire turn. Never leave it blank
+and never call `bash()` without it.
 
 Return-value markers from `bash()`:
 - normal output (single PS1 cycle, ≤15K chars) — command finished, returned inline
@@ -110,9 +118,9 @@ sessions have INDEPENDENT cwd.
 Use a dedicated session for each long-running command. Keep `main`
 free for ad-hoc foreground checks while a heavy scan runs:
 ```
-bash(command="nmap -sV --top-ports 1000 target", session="nmap", background=True)
-bash(command="dig target", session="main")
-bash(command="curl -sI target", session="main")
+bash(command="nmap -sV --top-ports 1000 target", session="nmap", background=True, description="Scan the top 1000 ports on the target")
+bash(command="dig target", session="main", description="Resolve the target's DNS records")
+bash(command="python3 -c \"from curl_cffi import requests as r; resp=r.get('http://target', impersonate='chrome'); print(resp.status_code, resp.headers)\"", session="main", description="Fetch the target's response headers via curl_cffi")
 # ... continue work — you'll be notified when nmap finishes
 ```
 
@@ -131,15 +139,25 @@ ANSI codes stripped, repetitive lines compressed.
 If a bash command will produce more than ~2KB of output (HTML page, API JSON, file dump, recursive directory listing, multi-host scan), redirect to a file FIRST and then extract only the fragment you need:
 
 ```bash
-# WRONG — 50KB curl output joins the LLM context, causes summarization slowdown
-curl -s "https://target/"
+# WRONG — 50KB page joins the LLM context, causes summarization slowdown
+python3 -c "from curl_cffi import requests as r; print(r.get('https://target/', impersonate='chrome').text)"
 
 # RIGHT — capture once, extract narrowly
-curl -s "https://target/" > /tmp/root.html
+python3 -c "from curl_cffi import requests as r; open('/tmp/root.html','w').write(r.get('https://target/', impersonate='chrome').text)"
 grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
 ```
 
 **Why this matters**: Each multi-KB tool output forces SummarizationMiddleware to compact context on the NEXT turn — compaction is expensive and disrupts engagement progress. One pre-extraction `grep` fits cleanly; the raw page does not.
+
+**Fetching a web page? Use curl_cffi from the start, never raw `curl`.** Raw
+`curl` sends a fingerprintable TLS/JA3 handshake that WAFs (Cloudflare, Akamai,
+DataDome) block on the very first request — retrying raw `curl` never clears it.
+If you have the `web_fetch` tool, use it: it wraps a curl_cffi
+TLS-impersonation grid + headless-browser fallback and is RoE/SSRF-gated.
+Otherwise fetch with curl_cffi directly in bash:
+`python3 -c "from curl_cffi import requests as r; open('/tmp/p.html','w').write(r.get('https://target/', impersonate='chrome').text)"`
+Reserve raw `curl` only for plain-HTTP localhost / internal APIs where there is
+no TLS fingerprint to defeat.
 
 **Heuristics for what to extract** (instead of dumping):
 
@@ -157,9 +175,9 @@ grep -iE 'flag|secret|admin|api' /tmp/root.html | head -20
 
 The tool auto-detects waiting prompts:
 ```
-bash(command="sliver-client console", session="c2")
-bash(command="https -l 443", is_input=True, session="c2")
-bash(command="C-c", is_input=True, session="c2")  # Ctrl+C
+bash(command="sliver-client console", session="c2", description="Open the Sliver client console")
+bash(command="https -l 443", is_input=True, session="c2", description="Start an HTTPS listener on port 443")
+bash(command="C-c", is_input=True, session="c2", description="Send Ctrl+C to the console")  # Ctrl+C
 ```
 
 NEVER start with `is_input=True`. NEVER use `nohup ... &` — use named
@@ -172,10 +190,36 @@ sessions and `background=True` instead.
 - `137` — killed (OOM or size limit) → redirect output to a file
 - `143` — terminated externally
 
-## File Creation
+## File Creation & Reads
 
 ALWAYS use `write_file` for file creation. NEVER `cat > file << EOF` —
 it echoes content back as tool output and wastes context.
+
+- `write_file` requires non-empty `content`; calling it with only `file_path`
+  fails schema validation and wastes the turn. For a large artifact (a full
+  report) write it in sections — one `write_file` then `edit_file` to append
+  the rest — rather than one oversized call. An oversized single `content` is
+  the case a model most often drops or truncates, leaving the call invalid.
+- `write_file` CREATES a new file — it will NOT overwrite. Calling it on a path
+  that already exists fails with "already exists". To change a file that exists,
+  use `edit_file` (targeted string replace), never a second `write_file`. This
+  matters on retries too: if an earlier attempt already wrote the file, the
+  retry must `edit_file` it, not re-`write_file` it.
+- When unsure whether a file exists (e.g. resuming work, or after a retry),
+  `ls` the directory (or `read_file` the path) FIRST, then `write_file` if it is
+  absent or `edit_file` if it is present. Don't `write_file` blind and rely on
+  the error to tell you.
+- Before `read_file`, confirm the path EXISTS and is a file: `ls` the
+  directory and read only what it returns. Never read a path before the bash
+  command or `write_file` that creates it has SUCCEEDED, and never invent an
+  artifact name you have not written — guessed names (`dns.txt`, `api.txt`,
+  `fingerprint.txt`) just return `file_not_found` and burn the turn. `read_file`
+  targets a file, not a directory (`ls` the directory instead).
+- Anything you must re-read on a later turn, or hand to another agent, MUST
+  live under the engagement workspace (`/workspace/...`) — it persists there.
+  `/tmp` is session-local scratch: fine for a transient extract inside one bash
+  session, but gone on a later turn or for a different agent, so a `read_file`
+  / `cat` of a `/tmp` path written earlier elsewhere returns not-found.
 
 ## Sandbox Bash Anti-patterns
 
@@ -187,7 +231,7 @@ produce machine-readable output.
 | Pattern | Why it's bad |
 |---------|--------------|
 | `bash <<'EOF' ... EOF` heredocs in tool calls | Often truncated mid-stream, brittle quoting, ambiguous timeout behavior. |
-| Trailing `&` to "parallelize" (`curl ... & curl ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
+| Trailing `&` to "parallelize" (`nmap ... & nmap ... & wait`) | Backgrounded jobs detach from the tool's stdout/timeout — silent failures, races nobody can read. |
 | `nohup python3 script.py &` | Functionally identical to `&` backgrounding — process detaches, stdout is lost, cannot be timed out by outer wall-clock. Use `timeout N python3 -u -c '...' \\| tee log.txt` or named-session `background=True` instead. |
 | Unbounded `sleep`, `nc -l`, `tail -f`, `while true` | Hits the wall-clock and burns the entire cycle; never produces useful output. |
 | `timeout 5 bash -c ""` (empty command) | Zero-effect probe, recon-scope-creep tell. |

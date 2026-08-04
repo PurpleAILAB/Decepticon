@@ -29,7 +29,7 @@ The key value is never logged here, and ``event_logging`` already redacts
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware
@@ -39,6 +39,7 @@ from pydantic import SecretStr
 from typing_extensions import NotRequired, override
 
 from decepticon.llm.factory import LLMFactory, _model_drops_temperature
+from decepticon.middleware.state_reducers import reduce_converging_value
 from decepticon_core.utils.logging import get_logger
 
 log = get_logger("middleware.proxy_key_override")
@@ -52,10 +53,23 @@ class ProxyKeyState(AgentState):
     SaaS caller threading the key via run ``input`` could never reach
     ``request.state`` (the middleware's reachable read path; ``runtime.context``
     needs a top-level ``context`` field, which the Platform forbids alongside
-    ``config.configurable`` that OSS already uses for tenant context). LastValue
-    (overwrite): set once on the kickoff run, persisted to the checkpoint, and
-    read on every model call (incl. resume runs that send no input). Extends
-    ``AgentState`` so the agent's own channels are preserved.
+    ``config.configurable`` that OSS already uses for tenant context). Set once
+    on the kickoff run, persisted to the checkpoint, and read on every model
+    call (incl. resume runs that send no input). Extends ``AgentState`` so the
+    agent's own channels are preserved.
+
+    Reducer — ``reduce_converging_value`` (NOT the default LastValue): the
+    orchestrator can dispatch two sub-agents in the SAME super-step (the model
+    emits multiple ``task()`` tool calls in one turn). deepagents copies parent
+    state into each sub-agent and does NOT exclude ``proxy_api_key``, so each
+    sub-agent's task() Command writes the key back to the parent in that single
+    tick. A LastValue channel rejects >1 write per step with
+    ``InvalidUpdateError`` ("Can receive only one value per step. Use an
+    Annotated key…"), which crashed the whole run and left ``thread.values``
+    without ``objectives`` / ``subagent_transcripts``. Every writer carries the
+    SAME per-run key, so a converging reducer (keep the non-None write) collapses
+    the concurrent writes to one value — the same treatment the launcher-set
+    context channels (``target_url``, ``language`` …) already use.
 
     The value is sensitive (a LiteLLM virtual key). It is never logged here;
     ``event_logging`` redacts ``api_key`` fields; the SaaS stream + state
@@ -64,7 +78,7 @@ class ProxyKeyState(AgentState):
     exposure (NOT run metadata, so it does not regress the metadata-leak fix).
     """
 
-    proxy_api_key: NotRequired[str]
+    proxy_api_key: NotRequired[Annotated[str, reduce_converging_value]]
 
 
 def _read_proxy_key(request: Any) -> str:

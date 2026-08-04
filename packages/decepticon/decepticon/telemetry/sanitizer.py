@@ -67,7 +67,15 @@ def _msgs_bucket(n: int) -> str:
     return "50+"
 
 
-def _slug(value: Any) -> str | None:
+def slug(value: Any) -> str | None:
+    """Normalize ``value`` to a short slug, or ``None`` if it isn't one.
+
+    Absent fields MUST map to ``None``: ``str(None)`` is the perfectly
+    slug-shaped ``"none"``, which shipped as a real value for every missing
+    ``model`` / ``severity`` / ``phase`` and made those fields useless.
+    """
+    if value is None or value == "":
+        return None
     s = str(value).replace("/", "-").lower()
     return s if _SLUG.match(s) and len(s) <= 64 else None
 
@@ -93,7 +101,7 @@ def event_to_tier_a(record: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     ev: dict[str, Any] = {"type": etype, "ts": float(ts)}
-    agent = _slug(record.get("agent")) if record.get("agent") else None
+    agent = slug(record.get("agent")) if record.get("agent") else None
     if agent:
         ev["agent"] = agent
 
@@ -102,27 +110,27 @@ def event_to_tier_a(record: dict[str, Any]) -> dict[str, Any] | None:
         p = {}
 
     if etype == "tool.call":
-        tool = _slug(p.get("tool"))
+        tool = slug(p.get("tool"))
         if tool:
             ev["tool"] = tool
     elif etype == "finding.created":
         # Ground-truth finding classification from the Finding model / KG.
         for key in ("tool", "severity", "phase", "confidence", "detected"):
-            slug = _slug(p.get(key))
-            if slug:
-                ev[key] = slug
+            value = slug(p.get(key))
+            if value:
+                ev[key] = value
         # cwe / mitre_techniques come from the shared id-list block below.
     elif etype == "opplan.update":
-        phase = _slug(p.get("phase"))
+        phase = slug(p.get("phase"))
         if phase:
             ev["phase"] = phase
         # OPPLAN status uses a different vocabulary than tool-result `status`
         # (pending/blocked/… vs ok/error), so it maps to its own field.
-        status_obj = _slug(p.get("status"))
+        status_obj = slug(p.get("status"))
         if status_obj:
             ev["status_objective"] = status_obj
     elif etype == "tool.result":
-        tool = _slug(p.get("tool"))
+        tool = slug(p.get("tool"))
         if tool:
             ev["tool"] = tool
         status = _STATUS_MAP.get(str(p.get("status", "")))
@@ -132,7 +140,7 @@ def event_to_tier_a(record: dict[str, Any]) -> dict[str, Any] | None:
         if isinstance(n, int):
             ev["output_bucket"] = _output_bucket(n)
     elif etype == "llm.call":
-        model = _slug(p.get("model"))
+        model = slug(p.get("model"))
         if model:
             ev["model"] = model
         m = p.get("messages")
@@ -172,8 +180,13 @@ _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("user_pass", re.compile(r"\b[\w.-]+:[^\s:@/]{4,}@[\w.-]+")),
     ("opaque_blob", re.compile(r"\b[A-Za-z0-9+/]{40,}={0,2}\b")),
     (
+        # `(?!\()` must mirror redact._DOMAIN exactly: whatever this scanner
+        # rejects, the masker has to be able to mask, or the step is dropped
+        # whole instead of masked. Dotted code (`json.load(`) is not a host.
         "domain",
-        re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}\b(?!\()", re.IGNORECASE
+        ),
     ),
 )
 
