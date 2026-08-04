@@ -6,6 +6,11 @@ import {
   canOpenExternal,
   canNavigateInApp,
   composeUpArgs,
+  composeProcessEnv,
+  DASHBOARD_READY_ATTEMPTS,
+  DASHBOARD_READY_DELAY_MS,
+  dashboardResponseReady,
+  isTrustedIpcSender,
   missingConfigFiles,
   readInstalledVersion,
   resolveDesktopConfig,
@@ -25,6 +30,25 @@ test("resolveDesktopConfig defaults to the installed Decepticon home and WEB_POR
   assert.equal(cfg.envFile, path.join("/home/alice", ".decepticon", ".env"));
   assert.equal(cfg.webContainer, "decepticon-web");
   assert.equal(cfg.project, "decepticon");
+});
+
+test("resolveDesktopConfig reads WEB_PORT from the installed env file", () => {
+  const cfg = resolveDesktopConfig(
+    { DECEPTICON_HOME: "/opt/decepticon" },
+    { homedir: () => "/unused", platform: "linux" },
+    () => "POSTGRES_PASSWORD=secret\nWEB_PORT=4310\n",
+  );
+
+  assert.equal(cfg.dashboardUrl, "http://localhost:4310");
+});
+
+test("resolveDesktopConfig prefers explicit Compose project", () => {
+  const cfg = resolveDesktopConfig({
+    DECEPTICON_COMPOSE_PROJECT: "vendor-dev",
+    DECEPTICON_STACK_NAME: "lab",
+  });
+
+  assert.equal(cfg.project, "vendor-dev");
 });
 
 test("readInstalledVersion pins Compose to the installed CLI version", () => {
@@ -62,6 +86,26 @@ test("composeUpArgs starts only the dynamic web profile", () => {
   ]);
 });
 
+test("composeProcessEnv clears implicit profile activation", () => {
+  assert.deepEqual(composeProcessEnv({ COMPOSE_PROFILES: "c2-sliver" }, "1.1.40"), {
+    COMPOSE_PROFILES: "",
+    DECEPTICON_COMPOSE_PROJECT: "",
+    DECEPTICON_STACK_NAME: "",
+    DECEPTICON_VERSION: "1.1.40",
+  });
+});
+
+test("composeProcessEnv preserves explicit stack ownership", () => {
+  assert.deepEqual(
+    composeProcessEnv({ DECEPTICON_COMPOSE_PROJECT: "vendor-dev", DECEPTICON_STACK_NAME: "lab" }),
+    {
+      COMPOSE_PROFILES: "",
+      DECEPTICON_COMPOSE_PROJECT: "vendor-dev",
+      DECEPTICON_STACK_NAME: "lab",
+    },
+  );
+});
+
 test("missingConfigFiles catches incomplete desktop setup before Compose runs", () => {
   const cfg = resolveDesktopConfig(
     { DECEPTICON_HOME: "/tmp/decepticon-desktop-smoke" },
@@ -80,6 +124,27 @@ test("canNavigateInApp only allows same-origin dashboard navigation", () => {
   assert.equal(canNavigateInApp("not a url", "http://localhost:3000"), false);
 });
 
+test("dashboardResponseReady rejects external redirects", () => {
+  assert.equal(
+    dashboardResponseReady(
+      { status: 200, url: "https://example.com/login" },
+      "http://localhost:3000",
+    ),
+    false,
+  );
+  assert.equal(
+    dashboardResponseReady(
+      { status: 200, url: "http://localhost:3000/engagements" },
+      "http://localhost:3000",
+    ),
+    true,
+  );
+});
+
+test("dashboard readiness wait covers the Compose health budget", () => {
+  assert.ok(DASHBOARD_READY_ATTEMPTS * DASHBOARD_READY_DELAY_MS >= 150_000);
+});
+
 test("canOpenExternal allows web URLs", () => {
   assert.equal(canOpenExternal("https://docs.decepticon.red"), true);
   assert.equal(canOpenExternal("http://localhost:3000"), true);
@@ -89,6 +154,28 @@ test("canOpenExternal rejects non-web protocols", () => {
   assert.equal(canOpenExternal("file:///etc/passwd"), false);
   assert.equal(canOpenExternal("decepticon://run"), false);
   assert.equal(canOpenExternal("not a url"), false);
+});
+
+test("isTrustedIpcSender accepts only the generated status document main frame", () => {
+  const mainFrame = { url: "data:text/html;charset=utf-8,%3Ch1%3Eoffline%3C%2Fh1%3E" };
+  const webContents = { mainFrame };
+
+  assert.equal(isTrustedIpcSender({ sender: webContents, senderFrame: mainFrame }, webContents), true);
+  assert.equal(
+    isTrustedIpcSender(
+      { sender: webContents, senderFrame: { url: "http://localhost:3000" } },
+      webContents,
+    ),
+    false,
+  );
+  assert.equal(
+    isTrustedIpcSender(
+      { sender: webContents, senderFrame: { url: mainFrame.url } },
+      webContents,
+    ),
+    false,
+  );
+  assert.equal(isTrustedIpcSender({ sender: {}, senderFrame: mainFrame }, webContents), false);
 });
 
 test("setupGuide gives OS-specific install and onboarding commands", () => {
