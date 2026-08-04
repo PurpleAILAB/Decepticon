@@ -1277,6 +1277,14 @@ _FATAL_STATUS = frozenset({400, 401, 403, 404})
 _STATUS_IN_MSG = re.compile(r"(?:error\s*code|status(?:_code)?|http)\D{0,8}(\d{3})", re.I)
 
 
+def _provider_status_code(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status
+    nested_status = getattr(getattr(exc, "response", None), "status_code", None)
+    return nested_status if isinstance(nested_status, int) else None
+
+
 def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
     """Tag a provider exception as ``retryable`` or ``fatal``.
 
@@ -1295,11 +1303,8 @@ def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
     if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
         return "retryable"
 
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        response = getattr(exc, "response", None)
-        status = getattr(response, "status_code", None)
-    if isinstance(status, int):
+    status = _provider_status_code(exc)
+    if status is not None:
         if status in _FATAL_STATUS:
             return "fatal"
         if status in _RETRYABLE_STATUS:
@@ -1359,9 +1364,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
     safe_msg = _redact_secrets(msg)
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
+    status = _provider_status_code(exc)
     status_match = _STATUS_IN_MSG.search(msg)
     is_bad_request = (
         "badrequest" in err_type.lower()
