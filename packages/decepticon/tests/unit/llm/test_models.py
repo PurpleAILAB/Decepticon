@@ -1,6 +1,9 @@
 """Unit tests for decepticon_core.types.llm — tier-based, credentials-aware mapping."""
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from decepticon_core.types.llm import (
     AGENT_TEMPERATURES,
@@ -15,6 +18,8 @@ from decepticon_core.types.llm import (
     Tier,
     resolve_chain,
 )
+
+_LITELLM_CONFIG = Path(__file__).resolve().parents[5] / "config" / "litellm.yaml"
 
 # ── Enum sanity ─────────────────────────────────────────────────────────
 
@@ -88,6 +93,14 @@ class TestMethodModels:
         assert m[Tier.HIGH] == "minimax/MiniMax-M3"
         assert m[Tier.MID] == "minimax/MiniMax-M2.7-highspeed"
         assert Tier.LOW not in m
+
+    def test_default_bedrock_models_are_registered(self):
+        config = yaml.safe_load(_LITELLM_CONFIG.read_text(encoding="utf-8"))
+        routes = {entry["model_name"]: entry["litellm_params"] for entry in config["model_list"]}
+
+        for model in METHOD_MODELS[AuthMethod.BEDROCK_API].values():
+            assert routes[model]["model"] == model
+            assert "api_key" not in routes[model]
 
 
 # ── Per-agent tier table ────────────────────────────────────────────────
