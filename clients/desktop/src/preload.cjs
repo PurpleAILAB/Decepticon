@@ -11,6 +11,7 @@ const channels = {
 };
 
 window.addEventListener("DOMContentLoaded", () => {
+  if (window.location.protocol !== "data:") return;
   document.addEventListener("click", (event) => {
     const button = event.target?.closest?.("[data-desktop-action]");
     if (!button) return;

@@ -1,10 +1,23 @@
-import { app, BrowserWindow, Menu, clipboard, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, clipboard, ipcMain, session, shell } from "electron";
 import fs from "node:fs";
 import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { canNavigateInApp, canOpenExternal, composeUpArgs, missingConfigFiles, readInstalledVersion, resolveDesktopConfig, setupGuide } from "./config.mjs";
+import {
+  canNavigateInApp,
+  canOpenExternal,
+  composeProcessEnv,
+  composeUpArgs,
+  DASHBOARD_READY_ATTEMPTS,
+  DASHBOARD_READY_DELAY_MS,
+  dashboardResponseReady,
+  isTrustedIpcSender,
+  missingConfigFiles,
+  readInstalledVersion,
+  resolveDesktopConfig,
+  setupGuide,
+} from "./config.mjs";
 import { statusHtml } from "./ui.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,7 +38,7 @@ async function dashboardReady() {
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
     const res = await fetch(config.dashboardUrl, { signal: controller.signal });
-    return res.status < 500;
+    return dashboardResponseReady(res, config.dashboardUrl);
   } catch {
     return false;
   } finally {
@@ -51,7 +64,10 @@ async function runningWebImageCurrent() {
   });
 }
 
-async function waitForDashboardReady(attempts = 40, delayMs = 1500) {
+async function waitForDashboardReady(
+  attempts = DASHBOARD_READY_ATTEMPTS,
+  delayMs = DASHBOARD_READY_DELAY_MS,
+) {
   for (let i = 0; i < attempts; i += 1) {
     if (await dashboardReady()) return true;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -79,9 +95,7 @@ async function bootstrapDashboard() {
 }
 
 function composeEnv() {
-  const env = { ...process.env };
-  if (installedVersion) env.DECEPTICON_VERSION = installedVersion;
-  return env;
+  return composeProcessEnv(process.env, installedVersion);
 }
 
 function startWebProfile() {
@@ -139,13 +153,19 @@ function registerIpcHandlers() {
   ipcMain.removeAllListeners("desktop:copy-install");
   ipcMain.removeAllListeners("desktop:copy-onboard");
   ipcMain.removeAllListeners("desktop:copy-api-key");
-  ipcMain.on("desktop:retry", bootstrapDashboard);
-  ipcMain.on("desktop:open-in-browser", () => openWebUrl(config.dashboardUrl));
-  ipcMain.on("desktop:open-download", () => openWebUrl(setup.downloadUrl));
-  ipcMain.on("desktop:open-docs", () => openWebUrl(setup.docsUrl));
-  ipcMain.on("desktop:copy-install", () => clipboard.writeText(setup.installCommand));
-  ipcMain.on("desktop:copy-onboard", () => clipboard.writeText(setup.onboardCommand));
-  ipcMain.on("desktop:copy-api-key", () => clipboard.writeText(setup.apiKeyCommand));
+  const onStatusAction = (channel, action) => {
+    ipcMain.on(channel, (event) => {
+      const webContents = mainWindow?.webContents;
+      if (webContents && isTrustedIpcSender(event, webContents)) action();
+    });
+  };
+  onStatusAction("desktop:retry", bootstrapDashboard);
+  onStatusAction("desktop:open-in-browser", () => openWebUrl(config.dashboardUrl));
+  onStatusAction("desktop:open-download", () => openWebUrl(setup.downloadUrl));
+  onStatusAction("desktop:open-docs", () => openWebUrl(setup.docsUrl));
+  onStatusAction("desktop:copy-install", () => clipboard.writeText(setup.installCommand));
+  onStatusAction("desktop:copy-onboard", () => clipboard.writeText(setup.onboardCommand));
+  onStatusAction("desktop:copy-api-key", () => clipboard.writeText(setup.apiKeyCommand));
 }
 
 function createWindow() {
@@ -182,6 +202,10 @@ function createWindow() {
     }
   });
 
+  mainWindow.webContents.on("will-redirect", (event, url) => {
+    if (!canNavigateInApp(url, config.dashboardUrl)) event.preventDefault();
+  });
+
   registerIpcHandlers();
   bootstrapDashboard();
 }
@@ -197,6 +221,10 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    session.defaultSession.setPermissionCheckHandler(() => false);
+    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(false);
+    });
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
