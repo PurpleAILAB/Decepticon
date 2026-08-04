@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 
 import {
+  canOpenExternal,
   canNavigateInApp,
   composeUpArgs,
   missingConfigFiles,
@@ -77,6 +78,17 @@ test("canNavigateInApp only allows same-origin dashboard navigation", () => {
   assert.equal(canNavigateInApp("http://localhost:3000/engagements", "http://localhost:3000"), true);
   assert.equal(canNavigateInApp("https://docs.decepticon.red", "http://localhost:3000"), false);
   assert.equal(canNavigateInApp("not a url", "http://localhost:3000"), false);
+});
+
+test("canOpenExternal allows web URLs", () => {
+  assert.equal(canOpenExternal("https://docs.decepticon.red"), true);
+  assert.equal(canOpenExternal("http://localhost:3000"), true);
+});
+
+test("canOpenExternal rejects non-web protocols", () => {
+  assert.equal(canOpenExternal("file:///etc/passwd"), false);
+  assert.equal(canOpenExternal("decepticon://run"), false);
+  assert.equal(canOpenExternal("not a url"), false);
 });
 
 test("setupGuide gives OS-specific install and onboarding commands", () => {
