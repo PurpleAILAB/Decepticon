@@ -4,7 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { canNavigateInApp, composeUpArgs, missingConfigFiles, readInstalledVersion, resolveDesktopConfig, setupGuide } from "./config.mjs";
+import { canNavigateInApp, canOpenExternal, composeUpArgs, missingConfigFiles, readInstalledVersion, resolveDesktopConfig, setupGuide } from "./config.mjs";
 import { statusHtml } from "./ui.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +127,10 @@ function startWebProfile() {
   });
 }
 
+function openWebUrl(url) {
+  if (canOpenExternal(url)) shell.openExternal(url);
+}
+
 function registerIpcHandlers() {
   ipcMain.removeAllListeners("desktop:retry");
   ipcMain.removeAllListeners("desktop:open-in-browser");
@@ -136,9 +140,9 @@ function registerIpcHandlers() {
   ipcMain.removeAllListeners("desktop:copy-onboard");
   ipcMain.removeAllListeners("desktop:copy-api-key");
   ipcMain.on("desktop:retry", bootstrapDashboard);
-  ipcMain.on("desktop:open-in-browser", () => shell.openExternal(config.dashboardUrl));
-  ipcMain.on("desktop:open-download", () => shell.openExternal(setup.downloadUrl));
-  ipcMain.on("desktop:open-docs", () => shell.openExternal(setup.docsUrl));
+  ipcMain.on("desktop:open-in-browser", () => openWebUrl(config.dashboardUrl));
+  ipcMain.on("desktop:open-download", () => openWebUrl(setup.downloadUrl));
+  ipcMain.on("desktop:open-docs", () => openWebUrl(setup.docsUrl));
   ipcMain.on("desktop:copy-install", () => clipboard.writeText(setup.installCommand));
   ipcMain.on("desktop:copy-onboard", () => clipboard.writeText(setup.onboardCommand));
   ipcMain.on("desktop:copy-api-key", () => clipboard.writeText(setup.apiKeyCommand));
@@ -167,14 +171,14 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openWebUrl(url);
     return { action: "deny" };
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (!canNavigateInApp(url, config.dashboardUrl)) {
       event.preventDefault();
-      shell.openExternal(url);
+      openWebUrl(url);
     }
   });
 

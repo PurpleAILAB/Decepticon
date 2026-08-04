@@ -74,3 +74,11 @@ export function canNavigateInApp(targetUrl, dashboardUrl) {
     return false;
   }
 }
+
+export function canOpenExternal(targetUrl) {
+  try {
+    return ["http:", "https:"].includes(new URL(targetUrl).protocol);
+  } catch {
+    return false;
+  }
+}
