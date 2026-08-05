@@ -27,7 +27,15 @@ The dashboard is **dynamic-spawn** (v1.1.8+): it does NOT come up on `decepticon
 npm run desktop
 ```
 
-The desktop app is an Electron shell for the same local dashboard. It loads `http://localhost:${WEB_PORT:-3000}`, auto-starts the existing `web` Docker Compose profile from `~/.decepticon` when the dashboard is offline, keeps external links in the system browser, and shows a CLI-style status console if setup is incomplete.
+The desktop app is an Electron shell for the product UI:
+
+| Mode | When | Target |
+|---|---|---|
+| `auto` (default) | Local install present → local; otherwise cloud | `http://localhost:${WEB_PORT:-3000}` or `https://app.decepticon.red` |
+| `cloud` | `DECEPTICON_DESKTOP_MODE=cloud` | Hosted app (website login, Google/GitHub OAuth in-window) |
+| `local` | `DECEPTICON_DESKTOP_MODE=local` | Local dashboard; auto-starts the `web` Docker Compose profile from `~/.decepticon` when offline |
+
+Sessions use a persistent Electron partition (`persist:decepticon-desktop`). Optional one-shot cookie import: drop a Cookie-Editor JSON or Netscape export at `~/.decepticon/desktop-cookies.txt` (or set `DECEPTICON_DESKTOP_COOKIES`). Prefer interactive sign-in; never commit session tokens. External links stay in the system browser; status UI matches the product branding when bootstrap is blocked.
 
 Headless operators (no CLI, e.g. CI) can drive the same lifecycle from the host shell:
 ```bash

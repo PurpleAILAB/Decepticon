@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  canNavigateInApp,
+  canNavigateInShell,
   canOpenExternal,
   composeProcessEnv,
   composeUpArgs,
@@ -14,6 +14,8 @@ import {
   dashboardResponseReady,
   isTrustedIpcSender,
   missingConfigFiles,
+  parseCookieImport,
+  readCookieImportFile,
   readInstalledVersion,
   resolveDesktopConfig,
   setupGuide,
@@ -27,17 +29,26 @@ const config = resolveDesktopConfig();
 const installedVersion = readInstalledVersion(config);
 const setup = setupGuide();
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
+const appSession = () => session.fromPartition(config.partition);
 let mainWindow;
 let starting = false;
+let cookiesImported = false;
 
-app.setName("Decepticon Desktop");
+app.setName("Decepticon");
 if (process.platform === "win32") app.setAppUserModelId("red.decepticon.desktop");
 
 async function dashboardReady() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
   try {
-    const res = await fetch(config.dashboardUrl, { signal: controller.signal });
+    const res = await fetch(config.dashboardUrl, {
+      signal: controller.signal,
+      redirect: "manual",
+    });
+    // Cloud login pages often 302 to /login — still "ready" for the shell.
+    if (config.isCloud) {
+      return res.status > 0 && res.status < 500;
+    }
     return dashboardResponseReady(res, config.dashboardUrl);
   } catch {
     return false;
@@ -77,13 +88,74 @@ async function waitForDashboardReady(
 
 async function loadStatus(message, detail) {
   if (!mainWindow) return;
-  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(statusHtml({ ...config, iconDataUrl, installedVersion, setup }, message, detail))}`);
+  await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(statusHtml({
+    ...config,
+    iconDataUrl,
+    installedVersion,
+    setup,
+  }, message, detail))}`);
+}
+
+async function importSessionCookies() {
+  if (cookiesImported) return { imported: 0, skipped: true };
+  cookiesImported = true;
+  const raw = readCookieImportFile(config.cookiesPath);
+  if (!raw) return { imported: 0, skipped: true };
+
+  let cookies;
+  try {
+    cookies = parseCookieImport(raw, config.dashboardUrl);
+  } catch (err) {
+    return { imported: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+  if (cookies.length === 0) return { imported: 0, skipped: true };
+
+  const ses = appSession();
+  let imported = 0;
+  for (const cookie of cookies) {
+    try {
+      await ses.cookies.set(cookie);
+      imported += 1;
+    } catch {
+      // Skip malformed or rejected cookies; login can still proceed interactively.
+    }
+  }
+  await ses.cookies.flushStore();
+  return { imported };
+}
+
+async function loadDashboard() {
+  if (!mainWindow) return;
+  const result = await importSessionCookies();
+  if (result.error) {
+    await loadStatus("cookie import failed", result.error);
+  }
+  await mainWindow.loadURL(config.dashboardUrl);
 }
 
 async function bootstrapDashboard() {
+  if (config.isCloud) {
+    await loadStatus("connecting to Decepticon cloud…");
+    if (await dashboardReady()) {
+      await loadDashboard();
+      return;
+    }
+    await loadStatus(
+      "cloud app unreachable",
+      [
+        `Could not reach ${config.dashboardUrl}.`,
+        "Check your network, then retry — or switch to a local dashboard:",
+        "",
+        "  set DECEPTICON_DESKTOP_MODE=local",
+        "  npm run desktop",
+      ].join("\n"),
+    );
+    return;
+  }
+
   if (await dashboardReady()) {
     if (await runningWebImageCurrent()) {
-      await mainWindow?.loadURL(config.dashboardUrl);
+      await loadDashboard();
       return;
     }
     await loadStatus(`dashboard is running on an older image; updating to v${installedVersion}…`);
@@ -106,7 +178,7 @@ function startWebProfile() {
       "Missing required Decepticon config file(s):",
       ...missing.map(([label, file]) => `- ${label}: ${file}`),
       "",
-      "Use the buttons below to copy the installer, run onboarding, or open docs.",
+      "Use the buttons below to open the cloud app, copy the installer, or run onboarding.",
       "Onboarding handles API keys, telemetry consent, auto-update settings, Docker checks, and model/provider setup.",
     ].join("\n");
     loadStatus("desktop setup incomplete; bootstrap blocked", detail);
@@ -131,7 +203,7 @@ function startWebProfile() {
     if (code === 0) {
       await loadStatus("web profile started; waiting for dashboard readiness…", output);
       if (await waitForDashboardReady()) {
-        await mainWindow?.loadURL(config.dashboardUrl);
+        await loadDashboard();
         return;
       }
       await loadStatus("web profile started, but dashboard did not become ready", output);
@@ -150,6 +222,7 @@ function registerIpcHandlers() {
   ipcMain.removeAllListeners("desktop:open-in-browser");
   ipcMain.removeAllListeners("desktop:open-download");
   ipcMain.removeAllListeners("desktop:open-docs");
+  ipcMain.removeAllListeners("desktop:open-cloud");
   ipcMain.removeAllListeners("desktop:copy-install");
   ipcMain.removeAllListeners("desktop:copy-onboard");
   ipcMain.removeAllListeners("desktop:copy-api-key");
@@ -161,6 +234,7 @@ function registerIpcHandlers() {
   };
   onStatusAction("desktop:retry", bootstrapDashboard);
   onStatusAction("desktop:open-in-browser", () => openWebUrl(config.dashboardUrl));
+  onStatusAction("desktop:open-cloud", () => openWebUrl(config.cloudAppUrl || setup.cloudAppUrl));
   onStatusAction("desktop:open-download", () => openWebUrl(setup.downloadUrl));
   onStatusAction("desktop:open-docs", () => openWebUrl(setup.docsUrl));
   onStatusAction("desktop:copy-install", () => clipboard.writeText(setup.installCommand));
@@ -175,10 +249,12 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     show: false,
-    title: "Decepticon Desktop",
+    title: "Decepticon",
     icon: iconPath,
     backgroundColor: "#050609",
+    autoHideMenuBar: true,
     webPreferences: {
+      partition: config.partition,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -191,19 +267,39 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Keep OAuth / product popups inside the shell when allowed; else system browser.
+    if (canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 520,
+          height: 720,
+          autoHideMenuBar: true,
+          backgroundColor: "#050609",
+          webPreferences: {
+            partition: config.partition,
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true,
+          },
+        },
+      };
+    }
     openWebUrl(url);
     return { action: "deny" };
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!canNavigateInApp(url, config.dashboardUrl)) {
+    if (!canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
       event.preventDefault();
       openWebUrl(url);
     }
   });
 
   mainWindow.webContents.on("will-redirect", (event, url) => {
-    if (!canNavigateInApp(url, config.dashboardUrl)) event.preventDefault();
+    if (!canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
+      event.preventDefault();
+    }
   });
 
   registerIpcHandlers();
@@ -221,8 +317,9 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
-    session.defaultSession.setPermissionCheckHandler(() => false);
-    session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    const ses = appSession();
+    ses.setPermissionCheckHandler(() => false);
+    ses.setPermissionRequestHandler((_webContents, _permission, callback) => {
       callback(false);
     });
     createWindow();
