@@ -20,6 +20,13 @@ import {
   resolveDesktopConfig,
   setupGuide,
 } from "./config.mjs";
+import {
+  applicationMenuTemplate,
+  browserWindowChrome,
+  dockerComposeSpawn,
+  dockerInspectSpawn,
+  envAssignHint,
+} from "./platform.mjs";
 import { statusHtml } from "./ui.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,7 +42,16 @@ let starting = false;
 let cookiesImported = false;
 
 app.setName("Decepticon");
-if (process.platform === "win32") app.setAppUserModelId("red.decepticon.desktop");
+if (process.platform === "win32") {
+  app.setAppUserModelId("red.decepticon.desktop");
+}
+if (process.platform === "darwin" && app.dock) {
+  try {
+    app.dock.setIcon(iconPath);
+  } catch {
+    // Dock icon is best-effort; PNG may be rejected on some macOS builds.
+  }
+}
 
 async function dashboardReady() {
   const controller = new AbortController();
@@ -59,19 +75,17 @@ async function dashboardReady() {
 
 async function runningWebImageCurrent() {
   if (!installedVersion) return true;
+  const { command, args, options } = dockerInspectSpawn(config.webContainer, {
+    env: composeEnv(),
+  });
   return new Promise((resolve) => {
-    execFile(
-      "docker",
-      ["inspect", "--format", "{{.Config.Image}}", config.webContainer],
-      { env: composeEnv(), timeout: 2000 },
-      (err, stdout) => {
-        if (err) {
-          resolve(true);
-          return;
-        }
-        resolve(stdout.trim().endsWith(`:${installedVersion}`));
-      },
-    );
+    execFile(command, args, options, (err, stdout) => {
+      if (err) {
+        resolve(true);
+        return;
+      }
+      resolve(String(stdout).trim().endsWith(`:${installedVersion}`));
+    });
   });
 }
 
@@ -146,8 +160,8 @@ async function bootstrapDashboard() {
         `Could not reach ${config.dashboardUrl}.`,
         "Check your network, then retry — or switch to a local dashboard:",
         "",
-        "  set DECEPTICON_DESKTOP_MODE=local",
-        "  npm run desktop",
+        envAssignHint("DECEPTICON_DESKTOP_MODE", "local"),
+        "npm run desktop",
       ].join("\n"),
     );
     return;
@@ -186,9 +200,10 @@ function startWebProfile() {
   }
 
   starting = true;
-  const args = composeUpArgs(config);
-  const child = spawn("docker", args, { env: composeEnv(), stdio: ["ignore", "pipe", "pipe"] });
-  let output = `$ docker ${args.join(" ")}\n`;
+  const composeArgs = composeUpArgs(config);
+  const { command, args, options } = dockerComposeSpawn(composeArgs, { env: composeEnv() });
+  const child = spawn(command, args, options);
+  let output = `$ ${command} ${args.join(" ")}\n`;
   const append = (chunk) => {
     output = (output + chunk.toString()).slice(-8000);
   };
@@ -196,7 +211,12 @@ function startWebProfile() {
   child.stderr.on("data", append);
   child.on("error", async (err) => {
     starting = false;
-    await loadStatus("docker compose launch failed", err.message);
+    const hint = process.platform === "win32"
+      ? "Is Docker Desktop running and `docker` on PATH?"
+      : process.platform === "darwin"
+        ? "Is Docker Desktop running? Try: open -a Docker"
+        : "Is the Docker daemon running? Try: sudo systemctl start docker";
+    await loadStatus("docker compose launch failed", `${err.message}\n${hint}`);
   });
   child.on("close", async (code) => {
     starting = false;
@@ -242,17 +262,20 @@ function registerIpcHandlers() {
   onStatusAction("desktop:copy-api-key", () => clipboard.writeText(setup.apiKeyCommand));
 }
 
+function installApplicationMenu() {
+  const template = applicationMenuTemplate(process.platform, app.name);
+  // Wire Help → docs on Windows/Linux (macOS uses system Help less often for this).
+  const help = template.find((item) => item.label === "Help");
+  if (help && Array.isArray(help.submenu) && help.submenu[0]) {
+    help.submenu[0].click = () => openWebUrl(setup.docsUrl);
+  }
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 1000,
-    minHeight: 700,
-    show: false,
-    title: "Decepticon",
+    ...browserWindowChrome(process.platform),
     icon: iconPath,
-    backgroundColor: "#050609",
-    autoHideMenuBar: true,
     webPreferences: {
       partition: config.partition,
       contextIsolation: true,
@@ -264,6 +287,7 @@ function createWindow() {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
+    if (process.platform === "darwin") mainWindow?.focus();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -274,7 +298,7 @@ function createWindow() {
         overrideBrowserWindowOptions: {
           width: 520,
           height: 720,
-          autoHideMenuBar: true,
+          autoHideMenuBar: process.platform !== "darwin",
           backgroundColor: "#050609",
           webPreferences: {
             partition: config.partition,
@@ -316,7 +340,7 @@ if (!hasSingleInstanceLock) {
   });
 
   app.whenReady().then(() => {
-    Menu.setApplicationMenu(null);
+    installApplicationMenu();
     const ses = appSession();
     ses.setPermissionCheckHandler(() => false);
     ses.setPermissionRequestHandler((_webContents, _permission, callback) => {
@@ -324,11 +348,14 @@ if (!hasSingleInstanceLock) {
     });
     createWindow();
     app.on("activate", () => {
+      // macOS: re-open window when dock icon is clicked and none remain.
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else mainWindow?.show();
     });
   });
 }
 
 app.on("window-all-closed", () => {
+  // macOS apps stay alive until explicit Cmd+Q.
   if (process.platform !== "darwin") app.quit();
 });

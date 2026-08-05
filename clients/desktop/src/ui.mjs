@@ -9,6 +9,10 @@ export function statusHtml(config, message = "checking dashboard…", detail = "
   const cloudUrl = escapeHtml(config.cloudAppUrl || setup.cloudAppUrl || "https://app.decepticon.red");
   const dashboardUrl = escapeHtml(config.dashboardUrl || cloudUrl);
   const modeLabel = config.isCloud ? "cloud" : "local";
+  const cookiesPathHint = escapeHtml(
+    config.cookiesPath
+    || (config.decepticonHome ? `${config.decepticonHome}/desktop-cookies.txt` : "~/.decepticon/desktop-cookies.txt"),
+  );
   const icon = config.iconDataUrl
     ? `<img class="mark" src="${escapeHtml(config.iconDataUrl)}" alt="Decepticon chameleon" />`
     : `<div class="mark mark-fallback" aria-hidden="true">D</div>`;
@@ -278,7 +282,7 @@ export function statusHtml(config, message = "checking dashboard…", detail = "
           <div><strong>target</strong> <span class="target">${dashboardUrl}</span></div>
           <div><strong>status</strong> <span class="muted">${escapedMessage}</span></div>
         </div>
-        <pre class="detail">${escapedDetail || "Tip: export cookies from app.decepticon.red into ~/.decepticon/desktop-cookies.txt (JSON or Netscape) to restore a browser session. Prefer signing in interactively — do not commit session tokens."}</pre>
+        <pre class="detail">${escapedDetail || `Tip: export cookies from app.decepticon.red into ${cookiesPathHint} (JSON or Netscape) to restore a browser session. Prefer signing in interactively — do not commit session tokens.`}</pre>
         <div class="steps" aria-label="Setup paths">
           <div class="step">
             <strong>1. Cloud app</strong>
