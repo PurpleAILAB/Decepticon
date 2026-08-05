@@ -208,7 +208,7 @@ class TestLLMFactory:
     def test_get_model_returns_chat_model(self):
         model = self.factory.get_model("recon")
         assert model is not None
-        assert model.model_name == "anthropic/claude-haiku-4-5"
+        assert model.model_name == "anthropic/claude-sonnet-5"
 
     def test_get_model_caches_instances(self):
         m1 = self.factory.get_model("recon")
@@ -229,7 +229,7 @@ class TestLLMFactory:
             "openai/gpt-5-nano",
             "gemini/gemini-2.5-flash-lite",
             "deepseek/deepseek-v4-flash",
-            "openrouter/anthropic/claude-haiku-4-5",
+            "openrouter/anthropic/claude-sonnet-5",
             "nvidia_nim/meta/llama-3.2-3b-instruct",
         ]
 
@@ -243,7 +243,7 @@ class TestLLMFactory:
             "deepseek/deepseek-v4-pro",
             "xai/grok-4.3",
             "mistral/mistral-large-latest",
-            "openrouter/anthropic/claude-opus-4-8",
+            "openrouter/anthropic/claude-fable-5",
             "nvidia_nim/meta/llama-3.3-70b-instruct",
         ]
 

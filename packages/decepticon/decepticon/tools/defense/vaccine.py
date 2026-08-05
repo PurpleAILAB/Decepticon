@@ -188,7 +188,7 @@ def vaccine_record_defense(
             n
             for n in graph.by_kind(NodeKind.FINDING)
             if finding_id.lower() in (n.label or "").lower()
-            or finding_id.lower() in (n.key or "").lower()
+            or finding_id.lower() in str(n.props.get("key") or "").lower()
         ]
         for fn in finding_nodes:
             graph.upsert_edge(Edge.make(defense_node.id, fn.id, EdgeKind.MITIGATES, weight=0.8))
@@ -256,7 +256,7 @@ def vaccine_verify(
             n
             for n in graph.by_kind(NodeKind.FINDING)
             if finding_id.lower() in (n.label or "").lower()
-            or finding_id.lower() in (n.key or "").lower()
+            or finding_id.lower() in str(n.props.get("key") or "").lower()
         ]
         for fn in finding_nodes:
             graph.upsert_edge(Edge.make(verify_node.id, fn.id, EdgeKind.VERIFIES, weight=0.9))
