@@ -22,6 +22,13 @@ The dashboard is **dynamic-spawn** (v1.1.8+): it does NOT come up on `decepticon
 | `/web url` | prints `http://localhost:${WEB_PORT}` without touching docker |
 | `/dashboard` | alias for `/web` |
 
+**Desktop app (contributors):**
+```bash
+npm run desktop
+```
+
+The desktop app is an Electron shell for the same local dashboard. It loads `http://localhost:${WEB_PORT:-3000}`, auto-starts the existing `web` Docker Compose profile from `~/.decepticon` when the dashboard is offline, keeps external links in the system browser, and shows a CLI-style status console if setup is incomplete.
+
 Headless operators (no CLI, e.g. CI) can drive the same lifecycle from the host shell:
 ```bash
 docker compose -p decepticon --profile web up -d --no-build web
