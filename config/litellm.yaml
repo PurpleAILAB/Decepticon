@@ -76,6 +76,22 @@ model_list:
       input_cost_per_token: 0.000001
       output_cost_per_token: 0.000005
 
+  # AWS Bedrock uses the standard credential chain and AWS_REGION/AWS_REGION_NAME.
+  # Keep these aliases identical to METHOD_MODELS so Bedrock-only installs
+  # can use the normal tier resolver without per-role model overrides.
+  - model_name: bedrock/anthropic.claude-opus-4-7
+    litellm_params:
+      model: bedrock/anthropic.claude-opus-4-7
+      additional_drop_params: ["temperature"]
+
+  - model_name: bedrock/anthropic.claude-sonnet-4-6
+    litellm_params:
+      model: bedrock/anthropic.claude-sonnet-4-6
+
+  - model_name: bedrock/anthropic.claude-haiku-4-5-20251001-v1:0
+    litellm_params:
+      model: bedrock/anthropic.claude-haiku-4-5-20251001-v1:0
+
   # ── OpenAI ───────────────────────────────────────────────────────────
   # Per-1M USD as of 2026-05-14 (OpenAI API):
   #   gpt-5.5         $5.00 / $30.00   (built-in map missing → set)
