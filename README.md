@@ -41,7 +41,7 @@
 <br/>
 
 <div align="center">
-  <video src="https://github.com/user-attachments/assets/b3fd40d8-e859-4a39-97f4-bd825694ad96" width="800" controls></video>
+  <video src="https://github.com/user-attachments/assets/2344d6f7-fa44-42bb-9492-1c203e56df3c" width="800" controls></video>
 </div>
 
 <div align="center">
