@@ -334,6 +334,30 @@ def test_build_model_entry_routes_gateway_to_openai_with_api_base() -> None:
     }
 
 
+def test_build_model_entry_routes_orcarouter_gateway() -> None:
+    """OrcaRouter is an OpenAI-compatible gateway: the alias is rewritten to
+    ``openai/<namespace-slug>`` and pinned to api.orcarouter.ai with the
+    ``sk-orca-`` bearer key. The slug keeps OrcaRouter's namespace prefix
+    (``anthropic/…``), which the gateway requires — bare model names are
+    rejected with ``model_not_found``.
+    """
+    entry = build_model_entry("orcarouter/anthropic/claude-opus-5")
+
+    assert entry["model_name"] == "orcarouter/anthropic/claude-opus-5"
+    assert entry["litellm_params"] == {
+        "model": "openai/anthropic/claude-opus-5",
+        "api_key": "os.environ/ORCAROUTER_API_KEY",
+        "api_base": "https://api.orcarouter.ai/v1",
+    }
+
+
+def test_validate_model_name_accepts_orcarouter_prefix() -> None:
+    """``orcarouter/`` is in OPENAI_COMPAT_GATEWAYS so the validator must let
+    it through (the prefix is unioned into ALLOWED_DYNAMIC_PROVIDERS).
+    """
+    validate_model_name("orcarouter/anthropic/claude-haiku-4.5")  # must not raise
+
+
 def test_build_model_entry_gateway_preserves_multi_slash_slug() -> None:
     """Gateways whose ids embed slashes (``creator/model``) keep the full
     slug after ``openai/`` so the gateway receives the id it expects.

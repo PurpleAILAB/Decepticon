@@ -173,6 +173,11 @@ const SUPPORTED_MODELS: Record<string, string[]> = {
     "cfgateway/anthropic/claude-sonnet-4-6",
     "cfgateway/anthropic/claude-haiku-4-5",
   ],
+  "OrcaRouter": [
+    "orcarouter/anthropic/claude-opus-5",
+    "orcarouter/anthropic/claude-sonnet-5",
+    "orcarouter/anthropic/claude-haiku-4.5",
+  ],
   // Local
   "Ollama (local)": ["ollama_chat/qwen3-coder:30b (or your OLLAMA_MODEL)"],
   "Ollama Cloud": ["ollama_chat/<your OLLAMA_CLOUD_MODEL>"],

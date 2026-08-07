@@ -65,6 +65,7 @@ collide in the model_list.
   zenmux_api       zenmux/anthropic/…opus-4.6    zenmux/anthropic/…sonnet-4.6  zenmux/anthropic/…haiku-4.5
   qianfan_api      qianfan/ernie-4.5-turbo-128k  qianfan/ernie-4.5-turbo-32k   qianfan/ernie-speed-pro-128k
   cloudflare_gw    cfgateway/anthropic/…opus     cfgateway/anthropic/…sonnet   cfgateway/anthropic/…haiku
+  orcarouter_api   orcarouter/anthropic/…opus-5  orcarouter/anthropic/…sonnet-5 orcarouter/anthropic/…haiku-4.5
 
 Code-heavy override
 -------------------
@@ -164,6 +165,7 @@ class AuthMethod(StrEnum):
     ZENMUX_API = "zenmux_api"  # ZenMux multi-vendor gateway
     QIANFAN_API = "qianfan_api"  # Baidu Qianfan (ERNIE) v2 OpenAI-compatible
     CLOUDFLARE_GATEWAY_API = "cloudflare_gateway_api"  # Cloudflare AI Gateway
+    ORCAROUTER_API = "orcarouter_api"  # OrcaRouter (orcarouter.ai)
 
 
 # ── Tier × AuthMethod → model_id matrix ─────────────────────────────────
@@ -501,6 +503,17 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "cfgateway/anthropic/claude-opus-4-6",
         Tier.MID: "cfgateway/anthropic/claude-sonnet-4-6",
         Tier.LOW: "cfgateway/anthropic/claude-haiku-4-5",
+    },
+    AuthMethod.ORCAROUTER_API: {
+        # OrcaRouter — https://api.orcarouter.ai/v1, ``sk-orca-`` bearer key.
+        # Multi-vendor gateway + zero-trust guardrail router for AI agents.
+        # Model ids must keep the namespace prefix (``anthropic/…`` etc.) —
+        # bare names are rejected with ``model_not_found``. Route the
+        # Anthropic family for tool-call reliability parity with the native
+        # anthropic path (same rationale as the ZenMux entry).
+        Tier.HIGH: "orcarouter/anthropic/claude-opus-5",
+        Tier.MID: "orcarouter/anthropic/claude-sonnet-5",
+        Tier.LOW: "orcarouter/anthropic/claude-haiku-4.5",
     },
 }
 

@@ -181,6 +181,7 @@ OPENAI_COMPAT_GATEWAYS: dict[str, tuple[str, str]] = {
     "synthetic": ("https://api.synthetic.new/openai/v1", "SYNTHETIC_API_KEY"),
     "zenmux": ("https://zenmux.ai/api/v1", "ZENMUX_API_KEY"),
     "qianfan": ("https://qianfan.baidubce.com/v2", "QIANFAN_API_KEY"),
+    "orcarouter": ("https://api.orcarouter.ai/v1", "ORCAROUTER_API_KEY"),
     # Per-account base URL: the operator sets it to their Cloudflare AI
     # Gateway OpenAI-compat endpoint (``…/compat``). Resolved by LiteLLM at
     # request time, so an unset base only fails the call (with a clear 404),
@@ -618,7 +619,7 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
     elif provider in OPENAI_COMPAT_GATEWAYS:
         # OpenAI-compatible gateway / aggregator (OpenCode Zen, Vercel AI
         # Gateway, Hugging Face Router, Venice, NanoGPT, Synthetic, ZenMux,
-        # Kimi-for-Coding, Qianfan, Cloudflare AI Gateway). Strip the gateway
+        # Kimi-for-Coding, Qianfan, Cloudflare AI Gateway, OrcaRouter). Strip the gateway
         # prefix from the alias, remap to ``openai/<slug>``, and pin the
         # gateway's base URL + bearer key. The slug may itself contain
         # slashes (``vercel/anthropic/claude-opus-4.6`` →
