@@ -35,7 +35,9 @@ async def test_cve_enrichment_records_workspace_evidence(tmp_path: Path, monkeyp
     monkeypatch.setattr(research_tools.cve_mod, "lookup_cves", fake_lookup_cves)
 
     payload = json.loads(
-        await research_tools.cve_enrich_dependencies.ainvoke({"path": str(manifest), "min_score": 7.0})
+        await research_tools.cve_enrich_dependencies.ainvoke(
+            {"path": str(manifest), "min_score": 7.0}
+        )
     )
 
     assert payload["manifest_path"] == "requirements.txt"

@@ -11,7 +11,9 @@ def test_extra_headers_accepts_string_map(monkeypatch: pytest.MonkeyPatch) -> No
     assert _resolve_extra_headers() == {"HTTP-Referer": "https://example.test"}
 
 
-def test_extra_headers_rejects_malformed_or_protected_values(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_extra_headers_rejects_malformed_or_protected_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("DECEPTICON_LLM_EXTRA_HEADERS", "[]")
     with pytest.raises(ValueError, match="JSON object"):
         _resolve_extra_headers()

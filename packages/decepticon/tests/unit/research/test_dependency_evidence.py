@@ -49,4 +49,3 @@ def test_dependency_evidence_preserves_nested_npm_chain(tmp_path: Path) -> None:
     chains = _dependency_chains(lock)
 
     assert chains[("child", "2.0.0", "npm")] == ["parent", "child"]
-

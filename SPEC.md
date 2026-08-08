@@ -53,3 +53,4 @@ B2|2026-08-09|dependency-evidence test skipped helper call|invoke `_dependency_c
 B3|2026-08-09|test expected raw CVSS, not KEV-adjusted score|assert existing composite score
 B4|2026-08-09|async cleanup test asserted before unrelated start completed|wait for seeded workload starts
 B5|2026-08-09|new imports violated repository ordering|apply ruff import ordering
+B6|2026-08-09|new Python files missed repository formatter|apply ruff format before CI

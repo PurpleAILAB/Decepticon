@@ -679,12 +679,17 @@ def _adapt_api_spec(
         for method, route, raw_url in _iter_postman_items(document.get("item")):
             operations.append((method, route, raw_url, {}))
     else:
-        return {"error": "unsupported API document: expected OpenAPI or Postman collection", "operations": 0}
+        return {
+            "error": "unsupported API document: expected OpenAPI or Postman collection",
+            "operations": 0,
+        }
 
     observations: list[dict[str, Any]] = []
     operation_keys: list[str] = []
     for method, route, base_url, operation in operations:
-        operation_id = operation.get("operationId") if isinstance(operation.get("operationId"), str) else ""
+        operation_id = (
+            operation.get("operationId") if isinstance(operation.get("operationId"), str) else ""
+        )
         key = f"{source_key}::{method}::{route}"
         operation_keys.append(key)
         parameters = operation.get("parameters")
@@ -707,14 +712,20 @@ def _adapt_api_spec(
             }
         )
     if not observations:
-        return {"source": source_kind, "operations": 0, "records": {"created": 0, "merged": 0, "edges": 0}}
+        return {
+            "source": source_kind,
+            "operations": 0,
+            "records": {"created": 0, "merged": 0, "edges": 0},
+        }
     observations.append(
         {
             "kind": "SourceFile",
             "key": source_key,
             "label": path.name,
             "props": {"source": source_kind, "sha256": source_hash},
-            "edges_out": [{"to_key": key, "kind": "CONTAINS", "weight": 1.0} for key in operation_keys],
+            "edges_out": [
+                {"to_key": key, "kind": "CONTAINS", "weight": 1.0} for key in operation_keys
+            ],
         }
     )
     records = store.record_observations(
