@@ -20,15 +20,15 @@ the same adapter signature.
 
 from __future__ import annotations
 
-import json
 import hashlib
-import yaml
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import defusedxml.ElementTree as ET
+import yaml
 
 from decepticon.middleware.kg_internal.ai_surface import (
     technology_for_banner,

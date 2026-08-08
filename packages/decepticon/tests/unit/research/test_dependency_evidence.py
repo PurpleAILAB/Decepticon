@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from decepticon.tools.research.tools import _dependency_chains, _dependency_provenance, _manifest_path
+from decepticon.tools.research.tools import (
+    _dependency_chains,
+    _dependency_provenance,
+    _manifest_path,
+)
 
 
 def test_dependency_evidence_uses_workspace_relative_manifest_path(

@@ -52,3 +52,4 @@ B1|2026-08-09|`uv run pytest` timeout before collection|retry direct venv pytest
 B2|2026-08-09|dependency-evidence test skipped helper call|invoke `_dependency_chains` before assertion
 B3|2026-08-09|test expected raw CVSS, not KEV-adjusted score|assert existing composite score
 B4|2026-08-09|async cleanup test asserted before unrelated start completed|wait for seeded workload starts
+B5|2026-08-09|new imports violated repository ordering|apply ruff import ordering
