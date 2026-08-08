@@ -21,6 +21,8 @@ the same adapter signature.
 from __future__ import annotations
 
 import json
+import hashlib
+import yaml
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -569,6 +571,162 @@ def _adapt_sarif(
 
 # ── Register built-ins at import time ──────────────────────────────────
 
+
+_HTTP_METHODS = frozenset({"delete", "get", "head", "options", "patch", "post", "put", "trace"})
+
+
+def _has_external_ref(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key == "$ref" and isinstance(nested, str):
+                parsed = urlparse(nested)
+                if parsed.scheme or parsed.netloc:
+                    return True
+            if _has_external_ref(nested):
+                return True
+    elif isinstance(value, list):
+        return any(_has_external_ref(nested) for nested in value)
+    return False
+
+
+def _load_api_document(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    parsed: Any
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        parsed = yaml.safe_load(text)
+    else:
+        parsed = json.loads(text)
+    if not isinstance(parsed, dict):
+        raise ValueError("API document must be an object")
+    if _has_external_ref(parsed):
+        raise ValueError("external $ref is not supported")
+    return parsed
+
+
+def _postman_url(request: dict[str, Any]) -> str:
+    url = request.get("url")
+    if isinstance(url, str):
+        return url
+    if not isinstance(url, dict):
+        return ""
+    raw = url.get("raw")
+    if isinstance(raw, str):
+        return raw
+    host = url.get("host", [])
+    path = url.get("path", [])
+    host_text = ".".join(str(part) for part in host) if isinstance(host, list) else str(host)
+    path_text = "/".join(str(part) for part in path) if isinstance(path, list) else str(path)
+    protocol = str(url.get("protocol") or "https")
+    return f"{protocol}://{host_text}/{path_text}" if host_text else f"/{path_text}"
+
+
+def _iter_postman_items(items: Any) -> list[tuple[str, str, str]]:
+    operations: list[tuple[str, str, str]] = []
+    if not isinstance(items, list):
+        return operations
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        operations.extend(_iter_postman_items(item.get("item")))
+        request = item.get("request")
+        if not isinstance(request, dict):
+            continue
+        raw_url = _postman_url(request)
+        if not raw_url:
+            continue
+        parsed = urlparse(raw_url)
+        method = str(request.get("method") or "GET").upper()
+        operations.append((method, parsed.path or "/", raw_url))
+    return operations
+
+
+def _adapt_api_spec(
+    path: Path,
+    store: KGStore,
+    engagement: str,
+    created_by: str,
+    source_episode_id: str,
+) -> dict[str, Any]:
+    """Import a local OpenAPI or Postman document without contacting its target."""
+    try:
+        document = _load_api_document(path)
+    except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
+        return {"error": f"API document parse failed: {exc}", "operations": 0}
+
+    source_hash = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    source_key = f"api-spec::{source_hash}"
+    operations: list[tuple[str, str, str, dict[str, Any]]] = []
+    source_kind = ""
+
+    paths = document.get("paths")
+    if isinstance(paths, dict) and ("openapi" in document or "swagger" in document):
+        source_kind = "openapi"
+        servers = document.get("servers")
+        base_url = ""
+        if isinstance(servers, list) and servers and isinstance(servers[0], dict):
+            candidate = servers[0].get("url")
+            if isinstance(candidate, str):
+                base_url = candidate
+        for route, item in paths.items():
+            if not isinstance(route, str) or not isinstance(item, dict):
+                continue
+            for method, operation in item.items():
+                if method.lower() not in _HTTP_METHODS or not isinstance(operation, dict):
+                    continue
+                operations.append((method.upper(), route, base_url, operation))
+    elif isinstance(document.get("info"), dict) and "item" in document:
+        source_kind = "postman"
+        for method, route, raw_url in _iter_postman_items(document.get("item")):
+            operations.append((method, route, raw_url, {}))
+    else:
+        return {"error": "unsupported API document: expected OpenAPI or Postman collection", "operations": 0}
+
+    observations: list[dict[str, Any]] = []
+    operation_keys: list[str] = []
+    for method, route, base_url, operation in operations:
+        operation_id = operation.get("operationId") if isinstance(operation.get("operationId"), str) else ""
+        key = f"{source_key}::{method}::{route}"
+        operation_keys.append(key)
+        parameters = operation.get("parameters")
+        observations.append(
+            {
+                "kind": "Entrypoint",
+                "key": key,
+                "label": f"{method} {route}",
+                "props": {
+                    "api_operation": True,
+                    "method": method,
+                    "path": route,
+                    "base_url": base_url,
+                    "operation_id": operation_id,
+                    "parameter_count": len(parameters) if isinstance(parameters, list) else 0,
+                    "source": source_kind,
+                    "execution_state": "imported",
+                    "requires_roe": True,
+                },
+            }
+        )
+    if not observations:
+        return {"source": source_kind, "operations": 0, "records": {"created": 0, "merged": 0, "edges": 0}}
+    observations.append(
+        {
+            "kind": "SourceFile",
+            "key": source_key,
+            "label": path.name,
+            "props": {"source": source_kind, "sha256": source_hash},
+            "edges_out": [{"to_key": key, "kind": "CONTAINS", "weight": 1.0} for key in operation_keys],
+        }
+    )
+    records = store.record_observations(
+        observations,
+        engagement=engagement,
+        created_by=created_by,
+        source_episode_id=source_episode_id,
+    )
+    return {"source": source_kind, "operations": len(operation_keys), "records": records}
+
+
+register_adapter("api_spec", _adapt_api_spec)
 
 register_adapter("nmap_xml", _adapt_nmap_xml)
 register_adapter("nuclei_jsonl", _adapt_nuclei_jsonl)
