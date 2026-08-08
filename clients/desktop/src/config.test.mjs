@@ -286,7 +286,7 @@ test("parseCookieImport accepts Cookie-Editor JSON for the app host", () => {
   const cookies = parseCookieImport(raw, CLOUD_APP_URL);
   assert.equal(cookies.length, 1);
   assert.equal(cookies[0].name, "__Secure-better-auth.session_token");
-  assert.equal(cookies[0].value, "example.token+value");
+  assert.equal(cookies[0].value, "example.token%2Bvalue");
   assert.equal(cookies[0].secure, true);
   assert.equal(cookies[0].httpOnly, true);
   assert.equal(cookies[0].sameSite, "lax");

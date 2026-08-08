@@ -272,26 +272,8 @@ function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    ...browserWindowChrome(process.platform),
-    icon: iconPath,
-    webPreferences: {
-      partition: config.partition,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      preload: path.join(__dirname, "preload.cjs"),
-    },
-  });
-
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
-    if (process.platform === "darwin") mainWindow?.focus();
-  });
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Keep OAuth / product popups inside the shell when allowed; else system browser.
+function secureWebContents(webContents) {
+  webContents.setWindowOpenHandler(({ url }) => {
     if (canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
       return {
         action: "allow",
@@ -313,21 +295,44 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  webContents.on("will-navigate", (event, url) => {
     if (!canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
       event.preventDefault();
       openWebUrl(url);
     }
   });
-
-  mainWindow.webContents.on("will-redirect", (event, url) => {
+  webContents.on("will-redirect", (event, url) => {
     if (!canNavigateInShell(url, config.dashboardUrl, { cloud: config.isCloud })) {
       event.preventDefault();
     }
   });
+}
+
+app.on("web-contents-created", (_event, webContents) => {
+  secureWebContents(webContents);
+});
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    ...browserWindowChrome(process.platform),
+    icon: iconPath,
+    webPreferences: {
+      partition: config.partition,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: path.join(__dirname, "preload.cjs"),
+    },
+  });
+
+  mainWindow.once("ready-to-show", () => {
+    mainWindow?.show();
+    if (process.platform === "darwin") mainWindow?.focus();
+  });
 
   registerIpcHandlers();
   bootstrapDashboard();
+
 }
 
 if (!hasSingleInstanceLock) {

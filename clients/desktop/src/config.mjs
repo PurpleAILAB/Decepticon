@@ -318,7 +318,7 @@ function normalizeCookieEntry(entry, dashboard) {
   const details = {
     url,
     name: String(entry.name),
-    value: decodeCookieValue(String(entry.value)),
+    value: String(entry.value),
     path: cookiePath,
     secure,
     httpOnly: Boolean(entry.httpOnly),
@@ -347,13 +347,6 @@ function normalizeCookieEntry(entry, dashboard) {
   return details;
 }
 
-function decodeCookieValue(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
 
 function normalizeSameSite(value) {
   const v = String(value || "lax").toLowerCase();
