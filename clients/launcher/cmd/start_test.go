@@ -185,3 +185,31 @@ func TestApplyAutoUpdate_NoUpdateFlagAlwaysWins(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckDefaultCredentials_RefusesDefaults(t *testing.T) {
+	err := checkDefaultCredentials(map[string]string{
+		"LITELLM_MASTER_KEY": "sk-decepticon-master",
+		"POSTGRES_PASSWORD":  "decepticon",
+	})
+	if err == nil {
+		t.Fatal("default credentials must be refused")
+	}
+}
+
+func TestCheckDefaultCredentials_AllowsCustom(t *testing.T) {
+	err := checkDefaultCredentials(map[string]string{
+		"LITELLM_MASTER_KEY": "sk-9f2c1a7b3d5e",
+		"POSTGRES_PASSWORD":  "x9k2m4p7q1",
+	})
+	if err != nil {
+		t.Fatalf("custom credentials must be allowed, got: %v", err)
+	}
+}
+
+func TestCheckDefaultCredentials_AllowsUnset(t *testing.T) {
+	// Unset keys resolve to "" via config.Get — neither matches a default,
+	// so an empty env must not block startup.
+	if err := checkDefaultCredentials(map[string]string{}); err != nil {
+		t.Fatalf("unset credentials must be allowed, got: %v", err)
+	}
+}
