@@ -80,6 +80,9 @@ LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # ``DECEPTICON_LLM_TIMEOUT_SECONDS`` (explicit, whole-coroutine) >
 # ``DECEPTICON_LLM__TIMEOUT`` (the published env knob) > default.
 LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
+LLM_EXTRA_HEADERS_ENV = "DECEPTICON_LLM_EXTRA_HEADERS"
+LLM_DISABLE_STREAMING_ENV = "DECEPTICON_LLM_DISABLE_STREAMING"
+_PROTECTED_EXTRA_HEADERS = frozenset({"authorization", "host", "content-length"})
 
 
 def _model_max_output_tokens(model: str) -> int:
@@ -159,6 +162,33 @@ def _resolve_llm_timeout_seconds() -> float:
     if value <= 0:
         raise ValueError(f"{source} must be greater than 0")
     return value
+
+
+def _resolve_extra_headers() -> dict[str, str] | None:
+    raw = os.getenv(LLM_EXTRA_HEADERS_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} must be a JSON object") from exc
+    if not isinstance(parsed, dict) or not all(
+        isinstance(name, str) and isinstance(value, str) for name, value in parsed.items()
+    ):
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} must be a JSON object of string headers")
+    protected = sorted(name for name in parsed if name.lower() in _PROTECTED_EXTRA_HEADERS)
+    if protected:
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} cannot override {', '.join(protected)}")
+    return parsed
+
+
+def _resolve_disable_streaming() -> bool:
+    raw = os.getenv(LLM_DISABLE_STREAMING_ENV, "").strip().lower()
+    if not raw or raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(f"{LLM_DISABLE_STREAMING_ENV} must be a boolean")
 
 
 async def call_with_timeout(coro: Awaitable[Any], timeout: float) -> Any:
@@ -1679,6 +1709,8 @@ class LLMFactory:
         belt-and-suspenders for any future client that bypasses this
         factory.
         """
+        disable_streaming = _resolve_disable_streaming()
+        extra_headers = _resolve_extra_headers()
         kwargs: dict[str, Any] = {
             "model": model,
             "base_url": self._proxy.url,
@@ -1694,14 +1726,16 @@ class LLMFactory:
             # on those callbacks — without this, every consumer (CLI renderer,
             # web run console) receives each agent message as one finished
             # block instead of token deltas.
-            "streaming": True,
+            "streaming": not disable_streaming,
             # Streaming responses omit usage unless it is explicitly requested,
             # and the measurement/cost path reads ``usage_metadata`` off the
             # aggregated message (middleware/event_logging.py). Enabling this
             # alongside ``streaming`` keeps per-run spend + prompt-cache
             # accounting intact.
-            "stream_usage": True,
+            "stream_usage": not disable_streaming,
         }
+        if extra_headers is not None:
+            kwargs["default_headers"] = extra_headers
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}
         elif _model_is_deepseek_thinking(model):

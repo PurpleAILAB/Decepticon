@@ -211,6 +211,8 @@ class Decision:
 
 
 def _glob_match(pattern: str, candidate: str) -> bool:
+    if pattern.startswith("*.") and pattern.count("*") == 1 and "?" not in pattern:
+        return candidate.lower().endswith(pattern[1:].lower())
     regex = "^" + re.escape(pattern).replace(r"\*", "[^.]+").replace(r"\?", ".") + "$"
     return re.match(regex, candidate, re.IGNORECASE) is not None
 
