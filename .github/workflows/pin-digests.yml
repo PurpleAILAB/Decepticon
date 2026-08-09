@@ -29,11 +29,10 @@ jobs:
 
       - name: Resolve digests for released version
         id: digests
-        env:
-          VERSION: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          version="${VERSION#v}"
+          # GITHUB_REF_NAME is the tag (e.g. v1.1.42) for a release event.
+          version="${GITHUB_REF_NAME#v}"
           images="decepticon-litellm decepticon-langgraph decepticon-cli decepticon-skillogy decepticon-sandbox decepticon-c2-sliver decepticon-web"
           : > image-digests.txt
           for image in ${images}; do
