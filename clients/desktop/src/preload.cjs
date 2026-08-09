@@ -3,6 +3,7 @@ const { ipcRenderer } = require("electron");
 const channels = {
   retry: "desktop:retry",
   openInBrowser: "desktop:open-in-browser",
+  openCloud: "desktop:open-cloud",
   openDownload: "desktop:open-download",
   openDocs: "desktop:open-docs",
   copyInstall: "desktop:copy-install",
