@@ -51,6 +51,11 @@ docker-compose*.yml  text eol=lf
 *.jpeg               binary
 *.gif                binary
 *.ico                binary
+*.mp4                binary
+*.webm               binary
+*.mov                binary
+*.glb                binary
+*.gltf               binary
 *.svg                text eol=lf
 *.pdf                binary
 *.zip                binary

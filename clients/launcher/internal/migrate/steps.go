@@ -106,9 +106,9 @@ func applyTelemetryReconsent(c *Ctx) (string, error) {
 	consent := confirm(
 		"Share anonymous + masked red-team telemetry?",
 		telemetryConsentBlurb,
-		"Yes, share (recommended)",
-		"No, keep it off",
-		true, // default Yes
+		"Yes, share",
+		"No, keep it off (recommended)",
+		false, // default No — telemetry is opt-in
 	)
 
 	mode := "research"

@@ -285,6 +285,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		ui.Warning("set DECEPTICON_OPSCONTROL_SOCK_HOST: " + err.Error())
 	}
 
+	// 4.5. Refuse to start with default credentials. The compose file
+	// ships sk-decepticon-master / decepticon as fallbacks so a bare
+	// `docker compose up` still works for dev, but the launcher is the
+	// supported path — a default-keyed LiteLLM proxy on a reachable host
+	// is a free LLM proxy for anyone who finds it. Fail loud with the fix.
+	if err := checkDefaultCredentials(env); err != nil {
+		return err
+	}
+
 	// 5. Start services
 	c := compose.New()
 
@@ -339,6 +348,26 @@ func runStart(cmd *cobra.Command, args []string) error {
 // host.docker.internal in /etc/hosts; native-WSL Docker installs need
 // the Windows host IP from /etc/resolv.conf; an Ollama running inside
 // the WSL distro itself sits on 127.0.0.1. Whichever returns 2xx wins.
+// checkDefaultCredentials refuses to start when the compose fallback
+// credentials are still in effect. The compose file defaults to
+// sk-decepticon-master / decepticon so a bare `docker compose up` works
+// for dev; the launcher is the supported path and must not bring up a
+// default-keyed proxy. Returns an error with the one-command fix.
+func checkDefaultCredentials(env map[string]string) error {
+	master := config.Get(env, "LITELLM_MASTER_KEY", "")
+	pgPass := config.Get(env, "POSTGRES_PASSWORD", "")
+	if master != "sk-decepticon-master" && pgPass != "decepticon" {
+		return nil
+	}
+	return fmt.Errorf(
+		"refusing to start with default credentials (LITELLM_MASTER_KEY=%q, POSTGRES_PASSWORD=%q).\n"+
+			"Generate strong values and set them in %s, then re-run:\n"+
+			"  openssl rand -hex 32 | sed 's/^/sk-/'   # LITELLM_MASTER_KEY\n"+
+			"  openssl rand -hex 24                    # POSTGRES_PASSWORD\n"+
+			"or run `decepticon onboard` to set them interactively.",
+		master, pgPass, config.EnvPath())
+}
+
 func probeOllamaIfSelected(env map[string]string) {
 	priority := strings.ToLower(env["DECEPTICON_AUTH_PRIORITY"])
 	hasOllama := strings.Contains(","+priority+",", ",ollama_local,")

@@ -85,6 +85,20 @@ Every image is signed with Cosign (keyless OIDC) and ships a CycloneDX SBOM.
 The `:latest` tag and the published release appear only *after* every image is
 verified, so a half-finished release never moves the `:latest` tag.
 
+## Digest pinning
+
+`pin-digests.yml` runs on every published release and uploads
+`image-digests.txt` — one line per image, `ghcr.io/purpleailab/<image>:<version>@sha256:<digest>` —
+as a release asset. Operators who want immutable, tamper-evident deploys pin
+their compose stack to the digest form instead of the moving `:stable` /
+`:latest` channel tags:
+
+```yaml
+image: ghcr.io/purpleailab/decepticon-litellm@sha256:<digest>
+```
+
+The digest is the manifest-list digest, so it covers all published platforms.
+
 ## Pre-releases
 
 A tag whose version contains a hyphen (`v1.2.0-rc.1`) is treated as a

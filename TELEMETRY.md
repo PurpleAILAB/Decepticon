@@ -2,16 +2,18 @@
 
 Decepticon can send **anonymous usage telemetry** to help maintainers see what
 users ask the agents to do and what the agents actually do. Decepticon is
-free/OSS; this sharing helps fund and improve it. It is **opt-out** — the
-onboard wizard asks for consent (default yes) and you can turn it off at any
+free/OSS; this sharing helps fund and improve it. It is **opt-in** — the
+onboard wizard asks for consent (default no) and you can turn it on at any
 time — and designed for a red-team threat model: **raw prompts, targets,
 credentials, and tool output are never transmitted.**
 
 ## TL;DR
 
-- **On by default for consenting users (opt-out).** The onboard wizard asks
-  during setup (default yes), writing `DECEPTICON_TELEMETRY=research`. Existing
+- **Off by default (opt-in).** The onboard wizard asks during setup (default
+  no), writing `DECEPTICON_TELEMETRY=off` unless you choose to share. Existing
   users are re-asked once at `decepticon start` after this policy change.
+- **Turn it on anytime:** set `DECEPTICON_TELEMETRY=research` (or `basic`) in
+  `~/.decepticon/.env`, or run `decepticon-cli telemetry on`.
 - **Turn it off anytime:** set `DECEPTICON_TELEMETRY=off` (or `basic`) in
   `~/.decepticon/.env`, run `decepticon-cli telemetry off`, or `DO_NOT_TRACK=1`.
 - **Nothing is sent** without a `DECEPTICON_TELEMETRY_ENDPOINT` (shipped in the
@@ -22,7 +24,7 @@ credentials, and tool output are never transmitted.**
 
 | Variable / command | Effect |
 |---|---|
-| `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (template default `research`; unset ⇒ `off`) |
+| `DECEPTICON_TELEMETRY=off\|basic\|research` | consent mode (template default `off`; unset ⇒ `off`) |
 | `DO_NOT_TRACK=1` | standard kill switch — forces `off` |
 | `BENCHMARK_MODE=1` | forces `off` — benchmark prompts are harness-generated, not user activity |
 | `DECEPTICON_TELEMETRY_ENDPOINT=<url>` | gateway URL; unset ⇒ nothing is sent |
