@@ -700,6 +700,25 @@ class TestTemperatureDrop:
     def test_ollama_keeps_temperature(self):
         assert self._drops("ollama_chat/qwen3-coder:30b") is False
 
+    # Kimi for Coding (api.kimi.com/coding) rejects temperature != 1 on
+    # every model. Verified against all four ids, 2026-07.
+
+    def test_kimi_k3_drops_temperature(self):
+        assert self._drops("kimi/k3") is True
+
+    def test_kimi_k3_256k_drops_temperature(self):
+        assert self._drops("kimi/k3-256k") is True
+
+    def test_kimi_for_coding_drops_temperature(self):
+        assert self._drops("kimi/kimi-for-coding") is True
+
+    def test_kimi_for_coding_highspeed_drops_temperature(self):
+        assert self._drops("kimi/kimi-for-coding-highspeed") is True
+
+    def test_kimi_via_custom_prefix_drops_temperature(self):
+        # Operators routing api.kimi.com through custom/ still get the drop.
+        assert self._drops("custom/kimi-for-coding") is True
+
 
 # ── Actionable error translation (issue #107 + community feedback) ──────
 
