@@ -180,6 +180,7 @@ var APIKeyNames = []string{
 	"FIREWORKS_API_KEY",
 	"COHERE_API_KEY",
 	"MOONSHOT_API_KEY",
+	"KIMI_API_KEY",
 	"ZAI_API_KEY",
 	"DASHSCOPE_API_KEY",
 	"GITHUB_TOKEN",
@@ -227,6 +228,7 @@ var keyFormatRules = map[string]struct {
 	"FIREWORKS_API_KEY":              {Prefix: "fw_", Hint: "Fireworks keys start with 'fw_'"},
 	"COHERE_API_KEY":                 {Prefix: "", Hint: ""},
 	"MOONSHOT_API_KEY":               {Prefix: "sk-", Hint: "Moonshot keys start with 'sk-'"},
+	"KIMI_API_KEY":                   {Prefix: "sk-kimi-", Hint: "Kimi for Coding keys start with 'sk-kimi-'"},
 	"ZAI_API_KEY":                    {Prefix: "", Hint: ""},
 	"DASHSCOPE_API_KEY":              {Prefix: "sk-", Hint: "DashScope keys start with 'sk-'"},
 	// GitHub fine-grained PATs start with github_pat_; classic PATs

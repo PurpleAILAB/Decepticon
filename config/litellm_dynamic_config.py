@@ -70,8 +70,9 @@ PROVIDER_API_KEY_ENV: dict[str, str] = {
     # Cerebras Inference — native LiteLLM ``cerebras/`` provider,
     # OpenAI-compatible at api.cerebras.ai/v1.
     "cerebras": "CEREBRAS_API_KEY",
-    # Kimi is the user-facing name for the same Moonshot account.
-    "kimi": "MOONSHOT_API_KEY",
+    # kimi/ is an OpenAI-compat gateway now (OPENAI_COMPAT_GATEWAYS).
+    # Alias kept so older configs still resolve a key env.
+    "kimi": "KIMI_API_KEY",
     # Xiaomi MiMo Open Platform — OpenAI-compatible (/v1/chat/completions).
     # No native LiteLLM provider yet, so routes are registered under the
     # ``openai/`` provider with an api_base override; this entry lets
@@ -181,6 +182,10 @@ OPENAI_COMPAT_GATEWAYS: dict[str, tuple[str, str]] = {
     "synthetic": ("https://api.synthetic.new/openai/v1", "SYNTHETIC_API_KEY"),
     "zenmux": ("https://zenmux.ai/api/v1", "ZENMUX_API_KEY"),
     "qianfan": ("https://qianfan.baidubce.com/v2", "QIANFAN_API_KEY"),
+    # Kimi for Coding (api.kimi.com/coding). Separate platform from the
+    # legacy Moonshot API: own endpoint, keys and model ids. All models
+    # reject temperature != 1, handled in llm/factory.py.
+    "kimi": ("https://api.kimi.com/coding/v1", "KIMI_API_KEY"),
     # Per-account base URL: the operator sets it to their Cloudflare AI
     # Gateway OpenAI-compat endpoint (``…/compat``). Resolved by LiteLLM at
     # request time, so an unset base only fails the call (with a clear 404),
@@ -632,6 +637,10 @@ def build_model_entry(model_name: str) -> dict[str, Any]:
             "api_key": f"os.environ/{api_key_env}",
             "api_base": api_base,
         }
+        if provider == "kimi":
+            # Kimi for Coding rejects temperature != 1. Same proxy-level
+            # drop as the opus entries in config/litellm.yaml.
+            params["additional_drop_params"] = ["temperature"]
     else:
         params = {"model": model_name}
         if provider == "ollama_chat":
