@@ -67,6 +67,7 @@ const (
 	methodFireworksAPI    = "fireworks_api"
 	methodCohereAPI       = "cohere_api"
 	methodMoonshotAPI     = "moonshot_api"
+	methodKimiAPI         = "kimi_api"
 	methodZaiAPI          = "zai_api"
 	methodDashscopeAPI    = "dashscope_api"
 	methodGitHubModelsAPI = "github_models_api"
@@ -135,6 +136,7 @@ var methodOrder = []string{
 	methodFireworksAPI,
 	methodCohereAPI,
 	methodMoonshotAPI,
+	methodKimiAPI,
 	methodZaiAPI,
 	methodDashscopeAPI,
 	// Local last so cloud-preferred default still picks remote
@@ -236,6 +238,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		fireworksKey       string
 		cohereKey          string
 		moonshotKey        string
+		kimiKey            string
 		zaiKey             string
 		dashscopeKey       string
 		githubToken        string
@@ -318,6 +321,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Fireworks AI        — Llama / Mixtral hub (fireworks_ai/*)", methodFireworksAPI),
 					huh.NewOption("Cohere Command      — Command-A / Command-R (cohere/*)", methodCohereAPI),
 					huh.NewOption("Moonshot Kimi K2    — Kimi K2 (moonshot/*)", methodMoonshotAPI),
+					huh.NewOption("Kimi for Coding     — Kimi K3 / K2.7 Coding (kimi/*)", methodKimiAPI),
 					huh.NewOption("Z.ai GLM-4.5        — GLM-4.5 / GLM-4.5-Air (zai/*)", methodZaiAPI),
 					huh.NewOption("Alibaba DashScope   — Qwen Max/Plus/Turbo (dashscope/*)", methodDashscopeAPI),
 					huh.NewOption("LM Studio (local)   — local OpenAI-compatible server (lm_studio/*)", methodLMStudioLocal),
@@ -678,6 +682,18 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("2 / 5  ·  Moonshot Kimi K2").
 			WithHideFunc(func() bool { return !contains(methods, methodMoonshotAPI) }),
 
+		// Step 2-cloud-ix-b: Kimi for Coding (K3 / K2.7)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("KIMI_API_KEY").
+				Description("Kimi for Coding platform (api.kimi.com/coding) — separate\nfrom the legacy Moonshot API. Keys start with 'sk-kimi-'.").
+				Placeholder("sk-kimi-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&kimiKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Kimi for Coding").
+			WithHideFunc(func() bool { return !contains(methods, methodKimiAPI) }),
+
 		// Step 2-cloud-x: Z.ai GLM-4.5
 		huh.NewGroup(
 			huh.NewInput().
@@ -1005,6 +1021,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	}
 	if moonshotKey != "" {
 		values["MOONSHOT_API_KEY"] = strings.TrimSpace(moonshotKey)
+	}
+	if kimiKey != "" {
+		values["KIMI_API_KEY"] = strings.TrimSpace(kimiKey)
 	}
 	if zaiKey != "" {
 		values["ZAI_API_KEY"] = strings.TrimSpace(zaiKey)
