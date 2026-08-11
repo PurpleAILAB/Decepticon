@@ -237,6 +237,7 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.FIREWORKS_API,
     AuthMethod.COHERE_API,
     AuthMethod.MOONSHOT_API,
+    AuthMethod.KIMI_API,
     AuthMethod.ZAI_API,
     AuthMethod.DASHSCOPE_API,
     AuthMethod.GITHUB_MODELS_API,
@@ -289,6 +290,7 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.FIREWORKS_API: "FIREWORKS_API_KEY",
     AuthMethod.COHERE_API: "COHERE_API_KEY",
     AuthMethod.MOONSHOT_API: "MOONSHOT_API_KEY",
+    AuthMethod.KIMI_API: "KIMI_API_KEY",
     AuthMethod.ZAI_API: "ZAI_API_KEY",
     AuthMethod.DASHSCOPE_API: "DASHSCOPE_API_KEY",
     AuthMethod.GITHUB_MODELS_API: "GITHUB_TOKEN",
@@ -338,6 +340,8 @@ _KEY_PREFIX_HINTS: dict[AuthMethod, tuple[str, ...]] = {
     AuthMethod.NVIDIA_API: ("nvapi-",),
     AuthMethod.DEEPSEEK_API: ("sk-",),
     AuthMethod.GITHUB_MODELS_API: ("ghp_", "github_pat_", "gho_", "ghs_"),
+    # Kimi for Coding keys ship as sk-kimi-...; accept plain sk- too.
+    AuthMethod.KIMI_API: ("sk-kimi-", "sk-"),
 }
 
 # Substring tokens that mark a value as obviously not a real key.
@@ -748,6 +752,7 @@ _METHOD_LABEL: dict[AuthMethod, str] = {
     AuthMethod.FIREWORKS_API: "Fireworks AI — API key",
     AuthMethod.COHERE_API: "Cohere — API key",
     AuthMethod.MOONSHOT_API: "Moonshot (Kimi) — API key",
+    AuthMethod.KIMI_API: "Kimi for Coding (K3/K2.7) — API key",
     AuthMethod.ZAI_API: "Z.ai (GLM) — API key",
     AuthMethod.DASHSCOPE_API: "Alibaba DashScope (Qwen) — API key",
     AuthMethod.GITHUB_MODELS_API: "GitHub Models — PAT",
@@ -977,7 +982,17 @@ def _model_drops_temperature(model: str) -> bool:
     Opus 4.x build added to METHOD_MODELS.
     """
     slug = model.rsplit("/", 1)[-1].lower()
-    return slug.startswith("claude-opus-4")
+    return slug.startswith("claude-opus-4") or _model_is_kimi_coding(model)
+
+
+def _model_is_kimi_coding(model: str) -> bool:
+    """Kimi for Coding models reject any temperature other than exactly 1.
+
+    Verified against all four ids on api.kimi.com/coding (2026-07).
+    Dropping the param lets the platform default (=1) apply.
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    return slug.startswith("kimi-for-coding") or slug in ("k3", "k3-256k")
 
 
 def _model_is_deepseek_thinking(model: str) -> bool:
