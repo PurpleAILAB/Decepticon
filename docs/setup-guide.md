@@ -285,6 +285,7 @@ OPENAI_API_KEY=sk-proj-...
 | Replicate | `REPLICATE_API_TOKEN` | `r8_...` | [replicate.com](https://replicate.com) |
 | NVIDIA NIM | `NVIDIA_API_KEY` | `nvapi-...` | [build.nvidia.com](https://build.nvidia.com) |
 | Moonshot (Kimi K2) | `MOONSHOT_API_KEY` | `sk-...` | [platform.moonshot.cn](https://platform.moonshot.cn) |
+| Kimi for Coding (K3 / K2.7) | `KIMI_API_KEY` | `sk-kimi-...` | [kimi.com](https://www.kimi.com) (api.kimi.com/coding) |
 | Z.ai (GLM-4.5) | `ZAI_API_KEY` | `...` | [z.ai/manage](https://z.ai/manage) |
 | Alibaba DashScope (Qwen) | `DASHSCOPE_API_KEY` | `sk-...` | [dashscope.console.aliyun.com](https://dashscope.console.aliyun.com) |
 | GitHub Models | `GITHUB_TOKEN` | `github_pat_...` | [github.com/settings/personal-access-tokens](https://github.com/settings/personal-access-tokens) |
