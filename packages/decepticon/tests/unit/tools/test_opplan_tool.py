@@ -18,9 +18,14 @@ No network / docker / LLM dependencies.
 
 from __future__ import annotations
 
+import pytest
+
 from decepticon.tools.opplan import (
+    _BLOCKED_MIN_NOTES_CHARS,
     _VALID_TRANSITIONS,
     OPPLAN_FILE_SCHEMA_VERSION,
+    _blocked_gate_enabled,
+    _blocked_gate_error,
     _build_opplan_payload,
     _format_opplan_for_agent,
     _is_valid_transition,
@@ -308,3 +313,89 @@ def test_format_empty_plan_is_safe():
     out = _format_opplan_for_agent([], "eng", "threat")
     assert "Progress: 0/0 completed" in out
     assert "No actionable objectives" in out
+
+
+# ---------------------------------------------------------------- blocked gate
+
+
+class TestBlockedGate:
+    """``_blocked_gate_error`` — the evidence bar for ``status="blocked"``.
+
+    A block verdict parks an attack lane; a false one once hid an
+    engagement's top finding for ~14 days. The gate forces blocked notes to
+    carry substance (length) and an evidence reference (artifact / matrix /
+    liveness / operator adjudication).
+    """
+
+    @pytest.fixture(autouse=True)
+    def _gate_on(self, monkeypatch):
+        monkeypatch.delenv("DECEPTICON_OPPLAN_BLOCKED_GATE", raising=False)
+
+    def test_empty_notes_rejected(self):
+        err = _blocked_gate_error("")
+        assert err is not None
+        assert "Cannot mark blocked" in err
+
+    def test_short_notes_rejected(self):
+        err = _blocked_gate_error("WAF blocks everything. Giving up.")
+        assert err is not None
+        assert "substantiate" in err
+
+    def test_long_notes_without_evidence_marker_rejected(self):
+        notes = (
+            "Spent the entire dispatch trying every payload variant I could "
+            "think of against the login endpoint and none of them produced "
+            "anything useful at all, so this lane is done."
+        )
+        assert len(notes) >= _BLOCKED_MIN_NOTES_CHARS
+        err = _blocked_gate_error(notes)
+        assert err is not None
+        assert "no evidence marker" in err
+
+    @pytest.mark.parametrize(
+        "marker",
+        [
+            "EXIT_REPORT",
+            "PIVOT",
+            "CONVERGED",
+            "RECON_BLOCKED",
+            "RECON_BUDGET_EXHAUSTED",
+            "SUMMARY.md",
+            "differential",
+            "unreachable",
+            "liveness",
+            "operator",
+            "scope",
+        ],
+    )
+    def test_each_evidence_marker_accepted(self, marker: str):
+        notes = (
+            f"All vectors exhausted per the documented {marker} evidence; "
+            "every bypass class against every candidate endpoint returned "
+            "negative with signatures recorded, and no plausible chain "
+            "remains against the current finding set."
+        )
+        assert _blocked_gate_error(notes) is None
+
+    def test_marker_match_is_case_insensitive(self):
+        notes = (
+            "Reachability premise disproven by the differential matrix "
+            "(default-UA vs browser-UA vs curl_cffi vs browser across public "
+            "and api paths) — see exploit/exit_report.md for the capture."
+        )
+        assert _blocked_gate_error(notes) is None
+
+    def test_gate_disabled_by_env(self, monkeypatch):
+        monkeypatch.setenv("DECEPTICON_OPPLAN_BLOCKED_GATE", "0")
+        assert _blocked_gate_error("") is None
+
+    @pytest.mark.parametrize("value", ["0", "false", "off", "FALSE"])
+    def test_gate_disable_values(self, monkeypatch, value: str):
+        monkeypatch.setenv("DECEPTICON_OPPLAN_BLOCKED_GATE", value)
+        assert _blocked_gate_enabled() is False
+
+    def test_gate_enabled_by_default_and_other_values(self, monkeypatch):
+        monkeypatch.delenv("DECEPTICON_OPPLAN_BLOCKED_GATE", raising=False)
+        assert _blocked_gate_enabled() is True
+        monkeypatch.setenv("DECEPTICON_OPPLAN_BLOCKED_GATE", "1")
+        assert _blocked_gate_enabled() is True

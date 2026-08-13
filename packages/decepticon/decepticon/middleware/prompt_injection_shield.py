@@ -306,6 +306,10 @@ _FRAMEWORK_TOOL_NAMES: frozenset[str] = frozenset(
         # CLI / Web — not with an attacker — so the quarantine envelope
         # is noise and visually breaks the interview UX. Trust it.
         "ask_user_question",
+        # ``request_scope_amendment`` is the same operator-interrupt
+        # contract (orchestrator → operator scope approval); identical
+        # trust argument as ask_user_question.
+        "request_scope_amendment",
     }
 )
 

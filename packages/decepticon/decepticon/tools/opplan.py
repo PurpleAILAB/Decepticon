@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -50,6 +51,89 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
     # completed is terminal
     # cancelled is terminal
 }
+
+# ── Blocked-evidence gate ─────────────────────────────────────────────
+#
+# A ``blocked`` transition is a claim that no path forward exists — the
+# most expensive verdict in an engagement when it's wrong (a false
+# "WAF blocks everything" blocker once parked an engagement's richest
+# attack lane for ~14 days; a single differential probe later disproved
+# it and immediately produced the engagement's top finding). The gate
+# forces the blocking reason to carry *evidence*, not just prose: the
+# effective notes must meet a minimum substance bar AND reference one of
+# the recognized evidence markers below.
+#
+# The markers intentionally cover the legitimate block shapes:
+#   - sub-agent exit artifacts (EXIT_REPORT / PIVOT / CONVERGED /
+#     RECON_BLOCKED / RECON_BUDGET_EXHAUSTED / SUMMARY.md)
+#   - a differential matrix for reachability / WAF claims ("differential")
+#   - pre-dispatch liveness verdicts ("unreachable" / "liveness")
+#   - operator adjudications ("operator" / "scope")
+#
+# Disable with DECEPTICON_OPPLAN_BLOCKED_GATE=0/false/off (read at call
+# time so tests and operators can toggle without a restart).
+
+_BLOCKED_MIN_NOTES_CHARS = 120
+
+_BLOCKED_EVIDENCE_TOKENS: tuple[str, ...] = (
+    "exit_report",
+    "pivot",
+    "converged",
+    "recon_blocked",
+    "recon_budget_exhausted",
+    "summary.md",
+    "differential",
+    "unreachable",
+    "liveness",
+    "operator",
+    "scope",
+)
+
+_BLOCKED_GATE_ENV = "DECEPTICON_OPPLAN_BLOCKED_GATE"
+
+
+def _blocked_gate_enabled() -> bool:
+    return os.environ.get(_BLOCKED_GATE_ENV, "").strip().lower() not in {"0", "false", "off"}
+
+
+def _blocked_gate_error(notes: str) -> str | None:
+    """Return a rejection message when ``notes`` fails the blocked-evidence
+    gate, else ``None``.
+
+    Pure function over the effective notes (new notes if supplied with the
+    transition, otherwise the objective's existing notes) so it can be
+    unit-tested without LangGraph state plumbing.
+    """
+    if not _blocked_gate_enabled():
+        return None
+
+    text = (notes or "").strip()
+    if len(text) < _BLOCKED_MIN_NOTES_CHARS:
+        return (
+            f"Cannot mark blocked: notes must substantiate the block "
+            f"(≥{_BLOCKED_MIN_NOTES_CHARS} chars; got {len(text)}). State WHAT was "
+            f"attempted, WHY no path forward exists, and reference the evidence. "
+            f"If a sub-agent ran, write/cite its exit artifact "
+            f"(exploit/EXIT_REPORT.md, exploit/PIVOT.md, recon/SUMMARY.md with "
+            f"RECON_BLOCKED). If the claim is reachability/WAF, run and cite a "
+            f"differential matrix (default-UA vs browser-UA vs TLS-impersonated vs "
+            f"full browser, across a public and an API path) — a single-client "
+            f"'blocked' verdict is one data point, not a blocker."
+        )
+
+    lowered = text.lower()
+    if not any(token in lowered for token in _BLOCKED_EVIDENCE_TOKENS):
+        return (
+            "Cannot mark blocked: notes reference no evidence marker. Cite the "
+            "supporting artifact or decision — one of: EXIT_REPORT / PIVOT / "
+            "CONVERGED artifact, RECON_BLOCKED or RECON_BUDGET_EXHAUSTED in "
+            "recon/SUMMARY.md, a differential matrix for reachability claims, a "
+            "liveness/unreachable verdict, or an operator/scope adjudication. "
+            "If none of those exist yet, the block is premature — dispatch the "
+            "work that produces the evidence first."
+        )
+
+    return None
 
 
 def _build_opplan_payload(opplan: OPPLAN) -> dict[str, Any]:
@@ -632,7 +716,12 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
             "Can change: status, notes, owner, add_blocked_by. "
             "Valid transitions: pending→in-progress, in-progress→completed/blocked, "
             "blocked→in-progress (retry) or completed (abandon). "
-            "Include evidence when marking completed, failure reason when marking blocked. "
+            "Include evidence when marking completed. Marking blocked is GATED: "
+            "the notes must substantiate the block AND cite evidence (an exit "
+            "artifact like exploit/EXIT_REPORT.md or recon/SUMMARY.md, a "
+            "differential matrix for reachability/WAF claims, a liveness verdict, "
+            "or an operator/scope adjudication) — premature or evidence-free "
+            "blocks are rejected. "
             "Auto-persists the OPPLAN through the engagement filesystem backend "
             "to /workspace/plan/opplan.json on success. "
             "Call OPPLAN tools sequentially — never in parallel with other OPPLAN tools."
@@ -703,6 +792,24 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
                         ],
                     }
                 )
+
+            # Blocked-evidence gate: a block verdict must carry evidence —
+            # see _blocked_gate_error for the contract and rationale.
+            if status == "blocked":
+                effective_notes = notes if notes is not None else target.get("notes", "")
+                rejection = _blocked_gate_error(effective_notes)
+                if rejection:
+                    return Command(
+                        update={
+                            "messages": [
+                                ToolMessage(
+                                    content=rejection,
+                                    tool_call_id=tool_call_id,
+                                    status="error",
+                                )
+                            ],
+                        }
+                    )
 
             # Check blocked_by dependencies when starting execution
             if status == "in-progress":

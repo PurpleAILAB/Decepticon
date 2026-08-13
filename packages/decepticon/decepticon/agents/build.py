@@ -61,6 +61,7 @@ SAFETY_CRITICAL_TOOLS: frozenset[str] = frozenset(
     {
         "ask_user_question",
         "complete_engagement_planning",
+        "request_scope_amendment",
     }
 )
 

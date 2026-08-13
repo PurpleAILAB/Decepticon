@@ -67,6 +67,7 @@ from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.core.subagent_streaming import StreamingRunnable
 from decepticon.llm import LLMFactory
 from decepticon.tools.defense.vaccine import VACCINE_TOOLS
+from decepticon.tools.interaction import request_scope_amendment
 from decepticon.tools.research.cart import CART_TOOLS
 from decepticon.tools.research.consensus import CONSENSUS_TOOLS
 from decepticon.tools.research.engagement_intel import ENGAGEMENT_INTEL_TOOLS
@@ -179,6 +180,11 @@ def create_decepticon_agent(
         #    vaccine loop, consensus validation, structured export, CART,
         #    and finding-ID allocation for parallel dispatch. These carry no
         #    daemon dependency, so they are always registered.
+        # 3. ``request_scope_amendment``: the operator-approval channel for
+        #    out-of-scope opportunities discovered mid-engagement. Lives on
+        #    the orchestrator (not sub-agents) because scope adjudication is
+        #    a coordination concern — sub-agents surface opportunities in
+        #    their exit artifacts, the orchestrator raises them.
         from decepticon.tools.ops import OPS_TOOLS, ops_available
 
         orchestrator_tools = [
@@ -188,6 +194,7 @@ def create_decepticon_agent(
             *STRUCTURED_FINDING_TOOLS,
             *CART_TOOLS,
             allocate_finding_id,
+            request_scope_amendment,
         ]
         if ops_available():
             orchestrator_tools = [*OPS_TOOLS, *orchestrator_tools]

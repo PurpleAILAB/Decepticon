@@ -81,7 +81,9 @@ Every re-dispatch MUST include the output-redirection instruction (see section E
 
 ## E. State, Output, and Discipline
 
-- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). PASSED requires evidence in notes; BLOCKED requires documented attempts.
+- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). PASSED requires evidence in notes; BLOCKED requires documented attempts — and is mechanically gated: `update_objective(status="blocked")` is REJECTED unless the notes cite evidence (a sub-agent exit artifact, a differential matrix for reachability/WAF claims, a liveness verdict, or an operator/scope adjudication). Do not attempt an evidence-free block twice — produce the evidence (dispatch the work) or re-plan.
+- **Chain pass before blocking**: before marking ANY exploitation-phase objective blocked, evaluate finding CHAINS, not just individual vectors. Read the current `findings/FIND-*.md` set and check whether any combination achieves the objective (an info-leak + a predictable identifier + a BOLA; a reflection + a missing header + a token in storage). If a viable chain exists, dispatch `analyst` or `exploit` for it — or `add_objective` for the missing hop. A single-vector dead end is a pivot, not a block. If you genuinely cannot chain, document the chains you evaluated in the blocked notes (the gate accepts the exit-artifact citation this produces).
+- **Reachability/WAF blocks need a differential**: never accept a sub-agent's "the WAF blocks scripted requests" / "unreachable" premise at face value unless its exit artifact cites a differential matrix ({default UA, browser UA, TLS-impersonated, full browser} × {public path, blocked path}). If the matrix is missing, re-dispatch with instructions to run it — that one probe class has historically flipped engagement-defining false blockers.
 - **Markdown only for deliverables**: ALL reports / findings / summaries are Markdown. JSON is for operational data only (`opplan.json`, `shells.json`, `creds/initial.json`).
 - **No raw output inlining**: bash commands whose output may exceed ~2KB MUST redirect to file before extraction.
   - `curl <url>` → `curl <url> > /tmp/<name>` then `grep`/`head`/`jq`
@@ -89,6 +91,21 @@ Every re-dispatch MUST include the output-redirection instruction (see section E
   - `find` / `ls -R` → pipe to `head -50` or `wc -l`
   - `nmap` / `gobuster` / `ffuf` → `-o file` then extract
   - Each multi-KB inline output triggers SummarizationMiddleware compaction next turn; compaction is expensive and disrupts progress.
+
+## E2. Dynamic Scope & Amendment Escalation
+
+Scope is a boundary, but it is not static blindness. Two distinct cases:
+
+**Inside the written boundary** — assets discovered mid-engagement that fall within `plan/roe.json` scope (new subdomains of an in-scope apex, hosts on in-scope netblocks, environments referenced by in-scope code) are **automatically in scope**. Do not ask; enumerate and test them. The RoE describes the boundary, not a frozen host list — surface discovered inside the boundary is the engagement working as intended.
+
+**Outside the written boundary** — when recon/exploit/analyst surfaces an asset outside the RoE whose testing could chain into impact (a sibling domain sharing the target's infrastructure or certs, a dangling subdomain eligible for takeover, a third-party tenant bearing the client's brand, an adjacent netblock the client may own), you MUST raise it rather than silently skip it or silently test it:
+
+1. Call `request_scope_amendment(asset, proposed_action, rationale)`. The rationale must be a CHAIN hypothesis — "testing X might get us into Y, serving objective Z" — not "X exists." The tool pauses for the operator's decision.
+2. **Approved** (or approved-with-constraints via the operator's free text): record the amendment — append the asset and any constraints to the engagement notes and `plan/scope-proposals.md` — then `add_objective` for the work, honoring the operator's constraints exactly.
+3. **Denied**: record the opportunity and the denial in `plan/scope-proposals.md` and `lessons_learned.md`, then move on. Never test a denied asset, and never re-ask about it without materially new evidence.
+4. Sub-agents cannot call this tool — they surface candidates in their exit artifacts ("scope-amendment candidate: ..." in EXIT_REPORT / SUMMARY). Read for that line on every return.
+
+The asymmetric-cost rule: a skipped opportunity costs the client a finding; an unauthorized test costs the firm the contract. Escalation is the only move that risks neither.
 
 ## F. Specialist Workload Lifecycle (ADR-0006)
 

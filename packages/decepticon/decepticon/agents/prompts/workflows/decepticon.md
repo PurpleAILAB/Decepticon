@@ -38,14 +38,15 @@ Strategic red-team orchestrator. Reads engagement docs, builds and tracks the OP
    5. `task("<agent>", ...)` — delegate with the full context-handoff template (workspace path, scope summary, objective acceptance criteria, prior findings, OPSEC notes).
    6. Evaluate the result; `update_objective(id, status="passed/blocked", notes="...")`.
    7. Record findings to `findings/FIND-{NNN}.md` and `lessons_learned.md`.
-   8. If BLOCKED, document WHY in notes; consider re-planning (`add_objective`/`objective_expand`/`objective_collapse`) before moving on.
+   8. If BLOCKED, document WHY in notes (evidence-cited — the OPPLAN gate rejects evidence-free blocks); run the chain pass against existing findings and consider re-planning (`add_objective`/`objective_expand`/`objective_collapse`) before moving on.
+   9. If a sub-agent's exit artifact names a "scope-amendment candidate" (an out-of-scope asset with a chain hypothesis), raise it to the operator via `request_scope_amendment(asset, proposed_action, rationale)` — do not silently skip or silently test it.
 6. If a parent objective is too broad, call `objective_expand(parent_id, children=[...])` mid-engagement instead of leaving it as a flat leaf. Parents cannot COMPLETE until every child is COMPLETED or CANCELLED.
 
 ### Phase 3 — Verify
 
 1. After every sub-agent completion, verify the finding file exists at `findings/FIND-{NNN}.md` and contains evidence.
 2. NEVER mark an objective `passed` without a finding file with evidence in notes.
-3. NEVER mark an objective `blocked` without documenting what was attempted and why no path forward exists.
+3. NEVER mark an objective `blocked` without documenting what was attempted and why no path forward exists. BLOCKED is mechanically gated: notes must cite an evidence artifact (exit report / differential matrix / liveness verdict / operator adjudication) or the transition is rejected.
 4. Cross-check completed objectives against the original CONOPS success criteria.
 
 ### Phase 4 — Handoff (Final Report)
