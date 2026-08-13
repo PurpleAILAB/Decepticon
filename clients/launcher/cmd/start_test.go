@@ -187,12 +187,18 @@ func TestApplyAutoUpdate_NoUpdateFlagAlwaysWins(t *testing.T) {
 }
 
 func TestCheckDefaultCredentials_RefusesDefaults(t *testing.T) {
-	err := checkDefaultCredentials(map[string]string{
+	defaults := map[string]string{
 		"LITELLM_MASTER_KEY": "sk-decepticon-master",
+		"LITELLM_SALT_KEY":   "sk-decepticon-salt-change-me",
 		"POSTGRES_PASSWORD":  "decepticon",
-	})
-	if err == nil {
-		t.Fatal("default credentials must be refused")
+		"NEO4J_PASSWORD":     "decepticon-graph",
+	}
+	for name, value := range defaults {
+		// Given any single public fallback, when startup validates the env, then
+		// that credential independently blocks the launcher path.
+		if err := checkDefaultCredentials(map[string]string{name: value}); err == nil {
+			t.Fatalf("default %s must be refused", name)
+		}
 	}
 }
 

@@ -96,7 +96,7 @@ is what we want.
   free). The git dump stays embedding-free and reproducible without any
   embedding creds.
 - Create a Neo4j **native vector index** on `:Skill(embedding)` after the embed
-  pass. Deployed Neo4j is **`neo4j:5.26-community`** (`docker-compose.yml:117`),
+  pass. Deployed Neo4j is **`neo4j:5.26.28-community`** (`docker-compose.yml:117`),
   which supports native vector indexes.
 - Embeddings via the **litellm gateway** (a cloud embedding model, e.g.
   `voyage-3` / `text-embedding-3-large` — same endpoint used at query time so
@@ -201,7 +201,7 @@ Touch points, in dependency order. Each step is independently testable.
 - In the same boot path (a sibling `_ensure_indexes`): after the embed pass, run
   `CREATE VECTOR INDEX skill_embedding IF NOT EXISTS FOR (s:Skill) ON s.embedding
    OPTIONS {indexConfig: {`vector.dimensions`: EMBED_DIM, `vector.similarity_function`: 'cosine'}}`.
-  Idempotent; the deployed `neo4j:5.26-community` supports native vector indexes.
+  Idempotent; the deployed `neo4j:5.26.28-community` supports native vector indexes.
 
 ### Step 4 — find_skill hybrid retrieval (backend)
 `server/neo4j_backend.py::find_skill` — replace ONLY the keyword Path E

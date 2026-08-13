@@ -410,6 +410,28 @@ func TestTelemetryConsentWritesEnv(t *testing.T) {
 	}
 }
 
+func TestWriteEnvFromEmbedReplacesPermissiveFilePrivately(t *testing.T) {
+	out := filepath.Join(t.TempDir(), ".env")
+	// Given an existing configuration created with unsafe legacy permissions.
+	if err := os.WriteFile(out, []byte("POSTGRES_PASSWORD=old\n"), 0o644); err != nil {
+		t.Fatalf("seed .env: %v", err)
+	}
+
+	// When onboarding replaces it with generated credentials.
+	if err := WriteEnvFromEmbed(out, map[string]string{"POSTGRES_PASSWORD": "generated-secret"}); err != nil {
+		t.Fatalf("WriteEnvFromEmbed() error: %v", err)
+	}
+
+	// Then the replacement is private even though the old inode was not.
+	info, err := os.Stat(out)
+	if err != nil {
+		t.Fatalf("stat .env: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf(".env permissions = %04o, want 0600", got)
+	}
+}
+
 func TestBackfillEnvFromEmbed(t *testing.T) {
 	out := filepath.Join(t.TempDir(), ".env")
 	// Simulate a pre-#706 .env: has telemetry mode but NOT the endpoint,

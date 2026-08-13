@@ -42,7 +42,7 @@ make smoke      # fast check
 make dogfood    # full OSS UX
 ```
 
-The Web dashboard is part of the default Compose stack; after `make dev` it's reachable at <http://localhost:3000>.
+The Web dashboard is optional. Start it from the CLI with `/web`; it is then reachable at <http://localhost:3000>.
 
 ---
 
@@ -87,7 +87,7 @@ To regenerate just the Prisma client (without a full build): `cd clients/web && 
 |--------|-------------|
 | `make status` | Show running service status (`docker compose ps`) |
 | `make logs [SVC=service]` | Follow logs (default: `langgraph`). Override: `make logs SVC=litellm` |
-| `make health` | KG backend + Neo4j + Web health checks (broader than `decepticon kg-health`, which only checks the KG) |
+| `make health` | KG backend + Neo4j health checks, plus Web when it is running (broader than `decepticon kg-health`, which only checks the KG) |
 | `make clean` | Full teardown: stop services, remove volumes, **and remove `.dogfood/`**. Use this when you want the next `make dogfood` to start from a fresh onboard wizard. |
 
 ---
