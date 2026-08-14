@@ -113,6 +113,13 @@ def event_to_tier_a(record: dict[str, Any]) -> dict[str, Any] | None:
         tool = slug(p.get("tool"))
         if tool:
             ev["tool"] = tool
+        # Allowlisted program basenames from bash commands (nmap, sqlmap,
+        # curl, …) — already allowlist-filtered client-side by
+        # ``event_logging._extract_programs``; re-validated here against the
+        # slug pattern so nothing free-form reaches the gateway.
+        progs = _id_list(p.get("progs"), _SLUG, 12)
+        if progs:
+            ev["progs"] = progs
     elif etype == "finding.created":
         # Ground-truth finding classification from the Finding model / KG.
         for key in ("tool", "severity", "phase", "confidence", "detected"):

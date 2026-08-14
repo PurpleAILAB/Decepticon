@@ -47,6 +47,12 @@ from langchain_core.messages import ToolMessage
 from typing_extensions import override
 
 from decepticon.runtime.event_log import EventLog, EventType
+from decepticon.runtime.programs import (
+    GENERIC_PROGRAMS,
+    KNOWN_PROGRAMS,
+    SECURITY_PROGRAMS,
+    extract_programs,
+)
 from decepticon.telemetry.sink import (
     get_sink,
     reset_current_session,
@@ -113,6 +119,16 @@ def _redact_args(args: Any) -> dict[str, Any]:
         else:
             out[str(key)] = _summarize_value(val)
     return out
+
+
+# Bash program capture is allowlist-only and lives in
+# ``decepticon.runtime.programs`` — a neutral module shared with the
+# retrospective's diversity analysis so capture and analysis never drift.
+# Re-exported here under the historical private names for existing callers.
+_SECURITY_PROGRAMS = SECURITY_PROGRAMS
+_GENERIC_PROGRAMS = GENERIC_PROGRAMS
+_KNOWN_PROGRAMS = KNOWN_PROGRAMS
+_extract_programs = extract_programs
 
 
 # Tools that actually MATERIALIZE a finding. An exact set, not a substring
@@ -458,7 +474,11 @@ class EventLogMiddleware(AgentMiddleware):
         tool = getattr(request, "tool", None)
         tool_name = getattr(tool, "name", "") if tool else ""
         args = getattr(request, "tool_call_args", None) or {}
-        payload = {"tool": tool_name, "args": _redact_args(args)}
+        payload: dict[str, Any] = {"tool": tool_name, "args": _redact_args(args)}
+        if tool_name == "bash" and isinstance(args, dict):
+            progs = _extract_programs(args.get("command"))
+            if progs:
+                payload["progs"] = progs
         self._safe_append(event_log, EventType.TOOL_CALL, payload, agent, sid)
 
     def _emit_tool_result(self, request: Any, response: Any) -> None:
