@@ -331,7 +331,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/${{ matrix.platform }}
           provenance: mode=max
-          sbom: true
+          sbom: ${{ matrix.image != 'decepticon-sandbox' }}
           outputs: type=image,name=ghcr.io/purpleailab/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
