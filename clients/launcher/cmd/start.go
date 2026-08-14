@@ -353,16 +353,16 @@ func runStart(cmd *cobra.Command, args []string) error {
 // are still in effect. A bare docker compose up remains available for dev,
 // while the supported launcher path cannot expose a default-keyed service.
 func checkDefaultCredentials(env map[string]string) error {
-	defaults := map[string]string{
-		"LITELLM_MASTER_KEY": "sk-decepticon-master",
-		"LITELLM_SALT_KEY":   "sk-decepticon-salt-change-me",
-		"POSTGRES_PASSWORD":  "decepticon",
-		"NEO4J_PASSWORD":     "decepticon-graph",
+	defaults := map[string][]string{
+		"LITELLM_MASTER_KEY": {"sk-decepticon-master"},
+		"LITELLM_SALT_KEY":   {"sk-decepticon-salt-change-me", "sk-decepticon-salt"},
+		"POSTGRES_PASSWORD":  {"decepticon"},
+		"NEO4J_PASSWORD":     {"decepticon-graph"},
 	}
 	insecure := make([]string, 0, len(defaults))
-	for name, fallback := range defaults {
+	for name, fallbacks := range defaults {
 		value := strings.TrimSpace(config.Get(env, name, ""))
-		if value == "" || value == fallback {
+		if value == "" || slices.Contains(fallbacks, value) {
 			insecure = append(insecure, name)
 		}
 	}

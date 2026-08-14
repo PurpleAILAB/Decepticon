@@ -188,11 +188,11 @@ func TestApplyAutoUpdate_NoUpdateFlagAlwaysWins(t *testing.T) {
 }
 
 func TestCheckDefaultCredentials_RefusesDefaults(t *testing.T) {
-	defaults := map[string]string{
-		"LITELLM_MASTER_KEY": "sk-decepticon-master",
-		"LITELLM_SALT_KEY":   "sk-decepticon-salt-change-me",
-		"POSTGRES_PASSWORD":  "decepticon",
-		"NEO4J_PASSWORD":     "decepticon-graph",
+	defaults := map[string][]string{
+		"LITELLM_MASTER_KEY": {"sk-decepticon-master"},
+		"LITELLM_SALT_KEY":   {"sk-decepticon-salt-change-me", "sk-decepticon-salt"},
+		"POSTGRES_PASSWORD":  {"decepticon"},
+		"NEO4J_PASSWORD":     {"decepticon-graph"},
 	}
 	custom := map[string]string{
 		"LITELLM_MASTER_KEY": "sk-9f2c1a7b3d5e",
@@ -200,13 +200,15 @@ func TestCheckDefaultCredentials_RefusesDefaults(t *testing.T) {
 		"POSTGRES_PASSWORD":  "x9k2m4p7q1",
 		"NEO4J_PASSWORD":     "n8v7c6x5z4",
 	}
-	for name, value := range defaults {
+	for name, values := range defaults {
 		// Given any single public fallback, when startup validates the env, then
 		// that credential independently blocks the launcher path.
-		env := maps.Clone(custom)
-		env[name] = value
-		if err := checkDefaultCredentials(env); err == nil {
-			t.Fatalf("default %s must be refused", name)
+		for _, value := range values {
+			env := maps.Clone(custom)
+			env[name] = value
+			if err := checkDefaultCredentials(env); err == nil {
+				t.Fatalf("default %s=%q must be refused", name, value)
+			}
 		}
 	}
 }
