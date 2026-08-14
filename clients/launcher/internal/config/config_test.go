@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -427,7 +428,7 @@ func TestWriteEnvFromEmbedReplacesPermissiveFilePrivately(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat .env: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
+	if got := info.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
 		t.Fatalf(".env permissions = %04o, want 0600", got)
 	}
 }
