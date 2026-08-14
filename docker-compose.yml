@@ -253,6 +253,15 @@ services:
       - NEO4J_PASSWORD=${NEO4J_PASSWORD:-decepticon-graph}
       - GHIDRA_INSTALL_DIR=/opt/ghidra
       - GHIDRA_MCP_URL=http://ghidra-mcp:8089
+      # Engagement-scoped cloud credentials (e.g. an engagement AWS account
+      # for authorized claim PoCs) pass through ONLY these vars — never the
+      # whole env_file, which carries LLM/provider keys the sandbox doesn't
+      # need. Set them in .env; empty defaults keep them absent when unset.
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
     volumes:
       # Bind is engagement-scoped. The launcher sets DECEPTICON_ENGAGEMENT_WORKSPACE
       # to <home>/workspace/<slug> after the engagement picker, so the agent only
