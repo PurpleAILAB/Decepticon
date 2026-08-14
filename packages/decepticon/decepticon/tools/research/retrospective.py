@@ -23,6 +23,7 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+from decepticon.runtime.programs import SECURITY_PROGRAMS, WEB_SCANNER_PROGRAMS
 from decepticon.tools.research._state import _json
 from decepticon_core.utils.logging import get_logger
 
@@ -470,6 +471,217 @@ def _analyze_objective_gaps(objectives: list[dict[str, Any]]) -> list[dict[str, 
     return issues
 
 
+# ── Tool-diversity analysis ─────────────────────────────────────────────
+#
+# Measures whether the engagement actually used its capability surface, or
+# hand-rolled everything through curl/python one-offs. Two channels:
+#
+# 1. ``progs`` on bash tool.call events — allowlisted program basenames
+#    (nmap, sqlmap, ffuf, …) captured by EventLogMiddleware. Absent on
+#    events written before program capture shipped, so zero-prog logs only
+#    raise issues when generic utilities WERE captured (proving capture
+#    worked and the arsenal genuinely went untouched).
+# 2. Registered LangChain-tool usage per agent — the structured tools each
+#    role carries (CVE intel, smart fuzzers, scope-expansion miners) that
+#    prompts instruct agents to prefer over manual work.
+
+#: Specialty tools each role carries that engagement prompts instruct
+#: agents to prefer. Keep in sync with agents/standard/{recon,exploit}.py
+#: _STANDARD_TOOLS — the analysis only flags never-used entries, so a stale
+#: extra entry here produces a false "unused" flag, not a crash.
+_SPECIALTY_TOOL_EXPECTATIONS: dict[str, frozenset[str]] = {
+    "recon": frozenset(
+        {
+            "web_search",
+            "web_fetch",
+            "extract_urls_from_js",
+            "extract_from_error_pages",
+            "check_subdomain_takeover",
+        }
+    ),
+    "exploit": frozenset(
+        {
+            "cve_lookup",
+            "cve_poc_lookup",
+            "payload_search",
+            "methodology_lookup",
+            "generate_smart_payloads",
+            "classify_fuzz_response",
+            "extract_urls_from_js",
+            "extract_from_error_pages",
+        }
+    ),
+}
+
+#: Minimum activity before under-use verdicts fire — tiny engagements
+#: (smoke tests, single-probe checks) have no diversity to measure.
+_MIN_BASH_CALLS_FOR_DIVERSITY = 20
+_MIN_WEB_PROBES_FOR_SCANNER_CHECK = 10
+_MIN_AGENT_CALLS_FOR_SPECIALTY_CHECK = 10
+
+
+def _analyze_tool_diversity(
+    events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Measure tool-surface utilization; return (issues, stats).
+
+    The stats block is embedded in ``retro_analyze_events`` output so the
+    retrospective agent can quote ground truth in its Tool Utilization
+    section instead of inferring usage from prose artifacts.
+    """
+    issues: list[dict[str, Any]] = []
+
+    bash_calls = 0
+    progs: Counter[str] = Counter()
+    agent_progs: dict[str, Counter[str]] = defaultdict(Counter)
+    agent_tools: dict[str, Counter[str]] = defaultdict(Counter)
+
+    for ev in events:
+        if ev.get("type") != "tool.call":
+            continue
+        payload = ev.get("payload", {})
+        tool_name = payload.get("tool", "unknown")
+        agent = ev.get("agent") or "unknown"
+        agent_tools[agent][tool_name] += 1
+        if tool_name == "bash":
+            bash_calls += 1
+            for prog in payload.get("progs") or []:
+                progs[prog] += 1
+                agent_progs[agent][prog] += 1
+
+    security_used = sorted(p for p in progs if p in SECURITY_PROGRAMS)
+    web_scanners_used = sorted(p for p in progs if p in WEB_SCANNER_PROGRAMS)
+    generic_seen = sorted(p for p in progs if p not in SECURITY_PROGRAMS)
+    web_probes = sum(progs.get(p, 0) for p in ("curl", "wget", "httpie", "http"))
+
+    stats: dict[str, Any] = {
+        "bash_calls": bash_calls,
+        "programs_used": dict(progs.most_common()),
+        "security_programs_used": security_used,
+        "web_scanners_used": web_scanners_used,
+        "distinct_programs": len(progs),
+        "per_agent": {
+            agent: {
+                "tool_calls": sum(counts.values()),
+                "distinct_tools": sorted(counts),
+                "programs": dict(agent_progs.get(agent, Counter()).most_common()),
+            }
+            for agent, counts in sorted(agent_tools.items())
+        },
+    }
+
+    # 1. Arsenal never touched: heavy shell activity, capture proven live
+    #    (generic utilities recorded), but not one dedicated security tool.
+    if bash_calls >= _MIN_BASH_CALLS_FOR_DIVERSITY and generic_seen and not security_used:
+        issues.append(
+            {
+                "category": "tool_underuse",
+                "severity": "high",
+                "title": (
+                    f"Zero dedicated security tools across {bash_calls} bash calls "
+                    "— engagement ran on hand-rolled scripts only"
+                ),
+                "description": (
+                    f"The engagement executed {bash_calls} bash commands. Program "
+                    f"capture recorded only generic utilities ({', '.join(generic_seen[:8])}) "
+                    "— no scanner, fuzzer, cracker, or framework (nmap, ffuf, "
+                    "nuclei, sqlmap, hydra, testssl.sh, …) was ever invoked. "
+                    "Hand-rolled curl/python probes have systematically lower "
+                    "coverage and higher false-negative rates than the dedicated "
+                    "tooling installed in the sandbox."
+                ),
+                "evidence": {
+                    "bash_calls": bash_calls,
+                    "programs_used": dict(progs.most_common(20)),
+                    "security_programs_used": [],
+                },
+                "recommended_fix": (
+                    "Reinforce tool-first discipline in the recon/exploit prompts and "
+                    "skills: before hand-rolling a probe loop, check whether a dedicated "
+                    "tool covers the class (content discovery → ffuf/feroxbuster; "
+                    "parameter fuzzing → smart-fuzzer tools/arjun; TLS → testssl.sh; "
+                    "known-version components → searchsploit/msfconsole check). The "
+                    "EXIT_REPORT tool-consideration ledger should name what was "
+                    "considered AND rejected, per class."
+                ),
+                "effort": "small",
+            }
+        )
+
+    # 2. Web surface fuzzed by hand: heavy HTTP probing but no dedicated
+    #    content-discovery scanner.
+    if web_probes >= _MIN_WEB_PROBES_FOR_SCANNER_CHECK and not web_scanners_used:
+        issues.append(
+            {
+                "category": "tool_underuse",
+                "severity": "medium",
+                "title": (
+                    f"{web_probes} hand-rolled HTTP probes, zero content-discovery "
+                    "scanners (ffuf/gobuster/feroxbuster/nuclei/katana)"
+                ),
+                "description": (
+                    f"curl/wget-style probing ran {web_probes} times, but no "
+                    "dedicated web content-discovery or scanning tool was used. "
+                    "Manual probe loops miss vhost, extension, and recursion "
+                    "coverage that ffuf/feroxbuster/nuclei get by default."
+                ),
+                "evidence": {
+                    "web_probe_count": web_probes,
+                    "web_scanners_used": [],
+                    "programs_used": dict(progs.most_common(20)),
+                },
+                "recommended_fix": (
+                    "For any endpoint enumeration beyond a handful of known paths, "
+                    "dispatch a dedicated scanner (ffuf/feroxbuster for paths/vhosts, "
+                    "nuclei for exposures/misconfig, katana for JS-aware crawling) "
+                    "instead of iterating curl by hand."
+                ),
+                "effort": "trivial",
+            }
+        )
+
+    # 3. Specialty LangChain tools never used by the role that carries them.
+    for role, expected in _SPECIALTY_TOOL_EXPECTATIONS.items():
+        counts = agent_tools.get(role)
+        if not counts:
+            continue
+        total = sum(counts.values())
+        if total < _MIN_AGENT_CALLS_FOR_SPECIALTY_CHECK:
+            continue
+        unused = sorted(t for t in expected if counts.get(t, 0) == 0)
+        if unused:
+            issues.append(
+                {
+                    "category": "tool_underuse",
+                    "severity": "low",
+                    "title": f"Agent '{role}' never used {len(unused)} of its structured tools",
+                    "description": (
+                        f"'{role}' made {total} tool calls but never invoked: "
+                        f"{', '.join(unused)}. These structured tools exist to "
+                        "replace manual work with higher-fidelity equivalents "
+                        "(CVE intel before payload crafting, JS/error mining "
+                        "before hand-grepping, smart fuzzing before wordlists)."
+                    ),
+                    "evidence": {
+                        "agent": role,
+                        "total_tool_calls": total,
+                        "unused_tools": unused,
+                        "used_tools": dict(counts.most_common()),
+                    },
+                    "recommended_fix": (
+                        f"Check whether '{role}' prompts/skills surface these tools at "
+                        "the decision point where they apply (e.g. cve_lookup when a "
+                        "versioned component is identified). Tools documented in an "
+                        "ENVIRONMENT block but absent from the phase workflow tend to "
+                        "go unused."
+                    ),
+                    "effort": "small",
+                }
+            )
+
+    return issues, stats
+
+
 # ── Tools ────────────────────────────────────────────────────────────────
 
 
@@ -478,13 +690,17 @@ def retro_analyze_events(workspace: str) -> str:
     """Analyze engagement events.jsonl for failures, errors, and patterns.
 
     Reads the engagement's event log and performs statistical analysis
-    across three dimensions:
+    across four dimensions:
 
     1. **Agent performance** -- agents with 0 tool calls (stuck),
        high tool/LLM error rates, excessive runtime relative to output.
     2. **Tool patterns** -- tools that consistently fail, error messages.
     3. **Access / infra issues** -- connection errors, credential failures,
        middleware rejections, rate limiting.
+    4. **Tool diversity** -- whether the dedicated security arsenal and
+       structured tools were used, or everything was hand-rolled
+       (``tool_underuse`` issues + a ``tool_diversity`` stats block for
+       the report's Tool Utilization section).
 
     Returns a structured JSON analysis with detected issues and
     engagement-wide statistics.  Returns ``{"issue_count": 0}`` when
@@ -515,8 +731,9 @@ def retro_analyze_events(workspace: str) -> str:
     agent_issues = _analyze_agent_performance(events)
     tool_issues = _analyze_tool_patterns(events)
     access_issues = _analyze_access_issues(events)
+    diversity_issues, diversity_stats = _analyze_tool_diversity(events)
 
-    all_issues = agent_issues + tool_issues + access_issues
+    all_issues = agent_issues + tool_issues + access_issues + diversity_issues
 
     # Sort by severity
     severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -541,6 +758,7 @@ def retro_analyze_events(workspace: str) -> str:
                 "llm_calls_total": event_types.get("llm.call", 0),
                 "findings_created": event_types.get("finding.created", 0),
             },
+            "tool_diversity": diversity_stats,
             "issues": all_issues,
         }
     )

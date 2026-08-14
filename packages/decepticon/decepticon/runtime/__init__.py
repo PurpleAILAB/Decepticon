@@ -31,6 +31,25 @@ except ImportError:
     pass
 
 try:
+    from decepticon.runtime.programs import (  # noqa: F401  # re-exported via __all__
+        GENERIC_PROGRAMS,
+        KNOWN_PROGRAMS,
+        SECURITY_PROGRAMS,
+        WEB_SCANNER_PROGRAMS,
+        extract_programs,
+    )
+
+    _exports += [
+        "GENERIC_PROGRAMS",
+        "KNOWN_PROGRAMS",
+        "SECURITY_PROGRAMS",
+        "WEB_SCANNER_PROGRAMS",
+        "extract_programs",
+    ]
+except ImportError:
+    pass
+
+try:
     from decepticon.runtime.recording import (  # noqa: F401
         RecordingMiddleware,
         ReplayMiddleware,

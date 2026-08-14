@@ -13,6 +13,7 @@ from decepticon.middleware.event_logging import (
     _summarize_value,
 )
 from decepticon.runtime.event_log import EventType, read_events
+from decepticon.runtime.programs import extract_programs
 
 # ── fakes mirroring the request/handler shapes used by other middleware tests ──
 
@@ -138,8 +139,94 @@ def test_tool_call_writes_call_then_result_pair(tmp_path: Path):
     assert events[0].payload["tool"] == "bash"
     assert events[0].payload["args"]["command"] == "<str:2>"
     assert events[0].payload["args"]["token"] == "***REDACTED***"
+    assert "progs" not in events[0].payload  # 'id' is not an allowlisted program
     assert events[1].payload["status"] == "success"
     assert events[1].payload["output_chars"] == len("uid=0(root)")
+
+
+# ── bash program capture (allowlist-only) ────────────────────────────────────
+
+
+def test_extract_programs_finds_allowlisted_basenames():
+    cmd = (
+        "nmap -sV target.example.com -oN out.txt && curl -sk https://x "
+        "| python3 /tmp/probe.py; /usr/bin/sqlmap -u 'http://t?id=1'"
+    )
+    assert extract_programs(cmd) == ["nmap", "curl", "python3", "sqlmap"]
+
+
+def test_extract_programs_never_emits_non_allowlisted_content():
+    """Targets, paths, flags, and secrets are never captured — only the
+    fixed allowlist. This is the privacy boundary for program capture."""
+    cmd = "sshpass -p hunter2 /opt/vendor/secretscanner --target corp.internal"
+    assert extract_programs(cmd) == []
+
+
+def test_extract_programs_dedupes_and_handles_non_string():
+    assert extract_programs("curl a; curl b; curl c") == ["curl"]
+    assert extract_programs(None) == []
+    assert extract_programs(42) == []
+    assert extract_programs("") == []
+
+
+def test_extract_programs_caps_at_prog_cap():
+    from decepticon.runtime.programs import PROG_CAP
+
+    cmd = " ".join(
+        [
+            "nmap",
+            "curl",
+            "python3",
+            "sqlmap",
+            "ffuf",
+            "gobuster",
+            "nuclei",
+            "hydra",
+            "john",
+            "hashcat",
+            "amass",
+            "subfinder",
+            "nikto",
+            "wpscan",
+        ]
+    )
+    out = extract_programs(cmd)
+    assert len(out) == PROG_CAP
+
+
+def test_bash_tool_call_records_progs(tmp_path: Path):
+    mw = EventLogMiddleware()
+    req = _ToolRequest(
+        tmp_path,
+        "eng-progs",
+        tool="bash",
+        args={"command": "nmap -p- target.internal | tee /tmp/scan; curl -s target.internal"},
+        agent="recon",
+    )
+    result = ToolMessage(content="ok", tool_call_id="t1", name="bash", status="success")
+
+    mw.wrap_tool_call(req, lambda _r: result)
+
+    events = list(read_events(_events_path(tmp_path, "eng-progs")))
+    call = events[0]
+    assert call.payload["progs"] == ["nmap", "curl"]
+    # The command itself remains fully redacted — progs is the only
+    # command-derived field, and it is allowlist-filtered.
+    assert call.payload["args"]["command"].startswith("<str:")
+    assert "target.internal" not in str(call.payload)
+
+
+def test_non_bash_tool_call_has_no_progs(tmp_path: Path):
+    mw = EventLogMiddleware()
+    req = _ToolRequest(
+        tmp_path, "eng-noprog", tool="web_search", args={"query": "nmap tutorial"}, agent="recon"
+    )
+    result = ToolMessage(content="ok", tool_call_id="t1", name="web_search", status="success")
+
+    mw.wrap_tool_call(req, lambda _r: result)
+
+    events = list(read_events(_events_path(tmp_path, "eng-noprog")))
+    assert "progs" not in events[0].payload
 
 
 def test_finding_tool_writes_finding_after_successful_result(tmp_path: Path):

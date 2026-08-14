@@ -46,6 +46,7 @@
         "ts": { "type": "number", "minimum": 0 },
         "agent": { "$ref": "#/$defs/slug" },
         "tool": { "$ref": "#/$defs/slug" },
+        "progs": { "type": "array", "maxItems": 12, "items": { "$ref": "#/$defs/slug" } },
         "status": { "enum": ["ok", "error"] },
         "model": { "$ref": "#/$defs/slug" },
         "category": { "$ref": "#/$defs/slug" },

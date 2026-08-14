@@ -19,6 +19,34 @@ def test_tool_call_keeps_only_tool() -> None:
     assert "args" not in ev  # argument structure never forwarded
 
 
+def test_tool_call_forwards_allowlisted_progs() -> None:
+    rec = {
+        "type": "tool.call",
+        "ts": 1.0,
+        "agent": "recon",
+        "payload": {"tool": "bash", "progs": ["nmap", "curl"]},
+    }
+    ev = event_to_tier_a(rec)
+    assert ev is not None
+    assert ev["progs"] == ["nmap", "curl"]
+
+
+def test_tool_call_progs_revalidated_against_slug_pattern() -> None:
+    """progs arrive allowlist-filtered from event_logging, but the sanitizer
+    is the fail-closed boundary — anything non-slug-shaped must not pass."""
+    rec = {
+        "type": "tool.call",
+        "ts": 1.0,
+        "payload": {
+            "tool": "bash",
+            "progs": ["nmap", "https://target.example.com/x", "-p", "", "ffuf"],
+        },
+    }
+    ev = event_to_tier_a(rec)
+    assert ev is not None
+    assert ev["progs"] == ["nmap", "ffuf"]
+
+
 def test_tool_result_normalizes_status_and_buckets_output() -> None:
     ev = event_to_tier_a(
         {

@@ -62,6 +62,8 @@ export const TelemetryEvent = z
     agent: Slug.optional(),
     /** Tool name / command binary, e.g. "nmap", "sqlmap" — never the full command. */
     tool: Slug.optional(),
+    /** Allowlisted program basenames from a bash command (e.g. ["nmap","curl"]) — client-side allowlist only, never arguments/paths. */
+    progs: z.array(Slug).max(12).optional(),
     /** Normalized tool result status. Client maps "success"->"ok"; "command" is dropped. */
     status: z.enum(["ok", "error"]).optional(),
     /** Model id, e.g. "claude-opus-4-8" — provider/model mix, non-identifying. */

@@ -48,6 +48,30 @@ describe("TelemetryBatch schema", () => {
     expect(TelemetryBatch.safeParse(bad).success).toBe(false);
   });
 
+  it("accepts allowlisted progs on tool.call events", () => {
+    const batch = {
+      ...VALID,
+      events: [{ type: "tool.call", ts: 1, agent: "recon", tool: "bash", progs: ["nmap", "curl", "ffuf"] }],
+    };
+    expect(TelemetryBatch.safeParse(batch).success).toBe(true);
+  });
+
+  it("rejects over-cap progs arrays", () => {
+    const batch = {
+      ...VALID,
+      events: [{ type: "tool.call", ts: 1, tool: "bash", progs: Array(13).fill("nmap") }],
+    };
+    expect(TelemetryBatch.safeParse(batch).success).toBe(false);
+  });
+
+  it("rejects non-slug progs entries", () => {
+    const batch = {
+      ...VALID,
+      events: [{ type: "tool.call", ts: 1, tool: "bash", progs: ["nmap -sV 10.0.0.5"] }],
+    };
+    expect(TelemetryBatch.safeParse(batch).success).toBe(false);
+  });
+
   it("accepts ground-truth finding / opplan events", () => {
     const batch = {
       ...VALID,
