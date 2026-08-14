@@ -703,7 +703,7 @@ See [Models](models.md) for the full role-to-model mapping.
 
 ## Web Dashboard
 
-The web dashboard starts automatically with `decepticon` and is accessible at:
+The web dashboard is optional. Start it from the interactive CLI with `/web`, then open:
 
 ```
 http://localhost:3000
@@ -733,7 +733,7 @@ See [Web Dashboard](web-dashboard.md) for the full feature reference.
 ### Core Commands
 
 ```bash
-decepticon                  # Launch platform (all services + interactive CLI)
+decepticon                  # Launch the core stack + interactive CLI
 decepticon onboard          # Setup wizard (auth, provider, profile)
 decepticon onboard --reset  # Re-run setup from scratch
 decepticon stop             # Stop all services, keep data

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -348,24 +349,33 @@ func runStart(cmd *cobra.Command, args []string) error {
 // host.docker.internal in /etc/hosts; native-WSL Docker installs need
 // the Windows host IP from /etc/resolv.conf; an Ollama running inside
 // the WSL distro itself sits on 127.0.0.1. Whichever returns 2xx wins.
-// checkDefaultCredentials refuses to start when the compose fallback
-// credentials are still in effect. The compose file defaults to
-// sk-decepticon-master / decepticon so a bare `docker compose up` works
-// for dev; the launcher is the supported path and must not bring up a
-// default-keyed proxy. Returns an error with the one-command fix.
+// checkDefaultCredentials refuses to start when compose fallback credentials
+// are still in effect. A bare docker compose up remains available for dev,
+// while the supported launcher path cannot expose a default-keyed service.
 func checkDefaultCredentials(env map[string]string) error {
-	master := config.Get(env, "LITELLM_MASTER_KEY", "")
-	pgPass := config.Get(env, "POSTGRES_PASSWORD", "")
-	if master != "sk-decepticon-master" && pgPass != "decepticon" {
+	defaults := map[string][]string{
+		"LITELLM_MASTER_KEY": {"sk-decepticon-master"},
+		"LITELLM_SALT_KEY":   {"sk-decepticon-salt-change-me", "sk-decepticon-salt"},
+		"POSTGRES_PASSWORD":  {"decepticon"},
+		"NEO4J_PASSWORD":     {"decepticon-graph"},
+	}
+	insecure := make([]string, 0, len(defaults))
+	for name, fallbacks := range defaults {
+		value := strings.TrimSpace(config.Get(env, name, ""))
+		if value == "" || slices.Contains(fallbacks, value) {
+			insecure = append(insecure, name)
+		}
+	}
+	if len(insecure) == 0 {
 		return nil
 	}
+	slices.Sort(insecure)
 	return fmt.Errorf(
-		"refusing to start with default credentials (LITELLM_MASTER_KEY=%q, POSTGRES_PASSWORD=%q).\n"+
-			"Generate strong values and set them in %s, then re-run:\n"+
-			"  openssl rand -hex 32 | sed 's/^/sk-/'   # LITELLM_MASTER_KEY\n"+
-			"  openssl rand -hex 24                    # POSTGRES_PASSWORD\n"+
-			"or run `decepticon onboard` to set them interactively.",
-		master, pgPass, config.EnvPath())
+		"refusing to start with missing or default credentials in %s: %s.\n"+
+			"For a new install, delete %s and run `decepticon onboard`.\n"+
+			"For an initialized install, do not change database passwords in .env alone; "+
+			"back up the engagement, run `decepticon remove`, then onboard again so credentials and volumes are recreated together.",
+		config.EnvPath(), strings.Join(insecure, ", "), config.EnvPath())
 }
 
 func probeOllamaIfSelected(env map[string]string) {

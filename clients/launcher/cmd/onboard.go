@@ -196,6 +196,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		ui.DimText("Run 'decepticon onboard --reset' to reconfigure")
 		return nil
 	}
+	existingEnv := map[string]string{}
+	if config.EnvExists() {
+		var err error
+		existingEnv, err = config.LoadEnv(config.EnvPath())
+		if err != nil {
+			return fmt.Errorf("read existing .env: %w", err)
+		}
+	}
 
 	// Kick off Ollama discovery in the background so the network
 	// round-trip overlaps with huh's startup work; the OLLAMA_MODEL
@@ -915,6 +923,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			priority = append(priority, m)
 		}
 	}
+	installationSecrets, err := onboardingInstallationSecrets(existingEnv)
+	if err != nil {
+		return fmt.Errorf("generate installation credentials: %w", err)
+	}
 
 	values := map[string]string{
 		"DECEPTICON_MODEL_PROFILE":    profile,
@@ -926,6 +938,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		"DECEPTICON_AUTH_GROK":        boolStr(contains(methods, methodGrokOAuth)),
 		"DECEPTICON_AUTH_COPILOT":     boolStr(contains(methods, methodCopilotOAuth)),
 		"DECEPTICON_AUTH_PERPLEXITY":  boolStr(contains(methods, methodPerplexityOAuth)),
+		"LITELLM_MASTER_KEY":          installationSecrets.LiteLLMMasterKey,
+		"LITELLM_SALT_KEY":            installationSecrets.LiteLLMSaltKey,
+		"POSTGRES_PASSWORD":           installationSecrets.PostgresPassword,
+		"NEO4J_PASSWORD":              installationSecrets.Neo4jPassword,
 	}
 
 	if anthropicKey != "" {
@@ -1107,6 +1123,26 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	ui.DimText("  Run 'decepticon' to start the platform")
 	return nil
+}
+
+func onboardingInstallationSecrets(existing map[string]string) (config.InstallationSecrets, error) {
+	secrets, err := config.NewInstallationSecrets()
+	if err != nil {
+		return config.InstallationSecrets{}, err
+	}
+	if value := strings.TrimSpace(existing["LITELLM_MASTER_KEY"]); value != "" {
+		secrets.LiteLLMMasterKey = value
+	}
+	if value := strings.TrimSpace(existing["LITELLM_SALT_KEY"]); value != "" {
+		secrets.LiteLLMSaltKey = value
+	}
+	if value := strings.TrimSpace(existing["POSTGRES_PASSWORD"]); value != "" {
+		secrets.PostgresPassword = value
+	}
+	if value := strings.TrimSpace(existing["NEO4J_PASSWORD"]); value != "" {
+		secrets.Neo4jPassword = value
+	}
+	return secrets, nil
 }
 
 func contains(haystack []string, needle string) bool {

@@ -50,17 +50,17 @@ Configuration is saved to `~/.decepticon/.env`. Run `decepticon onboard --reset`
 decepticon
 ```
 
-Starts all services (PostgreSQL, LiteLLM, LangGraph, Neo4j, sandbox, C2 server, web dashboard) and opens the interactive terminal UI.
+Starts the core management and sandbox services, then opens the interactive terminal UI. Specialist services such as the C2 server and web dashboard start on demand.
 
-**Web Dashboard** (browser):
+**Web Dashboard** (browser, optional):
 
-The web dashboard starts as part of the default stack — it's reachable at `http://localhost:3000` once `decepticon` (or `make dev` for contributors) is running.
+From the terminal UI, run `/web` (or `/web up`) to start the dashboard. It is then reachable at `http://localhost:3000`.
 
 ---
 
 ## First Real Engagement
 
-1. Launch Decepticon (`decepticon`) and open <http://localhost:3000>
+1. Launch Decepticon (`decepticon`). To use the browser UI, run `/web` and open <http://localhost:3000>.
 2. The **Soundwave** agent interviews you to define the engagement:
    - Target scope (IP range, URL, Git repo, file upload, or local path)
    - Threat actor profile

@@ -37,7 +37,7 @@ services:
     env_file: .env
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-sk-decepticon-master}
-      - LITELLM_SALT_KEY=${LITELLM_SALT_KEY:-sk-decepticon-salt}
+      - LITELLM_SALT_KEY=${LITELLM_SALT_KEY:-sk-decepticon-salt-change-me}
       - CODEX_AUTH_PATH=/root/.codex/auth.json
       - DATABASE_URL=postgresql://decepticon:${POSTGRES_PASSWORD:-decepticon}@postgres:5432/litellm
     depends_on:
@@ -114,7 +114,9 @@ services:
   # Neo4j — Attack Chain Graph (the agent's persistent working memory)
   # On sandbox-net so cypher-shell from inside sandbox reaches bolt://neo4j:7687
   neo4j:
-    image: neo4j:5.26-community
+    # Pin the patch release: the mutable 5.26 tag currently resolves to
+    # 5.26.29, whose JVM exits with SIGBUS during startup on WSL2.
+    image: neo4j:5.26.28-community
     container_name: decepticon${DECEPTICON_STACK_NAME:+-${DECEPTICON_STACK_NAME}}-neo4j
     # heap_max 256m + pagecache 64m + JVM/APOC off-heap ≈ <1g nominal.
     # 2g caps the JVM so a large attack-graph scan can't swap-thrash the host.
@@ -421,14 +423,14 @@ services:
     # python urllib — same pattern as the litellm healthcheck. Runs entirely
     # inside the container so host OS (Linux / macOS / Windows) is irrelevant;
     # avoids relying on curl/wget being present in the langgraph base image.
-    # start_period covers FastAPI + graph-server boot after litellm flips
-    # healthy; retries is post-cushion grace.
+    # start_period covers a cold FastAPI + all-graph import on slower hosts
+    # after litellm flips healthy; retries is post-cushion grace.
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2024/ok')"]
       interval: 5s
       timeout: 3s
       retries: 12
-      start_period: 90s
+      start_period: 180s
     networks:
       # decepticon-net: reach litellm, postgres, neo4j (infra plane).
       # sandbox-net: reach the sandbox container's HTTP daemon
