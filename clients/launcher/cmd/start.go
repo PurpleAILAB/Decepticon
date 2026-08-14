@@ -361,7 +361,8 @@ func checkDefaultCredentials(env map[string]string) error {
 	}
 	insecure := make([]string, 0, len(defaults))
 	for name, fallback := range defaults {
-		if config.Get(env, name, "") == fallback {
+		value := strings.TrimSpace(config.Get(env, name, ""))
+		if value == "" || value == fallback {
 			insecure = append(insecure, name)
 		}
 	}
@@ -370,7 +371,7 @@ func checkDefaultCredentials(env map[string]string) error {
 	}
 	slices.Sort(insecure)
 	return fmt.Errorf(
-		"refusing to start with default credentials in %s: %s.\n"+
+		"refusing to start with missing or default credentials in %s: %s.\n"+
 			"For a new install, delete %s and run `decepticon onboard`.\n"+
 			"For an initialized install, do not change database passwords in .env alone; "+
 			"back up the engagement, run `decepticon remove`, then onboard again so credentials and volumes are recreated together.",
