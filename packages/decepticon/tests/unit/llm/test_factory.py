@@ -202,6 +202,14 @@ class TestLLMFactory:
         self.mapping = LLMModelMapping.from_credentials_and_profile(creds, ModelProfile.ECO)
         self.factory = LLMFactory(self.proxy, self.mapping)
 
+    def test_ollama_keeps_text_streaming_but_buffers_tool_calls(self, monkeypatch) -> None:
+        monkeypatch.delenv("DECEPTICON_LLM_DISABLE_STREAMING", raising=False)
+
+        model = self.factory._create_chat_model("ollama_chat/mistral:7b-instruct", 0)
+
+        assert model.streaming is True
+        assert model.disable_streaming == "tool_calling"
+
     def test_factory_initializes(self):
         assert self.factory.proxy_url == "http://localhost:4000"
 

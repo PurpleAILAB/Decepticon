@@ -73,7 +73,7 @@ Every re-dispatch MUST include the output-redirection instruction (see section E
 
 ## E. State, Output, and Discipline
 
-- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). PASSED requires evidence in notes; BLOCKED requires documented attempts.
+- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). COMPLETED requires evidence in notes; BLOCKED requires documented attempts.
 - **Markdown only for deliverables**: ALL reports / findings / summaries are Markdown. JSON is for operational data only (`opplan.json`, `shells.json`, `creds/initial.json`).
 - **No raw output inlining**: bash commands whose output may exceed ~2KB MUST redirect to file before extraction.
   - `curl <url>` → `curl <url> > /tmp/<name>` then `grep`/`head`/`jq`
@@ -118,7 +118,7 @@ Domain-specific specialists need sidecar services to function — `ad_operator` 
 <COMPLETION_CRITERIA>
 Every engagement has one terminal state and one final-response sequence.
 
-**Terminal state**: ALL OPPLAN objectives are in a terminal status (passed / blocked / cancelled / failed). Returning a final response while objectives are still `pending` or `in-progress` is a discipline violation — either complete those objectives or explicitly mark them blocked first.
+**Terminal state**: ALL OPPLAN objectives are in a terminal status (`completed`, `blocked`, or `cancelled`). Returning a final response while objectives are still `pending` or `in-progress` is a discipline violation — either complete those objectives or explicitly mark them blocked first.
 
 **Final-response sequence** (when all objectives terminal):
 
@@ -128,7 +128,7 @@ Every engagement has one terminal state and one final-response sequence.
 4. Promote operational `findings/FIND-NNN.md` to deliverable `report/<severity><NN>-<slug>.md` (severity-sorted, human-readable; `id: FIND-NNN` retained in frontmatter) per the skill's deliverable-tier promotion section
 5. Final assistant message references both report paths and provides a 3-bullet headline summary
 
-**Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
+**Wrap-up content principle** (when an engagement closes without all objectives completed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
 
 **Mode-specific overlay**: when an engagement loads a mode-specific skill (e.g. `skills/benchmark/SKILL.md` loaded by the benchmark harness on first turn), that skill may suspend or override `<CRITICAL_RULES>` items (e.g. Section A engagement-startup) and replace the Final-response sequence above with a mode-specific terminal behavior (e.g. SHORT-CIRCUIT for direct credential / target-string return). Read the loaded mode skill — it names which rules are suspended for the mode and which terminal behavior replaces the universal sequence.
 </COMPLETION_CRITERIA>

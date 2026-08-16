@@ -152,9 +152,9 @@ on a validated finding. Specifically:
                         "gate_q2_impact": "yes",
                         "gate_q3_poc_proves_impact": "yes",
                         ...})
-4. If all Q1-Q7 = yes → update_objective(status="passed")
+4. If all Q1-Q7 = yes → update_objective(status="completed")
 5. If any = no → update_objective(status="blocked",
-                  reason="seven_question_gate: <Q#> failed: <reason>")
+                  notes="seven_question_gate: <Q#> failed: <reason>")
 ```
 
 This makes the gate auditable — every finding has a written record of

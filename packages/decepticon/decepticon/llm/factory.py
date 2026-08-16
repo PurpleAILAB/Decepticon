@@ -1749,6 +1749,11 @@ class LLMFactory:
             # accounting intact.
             "stream_usage": not disable_streaming,
         }
+        if model.lower().startswith("ollama_chat/"):
+            # LiteLLM <= 1.89 loses the ``tool_calls`` finish reason when
+            # Ollama emits tool calls before its final streaming chunk. Buffer
+            # only tool-bound requests; ordinary text responses still stream.
+            kwargs["disable_streaming"] = "tool_calling"
         if extra_headers is not None:
             kwargs["default_headers"] = extra_headers
         if _model_drops_temperature(model):

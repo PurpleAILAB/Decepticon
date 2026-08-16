@@ -87,11 +87,13 @@ task(description="Recon subnet 10.0.1.0/24...", subagent_type="recon")
 ```
 
 ### State Update Protocol (After Each Sub-Agent Returns)
-1. **Parse result** — Did the sub-agent report PASSED or BLOCKED?
-2. **Update plan/opplan.json** — Set objective status (`passed`, `blocked`, `in_progress`)
+1. **Parse result** — Did the sub-agent report COMPLETED or BLOCKED?
+2. **Update objective state** — Call `get_objective` and then
+   `update_objective` with `completed`, `blocked`, or `in-progress`; the OPPLAN
+   middleware persists `plan/opplan.json` automatically.
 3. **Record verified findings** — Add `findings/FIND-{NNN}.md` only when a real finding exists
 4. **Append lessons_learned.md** — Record what worked, what failed, and why
-5. **Check completion** — All objectives passed? → Generate summary
+5. **Check completion** — All objectives completed? → Generate summary
 
 ### Context Window Budget
 - Read recent `findings/FIND-*.md` entries each iteration (keep only relevant excerpts)
@@ -155,7 +157,7 @@ Report structured status:
 
 | Objective | Phase | Sub-Agent | Result | Key Findings |
 |-----------|-------|-----------|--------|-------------|
-| OBJ-001 | Recon | recon | PASSED | 12 subdomains, AD on 10.0.0.5 |
+| OBJ-001 | Recon | recon | COMPLETED | 12 subdomains, AD on 10.0.0.5 |
 
 ### Decision Transparency
 Before each delegation, briefly state:
