@@ -1068,11 +1068,11 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
 
     @tool(
         description=(
-            "Load an existing plan/opplan.json into agent state to resume an engagement. "
-            "Call on session startup when plan/opplan.json already exists — "
-            "this hydrates objectives, engagement_name, and threat_profile into state "
-            "so OPPLAN tools and the status tracker work immediately. "
-            "Call OPPLAN tools sequentially — never in parallel with other OPPLAN tools."
+            "Bind the active engagement workspace and load plan/opplan.json when it exists. "
+            "Call before filesystem bootstrap: when the file is missing, the workspace path "
+            "is still stored in agent state so planning files can be created. "
+            "When the file exists, objectives, engagement_name, and threat_profile are "
+            "hydrated. Call OPPLAN tools sequentially — never in parallel."
         )
     )
     def load_opplan(
@@ -1109,17 +1109,18 @@ def build_opplan_tools(backend: BackendProtocol | None = None) -> list:
                 if not_found
                 else f"Failed to load opplan.json: {read_error}"
             )
-            return Command(
-                update={
-                    "messages": [
-                        ToolMessage(
-                            content=content,
-                            tool_call_id=tool_call_id,
-                            status="error",
-                        )
-                    ]
-                }
-            )
+            update: dict[str, Any] = {
+                "messages": [
+                    ToolMessage(
+                        content=content,
+                        tool_call_id=tool_call_id,
+                        status="error",
+                    )
+                ]
+            }
+            if not_found:
+                update["workspace_path"] = workspace_path
+            return Command(update=update)
 
         try:
             data = json.loads(raw)

@@ -13,74 +13,71 @@ metadata:
 
 **Execute this procedure on every session start, before any other action.**
 
-## Step 1: Discover Existing Engagements
+## Step 1: Bind the Active Workspace
+
+The launcher normally injects the workspace root. Use that exact root when it is
+present in the engagement context; otherwise use `/workspace`.
+
+Before calling `read_file`, `write_file`, `edit_file`, `ls`, `glob`, or `grep`,
+call:
 
 ```
-bash(command="ls -1 /workspace/ 2>/dev/null || echo '[empty]'", description="List existing engagement workspaces")
+load_opplan(workspace_path="<active workspace root>")
 ```
 
-## Step 2: Present Options to Operator
+This call has two outcomes:
 
-### If engagements exist
+- Existing `plan/opplan.json`: objectives and engagement metadata are loaded.
+- Missing `plan/opplan.json`: the workspace is still bound so planning files
+  can be created. This is the expected new-engagement path, not a fatal error.
 
-Present a numbered list and ask:
+Do not probe the filesystem before this call.
 
-```
-Existing engagements found:
-  1. acme-external-2026
-  2. internal-audit-q1
+## Step 2: Inspect Planning State
 
-Options:
-  [number] Resume an engagement
-  [new]    Start a new engagement
-
-Which would you like?
-```
-
-### If no engagements exist
+Read the active workspace's planning documents:
 
 ```
-No existing engagements found. Let's set up a new one.
-What is the target or scope for this engagement?
+read_file("<active workspace root>/plan/roe.json")
+read_file("<active workspace root>/plan/conops.json")
+read_file("<active workspace root>/plan/deconfliction.json")
 ```
 
-## Step 3A: Resume Existing Engagement
+If any document is missing, delegate to Soundwave:
 
-1. Read planning documents:
-   ```
-   read_file("<engagement>/plan/roe.json")
-   read_file("<engagement>/plan/conops.json")
-   read_file("<engagement>/plan/deconfliction.json")
-   read_file("<engagement>/plan/opplan.json")
-   read relevant files under "<engagement>/findings/"
-   ```
-2. Summarize progress to the operator:
-   - Objectives completed / total
-   - Current phase (recon / exploit / post-exploit)
-   - Last completed objective and key findings
-   - Next pending objective
+```
+task("soundwave", "Workspace: <active workspace root>. Regenerate the missing planning documents.")
+```
+
+The launcher already selected the engagement. Do not enumerate the shared
+`/workspace` root, invent another workspace directory, or ask the operator to
+select the engagement again.
+
+## Step 3A: Resume an Existing OPPLAN
+
+When `load_opplan` loaded objectives:
+
+1. Read relevant files under `findings/`.
+2. Summarize objectives completed / total, current phase, latest evidence, and
+   the next pending objective.
 3. Ask: "Continue from where we left off?"
-4. Begin the Ralph execution loop
+4. Resume the execution loop after confirmation.
 
-## Step 3B: New Engagement (docs already created by Soundwave)
+## Step 3B: Build a New OPPLAN
 
-Soundwave has already interviewed the operator and created the engagement documents
-(RoE, CONOPS, Deconfliction Plan) before the orchestrator was activated. The workspace
-and planning documents already exist.
+When no OPPLAN exists but the planning documents are present:
 
-1. Verify documents exist:
-   ```
-   bash(command="ls plan/roe.json plan/conops.json plan/deconfliction.json", description="Verify the planning documents exist")
-   ```
-   If any are missing, delegate to `soundwave` to regenerate:
-   ```
-   task("soundwave", "Engagement workspace: /workspace/. Regenerate missing planning documents.")
-   ```
-2. **Check C2 Infrastructure**:
-   ```
-   bash(command="nc -z c2-sliver 31337 2>/dev/null && echo 'C2_REACHABLE' || echo 'C2_UNREACHABLE'", description="Check whether the C2 server is reachable")
-   ```
-   - If `C2_REACHABLE` → C2 framework is **Sliver** (server: `c2-sliver`, gRPC port 31337). Include this in ALL sub-agent delegations.
-   - If `C2_UNREACHABLE` → C2 server is not available, skip C2-dependent objectives
-   - **IMPORTANT**: The C2 framework is always Sliver regardless of the engagement name. Do NOT assume Metasploit from engagement names containing "msf".
-3. Begin the Ralph execution loop (Phase 1: read CONOPS → build OPPLAN)
+1. Read CONOPS goals and kill-chain dependencies.
+2. Create one bounded objective per sub-agent context window with
+   `add_objective`.
+3. Present the complete OPPLAN for approval.
+4. Enter the execution loop after confirmation. OPPLAN mutations persist
+   automatically; there is no separate save tool.
+
+## Constraints
+
+- The orchestrator has no shell. Never call `bash` from this workflow.
+- Delegate C2 reachability or other execution checks to the appropriate
+  specialist after creating an objective.
+- Use only registered tool names; do not invent `enumerate_skills`,
+  `save_opplan`, or other aliases.
