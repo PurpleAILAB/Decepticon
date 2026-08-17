@@ -129,7 +129,7 @@ service activation through it.  Four sub-decisions:
    `profiles: [c2-sliver]` but the **default value of
    `COMPOSE_PROFILES` is removed from `.env.example`** so a vanilla
    `make dev` brings up only the core plane (litellm + postgres +
-   neo4j-KGStore + langgraph + web + sandbox + skillogy +
+   neo4j-KGStore + langgraph + sandbox + skillogy +
    `ops-control`).  Domain services are inert until something
    `ops_start`s them.
 

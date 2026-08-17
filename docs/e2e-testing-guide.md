@@ -6,7 +6,7 @@ Manual testing procedures for verifying the LLM gateway features.
 
 - Docker and Docker Compose installed
 - At least one LLM provider API key or an authorized local/OpenAI-compatible model endpoint
-- `make dev` successfully starts all services
+- `make dev` successfully starts the core services
 
 ## Scenario 1: API Key Provider Routing
 

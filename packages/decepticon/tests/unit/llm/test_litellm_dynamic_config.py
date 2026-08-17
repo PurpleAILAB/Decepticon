@@ -762,3 +762,31 @@ def test_build_model_entry_vllm_uses_the_key_env_that_is_set(monkeypatch) -> Non
     monkeypatch.setenv("HOSTED_VLLM_API_KEY", "sk-catalog")
     entry = build_model_entry("hosted_vllm/qwen3-coder-30b")
     assert entry["litellm_params"]["api_key"] == "os.environ/HOSTED_VLLM_API_KEY"
+
+
+def test_build_model_entry_routes_kimi_coding_gateway() -> None:
+    entry = build_model_entry("kimi/k3")
+
+    assert entry["litellm_params"] == {
+        "model": "openai/k3",
+        "api_key": "os.environ/KIMI_API_KEY",
+        "api_base": "https://api.kimi.com/coding/v1",
+        # kimi models reject temperature != 1, so the proxy drops it
+        "additional_drop_params": ["temperature"],
+    }
+
+
+def test_validate_model_name_accepts_kimi_coding_models() -> None:
+    for model in (
+        "kimi/k3",
+        "kimi/k3-256k",
+        "kimi/kimi-for-coding",
+        "kimi/kimi-for-coding-highspeed",
+    ):
+        validate_model_name(model)  # must not raise
+
+
+def test_kimi_gateway_registered_in_openai_compat_gateways() -> None:
+    base, key_env = OPENAI_COMPAT_GATEWAYS["kimi"]
+    assert base == "https://api.kimi.com/coding/v1"
+    assert key_env == "KIMI_API_KEY"

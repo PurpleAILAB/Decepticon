@@ -4,7 +4,7 @@
 
 | Command | Description |
 |---------|-------------|
-| `decepticon` | Start all services, open the terminal UI, and print the web dashboard URL |
+| `decepticon` | Start the core services and open the terminal UI |
 | `decepticon onboard` | Interactive setup wizard (provider, API key, model profile, LangSmith) |
 | `decepticon onboard --reset` | Reconfigure even if `.env` already exists |
 | `decepticon stop` | Stop all services |

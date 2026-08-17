@@ -31,6 +31,16 @@ WEB_DIR       := clients/web
 DOGFOOD_HOME  := $(CURDIR)/.dogfood
 LAUNCHER_BIN  := clients/launcher/bin/decepticon
 
+# Match the launcher's explicit Compose project without interpolating the
+# environment-controlled stack/project name into Make's shell source.
+define CLEAN_LAUNCHER_STACK
+	@stack="$${DECEPTICON_STACK_NAME:-}"; project="$${DECEPTICON_COMPOSE_PROJECT:-}"; \
+	case "$$stack" in *[!a-z0-9-]* ) echo "invalid DECEPTICON_STACK_NAME: $$stack" >&2; exit 2;; esac; \
+	if [ -z "$$project" ]; then project="decepticon$${stack:+-$$stack}"; fi; \
+	case "$$project" in ""|[!a-z0-9]*|*[!a-z0-9_-]* ) echo "invalid DECEPTICON_COMPOSE_PROJECT: $$project" >&2; exit 2;; esac; \
+	docker compose -p "$$project" $(PROFILES_ALL) down --volumes --remove-orphans 2>/dev/null; true
+endef
+
 # docker compose cannot expand ~ inside compose-file defaults, so resolve it
 # here before any subprocess inherits the env.
 export DECEPTICON_HOME ?= $(HOME)/.decepticon
@@ -89,7 +99,7 @@ help:
 	@echo "Ops:"
 	@echo "  make status       docker compose ps"
 	@echo "  make logs [SVC=]  Follow logs (default: langgraph)"
-	@echo "  make health       KG + Neo4j + Web health checks"
+	@echo "  make health       KG + Neo4j; Web when running"
 	@echo "  make clean        Full teardown (compose volumes + .dogfood/)"
 	@echo ""
 	@echo "Other:"
@@ -103,7 +113,8 @@ help:
 ## launcher version is "dev" so auto-update + config-sync are skipped — the
 ## symlinked .dogfood/ tree is the source of truth.
 dogfood: launcher
-	@echo "[dogfood] Stopping any prior repo-root stack to avoid container-name conflict..."
+	@echo "[dogfood] Stopping any prior launcher and repo-root stacks..."
+	$(CLEAN_LAUNCHER_STACK)
 	@$(COMPOSE) $(PROFILES_ALL) down --remove-orphans 2>/dev/null; true
 	@mkdir -p $(DOGFOOD_HOME)/workspace
 	@cp -f $(CURDIR)/docker-compose.yml $(DOGFOOD_HOME)/docker-compose.yml
@@ -136,6 +147,7 @@ smoke:
 	@echo "=== Decepticon pre-release smoke (compose-only, no launcher) ==="
 	@echo ""
 	@echo "[1/4] Clean state (purging containers + volumes)..."
+	$(CLEAN_LAUNCHER_STACK)
 	@$(COMPOSE) $(PROFILES_ALL) down --volumes --remove-orphans 2>/dev/null; true
 	@echo ""
 	@echo "[2/4] Building images from local code..."
@@ -149,7 +161,7 @@ smoke:
 	@$(MAKE) -s health
 	@echo ""
 	@echo "=== smoke OK — stack mirrors OSS user state ==="
-	@echo "  Web:          http://localhost:$${WEB_PORT:-3000}"
+	@echo "  Web:          optional (/web from CLI)"
 	@echo "  LangGraph:    http://localhost:$${LANGGRAPH_PORT:-2024}"
 	@echo "  Run dogfood:  make dogfood"
 	@echo "  Teardown:     make clean"
@@ -322,14 +334,19 @@ health:
 		&& echo "kg:    OK" || (echo "kg:    FAIL" && exit 1)
 	@$(COMPOSE) exec -T neo4j cypher-shell -u neo4j -p "$${NEO4J_PASSWORD:-decepticon-graph}" "RETURN 1 AS ok;" >/dev/null 2>&1 \
 		&& echo "neo4j: OK" || (echo "neo4j: FAIL" && exit 1)
-	@curl -sf http://localhost:$${WEB_PORT:-3000} >/dev/null 2>&1 \
-		&& echo "web:   OK (http://localhost:$${WEB_PORT:-3000})" \
-		|| (echo "web:   FAIL — not reachable on port $${WEB_PORT:-3000}" && exit 1)
+	@if $(COMPOSE) ps --status running --services | grep -qx web; then \
+		curl -sf http://localhost:$${WEB_PORT:-3000} >/dev/null 2>&1 \
+			&& echo "web:   OK (http://localhost:$${WEB_PORT:-3000})" \
+			|| (echo "web:   FAIL — not reachable on port $${WEB_PORT:-3000}" && exit 1); \
+	else \
+		echo "web:   SKIP (optional profile not running)"; \
+	fi
 
 ## Full teardown: containers + volumes + .dogfood/. Destructive — also
 ## wipes the dogfood .env (API keys) so the next `make dogfood` starts
 ## with a fresh onboard wizard.
 clean:
+	$(CLEAN_LAUNCHER_STACK)
 	$(COMPOSE) $(PROFILES_ALL) down --volumes --remove-orphans
 	@rm -rf $(DOGFOOD_HOME)
 	@echo "OK — compose volumes purged, .dogfood/ removed"

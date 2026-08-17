@@ -67,6 +67,7 @@ const (
 	methodFireworksAPI    = "fireworks_api"
 	methodCohereAPI       = "cohere_api"
 	methodMoonshotAPI     = "moonshot_api"
+	methodKimiAPI         = "kimi_api"
 	methodZaiAPI          = "zai_api"
 	methodDashscopeAPI    = "dashscope_api"
 	methodGitHubModelsAPI = "github_models_api"
@@ -135,6 +136,7 @@ var methodOrder = []string{
 	methodFireworksAPI,
 	methodCohereAPI,
 	methodMoonshotAPI,
+	methodKimiAPI,
 	methodZaiAPI,
 	methodDashscopeAPI,
 	// Local last so cloud-preferred default still picks remote
@@ -194,6 +196,14 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		ui.DimText("Run 'decepticon onboard --reset' to reconfigure")
 		return nil
 	}
+	existingEnv := map[string]string{}
+	if config.EnvExists() {
+		var err error
+		existingEnv, err = config.LoadEnv(config.EnvPath())
+		if err != nil {
+			return fmt.Errorf("read existing .env: %w", err)
+		}
+	}
 
 	// Kick off Ollama discovery in the background so the network
 	// round-trip overlaps with huh's startup work; the OLLAMA_MODEL
@@ -236,6 +246,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		fireworksKey       string
 		cohereKey          string
 		moonshotKey        string
+		kimiKey            string
 		zaiKey             string
 		dashscopeKey       string
 		githubToken        string
@@ -318,6 +329,7 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 					huh.NewOption("Fireworks AI        — Llama / Mixtral hub (fireworks_ai/*)", methodFireworksAPI),
 					huh.NewOption("Cohere Command      — Command-A / Command-R (cohere/*)", methodCohereAPI),
 					huh.NewOption("Moonshot Kimi K3    — Kimi K3 (moonshot/*)", methodMoonshotAPI),
+					huh.NewOption("Kimi for Coding     — Kimi K3 / K2.7 Coding (kimi/*)", methodKimiAPI),
 					huh.NewOption("Z.ai GLM-4.5        — GLM-4.5 / GLM-4.5-Air (zai/*)", methodZaiAPI),
 					huh.NewOption("Alibaba DashScope   — Qwen Max/Plus/Turbo (dashscope/*)", methodDashscopeAPI),
 					huh.NewOption("LM Studio (local)   — local OpenAI-compatible server (lm_studio/*)", methodLMStudioLocal),
@@ -678,6 +690,18 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		).Title("2 / 5  ·  Moonshot Kimi K3").
 			WithHideFunc(func() bool { return !contains(methods, methodMoonshotAPI) }),
 
+		// Step 2-cloud-ix-b: Kimi for Coding (K3 / K2.7)
+		huh.NewGroup(
+			huh.NewInput().
+				Title("KIMI_API_KEY").
+				Description("Kimi for Coding platform (api.kimi.com/coding) — separate\nfrom the legacy Moonshot API. Keys start with 'sk-kimi-'.").
+				Placeholder("sk-kimi-...").
+				EchoMode(huh.EchoModePassword).
+				Value(&kimiKey).
+				Validate(nonEmpty),
+		).Title("2 / 5  ·  Kimi for Coding").
+			WithHideFunc(func() bool { return !contains(methods, methodKimiAPI) }),
+
 		// Step 2-cloud-x: Z.ai GLM-4.5
 		huh.NewGroup(
 			huh.NewInput().
@@ -899,6 +923,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 			priority = append(priority, m)
 		}
 	}
+	installationSecrets, err := onboardingInstallationSecrets(existingEnv)
+	if err != nil {
+		return fmt.Errorf("generate installation credentials: %w", err)
+	}
 
 	values := map[string]string{
 		"DECEPTICON_MODEL_PROFILE":    profile,
@@ -910,6 +938,10 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 		"DECEPTICON_AUTH_GROK":        boolStr(contains(methods, methodGrokOAuth)),
 		"DECEPTICON_AUTH_COPILOT":     boolStr(contains(methods, methodCopilotOAuth)),
 		"DECEPTICON_AUTH_PERPLEXITY":  boolStr(contains(methods, methodPerplexityOAuth)),
+		"LITELLM_MASTER_KEY":          installationSecrets.LiteLLMMasterKey,
+		"LITELLM_SALT_KEY":            installationSecrets.LiteLLMSaltKey,
+		"POSTGRES_PASSWORD":           installationSecrets.PostgresPassword,
+		"NEO4J_PASSWORD":              installationSecrets.Neo4jPassword,
 	}
 
 	if anthropicKey != "" {
@@ -1006,6 +1038,9 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 	if moonshotKey != "" {
 		values["MOONSHOT_API_KEY"] = strings.TrimSpace(moonshotKey)
 	}
+	if kimiKey != "" {
+		values["KIMI_API_KEY"] = strings.TrimSpace(kimiKey)
+	}
 	if zaiKey != "" {
 		values["ZAI_API_KEY"] = strings.TrimSpace(zaiKey)
 	}
@@ -1088,6 +1123,26 @@ func runOnboard(cmd *cobra.Command, args []string) error {
 
 	ui.DimText("  Run 'decepticon' to start the platform")
 	return nil
+}
+
+func onboardingInstallationSecrets(existing map[string]string) (config.InstallationSecrets, error) {
+	secrets, err := config.NewInstallationSecrets()
+	if err != nil {
+		return config.InstallationSecrets{}, err
+	}
+	if value := strings.TrimSpace(existing["LITELLM_MASTER_KEY"]); value != "" {
+		secrets.LiteLLMMasterKey = value
+	}
+	if value := strings.TrimSpace(existing["LITELLM_SALT_KEY"]); value != "" {
+		secrets.LiteLLMSaltKey = value
+	}
+	if value := strings.TrimSpace(existing["POSTGRES_PASSWORD"]); value != "" {
+		secrets.PostgresPassword = value
+	}
+	if value := strings.TrimSpace(existing["NEO4J_PASSWORD"]); value != "" {
+		secrets.Neo4jPassword = value
+	}
+	return secrets, nil
 }
 
 func contains(haystack []string, needle string) bool {
