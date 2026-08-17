@@ -18,8 +18,7 @@ class _Sandbox:
 
 @pytest.mark.asyncio
 async def test_workspace_verifier_requires_and_records_negative_control(monkeypatch) -> None:
-    monkeypatch.setattr("decepticon.tools.verification.get_sandbox", lambda: _Sandbox())
-
+    monkeypatch.setattr("decepticon.tools.verification.get_sandbox", _Sandbox)
     raw = await validate_workspace_finding.ainvoke(
         {
             "finding_id": "FIND-001",

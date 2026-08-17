@@ -13,6 +13,7 @@ import json
 import os
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -156,10 +157,9 @@ async def invoke_live_agent(challenge: CVEBenchChallenge, config: LiveConfig) ->
         return load_evidence(host_workspace)
     except Exception:
         if run_id is not None:
-            try:
+            # Cancellation is best-effort; preserve the original run failure.
+            with suppress(Exception):
                 await client.runs.cancel(thread_id, run_id, wait=False, action="rollback")
-            except Exception:
-                pass
         raise
     finally:
         if config.cleanup_workspace:
