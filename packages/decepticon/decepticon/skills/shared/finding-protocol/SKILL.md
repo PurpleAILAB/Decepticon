@@ -44,6 +44,7 @@ agent: recon | exploit | postexploit | analyst | ...
 objective_id: OBJ-001
 discovered_at: "2026-04-06T14:23:11Z"
 evidence_pointer: findings/evidence/FIND-001_<slug>.txt
+location: http:https://app.example.com/admin/users  # optional but recommended stable locator
 ---
 
 ## Description
@@ -86,6 +87,30 @@ bare number is ambiguous between v3.1 and v4.0.
   Optional but recommended; it carries a machine-readable cross-walk to CVSS/CWE
   and a P1–P5 priority, and keeps classifications interoperable with bug-bounty
   triage. See the VRT at github.com/bugcrowd/vulnerability-rating-taxonomy.
+
+## Location
+
+`location` is optional but recommended when a finding has a crisp target. It is
+a stable, typed `scheme:value` locator for cross-run correlation; do not put
+the location only in the description. Omit it for domain-wide policy weaknesses
+or findings without a specific locator.
+
+The outer scheme classifies the finding location; its value may itself contain
+colons (for example, `http:https://...` or `cloud:aws:iam-role:...`). Write the
+outer scheme in lowercase.
+
+Use exactly one of these schemes and normalize the value before writing it:
+
+| Scheme | Value | Normalization |
+| --- | --- | --- |
+| `http` | URL | Lowercase scheme and host; remove fragment and default port; preserve path and query. |
+| `net` | `protocol://host:port` | Lowercase protocol and DNS host; use an IP address as written; include port. |
+| `code` | repository-relative path with optional `#L<line>` | Use `/` separators and the repository-relative path. |
+| `pkg` | package name with optional `@version` | Use the ecosystem's canonical package name and exact version. |
+| `cloud` | `provider:resource-type:resource-id` | Lowercase provider and resource type; preserve the provider resource ID. |
+| `identity` | `provider:principal` | Lowercase provider; preserve the canonical principal identifier. |
+| `mobile` | `platform:package-or-bundle-id` | Lowercase platform and use the canonical application identifier. |
+| `device` | `manufacturer:model[:firmware]` | Use manufacturer and model identifiers; include the exact firmware version when relevant. |
 
 ## After Creating a Finding
 
