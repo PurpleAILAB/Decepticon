@@ -428,7 +428,7 @@ class Objective(BaseModel):
     """A single engagement objective — analogous to ralph's user story.
 
     Each objective must be completable in ONE agent context window.
-    The ralph loop picks the highest-priority objective where status != 'passed'.
+    The ralph loop picks the highest-priority objective whose status is not completed.
     """
 
     id: str = Field(description="Unique ID, e.g. OBJ-001")

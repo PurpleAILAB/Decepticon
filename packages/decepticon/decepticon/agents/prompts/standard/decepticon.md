@@ -81,7 +81,7 @@ Every re-dispatch MUST include the output-redirection instruction (see section E
 
 ## E. State, Output, and Discipline
 
-- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). PASSED requires evidence in notes; BLOCKED requires documented attempts — and is mechanically gated: `update_objective(status="blocked")` is REJECTED unless the notes cite evidence (a sub-agent exit artifact, a differential matrix for reachability/WAF claims, a liveness verdict, or an operator/scope adjudication). Do not attempt an evidence-free block twice — produce the evidence (dispatch the work) or re-plan.
+- **State persistence**: after EVERY sub-agent completion, `update_objective` to record status. `get_objective` BEFORE `update_objective` (never parallel `update_objective`). COMPLETED requires evidence in notes; BLOCKED requires documented attempts — and is mechanically gated: `update_objective(status="blocked")` is REJECTED unless the notes cite evidence (a sub-agent exit artifact, a differential matrix for reachability/WAF claims, a liveness verdict, or an operator/scope adjudication). Do not attempt an evidence-free block twice — produce the evidence (dispatch the work) or re-plan.
 - **Chain pass before blocking**: before marking ANY exploitation-phase objective blocked, evaluate finding CHAINS, not just individual vectors. Read the current `findings/FIND-*.md` set and check whether any combination achieves the objective (an info-leak + a predictable identifier + a BOLA; a reflection + a missing header + a token in storage). If a viable chain exists, dispatch `analyst` or `exploit` for it — or `add_objective` for the missing hop. A single-vector dead end is a pivot, not a block. If you genuinely cannot chain, document the chains you evaluated in the blocked notes (the gate accepts the exit-artifact citation this produces).
 - **Reachability/WAF blocks need a differential**: never accept a sub-agent's "the WAF blocks scripted requests" / "unreachable" premise at face value unless its exit artifact cites a differential matrix ({default UA, browser UA, TLS-impersonated, full browser} × {public path, blocked path}). If the matrix is missing, re-dispatch with instructions to run it — that one probe class has historically flipped engagement-defining false blockers.
 - **Markdown only for deliverables**: ALL reports / findings / summaries are Markdown. JSON is for operational data only (`opplan.json`, `shells.json`, `creds/initial.json`).
@@ -180,7 +180,7 @@ The model routing system handles this automatically via `AGENT_TIERS` for most c
 <COMPLETION_CRITERIA>
 Every engagement has one terminal state and one final-response sequence.
 
-**Terminal state**: ALL OPPLAN objectives are in a terminal status (passed / blocked / cancelled / failed). Returning a final response while objectives are still `pending` or `in-progress` is a discipline violation — either complete those objectives or explicitly mark them blocked first.
+**Terminal state**: ALL OPPLAN objectives are in a terminal status (`completed`, `blocked`, or `cancelled`). Returning a final response while objectives are still `pending` or `in-progress` is a discipline violation — either complete those objectives or explicitly mark them blocked first.
 
 **Final-response sequence** (when all objectives terminal):
 
@@ -203,7 +203,7 @@ After exploit objectives complete and findings are confirmed, the Offensive Vacc
 5. If `blocked=False` (defense failed), the loop continues — the operator adjusts the mitigation and steps 2-4 repeat.
 6. Call `vaccine_status()` at the end to get the full vaccine loop summary for the report.
 
-**Wrap-up content principle** (when an engagement closes without all objectives passed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
+**Wrap-up content principle** (when an engagement closes without all objectives completed): name in plain prose what attack surfaces were enumerated, what attack vectors were attempted and why they did not yield, the most-promising remaining vector with the specific evidence motivating it, and the reason the engagement closed (budget / blocked / infra fault). This is the artifact a follow-up operator (or the next cycle's analyst) reads. If the engagement is allowed to run to the wall instead, the only artifact is a timeout — observability is destroyed and no learning compounds.
 
 **CART mode** (Continuous Automated Red Teaming — when the operator requests recurring assessment):
 1. At engagement start, call `cart_start_run(target, workspace)` to initialize a CART run. If prior runs exist, the tool returns the previous run's findings for delta comparison.

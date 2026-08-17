@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -285,6 +286,15 @@ func runStart(cmd *cobra.Command, args []string) error {
 		ui.Warning("set DECEPTICON_OPSCONTROL_SOCK_HOST: " + err.Error())
 	}
 
+	// 4.5. Refuse to start with default credentials. The compose file
+	// ships sk-decepticon-master / decepticon as fallbacks so a bare
+	// `docker compose up` still works for dev, but the launcher is the
+	// supported path — a default-keyed LiteLLM proxy on a reachable host
+	// is a free LLM proxy for anyone who finds it. Fail loud with the fix.
+	if err := checkDefaultCredentials(env); err != nil {
+		return err
+	}
+
 	// 5. Start services
 	c := compose.New()
 
@@ -339,6 +349,35 @@ func runStart(cmd *cobra.Command, args []string) error {
 // host.docker.internal in /etc/hosts; native-WSL Docker installs need
 // the Windows host IP from /etc/resolv.conf; an Ollama running inside
 // the WSL distro itself sits on 127.0.0.1. Whichever returns 2xx wins.
+// checkDefaultCredentials refuses to start when compose fallback credentials
+// are still in effect. A bare docker compose up remains available for dev,
+// while the supported launcher path cannot expose a default-keyed service.
+func checkDefaultCredentials(env map[string]string) error {
+	defaults := map[string][]string{
+		"LITELLM_MASTER_KEY": {"sk-decepticon-master"},
+		"LITELLM_SALT_KEY":   {"sk-decepticon-salt-change-me", "sk-decepticon-salt"},
+		"POSTGRES_PASSWORD":  {"decepticon"},
+		"NEO4J_PASSWORD":     {"decepticon-graph"},
+	}
+	insecure := make([]string, 0, len(defaults))
+	for name, fallbacks := range defaults {
+		value := strings.TrimSpace(config.Get(env, name, ""))
+		if value == "" || slices.Contains(fallbacks, value) {
+			insecure = append(insecure, name)
+		}
+	}
+	if len(insecure) == 0 {
+		return nil
+	}
+	slices.Sort(insecure)
+	return fmt.Errorf(
+		"refusing to start with missing or default credentials in %s: %s.\n"+
+			"For a new install, delete %s and run `decepticon onboard`.\n"+
+			"For an initialized install, do not change database passwords in .env alone; "+
+			"back up the engagement, run `decepticon remove`, then onboard again so credentials and volumes are recreated together.",
+		config.EnvPath(), strings.Join(insecure, ", "), config.EnvPath())
+}
+
 func probeOllamaIfSelected(env map[string]string) {
 	priority := strings.ToLower(env["DECEPTICON_AUTH_PRIORITY"])
 	hasOllama := strings.Contains(","+priority+",", ",ollama_local,")

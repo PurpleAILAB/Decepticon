@@ -128,8 +128,9 @@ a stable, sorted, human-readable JSON document with a `schema_version`, a
   Use when abandoning a hierarchical task so the parent can then be moved
   to COMPLETED or CANCELLED itself.
 
-- **`load_opplan`** — Hydrate agent state from an existing `plan/opplan.json`.
-  Call on session startup if the engagement already has an OPPLAN file.
+- **`load_opplan`** — Bind the active workspace and hydrate state from an
+  existing `plan/opplan.json`. Call before filesystem bootstrap. A missing file
+  still binds the workspace so a new engagement can create its planning files.
 
 ### Concurrency rule
 

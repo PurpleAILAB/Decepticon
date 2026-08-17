@@ -206,6 +206,16 @@ func TestServer_CleanupEngagementStopsTaggedWorkloads(t *testing.T) {
 		}
 	}
 
+	// Start is asynchronous; the cleanup assertion needs all seed workloads
+	// materialized before it can distinguish engagement-scoped teardown.
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) && be.startCount.Load() != 3 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if be.startCount.Load() != 3 {
+		t.Fatal("seed workload starts did not complete")
+	}
+
 	// Cleanup eng-1.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/v1/engagements/eng-1/cleanup", nil)

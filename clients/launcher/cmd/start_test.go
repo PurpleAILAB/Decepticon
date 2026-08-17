@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"maps"
 	"reflect"
 	"testing"
 
@@ -183,5 +184,66 @@ func TestApplyAutoUpdate_NoUpdateFlagAlwaysWins(t *testing.T) {
 					ev, *auto, *prompt)
 			}
 		})
+	}
+}
+
+func TestCheckDefaultCredentials_RefusesDefaults(t *testing.T) {
+	defaults := map[string][]string{
+		"LITELLM_MASTER_KEY": {"sk-decepticon-master"},
+		"LITELLM_SALT_KEY":   {"sk-decepticon-salt-change-me", "sk-decepticon-salt"},
+		"POSTGRES_PASSWORD":  {"decepticon"},
+		"NEO4J_PASSWORD":     {"decepticon-graph"},
+	}
+	custom := map[string]string{
+		"LITELLM_MASTER_KEY": "sk-9f2c1a7b3d5e",
+		"LITELLM_SALT_KEY":   "sk-salt-7c6b5a4d3e2f",
+		"POSTGRES_PASSWORD":  "x9k2m4p7q1",
+		"NEO4J_PASSWORD":     "n8v7c6x5z4",
+	}
+	for name, values := range defaults {
+		// Given any single public fallback, when startup validates the env, then
+		// that credential independently blocks the launcher path.
+		for _, value := range values {
+			env := maps.Clone(custom)
+			env[name] = value
+			if err := checkDefaultCredentials(env); err == nil {
+				t.Fatalf("default %s=%q must be refused", name, value)
+			}
+		}
+	}
+}
+
+func TestCheckDefaultCredentials_AllowsCustom(t *testing.T) {
+	err := checkDefaultCredentials(map[string]string{
+		"LITELLM_MASTER_KEY": "sk-9f2c1a7b3d5e",
+		"LITELLM_SALT_KEY":   "sk-salt-7c6b5a4d3e2f",
+		"POSTGRES_PASSWORD":  "x9k2m4p7q1",
+		"NEO4J_PASSWORD":     "n8v7c6x5z4",
+	})
+	if err != nil {
+		t.Fatalf("custom credentials must be allowed, got: %v", err)
+	}
+}
+
+func TestCheckDefaultCredentials_RefusesMissingOrEmpty(t *testing.T) {
+	custom := map[string]string{
+		"LITELLM_MASTER_KEY": "sk-9f2c1a7b3d5e",
+		"LITELLM_SALT_KEY":   "sk-salt-7c6b5a4d3e2f",
+		"POSTGRES_PASSWORD":  "x9k2m4p7q1",
+		"NEO4J_PASSWORD":     "n8v7c6x5z4",
+	}
+	for name := range custom {
+		// Given one missing credential, when startup validates the env, then
+		// the Compose public fallback cannot enter the supported launcher path.
+		env := maps.Clone(custom)
+		delete(env, name)
+		if err := checkDefaultCredentials(env); err == nil {
+			t.Fatalf("missing %s must be refused", name)
+		}
+
+		env[name] = "   "
+		if err := checkDefaultCredentials(env); err == nil {
+			t.Fatalf("empty %s must be refused", name)
+		}
 	}
 }

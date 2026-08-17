@@ -22,6 +22,7 @@ from deepagents.backends.filesystem import FilesystemBackend
 from langchain_core.messages import AIMessage, ToolMessage
 
 from decepticon.middleware import opplan as opplan_mod
+from decepticon.middleware.filesystem import EngagementFilesystemBackend
 from decepticon.middleware.opplan import OPPLANMiddleware
 from decepticon.tools.opplan import (
     OPPLAN_FILE_SCHEMA_VERSION,
@@ -222,6 +223,24 @@ def test_load_opplan_reads_through_backend(tmp_path: Path) -> None:
     assert cmd.update["workspace_path"] == "/workspace"
     assert cmd.update["objectives"][0]["id"] == "OBJ-001"
     assert OPPLAN_VIRTUAL_PATH in cmd.update["messages"][0].content
+
+
+def test_load_opplan_binds_workspace_when_plan_is_missing(tmp_path: Path) -> None:
+    backend = _backend(tmp_path)
+
+    cmd = _call(
+        "load_opplan",
+        {"workspace_path": "/workspace"},
+        state={},
+        backend=backend,
+    )
+
+    assert cmd.update["workspace_path"] == "/workspace"
+    assert "No opplan.json found" in cmd.update["messages"][0].content
+
+    scoped = EngagementFilesystemBackend(backend, cmd.update["workspace_path"])
+    result = scoped.write("/workspace/plan/roe.json", "{}")
+    assert result.error is None
 
 
 # ── auto-persist on each mutating tool ─────────────────────────────────

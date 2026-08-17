@@ -139,7 +139,8 @@ class AuthMethod(StrEnum):
     TOGETHER_API = "together_api"  # Together AI
     FIREWORKS_API = "fireworks_api"  # Fireworks AI
     COHERE_API = "cohere_api"  # Cohere Command
-    MOONSHOT_API = "moonshot_api"  # Moonshot Kimi K3
+    MOONSHOT_API = "moonshot_api"  # Moonshot Kimi K3 (fork prime model, api.moonshot.cn)
+    KIMI_API = "kimi_api"  # Kimi for Coding (api.kimi.com/coding)
     ZAI_API = "zai_api"  # Z.ai GLM-4.5
     DASHSCOPE_API = "dashscope_api"  # Alibaba DashScope (Qwen)
     GITHUB_MODELS_API = "github_models_api"  # GitHub Models (PAT auth)
@@ -356,6 +357,15 @@ METHOD_MODELS: dict[AuthMethod, dict[Tier, str]] = {
         Tier.HIGH: "moonshot/kimi-k3",
         Tier.MID: "moonshot/kimi-k3",
         Tier.LOW: "moonshot/kimi-k3",
+    },
+    # Kimi for Coding is a separate platform from the legacy Moonshot
+    # API above: own endpoint, own keys (KIMI_API_KEY), own model ids.
+    # Routed via the kimi/ gateway in OPENAI_COMPAT_GATEWAYS. HIGH is
+    # K3 (1M context), MID is the coding-tuned K2.7, LOW its fast tier.
+    AuthMethod.KIMI_API: {
+        Tier.HIGH: "kimi/k3",
+        Tier.MID: "kimi/kimi-for-coding",
+        Tier.LOW: "kimi/kimi-for-coding-highspeed",
     },
     # Z.ai GLM family — native ``zai/`` LiteLLM provider (no custom shim
     # needed since LiteLLM 1.55+). LOW = glm-4.5-flash, the free-tier

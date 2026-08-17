@@ -153,7 +153,7 @@ assert_sha256() {
 # falls back to /releases/latest) when python3 is absent or none qualify.
 resolve_stable_soaked() {
     command -v python3 >/dev/null 2>&1 || return 0
-    curl -s "https://api.github.com/repos/$REPO/releases?per_page=30" | python3 - "$STABLE_SOAK_DAYS" <<'PY' 2>/dev/null
+    curl -s "https://api.github.com/repos/$REPO/releases?per_page=30" | python3 -c '
 import sys, json, datetime
 try:
     soak = float(sys.argv[1])
@@ -187,7 +187,7 @@ for r in rels if isinstance(rels, list) else []:
     if best is None or key(tag) > key(best):
         best = tag
 print(best or "")
-PY
+' "$STABLE_SOAK_DAYS" 2>/dev/null
 }
 
 resolve_version() {

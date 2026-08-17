@@ -80,6 +80,9 @@ LLM_TIMEOUT_ENV = "DECEPTICON_LLM_TIMEOUT_SECONDS"
 # ``DECEPTICON_LLM_TIMEOUT_SECONDS`` (explicit, whole-coroutine) >
 # ``DECEPTICON_LLM__TIMEOUT`` (the published env knob) > default.
 LLM_TIMEOUT_ENV_ALIAS = "DECEPTICON_LLM__TIMEOUT"
+LLM_EXTRA_HEADERS_ENV = "DECEPTICON_LLM_EXTRA_HEADERS"
+LLM_DISABLE_STREAMING_ENV = "DECEPTICON_LLM_DISABLE_STREAMING"
+_PROTECTED_EXTRA_HEADERS = frozenset({"authorization", "host", "content-length"})
 
 
 def _model_max_output_tokens(model: str) -> int:
@@ -161,6 +164,33 @@ def _resolve_llm_timeout_seconds() -> float:
     return value
 
 
+def _resolve_extra_headers() -> dict[str, str] | None:
+    raw = os.getenv(LLM_EXTRA_HEADERS_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} must be a JSON object") from exc
+    if not isinstance(parsed, dict) or not all(
+        isinstance(name, str) and isinstance(value, str) for name, value in parsed.items()
+    ):
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} must be a JSON object of string headers")
+    protected = sorted(name for name in parsed if name.lower() in _PROTECTED_EXTRA_HEADERS)
+    if protected:
+        raise ValueError(f"{LLM_EXTRA_HEADERS_ENV} cannot override {', '.join(protected)}")
+    return parsed
+
+
+def _resolve_disable_streaming() -> bool:
+    raw = os.getenv(LLM_DISABLE_STREAMING_ENV, "").strip().lower()
+    if not raw or raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    raise ValueError(f"{LLM_DISABLE_STREAMING_ENV} must be a boolean")
+
+
 async def call_with_timeout(coro: Awaitable[Any], timeout: float) -> Any:
     """Wrap ``coro`` in :func:`asyncio.wait_for` and re-raise as :class:`LLMTimeoutError`.
 
@@ -207,6 +237,7 @@ _DEFAULT_AUTH_PRIORITY: tuple[AuthMethod, ...] = (
     AuthMethod.FIREWORKS_API,
     AuthMethod.COHERE_API,
     AuthMethod.MOONSHOT_API,
+    AuthMethod.KIMI_API,
     AuthMethod.ZAI_API,
     AuthMethod.DASHSCOPE_API,
     AuthMethod.GITHUB_MODELS_API,
@@ -259,6 +290,7 @@ _API_METHOD_ENV: dict[AuthMethod, str] = {
     AuthMethod.FIREWORKS_API: "FIREWORKS_API_KEY",
     AuthMethod.COHERE_API: "COHERE_API_KEY",
     AuthMethod.MOONSHOT_API: "MOONSHOT_API_KEY",
+    AuthMethod.KIMI_API: "KIMI_API_KEY",
     AuthMethod.ZAI_API: "ZAI_API_KEY",
     AuthMethod.DASHSCOPE_API: "DASHSCOPE_API_KEY",
     AuthMethod.GITHUB_MODELS_API: "GITHUB_TOKEN",
@@ -308,6 +340,8 @@ _KEY_PREFIX_HINTS: dict[AuthMethod, tuple[str, ...]] = {
     AuthMethod.NVIDIA_API: ("nvapi-",),
     AuthMethod.DEEPSEEK_API: ("sk-",),
     AuthMethod.GITHUB_MODELS_API: ("ghp_", "github_pat_", "gho_", "ghs_"),
+    # Kimi for Coding keys ship as sk-kimi-...; accept plain sk- too.
+    AuthMethod.KIMI_API: ("sk-kimi-", "sk-"),
 }
 
 # Substring tokens that mark a value as obviously not a real key.
@@ -753,6 +787,7 @@ _METHOD_LABEL: dict[AuthMethod, str] = {
     AuthMethod.FIREWORKS_API: "Fireworks AI — API key",
     AuthMethod.COHERE_API: "Cohere — API key",
     AuthMethod.MOONSHOT_API: "Moonshot (Kimi) — API key",
+    AuthMethod.KIMI_API: "Kimi for Coding (K3/K2.7) — API key",
     AuthMethod.ZAI_API: "Z.ai (GLM) — API key",
     AuthMethod.DASHSCOPE_API: "Alibaba DashScope (Qwen) — API key",
     AuthMethod.GITHUB_MODELS_API: "GitHub Models — PAT",
@@ -1008,7 +1043,17 @@ def _model_drops_temperature(model: str) -> bool:
     Opus 4.x build added to METHOD_MODELS.
     """
     slug = model.rsplit("/", 1)[-1].lower()
-    return slug.startswith("claude-opus-4")
+    return slug.startswith("claude-opus-4") or _model_is_kimi_coding(model)
+
+
+def _model_is_kimi_coding(model: str) -> bool:
+    """Kimi for Coding models reject any temperature other than exactly 1.
+
+    Verified against all four ids on api.kimi.com/coding (2026-07).
+    Dropping the param lets the platform default (=1) apply.
+    """
+    slug = model.rsplit("/", 1)[-1].lower()
+    return slug.startswith("kimi-for-coding") or slug in ("k3", "k3-256k")
 
 
 def _model_is_deepseek_thinking(model: str) -> bool:
@@ -1356,6 +1401,14 @@ _FATAL_STATUS = frozenset({400, 401, 403, 404})
 _STATUS_IN_MSG = re.compile(r"(?:error\s*code|status(?:_code)?|http)\D{0,8}(\d{3})", re.I)
 
 
+def _provider_status_code(exc: BaseException) -> int | None:
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int):
+        return status
+    nested_status = getattr(getattr(exc, "response", None), "status_code", None)
+    return nested_status if isinstance(nested_status, int) else None
+
+
 def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
     """Tag a provider exception as ``retryable`` or ``fatal``.
 
@@ -1374,11 +1427,8 @@ def _classify_provider_error(exc: BaseException) -> ProviderErrorClass:
     if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
         return "retryable"
 
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        response = getattr(exc, "response", None)
-        status = getattr(response, "status_code", None)
-    if isinstance(status, int):
+    status = _provider_status_code(exc)
+    if status is not None:
         if status in _FATAL_STATUS:
             return "fatal"
         if status in _RETRYABLE_STATUS:
@@ -1438,9 +1488,7 @@ def _reraise_with_actionable_message(exc: Exception, model_name: str) -> None:
     # but interpolate the scrubbed copy so an echoed credential never reaches
     # the user-facing message — see _redact_secrets.
     safe_msg = _redact_secrets(msg)
-    status = getattr(exc, "status_code", None)
-    if status is None:
-        status = getattr(getattr(exc, "response", None), "status_code", None)
+    status = _provider_status_code(exc)
     status_match = _STATUS_IN_MSG.search(msg)
     is_bad_request = (
         "badrequest" in err_type.lower()
@@ -1755,6 +1803,8 @@ class LLMFactory:
         belt-and-suspenders for any future client that bypasses this
         factory.
         """
+        disable_streaming = _resolve_disable_streaming()
+        extra_headers = _resolve_extra_headers()
         kwargs: dict[str, Any] = {
             "model": model,
             "base_url": self._proxy.url,
@@ -1770,14 +1820,21 @@ class LLMFactory:
             # on those callbacks — without this, every consumer (CLI renderer,
             # web run console) receives each agent message as one finished
             # block instead of token deltas.
-            "streaming": True,
+            "streaming": not disable_streaming,
             # Streaming responses omit usage unless it is explicitly requested,
             # and the measurement/cost path reads ``usage_metadata`` off the
             # aggregated message (middleware/event_logging.py). Enabling this
             # alongside ``streaming`` keeps per-run spend + prompt-cache
             # accounting intact.
-            "stream_usage": True,
+            "stream_usage": not disable_streaming,
         }
+        if model.lower().startswith("ollama_chat/"):
+            # LiteLLM <= 1.89 loses the ``tool_calls`` finish reason when
+            # Ollama emits tool calls before its final streaming chunk. Buffer
+            # only tool-bound requests; ordinary text responses still stream.
+            kwargs["disable_streaming"] = "tool_calling"
+        if extra_headers is not None:
+            kwargs["default_headers"] = extra_headers
         if _model_drops_temperature(model):
             kwargs["disabled_params"] = {"temperature": None}
         elif _model_is_deepseek_thinking(model):

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import re
 import threading
 from pathlib import Path
@@ -328,6 +329,66 @@ def _parse_dependencies(path: Path) -> list[tuple[str, str, str]]:
     return []
 
 
+def _dependency_provenance(
+    dep: tuple[str, str, str],
+    *,
+    manifest_path: str | None,
+    chains: dict[tuple[str, str, str], list[str]],
+) -> dict[str, Any]:
+    name, version, ecosystem = dep
+    level = "declared" if ecosystem == "PyPI" else "resolved"
+    props: dict[str, Any] = {
+        "reachability_level": level,
+        "dependency_chain": chains.get(dep, [f"{name}@{version}"]),
+    }
+    if manifest_path is not None:
+        props["manifest_path"] = manifest_path
+    return props
+
+
+_EVIDENCE_SEVERITY_CEILING = {
+    "declared": Severity.LOW,
+    "resolved": Severity.MEDIUM,
+    "symbol-matched": Severity.HIGH,
+    "call-path": Severity.HIGH,
+    "runtime-observed": Severity.CRITICAL,
+}
+
+
+def _reported_severity(score: float, evidence_level: str) -> tuple[Severity, Severity]:
+    raw = _severity_from_score(score)
+    ceiling = _EVIDENCE_SEVERITY_CEILING[evidence_level]
+    return raw, raw if SEVERITY_SCORE[raw] <= SEVERITY_SCORE[ceiling] else ceiling
+
+
+def _dependency_chains(path: Path) -> dict[tuple[str, str, str], list[str]]:
+    if path.name.lower() != "package-lock.json":
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    packages = payload.get("packages")
+    if not isinstance(packages, dict):
+        return {}
+    chains: dict[tuple[str, str, str], list[str]] = {}
+    for package_path, meta in packages.items():
+        if not package_path.startswith("node_modules/") or not isinstance(meta, dict):
+            continue
+        name = meta.get("name") or package_path.rsplit("node_modules/", 1)[-1]
+        version = meta.get("version")
+        if not isinstance(name, str) or not isinstance(version, str):
+            continue
+        chain = [part.strip("/") for part in package_path.split("node_modules/")[1:] if part]
+        chains[(name, version, "npm")] = chain or [f"{name}@{version}"]
+    return chains
+
+
+def _manifest_path(path: Path) -> str | None:
+    workspace = Path(os.getenv("DECEPTICON_WORKSPACE_PATH", Path.cwd())).resolve()
+    try:
+        return path.resolve().relative_to(workspace).as_posix()
+    except ValueError:
+        return None
+
+
 # ── Knowledge graph tools ───────────────────────────────────────────────
 
 
@@ -591,6 +652,8 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
         deps = _parse_dependencies(dep_path)
     except (OSError, ValueError, json.JSONDecodeError) as e:
         return _json({"error": f"dependency parse failed: {e}"})
+    manifest_path = _manifest_path(dep_path)
+    chains = _dependency_chains(dep_path)
 
     # Deduplicate and cap work for bounded runtime.
     dedup: dict[tuple[str, str, str], None] = {}
@@ -624,6 +687,11 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
     with graph_transaction() as graph:
         for dep, records in results:
             name, version, ecosystem = dep
+            provenance = _dependency_provenance(
+                dep,
+                manifest_path=manifest_path,
+                chains=chains,
+            )
             dep_node = graph.upsert_node(
                 Node.make(
                     NodeKind.SERVICE,
@@ -634,6 +702,7 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                     version=version,
                     ecosystem=ecosystem,
                     source="dependency-enricher",
+                    **provenance,
                 )
             )
 
@@ -642,7 +711,9 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                 if not cve_id.startswith("CVE-"):
                     continue
                 score = float(rec.get("score") or 0.0)
-                severity = _severity_from_score(score)
+                raw_severity, severity = _reported_severity(
+                    score, str(provenance["reachability_level"])
+                )
                 cve_node = graph.upsert_node(
                     Node.make(
                         NodeKind.CVE,
@@ -665,6 +736,7 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                         ecosystem=ecosystem,
                         cve_id=cve_id,
                         severity=severity.value,
+                        raw_severity=raw_severity.value,
                         cvss=rec.get("cvss"),
                         cvss_vector=rec.get("cvss_vector"),
                         epss=rec.get("epss"),
@@ -674,6 +746,7 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                         summary=rec.get("summary", ""),
                         references=rec.get("references", []),
                         source="dependency-enricher",
+                        **provenance,
                     )
                 )
                 graph.upsert_edge(Edge.make(dep_node.id, cve_node.id, EdgeKind.AFFECTS, weight=0.5))
@@ -686,21 +759,24 @@ async def cve_enrich_dependencies(path: str, limit: int = 100, min_score: float 
                         "cve": cve_id,
                         "score": score,
                         "severity": severity.value,
+                        "raw_severity": raw_severity.value,
                         "kev": bool(rec.get("kev")),
+                        "dependency_chain": provenance["dependency_chain"],
+                        "reachability_level": provenance["reachability_level"],
                     }
                 )
                 added += 1
 
     kept.sort(key=lambda x: x["score"], reverse=True)
-    return _json(
-        {
-            "dependency_file": str(dep_path),
-            "dependencies_scanned": len(planned),
-            "high_signal_records": added,
-            "results": kept[:100],
-            "stats": graph.stats(),
-        }
-    )
+    response: dict[str, Any] = {
+        "dependencies_scanned": len(planned),
+        "high_signal_records": added,
+        "results": kept[:100],
+        "stats": graph.stats(),
+    }
+    if manifest_path is not None:
+        response["manifest_path"] = manifest_path
+    return _json(response)
 
 
 # ── Static analysis ingestion ───────────────────────────────────────────

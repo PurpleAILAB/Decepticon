@@ -152,12 +152,41 @@ func writeEnvFromString(tmpl string, outputPath string, values map[string]string
 			out = append(out, key+"="+val)
 		}
 	}
-
-
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("create directory: %w", err)
 	}
-	return os.WriteFile(outputPath, []byte(strings.Join(out, "\n")), 0o600)
+	return writePrivateFile(outputPath, []byte(strings.Join(out, "\n")))
+}
+
+// writePrivateFile atomically replaces path with a file that is private from
+// its first byte. os.WriteFile's mode is ignored when path already exists,
+// which could leave credentials world-readable after onboard --reset.
+func writePrivateFile(path string, data []byte) (retErr error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".env.tmp-*")
+	if err != nil {
+		return fmt.Errorf("create temporary env: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		if retErr != nil {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return fmt.Errorf("secure temporary env: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("write temporary env: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary env: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replace env: %w", err)
+	}
+	return nil
 }
 
 // APIKeyNames lists the API key environment variable names to check.
@@ -180,6 +209,7 @@ var APIKeyNames = []string{
 	"FIREWORKS_API_KEY",
 	"COHERE_API_KEY",
 	"MOONSHOT_API_KEY",
+	"KIMI_API_KEY",
 	"ZAI_API_KEY",
 	"DASHSCOPE_API_KEY",
 	"GITHUB_TOKEN",
@@ -227,6 +257,7 @@ var keyFormatRules = map[string]struct {
 	"FIREWORKS_API_KEY":              {Prefix: "fw_", Hint: "Fireworks keys start with 'fw_'"},
 	"COHERE_API_KEY":                 {Prefix: "", Hint: ""},
 	"MOONSHOT_API_KEY":               {Prefix: "sk-", Hint: "Moonshot keys start with 'sk-'"},
+	"KIMI_API_KEY":                   {Prefix: "sk-kimi-", Hint: "Kimi for Coding keys start with 'sk-kimi-'"},
 	"ZAI_API_KEY":                    {Prefix: "", Hint: ""},
 	"DASHSCOPE_API_KEY":              {Prefix: "sk-", Hint: "DashScope keys start with 'sk-'"},
 	// GitHub fine-grained PATs start with github_pat_; classic PATs

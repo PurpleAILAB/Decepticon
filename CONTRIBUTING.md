@@ -14,7 +14,10 @@ Thank you for your interest in contributing to Decepticon! Whether you're a secu
 ### Development Setup
 
 ```bash
-git clone https://github.com/PurpleAILAB/Decepticon.git
+# The benchmark suite uses git submodules (xbow-validation-benchmarks,
+# MHBench). Clone with --recursive to fetch them; they are optional —
+# the main tool builds and runs without them.
+git clone --recursive https://github.com/PurpleAILAB/Decepticon.git
 cd Decepticon
 
 # Start with hot-reload (builds Docker images + watches for source changes)

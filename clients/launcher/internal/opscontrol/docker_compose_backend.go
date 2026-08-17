@@ -2,10 +2,15 @@ package opscontrol
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/PurpleAILAB/Decepticon/clients/launcher/internal/config"
 )
@@ -26,6 +31,7 @@ type DockerComposeBackend struct {
 	// notes BHCE cold-start is ~30s; we default to 180s to absorb
 	// goose migrations and dawgs index build.
 	WaitTimeoutSeconds int
+	runs sync.Map
 }
 
 // NewDockerComposeBackend constructs a backend with the launcher's
@@ -61,6 +67,51 @@ func (b *DockerComposeBackend) baseArgs() []string {
 	return args
 }
 
+
+
+type workloadRun struct {
+	engagement string
+	runID      string
+}
+
+func newRunID() (string, error) {
+	var bytes [12]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return "", fmt.Errorf("generate workload run id: %w", err)
+	}
+	return hex.EncodeToString(bytes[:]), nil
+}
+
+func labeledComposeOverride(services []string, workload, engagement, runID string) (string, error) {
+	override := map[string]map[string]map[string]map[string]string{"services": {}}
+	for _, service := range services {
+		override["services"][service] = map[string]map[string]string{
+			"labels": {
+				"decepticon.engagement": engagement,
+				"decepticon.run":        runID,
+				"decepticon.workload":   workload,
+			},
+		}
+	}
+	contents, err := json.Marshal(override)
+	if err != nil {
+		return "", fmt.Errorf("encode workload labels: %w", err)
+	}
+	file, err := os.CreateTemp("", "decepticon-ops-labels-*.json")
+	if err != nil {
+		return "", fmt.Errorf("create workload label override: %w", err)
+	}
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+		return "", fmt.Errorf("write workload label override: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(file.Name())
+		return "", fmt.Errorf("close workload label override: %w", err)
+	}
+	return file.Name(), nil
+}
 // Start runs `docker compose --profile <workload> up -d --wait`. The
 // caller (server.go) has already taken the per-workload mutex, so
 // concurrent calls on the same workload are serialized.
@@ -75,8 +126,25 @@ func (b *DockerComposeBackend) baseArgs() []string {
 // ops_start; they must keep running AFTER). `--no-recreate` tells
 // compose to skip the hash diff and only create services the
 // requested profile activates that are not already running.
-func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ string) (Handle, error) {
-	args := append(b.baseArgs(),
+func (b *DockerComposeBackend) Start(ctx context.Context, workload, engagementID string) (Handle, error) {
+	if engagementID == "" {
+		return Handle{}, fmt.Errorf("workload %s requires an engagement id", workload)
+	}
+	services, err := b.profileExclusiveServices(ctx, workload)
+	if err != nil {
+		return Handle{}, err
+	}
+	runID, err := newRunID()
+	if err != nil {
+		return Handle{}, err
+	}
+	override, err := labeledComposeOverride(services, workload, engagementID, runID)
+	if err != nil {
+		return Handle{}, err
+	}
+	defer os.Remove(override)
+	args := append(b.baseArgs(), "-f", override)
+	args = append(args,
 		"--profile", workload,
 		"up", "-d", "--no-build", "--no-recreate", "--wait",
 		"--wait-timeout", fmt.Sprintf("%d", b.WaitTimeoutSeconds),
@@ -87,7 +155,8 @@ func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ str
 	if err != nil {
 		return Handle{}, fmt.Errorf("compose up --profile %s: %w: %s", workload, err, strings.TrimSpace(string(out)))
 	}
-	return Handle{Workload: workload, State: StateRunning}, nil
+	b.runs.Store(workload, workloadRun{engagement: engagementID, runID: runID})
+	return Handle{Workload: workload, State: StateRunning, EngagementID: engagementID}, nil
 }
 
 // Stop terminates and removes only the services exclusive to the
@@ -116,48 +185,38 @@ func (b *DockerComposeBackend) Start(ctx context.Context, workload string, _ str
 // the whole project regardless of `--profile`, so a single
 // `ops_stop("ad")` would nuke the entire stack.
 func (b *DockerComposeBackend) Stop(ctx context.Context, workload string) error {
-	services, err := b.profileExclusiveServices(ctx, workload)
-	if err != nil {
-		return err
+	value, ok := b.runs.Load(workload)
+	if !ok {
+		return fmt.Errorf("workload %s has no run label; refusing unscoped teardown", workload)
 	}
-	if len(services) == 0 {
-		// Nothing profile-exclusive to stop — the workload was never
-		// materialized via compose (e.g. registry had a stale entry
-		// from a daemon-side bug). Treat as a no-op.
+	run := value.(workloadRun)
+	filterArgs := []string{
+		"ps", "-aq",
+		"--filter", "label=decepticon.engagement=" + run.engagement,
+		"--filter", "label=decepticon.run=" + run.runID,
+		"--filter", "label=decepticon.workload=" + workload,
+	}
+	psCmd := exec.CommandContext(ctx, "docker", filterArgs...)
+	out, err := psCmd.Output()
+	if err != nil {
+		return fmt.Errorf("list workload containers: %w", err)
+	}
+	containers := strings.Fields(string(out))
+	if len(containers) == 0 {
+		b.runs.Delete(workload)
 		return nil
 	}
-
-	stopArgs := append(b.baseArgs(), append([]string{"stop"}, services...)...)
-	stopCmd := exec.CommandContext(ctx, "docker", stopArgs...)
-	stopCmd.Env = ComposeCommandEnv()
+	stopCmd := exec.CommandContext(ctx, "docker", append([]string{"stop"}, containers...)...)
 	if out, err := stopCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("compose stop %v: %w: %s", services, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("stop workload containers: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-
-	// `rm -f` skips the confirmation prompt; `-s` is "also remove
-	// stopped containers" (without it the command would no-op right
-	// after `stop`). `-v` is intentionally omitted so named volumes
-	// — and the BHCE engagement state inside them — survive the
-	// stop/start cycle.
-	rmArgs := append(b.baseArgs(), append([]string{"rm", "-fs"}, services...)...)
-	rmCmd := exec.CommandContext(ctx, "docker", rmArgs...)
-	rmCmd.Env = ComposeCommandEnv()
+	rmCmd := exec.CommandContext(ctx, "docker", append([]string{"rm", "-f"}, containers...)...)
 	if out, err := rmCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("compose rm %v: %w: %s", services, err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("remove workload containers: %w: %s", err, strings.TrimSpace(string(out)))
 	}
+	b.runs.Delete(workload)
 	return nil
 }
-
-// profileExclusiveServices returns the list of compose service names
-// that belong to `workload`'s profile and to NO default (profile-less)
-// service. It is the set-difference of:
-//
-//	(`compose config --services --profile workload`)  // default + workload
-//	  minus
-//	(`compose config --services`)                     // default only
-//
-// Used by Stop so cleanup never targets the always-on management
-// plane.
 func (b *DockerComposeBackend) profileExclusiveServices(ctx context.Context, workload string) ([]string, error) {
 	withProfile, err := b.listServices(ctx, workload)
 	if err != nil {

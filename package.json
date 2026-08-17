@@ -9,6 +9,8 @@
     "dev": "npm run dev --workspace=clients/web",
     "build": "npm run build --workspace=clients/web",
     "start": "npm run start --workspace=clients/web",
+    "desktop": "npm run start --workspace=@decepticon/desktop",
+    "desktop:test": "npm test --workspace=@decepticon/desktop",
     "prisma:generate": "npm run prisma:generate --workspace=clients/web",
     "prisma:migrate": "npm run prisma:migrate --workspace=clients/web"
   },

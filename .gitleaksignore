@@ -1,0 +1,5 @@
+# Fake credentials in launcher tests (default-credential rejection fixtures).
+# These are non-secret test literals, not real keys.
+clients/launcher/cmd/start_test.go:generic-api-key:198
+clients/launcher/cmd/start_test.go:generic-api-key:218
+clients/launcher/cmd/start_test.go:generic-api-key:230
