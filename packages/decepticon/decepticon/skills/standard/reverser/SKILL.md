@@ -5,6 +5,16 @@ metadata:
   subdomain: reverse-engineering
   when_to_use: "reverser binary reversing triage strings packer unpack rop ghidra firmware VMProtect VMP2 Themida virtualized protectors overview routing"
   upstream_ref: "Decepticon reverser lane catalog — Ghidra, Radare2, Back Engineering VMProtect/Themida research, AFL++, libFuzzer, binwalk, and binary triage tooling"
+  capability_contract:
+    lane: reverse-engineering
+    scope: isolated-lab
+    environment: [analysis-container, disposable-vm]
+    required_tools: [ghidra, radare2, sanitizer]
+    evidence: [binary-sha256, function-map, dynamic-trace, minimized-input]
+    verification: "reproduce the claimed behavior against the pinned binary hash"
+    negative_control: "run a benign corpus input through the same harness"
+    scorecard: [reproducer-rate, root-cause-rate, artifact-completeness]
+    benchmark: held-out-reversing
 ---
 
 # Reverser Skill Catalog
@@ -19,6 +29,8 @@ metadata:
 | `/skills/standard/reverser/rop-chain/SKILL.md`         | Gadget hunting for exploit dev |
 | `/skills/standard/reverser/anti-debug-bypass/SKILL.md` | IsDebuggerPresent, ptrace, NtGlobalFlag |
 | `/skills/standard/reverser/ghidra/SKILL.md`            | Deep Ghidra analysis — decompile, xrefs, imports, P-code |
+| `/skills/standard/reverser/windows-internals/SKILL.md` | Defensive driver exposure assessment in disposable Windows VMs |
+| `/skills/standard/reverser/game-security/SKILL.md`     | Self-hosted game client, protocol, replay, and server-authority research |
 
 ## Workflow
 1. `ghidra_status` — check Ghidra MCP bridge and headless availability

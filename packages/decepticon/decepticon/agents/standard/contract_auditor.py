@@ -46,6 +46,7 @@ from typing import Any
 
 from langchain.agents import create_agent
 
+from decepticon.agents._benchmark_mode import benchmark_skill_sources
 from decepticon.agents.build import build_middleware, build_tools
 from decepticon.agents.prompts import load_prompt
 from decepticon.backends import build_sandbox_backend, make_agent_backend
@@ -79,6 +80,7 @@ _STANDARD_TOOLS: dict[str, Any] = {
 
 _ROLE = "contract_auditor"
 _RECURSION_LIMIT = 1000
+_SKILL_SOURCES: list[str] = ["/skills/standard/contracts/", "/skills/shared/"]
 
 
 def create_contract_auditor_agent(
@@ -142,6 +144,7 @@ def create_contract_auditor_agent(
     if middleware is None:
         middleware = build_middleware(
             role=_ROLE,
+            skill_sources=[*_SKILL_SOURCES, *benchmark_skill_sources()],
             backend=backend,
             llm=llm,
             fallback_models=fallback_models,

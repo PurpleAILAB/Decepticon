@@ -249,16 +249,22 @@ audit-skills:
 audit-skills-strict:
 	uv run python -m decepticon.skill_audit --mode strict
 
+## Download and verify the immutable MITRE STIX bundle required by the
+## Skillogy graph builder. The builder itself remains offline-only.
+.PHONY: bootstrap-skill-graph
+bootstrap-skill-graph:
+	uv run python scripts/bootstrap_skillogy_stix.py
+
 ## Skill graph builder (Phase 1a) — compile SKILL.md + seeds + MITRE STIX
 ## into packages/decepticon/decepticon/skills/.graph/skills.cypher.
 .PHONY: build-skill-graph
-build-skill-graph:
+build-skill-graph: bootstrap-skill-graph
 	uv run python -m decepticon.skillogy.builder --frozen-built-at
 
 ## CI gate — assert the checked-in skills.cypher matches what the
 ## builder produces from the current SKILL.md + seed YAML + pinned STIX.
 .PHONY: check-skill-graph
-check-skill-graph:
+check-skill-graph: bootstrap-skill-graph
 	uv run python -m decepticon.skillogy.builder --frozen-built-at --check
 
 ## main-push lane: slow included, coverage 60% gate (ratcheted from 35% in #380).

@@ -54,6 +54,15 @@ location: http:https://app.example.com/admin/users  # optional but recommended s
 - <pointer 1>: <one-line per pointer>
 - <pointer 2>: <one-line per pointer>
 
+
+## Verification
+Required before a finding is marked confirmed:
+- status: `confirmed` or `rejected`
+- positive command and discriminating success signal
+- equivalent negative-control command and expected baseline signal
+- `findings/evidence/FIND-001_verification.json` from `validate_workspace_finding`
+- CVSS vector string when confirmed
+
 ## Next
 next agent should: <action>
 OR

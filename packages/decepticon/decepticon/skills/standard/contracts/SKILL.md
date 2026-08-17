@@ -8,6 +8,16 @@ metadata:
     - T1190
     - T1565
     - T1565.001
+  capability_contract:
+    lane: web3
+    scope: isolated-lab
+    environment: [anvil, forked-chain]
+    required_tools: [forge, slither]
+    evidence: [foundry-poc, evm-trace, patched-build-result]
+    verification: "run the exploit test against the exact deployment or pinned fork"
+    negative_control: "run the baseline test without the exploit precondition"
+    scorecard: [validated-rate, patched-build-non-repro-rate, unique-root-causes]
+    benchmark: held-out-web3
 ---
 
 # Smart Contract Audit Catalog

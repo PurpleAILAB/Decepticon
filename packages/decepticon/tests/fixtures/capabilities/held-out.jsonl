@@ -1,0 +1,6 @@
+{"lane":"web","verified":true,"duration_seconds":2.5,"cost_usd":0.01,"root_cause_id":"web-boundary","visible_to_user":true}
+{"lane":"web3","verified":true,"duration_seconds":4.0,"cost_usd":0.03,"root_cause_id":"web3-boundary","visible_to_user":true}
+{"lane":"reverse-engineering","verified":false,"duration_seconds":3.0,"cost_usd":0.02,"root_cause_id":null,"visible_to_user":true}
+{"lane":"active-directory","verified":true,"duration_seconds":5.5,"cost_usd":0.04,"root_cause_id":"ad-boundary","visible_to_user":true}
+{"lane":"windows-internals","verified":false,"duration_seconds":3.5,"cost_usd":0.02,"root_cause_id":null,"visible_to_user":true}
+{"lane":"game-security","verified":true,"duration_seconds":4.5,"cost_usd":0.03,"root_cause_id":"game-boundary","visible_to_user":true}

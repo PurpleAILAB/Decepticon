@@ -1902,13 +1902,8 @@ async def validate_finding(
     """
     from decepticon.tools.bash.bash import get_sandbox
     from decepticon.tools.research.poc import (
-        AC,
-        AV,
-        PR,
-        UI,
         CVSSVector,
-        Impact,
-        Scope,
+        parse_cvss_vector,
         sandbox_runner,
         validate_poc,
     )
@@ -1923,19 +1918,9 @@ async def validate_finding(
     cvss: CVSSVector | None = None
     if cvss_vector:
         try:
-            parts = {kv.split(":")[0]: kv.split(":")[1] for kv in cvss_vector.split("/")[1:]}
-            cvss = CVSSVector(
-                av=AV(parts.get("AV", "N")),
-                ac=AC(parts.get("AC", "L")),
-                pr=PR(parts.get("PR", "N")),
-                ui=UI(parts.get("UI", "N")),
-                scope=Scope(parts.get("S", "U")),
-                c=Impact(parts.get("C", "H")),
-                i=Impact(parts.get("I", "H")),
-                a=Impact(parts.get("A", "H")),
-            )
-        except (ValueError, KeyError, IndexError) as e:
-            return _json({"error": f"bad CVSS vector: {e}"})
+            cvss = parse_cvss_vector(cvss_vector)
+        except ValueError as exc:
+            return _json({"error": f"bad CVSS vector: {exc}"})
 
     with graph_transaction() as graph:
         runner = sandbox_runner(sandbox)

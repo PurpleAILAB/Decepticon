@@ -146,6 +146,37 @@ class CVSSVector:
         return Severity.INFO
 
 
+def parse_cvss_vector(vector: str) -> CVSSVector:
+    """Parse a complete CVSS v3.1 base vector without inventing defaults."""
+    if not vector.startswith("CVSS:3.1/"):
+        raise ValueError("CVSS vector must start with 'CVSS:3.1/'")
+    metrics: dict[str, str] = {}
+    for segment in vector.removeprefix("CVSS:3.1/").split("/"):
+        key, separator, value = segment.partition(":")
+        if not separator or not key or not value:
+            raise ValueError(f"invalid CVSS metric {segment!r}")
+        if key in metrics:
+            raise ValueError(f"duplicate CVSS metric {key!r}")
+        metrics[key] = value
+    expected = {"AV", "AC", "PR", "UI", "S", "C", "I", "A"}
+    unexpected = set(metrics) - expected
+    missing = expected - set(metrics)
+    if unexpected:
+        raise ValueError(f"unsupported CVSS metrics: {', '.join(sorted(unexpected))}")
+    if missing:
+        raise ValueError(f"missing CVSS metrics: {', '.join(sorted(missing))}")
+    return CVSSVector(
+        av=AV(metrics["AV"]),
+        ac=AC(metrics["AC"]),
+        pr=PR(metrics["PR"]),
+        ui=UI(metrics["UI"]),
+        scope=Scope(metrics["S"]),
+        c=Impact(metrics["C"]),
+        i=Impact(metrics["I"]),
+        a=Impact(metrics["A"]),
+    )
+
+
 # ── PoC validation ──────────────────────────────────────────────────────
 
 

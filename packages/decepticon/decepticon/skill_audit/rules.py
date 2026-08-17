@@ -10,6 +10,7 @@ import enum
 from dataclasses import dataclass
 from typing import Any
 
+from decepticon.capabilities.contracts import validate_contract_metadata
 from decepticon.skill_audit.aliases import resolve_subdomain
 from decepticon.skill_audit.canonical import load_canonical_subdomains
 from decepticon.skill_audit.frontmatter import (
@@ -32,6 +33,7 @@ class RuleId(enum.Enum):
     BAD_MITRE_FORMAT = "R-bad-mitre-format"
     NO_ATTRIBUTION = "R-no-attribution"
     DUPLICATE_NAME = "R-duplicate-name"
+    BAD_CAPABILITY_CONTRACT = "R-bad-capability-contract"
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,7 @@ def validate_skill_file(path: str, text: str) -> list[Violation]:
     violations.extend(_check_subdomain(path, meta))
     violations.extend(_check_mitre(path, meta))
     violations.extend(_check_attribution(path, meta))
+    violations.extend(_check_capability_contract(path, meta))
     return violations
 
 
@@ -143,6 +146,13 @@ def _check_attribution(path: str, meta: dict[str, Any]) -> list[Violation]:
             "offensive skill has no mitre_attack, aatmf_tactic, or upstream_ref",
         )
     ]
+
+
+def _check_capability_contract(path: str, meta: dict[str, Any]) -> list[Violation]:
+    """Validate the optional executable-contract metadata on specialist skills."""
+    metadata = meta.get("metadata")
+    details = validate_contract_metadata(metadata)
+    return [Violation(path, RuleId.BAD_CAPABILITY_CONTRACT, detail) for detail in details]
 
 
 def _truthy_string(value: Any) -> bool:

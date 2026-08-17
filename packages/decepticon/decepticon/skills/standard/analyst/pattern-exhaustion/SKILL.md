@@ -4,6 +4,7 @@ description: Systematic pattern exhaustion methodology. Load after finding any c
 metadata:
   subdomain: analyst
   when_to_use: "pattern exhaustion methodology root cause search same pattern instances codebase variant hunt"
+  upstream_ref: "Decepticon analyst lane: source-root-cause variant investigation"
 ---
 
 # Pattern Exhaustion
@@ -76,8 +77,9 @@ Not all instances are equal. Prioritize:
 
 ### 4. Verify each instance
 
-Feed the top candidates to the verifier via `validate_finding`. Each
-confirmed instance becomes a separate FINDING node.
+Feed each top candidate to the verifier with a separate positive and baseline
+command. Persist the ``validate_workspace_finding`` result beside the candidate;
+only a result with ``validated=true`` becomes a separate operational finding.
 
 ### 5. Exhaustion criteria
 
