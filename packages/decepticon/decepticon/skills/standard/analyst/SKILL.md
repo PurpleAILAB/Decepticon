@@ -4,6 +4,7 @@ description: Root pointer for the analyst's vulnerability research playbooks. Lo
 metadata:
   subdomain: analyst
   when_to_use: "analyst overview vulnerability research playbook catalog chain building routing iteration start"
+  upstream_ref: "Decepticon analyst lane: vulnerability research playbook catalog"
 ---
 
 # Analyst Skill Catalog
@@ -27,6 +28,13 @@ Use when you have source code and are hunting a specific weakness class.
 | `/skills/standard/analyst/idor/SKILL.md`             | Missing authorization check on object reference                |
 | `/skills/standard/analyst/auth-bypass/SKILL.md`      | Broken auth state machine, missing session checks              |
 | `/skills/standard/analyst/prompt-injection/SKILL.md` | LLM prompts built from untrusted input                         |
+
+## Research expansion playbooks
+
+| Skill | Use for |
+|---|---|
+| `/skills/standard/analyst/patch-diff/SKILL.md` | Pinned vulnerable-to-fixed differential testing and variant analysis |
+| `/skills/standard/analyst/pattern-exhaustion/SKILL.md` | Independent validation of related root-cause candidates |
 
 ## Chain playbooks
 Use when you have a bag of individual findings and want to combine them

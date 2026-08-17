@@ -69,6 +69,20 @@ signals, then follow `/skills/standard/reverser/virtualized-protectors/SKILL.md`
 Do not promise automatic devirtualization. Recover VMEnter, VMEXIT, VIP,
 handler-table clues, and branch behavior; use Radare2/Ghidra facts to plan
 incremental lifting or trace collection.
+
+## Lane F — Windows driver exposure assessment
+Load `/skills/standard/reverser/windows-internals/SKILL.md`. Work only in a
+disposable Windows VM or on owner-authorized inventory. Produce driver
+hash/signer/version evidence, debugger or ETW observations, and a mitigation
+recheck. Do not load vulnerable drivers, disable platform protections, or build
+BYOVD, persistence, or anti-cheat-bypass chains.
+
+## Lane G — Game security research
+Load `/skills/standard/reverser/game-security/SKILL.md`. Work only on local,
+self-hosted, or intentionally vulnerable training targets. Measure server-side
+state, replay artifacts, and defensive telemetry. Do not create online-game
+cheats, aim assistance, overlays, anti-cheat evasion, or multiplayer disruption
+tooling.
 </HUNTING_LANES>
 
 <ENVIRONMENT>

@@ -243,22 +243,21 @@ for f in /workspace/findings/afl/default/crashes/id:*; do
 done | sort | uniq -c | sort -rn | head -20
 ```
 
-## 10. Promote to KG
+## 10. Persist and validate crash evidence
 
-For each confirmed unique crash:
+For each unique crash, preserve:
 
-```
-kg_add_node("vulnerability",
-  label="heap-buffer-overflow in target_parse()",
-  props={
-    "crash_input": "/workspace/findings/crash-min.bin",
-    "class": "heap-buffer-overflow",
-    "asan_report_summary": "WRITE of size 1 at 0x... heap base+0x28",
-    "exploitability": "HIGH",
-    "repro": "ASAN_OPTIONS=halt_on_error=1 ./harness crash-min.bin",
-    "key": "fuzzing:heap-bof-target-parse"
-  })
-```
+- the minimized input and its SHA-256;
+- complete sanitizer output and the first stable stack frames;
+- pinned compiler, sanitizer, and target-binary build identity;
+- the exact reproduction command;
+- a benign corpus input run through the same harness.
+
+Use ``validate_workspace_finding`` with the crash signature as the positive
+signal and the benign execution as the negative control. Save its JSON output
+under ``findings/evidence/`` before creating a finding. A sanitizer line alone
+is a triage lead; a reportable issue needs a reproducible minimized input and a
+baseline that does not emit the same signature.
 
 ## Tools Quick Reference
 
@@ -270,5 +269,4 @@ kg_add_node("vulnerability",
 | `afl-cmin` | bundled | Corpus minimization |
 | `afl-whatsup` | bundled | Multi-instance status summary |
 | libFuzzer | clang built-in | In-process fuzzer (LLVM) |
-| honggfuzz | `apt install honggfuzz` | Good for network/socket targets |
 | `cargo fuzz` | `cargo install cargo-fuzz` | Rust fuzzing (libFuzzer backend) |

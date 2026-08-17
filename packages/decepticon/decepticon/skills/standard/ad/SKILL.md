@@ -11,6 +11,16 @@ metadata:
     - T1003.006
     - T1649
     - T1555
+  capability_contract:
+    lane: active-directory
+    scope: isolated-lab
+    environment: [resettable-ad-lab, isolated-network]
+    required_tools: [bloodhound-ce, certipy, netexec]
+    evidence: [attack-path-query, lab-replay, remediation-check]
+    verification: "replay the exact path in a freshly reset authorized lab"
+    negative_control: "confirm the path fails after the remediated control is applied"
+    scorecard: [verified-path-rate, noisy-action-rate, remediation-correctness]
+    benchmark: dreadgoad
 ---
 
 # AD Operator Skill Catalog

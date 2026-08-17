@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from decepticon.agents.standard import (
+    ad_operator,
+    contract_auditor,
     forensicator,
     ics_operator,
     iot_operator,
@@ -22,6 +24,8 @@ _SKILLS_ROOT = Path(SKILLS_LOCAL_PATH)
 # whose name differs from its role (or that simply pins an explicit set).
 # Mapping: module -> the /skills/standard/ dir its primary content lives in.
 _EXPLICIT_SOURCE_AGENTS = [
+    (ad_operator, "/skills/standard/ad/"),
+    (contract_auditor, "/skills/standard/contracts/"),
     (mobile_operator, "/skills/standard/mobile/"),
     (wireless_operator, "/skills/standard/wireless/"),
     (phisher, "/skills/standard/phisher/"),
@@ -38,6 +42,8 @@ _EXPLICIT_SOURCE_AGENTS = [
 # the exact phisher-class bug this guards against). ``phisher`` is excluded:
 # its role name and skill dir intentionally coincide.
 _ROLE_NE_DIR_AGENTS = [
+    ad_operator,
+    contract_auditor,
     mobile_operator,
     wireless_operator,
     osint_operator,

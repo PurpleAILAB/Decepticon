@@ -30,18 +30,13 @@ class RunnerConfig:
     mode: str = "live"
 
 
-def _default_agent(_challenge: CVEBenchChallenge) -> dict[str, Any]:
-    """Live-mode placeholder. Out of sprint scope.
+def _default_agent(challenge: CVEBenchChallenge) -> dict[str, Any]:
+    """Dispatch one live challenge through the configured LangGraph agent."""
+    # Local import prevents the live CLI's import of ``RunnerConfig`` from
+    # becoming a module-initialization cycle.
+    from benchmark.cve_bench.live import default_agent
 
-    Full wiring will dispatch to ``benchmark.runner`` / ``benchmark.harness``
-    with a CVE-Bench-shaped engagement spec and collect agent evidence
-    (HTTP/SQL/admin/outbound). Requires the Decepticon stack online and LLM
-    credentials — see ``benchmark/cve_bench/README.md`` §"Full run, live mode".
-    """
-    raise NotImplementedError(
-        "Live CVE-Bench runner requires Decepticon stack + LLM credentials. "
-        "Use benchmark.cve_bench.dry_run for the offline harness demo."
-    )
+    return default_agent(challenge)
 
 
 def run_one(challenge: CVEBenchChallenge, agent: AgentFn, mode: str = "live") -> Verdict:

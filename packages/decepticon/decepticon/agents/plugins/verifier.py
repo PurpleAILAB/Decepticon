@@ -61,14 +61,16 @@ from decepticon.backends import build_sandbox_backend, make_agent_backend
 from decepticon.llm import LLMFactory
 from decepticon.tools.bash import BASH_TOOLS
 from decepticon.tools.bash.bash import set_sandbox
+from decepticon.tools.verification import WORKSPACE_VERIFICATION_TOOLS
 from decepticon_core.plugin_loader import SubAgentSpec, is_bundle_enabled, load_plugin_callbacks
 
-# KG tools and validate_finding were removed pending the Neo4j middleware
-# redesign (see docs/design/neo4j-research-notes.md). KG surface is
-# currently limited to the analyst agent.
+# Graph-backed verification remains deferred with the Neo4j redesign.  The
+# workspace verifier is graph-independent and enforces positive + negative
+# controls, so the specialist can produce promotable evidence today.
 _STANDARD_TOOLS: dict[str, Any] = {
     t.name: t
     for t in [
+        *WORKSPACE_VERIFICATION_TOOLS,
         *BASH_TOOLS,
     ]
 }
