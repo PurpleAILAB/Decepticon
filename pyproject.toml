@@ -87,6 +87,7 @@ extend-exclude = [
     "benchmark/xbow-validation-benchmarks",
     "benchmark/MHBench",
     "benchmark/results",
+    "integrations/reverse-skill",
 ]
 
 [tool.ruff.lint]
