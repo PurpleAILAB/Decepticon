@@ -10,8 +10,8 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.config import get_config, get_stream_writer
 
 from decepticon_core.types.engagement import (
-    AbortPlan,
     CONOPS,
+    AbortPlan,
     CleanupPlan,
     ContactPlan,
     DataHandlingPlan,
@@ -19,7 +19,6 @@ from decepticon_core.types.engagement import (
     RoE,
     ThreatProfile,
 )
-
 
 _PLANNING_DOCUMENTS = {
     "roe.json": RoE,
@@ -82,6 +81,7 @@ def _runtime_context() -> tuple[str, str, bool | None]:
         target if isinstance(target, str) else "",
         confirmed if isinstance(confirmed, bool) else None,
     )
+
 
 def _safe_writer():
     try:

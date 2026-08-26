@@ -8,8 +8,8 @@ from decepticon.agents.plugins.scanner import create_scanner_agent
 from decepticon.agents.plugins.verifier import create_verifier_agent
 from decepticon.agents.plugins.vulnresearch import create_vulnresearch_agent
 from decepticon.agents.standard.ad_operator import create_ad_operator_agent
-from decepticon.agents.standard.autohunt import create_autohunt_agent
 from decepticon.agents.standard.analyst import create_analyst_agent
+from decepticon.agents.standard.autohunt import create_autohunt_agent
 from decepticon.agents.standard.blue_cell import create_blue_cell_agent
 from decepticon.agents.standard.cloud_hunter import create_cloud_hunter_agent
 from decepticon.agents.standard.contract_auditor import create_contract_auditor_agent

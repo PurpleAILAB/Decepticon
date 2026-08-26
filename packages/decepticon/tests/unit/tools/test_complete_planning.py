@@ -53,11 +53,14 @@ def _write_bundle(root: Path, *, target: str = "https://target.example") -> None
 def test_validate_planning_bundle_accepts_complete_authorized_bundle(tmp_path: Path) -> None:
     _write_bundle(tmp_path)
 
-    assert validate_planning_bundle(
-        tmp_path,
-        target_value="https://target.example",
-        authorization_confirmed=True,
-    ) is None
+    assert (
+        validate_planning_bundle(
+            tmp_path,
+            target_value="https://target.example",
+            authorization_confirmed=True,
+        )
+        is None
+    )
 
 
 def test_validate_planning_bundle_rejects_unconfirmed_authorization(tmp_path: Path) -> None:
