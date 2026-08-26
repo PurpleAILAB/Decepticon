@@ -3,6 +3,7 @@
   "graphs": {
     "decepticon": "./packages/decepticon/decepticon/agents/standard/decepticon.py:graph",
     "recon": "./packages/decepticon/decepticon/agents/standard/recon.py:graph",
+    "autohunt": "./packages/decepticon/decepticon/agents/standard/autohunt.py:graph",
     "soundwave": "./packages/decepticon/decepticon/agents/standard/soundwave.py:graph",
     "exploit": "./packages/decepticon/decepticon/agents/standard/exploit.py:graph",
     "postexploit": "./packages/decepticon/decepticon/agents/standard/postexploit.py:graph",

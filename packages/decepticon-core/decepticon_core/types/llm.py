@@ -546,6 +546,7 @@ AGENT_TIERS: dict[str, Tier] = {
     "supply_chain_operator": Tier.MID,
     # LOW — high-throughput, low reasoning depth. Recon / triage / docs.
     "soundwave": Tier.LOW,
+    "autohunt": Tier.LOW,
     "recon": Tier.LOW,
     "scanner": Tier.LOW,
     "wireless_operator": Tier.LOW,
@@ -555,6 +556,7 @@ AGENT_TIERS: dict[str, Tier] = {
 AGENT_TEMPERATURES: dict[str, float] = {
     "decepticon": 0.4,
     "soundwave": 0.4,
+    "autohunt": 0.4,
     "exploit": 0.3,
     "exploiter": 0.2,
     "detector": 0.2,

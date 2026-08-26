@@ -65,9 +65,13 @@ export const AGENT_DISPLAY_CONFIG: Record<string, AgentDisplayMeta> = {
     color: "#ef4444",
     imagePath: "/agents/decepticon.png",
   },
-  // `soundwave` remains the deployed graph identifier during the Autohunt
-  // compatibility transition.
   soundwave: {
+    name: "Soundwave",
+    description: "Socratic interview — generates the engagement plan",
+    role: "Planning",
+    color: "#8b5cf6",
+  },
+  autohunt: {
     name: "Autohunt",
     description: "Autonomous bootstrap — plans one declared authorized target",
     role: "Planning",
