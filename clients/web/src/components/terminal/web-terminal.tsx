@@ -42,6 +42,9 @@ function sanitizeTermBytes(s: string): string {
 interface WebTerminalProps {
   engagementId: string;
   engagementSlug: string;
+  targetType: string;
+  targetValue: string;
+  authorizationConfirmed: boolean;
   agentId?: string;
   threadId?: string;
   className?: string;
@@ -51,6 +54,9 @@ interface WebTerminalProps {
 export function WebTerminal({
   engagementId,
   engagementSlug,
+  targetType,
+  targetValue,
+  authorizationConfirmed,
   agentId = "soundwave",
   threadId,
   className,
@@ -67,6 +73,12 @@ export function WebTerminal({
   agentIdRef.current = agentId;
   const threadIdRef = useRef(threadId);
   threadIdRef.current = threadId;
+  const targetTypeRef = useRef(targetType);
+  targetTypeRef.current = targetType;
+  const targetValueRef = useRef(targetValue);
+  targetValueRef.current = targetValue;
+  const authorizationConfirmedRef = useRef(authorizationConfirmed);
+  authorizationConfirmedRef.current = authorizationConfirmed;
   const onThreadIdRef = useRef(onThreadId);
   onThreadIdRef.current = onThreadId;
 
@@ -122,11 +134,17 @@ export function WebTerminal({
     const slug = engagementSlugRef.current;
     const aid = agentIdRef.current;
     const tid = threadIdRef.current;
+    const targetType = targetTypeRef.current;
+    const targetValue = targetValueRef.current;
+    const authorizationConfirmed = authorizationConfirmedRef.current;
 
     let wsUrl =
       `${TERMINAL_WS_URL}?engagementId=${encodeURIComponent(eid)}` +
       `&engagementSlug=${encodeURIComponent(slug)}` +
-      `&agentId=${encodeURIComponent(aid)}`;
+      `&agentId=${encodeURIComponent(aid)}` +
+      `&targetType=${encodeURIComponent(targetType)}` +
+      `&targetValue=${encodeURIComponent(targetValue)}` +
+      `&authorizationConfirmed=${authorizationConfirmed}`;
     if (tid) wsUrl += `&threadId=${encodeURIComponent(tid)}`;
 
     const ws = new WebSocket(wsUrl);

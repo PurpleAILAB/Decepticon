@@ -152,6 +152,9 @@ def test_workspace_path_reducer_handles_concurrent_updates(schema) -> None:
 # `language`. Each branch carries the same value, so last-write-wins converges.
 _CONVERGING_ENGAGEMENT_FIELDS = [
     ("language", "ko"),
+    ("target_type", "web_url"),
+    ("target_value", "https://target.example"),
+    ("authorization_confirmed", True),
     ("target_url", "http://target.example"),
     ("target_extra_ports", {22: 2222}),
     ("vulnerability_tags", ["xss", "sqli"]),
@@ -254,6 +257,26 @@ def test_engagement_only_injection(middleware: EngagementContextMiddleware) -> N
     assert "Workspace slug: blue-falcon" in text
     assert "Workspace root: /workspace" in text
     assert "BENCHMARK MODE" not in text  # benchmark section absent
+
+
+def test_autohunt_injection_uses_only_declared_target(
+    middleware: EngagementContextMiddleware,
+) -> None:
+    req = _FakeRequest(
+        state={
+            "target_type": "web_url",
+            "target_value": "https://target.example",
+            "authorization_confirmed": True,
+        },
+    )
+
+    text = _flatten(middleware._inject(req).system_message)
+
+    assert "Declared target: https://target.example" in text
+    assert "Declared target type: web_url" in text
+    assert "Authorization: confirmed" in text
+    assert "Do not infer related domains" in text
+    assert "BENCHMARK MODE" not in text
 
 
 def test_engagement_injection_honors_custom_workspace(
@@ -536,6 +559,25 @@ def test_hydrate_pulls_engagement_from_configurable_when_state_empty(
     assert updates == {
         "engagement_name": "from-launcher",
         "workspace_path": "/workspace",
+    }
+
+
+def test_hydrate_pulls_autohunt_context_from_configurable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "decepticon.middleware.engagement._configurable_from_runnable_config",
+        lambda: {
+            "target_type": "web_url",
+            "target_value": "https://target.example",
+            "authorization_confirmed": True,
+        },
+    )
+
+    assert _hydrate_engagement_state({}) == {
+        "target_type": "web_url",
+        "target_value": "https://target.example",
+        "authorization_confirmed": True,
     }
 
 

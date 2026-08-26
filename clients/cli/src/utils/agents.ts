@@ -11,8 +11,8 @@ export const AGENT_LABELS: Record<string, string> = {
   // Orchestrator
   decepticon: "Decepticon",
 
-  // Document generation
-  soundwave: "Soundwave",
+  // Document generation (stable graph id, Autohunt display name)
+  soundwave: "Autohunt",
 
   // Kill chain
   recon: "Recon",

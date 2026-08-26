@@ -53,6 +53,9 @@ describe("useAgent — engagement handoff lifecycle", () => {
     vi.stubEnv("DECEPTICON_ASSISTANT_ID", "soundwave");
     vi.stubEnv("DECEPTICON_ENGAGEMENT", "eng-abc");
     vi.stubEnv("DECEPTICON_WORKSPACE_PATH", "/tmp/ws");
+    vi.stubEnv("DECEPTICON_TARGET_TYPE", "web_url");
+    vi.stubEnv("DECEPTICON_TARGET", "https://target.example");
+    vi.stubEnv("DECEPTICON_AUTHORIZATION_CONFIRMED", "true");
     delete process.env.DECEPTICON_THREAD_ID;
     mockState.client = createMockClient();
     ({ useAgent } = await import("./useAgent.js"));
@@ -193,6 +196,8 @@ describe("useAgent — engagement handoff lifecycle", () => {
       const inputJson = JSON.stringify(opts.input);
       expect(inputJson).not.toContain("engagement_name");
       expect(inputJson).not.toContain("workspace_path");
+      expect(inputJson).not.toContain("target_value");
+      expect(inputJson).not.toContain("authorization_confirmed");
 
       // Engagement fields must be present in config.configurable for every
       // run (the env vars are set for the full test, so both submits route
@@ -202,6 +207,9 @@ describe("useAgent — engagement handoff lifecycle", () => {
       expect(configurable).toMatchObject({
         engagement_name: "eng-abc",
         workspace_path: "/tmp/ws",
+        target_type: "web_url",
+        target_value: "https://target.example",
+        authorization_confirmed: true,
       });
     }
   });

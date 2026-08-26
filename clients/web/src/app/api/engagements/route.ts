@@ -68,11 +68,17 @@ export async function POST(req: NextRequest) {
     const { userId } = await requireAuth();
 
     const body = await req.json();
-    const { name, targetType, targetValue } = body;
+    const { name, targetType, targetValue, authorizationConfirmed } = body;
 
     if (!name || !targetType || !targetValue) {
       return NextResponse.json(
         { error: "Missing required fields: name, targetType, targetValue" },
+        { status: 400 }
+      );
+    }
+    if (authorizationConfirmed !== true) {
+      return NextResponse.json(
+        { error: "Explicit authorization confirmation is required" },
         { status: 400 }
       );
     }
@@ -114,6 +120,7 @@ export async function POST(req: NextRequest) {
         targetValue,
         userId,
         workspacePath: wsPath,
+        authorizationConfirmed,
       },
     });
 

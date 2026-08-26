@@ -142,7 +142,9 @@ wss.on("connection", async (ws: WebSocket, req) => {
   const engagementId = url.searchParams.get("engagementId") ?? "";
   const engagementSlug = url.searchParams.get("engagementSlug") ?? "";
   const agentId = url.searchParams.get("agentId") ?? "soundwave";
-
+  const targetType = url.searchParams.get("targetType") ?? "";
+  const targetValue = url.searchParams.get("targetValue") ?? "";
+  const authorizationConfirmed = url.searchParams.get("authorizationConfirmed") === "true";
   if (!engagementSlug) {
     ws.close(1008, "Missing engagementSlug");
     return;
@@ -212,6 +214,9 @@ wss.on("connection", async (ws: WebSocket, req) => {
     DECEPTICON_ENGAGEMENT: engagementSlug,
     DECEPTICON_WORKSPACE_PATH: engagementSlug ? `/workspace/${engagementSlug}` : "/workspace",
     DECEPTICON_API_URL: LANGGRAPH_API_URL,
+    DECEPTICON_TARGET_TYPE: targetType,
+    DECEPTICON_TARGET: targetValue,
+    DECEPTICON_AUTHORIZATION_CONFIRMED: authorizationConfirmed ? "true" : "false",
   };
   if (threadId) env.DECEPTICON_THREAD_ID = threadId;
 

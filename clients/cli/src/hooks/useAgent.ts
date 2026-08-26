@@ -775,6 +775,13 @@ export function useAgent({
           configurable.workspace_path =
             process.env.DECEPTICON_WORKSPACE_PATH ?? "/workspace";
         }
+        const targetValue = process.env.DECEPTICON_TARGET;
+        if (targetValue) {
+          configurable.target_value = targetValue;
+          configurable.target_type = process.env.DECEPTICON_TARGET_TYPE ?? "";
+          configurable.authorization_confirmed =
+            process.env.DECEPTICON_AUTHORIZATION_CONFIRMED === "true";
+        }
         const modelOverride = getModelOverride();
         if (modelOverride) {
           configurable.model_override = modelOverride;
