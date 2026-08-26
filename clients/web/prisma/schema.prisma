@@ -26,11 +26,12 @@ enum EngagementStatus {
 // ── Application models ───────────────────────────────────────────────
 
 model Engagement {
-  id          String           @id @default(cuid())
-  name        String
-  targetType  TargetType
-  targetValue String
-  status      EngagementStatus @default(draft)
+  id                     String           @id @default(cuid())
+  name                   String
+  targetType             TargetType
+  targetValue            String
+  authorizationConfirmed Boolean          @default(false)
+  status                 EngagementStatus @default(draft)
 
   // Self-hosted single-user mode — userId is always "local".
   userId      String           @default("local")

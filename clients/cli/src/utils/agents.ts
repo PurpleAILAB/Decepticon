@@ -13,6 +13,7 @@ export const AGENT_LABELS: Record<string, string> = {
 
   // Document generation
   soundwave: "Soundwave",
+  autohunt: "Autohunt",
 
   // Kill chain
   recon: "Recon",

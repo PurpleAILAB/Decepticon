@@ -15,6 +15,7 @@ export default function NewEngagementPage() {
   const [targetType, setTargetType] = useState("web_url");
   const [name, setName] = useState("");
   const [targetValue, setTargetValue] = useState("");
+  const [authorizationConfirmed, setAuthorizationConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,8 +26,8 @@ export default function NewEngagementPage() {
       : null;
 
   async function handleSubmit() {
-    if (!nameValid || !targetValue.trim()) {
-      setError("Please fill in all required fields");
+    if (!nameValid || !targetValue.trim() || !authorizationConfirmed) {
+      setError("Enter one target and confirm explicit authorization before creating an engagement");
       return;
     }
 
@@ -37,7 +38,7 @@ export default function NewEngagementPage() {
       const res = await fetch("/api/engagements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, targetType, targetValue }),
+        body: JSON.stringify({ name, targetType, targetValue, authorizationConfirmed }),
       });
 
       if (!res.ok) {
@@ -152,11 +153,32 @@ export default function NewEngagementPage() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Authorization</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={authorizationConfirmed}
+              onChange={(event) => setAuthorizationConfirmed(event.target.checked)}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              I confirm I am authorized to test exactly the declared target. This does
+              not authorize adjacent assets, destructive testing, DoS, social
+              engineering, uncontrolled data mutation, or scope expansion.
+            </span>
+          </label>
+        </CardContent>
+      </Card>
+
       <div className="flex justify-end gap-3">
         <Button variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
-        <Button onClick={handleSubmit} disabled={submitting || !nameValid}>
+        <Button onClick={handleSubmit} disabled={submitting || !nameValid || !authorizationConfirmed}>
           {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Create Engagement
         </Button>

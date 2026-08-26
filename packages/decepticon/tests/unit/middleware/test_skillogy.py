@@ -119,6 +119,7 @@ class TestPhaseForRoleMapping:
             "supply_chain_operator",
             "blue_cell",
             "soundwave",
+            "autohunt",
             "decepticon",
         }
         assert set(_PHASE_FOR_ROLE) == expected, (

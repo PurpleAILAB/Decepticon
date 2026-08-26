@@ -72,6 +72,22 @@ class EngagementContextState(AgentState):
     language: NotRequired[
         Annotated[str, "Per-run output language (ISO 639-1).", reduce_converging_value]
     ]
+    # Fresh engagements pass this immutable launcher/client declaration to
+    # Autohunt. It is distinct from benchmark-only challenge context: it is
+    # never a license to infer sibling assets or widen the RoE.
+    target_type: NotRequired[
+        Annotated[str, "Declared target kind from the launcher/client.", reduce_converging_value]
+    ]
+    target_value: NotRequired[
+        Annotated[str, "One explicitly declared engagement target.", reduce_converging_value]
+    ]
+    authorization_confirmed: NotRequired[
+        Annotated[
+            bool,
+            "Explicit launcher/client authorization acknowledgement.",
+            reduce_converging_value,
+        ]
+    ]
     # Benchmark / CTF challenge context — populated by the benchmark harness.
     target_url: NotRequired[Annotated[str, "CTF challenge target URL.", reduce_converging_value]]
     target_extra_ports: NotRequired[
@@ -158,6 +174,16 @@ def _hydrate_engagement_state(state: Any) -> dict[str, Any] | None:
         if isinstance(cfg_lang, str) and cfg_lang:
             updates["language"] = cfg_lang
 
+    for field in ("target_type", "target_value"):
+        if not get(field):
+            value = configurable.get(field)
+            if isinstance(value, str) and value:
+                updates[field] = value
+    if get("authorization_confirmed") is None:
+        confirmed = configurable.get("authorization_confirmed")
+        if isinstance(confirmed, bool):
+            updates["authorization_confirmed"] = confirmed
+
     # KGMiddleware and the run launcher carry the authoritative composite
     # tenant+engagement graph partition in ``kg_engagement``. Keep the human /
     # workspace-facing ``engagement_name`` unchanged, but make every legacy KG
@@ -212,6 +238,24 @@ def _build_engagement_injection(slug: str, workspace: str) -> str:
         "engagement directory name; the launcher already chose them. The "
         "human-friendly engagement title belongs in roe.json:engagement_name "
         "and may differ from this slug."
+    )
+
+
+def _build_autohunt_injection(
+    target_type: str,
+    target_value: str,
+    authorization_confirmed: bool,
+) -> str:
+    """Render the trusted, single-target bootstrap context for Autohunt."""
+    authorization = "confirmed" if authorization_confirmed else "NOT confirmed"
+    return (
+        "\n\n[Autohunt bootstrap context — set by the launcher/client]\n"
+        f"Declared target: {target_value}\n"
+        f"Declared target type: {target_type}\n"
+        f"Authorization: {authorization}\n"
+        "Treat this as exactly one target. Do not infer related domains, IP ranges, "
+        "organizations, repositories, or cloud assets into scope. If authorization "
+        "is not confirmed, ask one blocking authorization question before planning."
     )
 
 
@@ -388,6 +432,9 @@ class EngagementContextMiddleware(AgentMiddleware):
         slug = get("engagement_name", "") or ""
         workspace = get("workspace_path", "/workspace") or "/workspace"
         language = get("language", "") or ""
+        target_type = get("target_type", "") or ""
+        target_value = get("target_value", "") or ""
+        authorization_confirmed = get("authorization_confirmed")
 
         sections: list[str] = []
         if slug:
@@ -397,6 +444,14 @@ class EngagementContextMiddleware(AgentMiddleware):
                 block = _build_deconfliction_injection(deconfliction)
                 if block:
                     sections.append(block)
+        if target_value:
+            sections.append(
+                _build_autohunt_injection(
+                    target_type,
+                    target_value,
+                    authorization_confirmed is True,
+                )
+            )
         if _benchmark_mode_active():
             sections.append(
                 _build_benchmark_injection(

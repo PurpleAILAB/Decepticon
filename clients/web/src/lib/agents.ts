@@ -67,7 +67,13 @@ export const AGENT_DISPLAY_CONFIG: Record<string, AgentDisplayMeta> = {
   },
   soundwave: {
     name: "Soundwave",
-    description: "Socratic interview — generates RoE, CONOPS, OPPLAN",
+    description: "Socratic interview — generates the engagement plan",
+    role: "Planning",
+    color: "#8b5cf6",
+  },
+  autohunt: {
+    name: "Autohunt",
+    description: "Autonomous bootstrap — plans one declared authorized target",
     role: "Planning",
     color: "#8b5cf6",
   },

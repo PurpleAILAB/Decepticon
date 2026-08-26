@@ -32,6 +32,7 @@ from decepticon_core.plugin_loader import is_bundle_enabled, load_plugin_agents
 STANDARD_GRAPHS: dict[str, str] = {
     "decepticon": "./decepticon/agents/standard/decepticon.py:graph",
     "recon": "./decepticon/agents/standard/recon.py:graph",
+    "autohunt": "./decepticon/agents/standard/autohunt.py:graph",
     "soundwave": "./decepticon/agents/standard/soundwave.py:graph",
     "exploit": "./decepticon/agents/standard/exploit.py:graph",
     "postexploit": "./decepticon/agents/standard/postexploit.py:graph",

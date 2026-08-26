@@ -25,7 +25,12 @@ export default function EngagementLayout({
   const pathname = usePathname();
   const engagementId = params.id as string;
 
-  const [engagement, setEngagement] = useState<{ name: string } | null>(null);
+  const [engagement, setEngagement] = useState<{
+    name: string;
+    targetType: string;
+    targetValue: string;
+    authorizationConfirmed: boolean;
+  } | null>(null);
   const [agentId, setAgentId] = useState<"soundwave" | "decepticon" | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
 
@@ -39,7 +44,13 @@ export default function EngagementLayout({
           fetch(`/api/engagements/${engagementId}/plan-docs`),
         ]);
         if (!engRes.ok) return;
-        const eng = (await engRes.json()) as { name: string; threadId?: string | null };
+        const eng = (await engRes.json()) as {
+          name: string;
+          targetType: string;
+          targetValue: string;
+          authorizationConfirmed: boolean;
+          threadId?: string | null;
+        };
         const planDocs = planRes.ok ? ((await planRes.json()) as Record<string, unknown>) : {};
         if (cancelled) return;
         setEngagement(eng);
@@ -89,6 +100,9 @@ export default function EngagementLayout({
             <WebTerminal
               engagementId={engagementId}
               engagementSlug={engagement!.name}
+              targetType={engagement!.targetType}
+              targetValue={engagement!.targetValue}
+              authorizationConfirmed={engagement!.authorizationConfirmed}
               agentId={agentId!}
               threadId={threadId ?? undefined}
               className="h-full"

@@ -129,6 +129,7 @@ _PHASE_FOR_ROLE: dict[str, str] = {
     # red/blue validation bridge — there is no dedicated blue-team phase.
     "blue_cell": "adversary-emulation",
     "soundwave": "planning",
+    "autohunt": "planning",
     "decepticon": "orchestration",
 }
 
